@@ -1,0 +1,19 @@
+{
+  "name": "career-autopilot",
+  "version": "3.3.1",
+  "description": "AI job-application assistant. Jobs are real & verified-only (structured sources + server-side URL verification, NO AI-generated jobs). AI returns only structured resume JSON; PDF/DOCX/TXT/LaTeX layout is produced by separate template renderers rendering real data only. v3.3 ships 8 visually-distinct resume templates by length — single-page: Modern Blue Sidebar, Executive Clean, Jake Tech Compact, ATS Compact Classic; multi-page: Modern Professional, ATS Detailed, Technical Detailed, Project Heavy Detailed — with an Auto/Single/Multi length selector and role-based recommendations. Job sources: Remotive, RemoteOK, Arbeitnow, Jobicy, The Muse (public) plus optional Adzuna, JSearch/RapidAPI, SerpAPI and USAJobs when keys are set.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0"
+  }
+}
