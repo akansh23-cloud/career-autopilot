@@ -24,6 +24,11 @@ app.use(session({
 /* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls). */
 app.use(express.static(__dirname));
 
+/* Explicit root route for platforms like Vercel where static index serving can be skipped. */
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 const JOB_FETCH_TIMEOUT  = Number(process.env.JOB_FETCH_TIMEOUT  || 12000);
 const JOB_VERIFY_TIMEOUT = Number(process.env.JOB_VERIFY_TIMEOUT || 9000);
 const STRICT_JOB_VERIFICATION = process.env.STRICT_JOB_VERIFICATION !== '0';
@@ -718,10 +723,21 @@ app.post('/ai/messages', async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Career Autopilot running on http://localhost:${port}`);
-  console.log(`  • Frontend served from this origin`);
-  console.log(`  • Job sources: ${SOURCES.map(s => s.name).join(', ')} (structured, verified — no AI-generated jobs)`);
-  console.log(`  • AI proxy: ${process.env.ANTHROPIC_API_KEY ? 'enabled' : 'OFF (set ANTHROPIC_API_KEY)'} — used for resume/tailoring/interview only`);
+/* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
+app.get(/^\/(?!jobs|auth|apply|ai|health).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
+
+const port = process.env.PORT || 3000;
+
+/* Local run uses app.listen. Vercel imports the Express app as a serverless handler. */
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Career Autopilot running on http://localhost:${port}`);
+    console.log(`  • Frontend served from this origin`);
+    console.log(`  • Job sources: ${SOURCES.map(s => s.name).join(', ')} (structured, verified — no AI-generated jobs)`);
+    console.log(`  • AI proxy: ${process.env.ANTHROPIC_API_KEY ? 'enabled' : 'OFF (set ANTHROPIC_API_KEY)'} — used for resume/tailoring/interview only`);
+  });
+}
+
+export default app;
