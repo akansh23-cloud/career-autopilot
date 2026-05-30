@@ -3129,6 +3129,95 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
 })();
 
 
+/* ============================================================
+   MULTI-BOARD SOURCE EXPANSION — LinkedIn/Indeed/Naukri aware
+   ============================================================ */
+(function(){
+  const BOARD_OPTIONS=['All','LinkedIn','Indeed','Naukri','Foundit/Monster','Wellfound','Instahyre','Cutshort','Hirist','Shine','TimesJobs','Adzuna','JSearch','SerpAPI','The Muse','Arbeitnow','Jobicy','Remotive','RemoteOK'];
+  const prevEnsure=ensureEnhancedState;
+  ensureEnhancedState=function(){
+    prevEnsure();
+    S.prefs=S.prefs||{};
+    if(!S.prefs.sources) S.prefs.sources='All';
+  };
+
+  caJobSearchUrl=function(base){
+    const q=new URLSearchParams();
+    q.set('role', S.targetRole||'software engineer');
+    q.set('location',(S.prefs&&S.prefs.location)||'');
+    q.set('mode',(S.prefs&&S.prefs.mode)||'Any');
+    q.set('freshness',(S.prefs&&S.prefs.freshness)||'7d');
+    q.set('limit',(S.prefs&&S.prefs.jobCount)||12);
+    q.set('verify','1');
+    const src=(S.prefs&&S.prefs.sources)||'All';
+    if(src && src!=='All') q.set('sources',src);
+    return base+'/jobs/search?'+q.toString();
+  };
+
+  const prevDoFind=doFind;
+  doFind=async function(){
+    ensureEnhancedState();
+    if(!S.analysis) toast('Tip: analyze your resume first for accurate match scoring');
+    S.prefs={
+      location:$('#jLoc').value, mode:$('#jMode').value, experience:$('#jExp').value, salary:$('#jSal').value,
+      freshness:$('#jFresh').value,
+      companyType:$('#jCompanyType')?$('#jCompanyType').value:'Any',
+      minMatch:$('#jMinMatch')?$('#jMinMatch').value:'0',
+      jobCount:$('#jCount')?$('#jCount').value:'12',
+      sources:$('#jSources')?$('#jSources').value:'All'
+    };
+    S.targetRole=$('#jRole').value; save();
+    const btn=$('#findBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Searching multiple boards…';
+    $('#jobStatus').innerHTML='<div class="loading"><span class="spin lime"></span>Fetching multiple job boards/API providers, balancing sources, applying the '+caWindowLabel()+' freshness filter, and verifying URLs server-side.</div>';
+    try{
+      const jobs=await discoverJobs();
+      S.jobs=jobs; S._searched=true; save(); renderJobs(); renderTabs();
+      if(S._jobBackendMissing) toast('Backend required for verified job search',true);
+      else if(S._jobBackendError) toast('Job backend error — see Freshness Audit',true);
+      else {
+        const cnt=new Set((jobs||[]).map(j=>j.source).filter(Boolean)).size;
+        toast(jobs.length ? (jobs.length+' verified fresh jobs found across '+cnt+' source'+(cnt===1?'':'s')) : 'No verified fresh jobs found. Try All sources, 7 days, or a broader location.');
+      }
+    }catch(e){ $('#jobStatus').innerHTML=''; errorModal(e.message,doFind); }
+    finally{ btn.disabled=false; btn.innerHTML='🔍 Find Real Jobs'; }
+  };
+
+  const prevRenderJobs=renderJobs;
+  renderJobs=function(){
+    prevRenderJobs();
+    const card=$('#jobsBody .card');
+    if(card && !$('#jSources')){
+      const grid=card.querySelector('div[style*="grid-template-columns"]') || card.firstElementChild;
+      const selected=(S.prefs&&S.prefs.sources)||'All';
+      const html='<div><label class="fl">Job source</label><select id="jSources">'+
+        BOARD_OPTIONS.map(x=>'<option value="'+esc(x)+'" '+(x===selected?'selected':'')+'>'+esc(x)+'</option>').join('')+
+        '</select></div>';
+      if(grid) grid.insertAdjacentHTML('beforeend',html);
+      const hint=card.querySelector('#multiSourceHint');
+      if(!hint) card.insertAdjacentHTML('beforeend','<div id="multiSourceHint" class="hint" style="margin-top:8px">Use <b>All</b> for balanced aggregation. LinkedIn, Indeed, Naukri and similar boards use SerpAPI/JSearch when configured; direct scraping is intentionally avoided for Vercel stability.</div>');
+    }
+  };
+
+  const prevAudit=caRenderAuditSection;
+  caRenderAuditSection=function(){
+    prevAudit();
+    const audit=$('#freshnessAudit');
+    if(!audit) return;
+    const sources=S._lastJobSources||[];
+    const returned=sources.filter(s=>s.ok && Number(s.count||0)>0);
+    const active=sources.filter(s=>s.active);
+    const inactive=sources.filter(s=>!s.active);
+    const old=$('#sourceCoverageBox'); if(old) old.remove();
+    const warn=returned.length && returned.length<=2
+      ? '<div class="flag" style="margin-top:10px;border-color:var(--amber);background:rgba(255,209,102,.08)"><b>Low source diversity:</b> only '+returned.length+' source(s) returned jobs. Configure <span class="mono">SERPAPI_KEY</span> or <span class="mono">RAPIDAPI_KEY</span> to unlock LinkedIn/Indeed/Naukri-style coverage.</div>' : '';
+    const inactiveHtml=inactive.length?'<div class="hint" style="margin-top:8px">Inactive/needs key: '+inactive.slice(0,10).map(s=>esc(s.source)).join(', ')+(inactive.length>10?'…':'')+'</div>':'';
+    audit.insertAdjacentHTML('afterbegin','<div id="sourceCoverageBox" class="mini-card" style="margin-bottom:12px"><b>Source coverage</b><div class="hint" style="margin-top:6px">Active configured sources: '+active.length+' · Returned jobs: '+returned.length+' source(s). RemoteOK/Remotive are fallback sources, not the only target.</div>'+warn+inactiveHtml+'</div>');
+  };
+
+  ensureEnhancedState(); save();
+})();
+
+
 /* boot */
 renderTabs();go('dash');maybeOnboard();
 

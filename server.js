@@ -229,29 +229,45 @@ if (process.env.RAPIDAPI_KEY) {
   SOURCES.push({
     name: 'JSearch',
     home: 'https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch',
-    description: 'JSearch/RapidAPI jobs API. Requires RAPIDAPI_KEY.',
+    description: 'JSearch/RapidAPI jobs API. Expands coverage across LinkedIn, Indeed, Naukri and other publishers when available.',
     requiresKey: true,
-    fetch: async (role) => {
-      const query = `${role || 'software engineer'} ${process.env.DEFAULT_JOB_LOCATION || ''}`.trim();
-      const data = await fetchJson(`https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(query)}&date_posted=week&num_pages=1`, JOB_FETCH_TIMEOUT, {
+    fetch: async (role, ctx = {}) => {
+      const loc = ctx.location || process.env.DEFAULT_JOB_LOCATION || 'India';
+      const queries = [
+        `${role || 'software engineer'} ${loc}`,
+        `${role || 'software engineer'} LinkedIn ${loc}`,
+        `${role || 'software engineer'} Indeed ${loc}`,
+        `${role || 'software engineer'} Naukri ${loc}`,
+        `${role || 'software engineer'} Instahyre Cutshort Hirist ${loc}`
+      ];
+      const calls = queries.map(q => fetchJson(`https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(q)}&date_posted=week&num_pages=1`, JOB_FETCH_TIMEOUT, {
         'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
         'X-RapidAPI-Host': 'jsearch.p.rapidapi.com'
-      });
-      return (data.data || []).map(x => ({
-        title: x.job_title,
-        company: x.employer_name,
-        location: [x.job_city, x.job_state, x.job_country].filter(Boolean).join(', ') || '—',
-        mode: x.job_is_remote ? 'Remote' : 'On-site/Hybrid',
-        experience: '',
-        salary: '',
-        companyType: x.employer_company_type || '',
-        source: 'JSearch',
-        postedDate: isoDate(x.job_posted_at_datetime_utc || x.job_posted_at_timestamp),
-        postedDays: ageDays(x.job_posted_at_datetime_utc || x.job_posted_at_timestamp),
-        url: x.job_apply_link || x.job_google_link,
-        summary: stripHtml(x.job_description).slice(0, 260),
-        requiredSkills: (x.job_required_skills || []).slice(0, 12)
       }));
+      const settled = await Promise.allSettled(calls);
+      const out = [];
+      for (const r of settled) if (r.status === 'fulfilled') out.push(...(r.value.data || []));
+      return out.map(x => {
+        const url = x.job_apply_link || x.job_google_link || '';
+        const publisher = x.job_publisher || sourceFromUrl(url) || 'JSearch';
+        const src = inferSource({ url, source: publisher }, 'JSearch');
+        return {
+          title: x.job_title,
+          company: x.employer_name,
+          location: [x.job_city, x.job_state, x.job_country].filter(Boolean).join(', ') || '—',
+          mode: x.job_is_remote ? 'Remote' : 'On-site/Hybrid',
+          experience: '',
+          salary: '',
+          companyType: x.employer_company_type || '',
+          source: src,
+          sourceProvider: 'JSearch',
+          postedDate: isoDate(x.job_posted_at_datetime_utc || x.job_posted_at_timestamp),
+          postedDays: ageDays(x.job_posted_at_datetime_utc || x.job_posted_at_timestamp),
+          url,
+          summary: stripHtml(x.job_description).slice(0, 260),
+          requiredSkills: (x.job_required_skills || []).slice(0, 12)
+        };
+      }).filter(j => j.url);
     }
   });
 }
@@ -261,34 +277,45 @@ if (process.env.SERPAPI_KEY) {
   SOURCES.push({
     name: 'SerpAPI',
     home: 'https://serpapi.com/google-jobs-api',
-    description: 'Google Jobs results via SerpAPI. Requires SERPAPI_KEY.',
+    description: 'Google Jobs results via SerpAPI. Runs targeted queries for LinkedIn, Indeed, Naukri, Foundit, Wellfound, Instahyre, Cutshort, Hirist, Shine and TimesJobs.',
     requiresKey: true,
-    fetch: async (role) => {
-      const q = `${role || 'software engineer'} ${process.env.DEFAULT_JOB_LOCATION || ''}`.trim();
-      const qs = new URLSearchParams({
-        engine: 'google_jobs',
-        q,
-        hl: 'en',
-        api_key: process.env.SERPAPI_KEY
+    fetch: async (role, ctx = {}) => {
+      const loc = ctx.location || process.env.DEFAULT_JOB_LOCATION || 'India';
+      const roleQ = role || 'software engineer';
+      const queries = [
+        `${roleQ} ${loc}`,
+        `${roleQ} LinkedIn jobs ${loc}`,
+        `${roleQ} Indeed jobs ${loc}`,
+        `${roleQ} Naukri jobs ${loc}`,
+        `${roleQ} Foundit Monster jobs ${loc}`,
+        `${roleQ} Instahyre Cutshort Hirist jobs ${loc}`,
+        `${roleQ} Wellfound startup jobs ${loc}`,
+        `${roleQ} Shine TimesJobs ${loc}`
+      ];
+      const calls = queries.map(q => {
+        const qs = new URLSearchParams({ engine: 'google_jobs', q, hl: 'en', api_key: process.env.SERPAPI_KEY });
+        if (loc) qs.set('location', loc);
+        return fetchJson(`https://serpapi.com/search.json?${qs.toString()}`);
       });
-      if (process.env.DEFAULT_JOB_LOCATION) qs.set('location', process.env.DEFAULT_JOB_LOCATION);
-      const data = await fetchJson(`https://serpapi.com/search.json?${qs.toString()}`);
-      return (data.jobs_results || []).map(x => {
-        // SerpAPI gives relative age strings like "2 days ago" in detected_extensions.posted_at
-        const posted = x.detected_extensions?.posted_at || '';
-        const link = x.share_link
-          || x.apply_options?.[0]?.link
-          || x.related_links?.[0]?.link
-          || '';
+      const settled = await Promise.allSettled(calls);
+      const all = [];
+      for (const r of settled) if (r.status === 'fulfilled') all.push(...(r.value.jobs_results || []));
+      return all.map(x => {
+        const apply = x.apply_options?.[0] || {};
+        const link = apply.link || x.share_link || x.related_links?.[0]?.link || '';
+        const via = apply.title || (x.via || '') || (x.extensions || []).join(' ');
+        const src = inferSource({ url: link, source: via }, 'Google Jobs');
+        const posted = x.detected_extensions?.posted_at || (x.extensions || []).find(e => /ago|today|yesterday/i.test(e)) || '';
         return {
           title: x.title,
           company: x.company_name,
           location: x.location || '—',
-          mode: /remote/i.test(`${x.location} ${x.title}`) ? 'Remote' : 'On-site/Hybrid',
+          mode: /remote/i.test(`${x.location} ${x.title} ${x.description}`) ? 'Remote' : 'On-site/Hybrid',
           experience: '',
           salary: x.detected_extensions?.salary || '',
           companyType: '',
-          source: 'SerpAPI',
+          source: src,
+          sourceProvider: 'SerpAPI / Google Jobs',
           postedDate: isoDate(posted),
           postedDays: ageDays(posted),
           url: link,
@@ -299,6 +326,7 @@ if (process.env.SERPAPI_KEY) {
     }
   });
 }
+
 
 /* ---- USAJobs (US federal government). Requires USAJOBS_API_KEY + USAJOBS_EMAIL. ---- */
 if (process.env.USAJOBS_API_KEY && process.env.USAJOBS_EMAIL) {
@@ -353,20 +381,80 @@ function jobKey(j) {
 }
 function sourceFromUrl(u) {
   try {
-    const h = new URL(u).hostname.replace(/^www\./, '');
+    const h = new URL(u).hostname.replace(/^www\./, '').toLowerCase();
     if (h.includes('linkedin')) return 'LinkedIn';
     if (h.includes('indeed')) return 'Indeed';
+    if (h.includes('naukri')) return 'Naukri';
+    if (h.includes('foundit') || h.includes('monster')) return 'Foundit/Monster';
+    if (h.includes('wellfound') || h.includes('angel.co')) return 'Wellfound';
+    if (h.includes('instahyre')) return 'Instahyre';
+    if (h.includes('cutshort')) return 'Cutshort';
+    if (h.includes('hirist')) return 'Hirist';
+    if (h.includes('shine')) return 'Shine';
+    if (h.includes('timesjobs')) return 'TimesJobs';
     if (h.includes('remotive')) return 'Remotive';
     if (h.includes('remoteok')) return 'RemoteOK';
     if (h.includes('arbeitnow')) return 'Arbeitnow';
     if (h.includes('jobicy')) return 'Jobicy';
     if (h.includes('themuse')) return 'The Muse';
     if (h.includes('adzuna')) return 'Adzuna';
-    if (h.includes('jsearch')) return 'JSearch';
-    if (h.includes('serpapi')) return 'SerpAPI';
     if (h.includes('usajobs')) return 'USAJobs';
     return h;
   } catch { return ''; }
+}
+const JOB_BOARD_TARGETS = [
+  'LinkedIn','Indeed','Naukri','Foundit/Monster','Wellfound','Instahyre','Cutshort','Hirist','Shine','TimesJobs',
+  'Adzuna','JSearch','SerpAPI','The Muse','Arbeitnow','Jobicy','Remotive','RemoteOK','USAJobs'
+];
+function sourceKey(x) { return normText(x).replace(/monster/g, 'foundit').replace(/\s+/g, ''); }
+function requestedSources(req) {
+  const raw = String(req.query.sources || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!raw.length || raw.some(s => /^all$/i.test(s))) return null;
+  const set = new Set(raw.map(sourceKey));
+  return set;
+}
+function sourceAllowed(name, set) {
+  if (!set) return true;
+  const k = sourceKey(name);
+  if (set.has(k)) return true;
+  if (k === 'founditfoundit' && set.has('foundit')) return true;
+  return false;
+}
+function inferSource(job, fallback = '') {
+  const fromUrl = sourceFromUrl(job.url || '');
+  const txt = `${job.source || ''} ${job.publisher || ''} ${job.sourceName || ''} ${job.via || ''}`.toLowerCase();
+  for (const n of JOB_BOARD_TARGETS) if (txt.includes(n.toLowerCase().split('/')[0])) return n;
+  return fromUrl || fallback || 'Structured source';
+}
+function balancedBySource(arr, limit) {
+  const buckets = new Map();
+  for (const j of arr) {
+    const k = j.source || 'Other';
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(j);
+  }
+  for (const b of buckets.values()) b.sort((a,b)=>(a.postedDays??99)-(b.postedDays??99));
+  const out = [];
+  while (out.length < limit && [...buckets.values()].some(b => b.length)) {
+    for (const [k,b] of buckets) {
+      if (b.length && out.length < limit) out.push(b.shift());
+    }
+  }
+  return out;
+}
+function configuredSources() {
+  const activeNames = new Set(SOURCES.map(s => s.name));
+  return JOB_BOARD_TARGETS.map(name => {
+    let active = activeNames.has(name);
+    let integration = active ? 'direct/public API' : 'requires API/search provider';
+    let reason = active ? '' : 'Not directly queryable from Vercel without an approved API or search-provider key.';
+    if (['LinkedIn','Indeed','Naukri','Foundit/Monster','Wellfound','Instahyre','Cutshort','Hirist','Shine','TimesJobs'].includes(name)) {
+      active = !!(process.env.SERPAPI_KEY || process.env.RAPIDAPI_KEY);
+      integration = active ? 'via SerpAPI/JSearch search provider' : 'inactive: set SERPAPI_KEY or RAPIDAPI_KEY';
+      reason = active ? '' : 'These boards block/limit unauthenticated scraping; configure SERPAPI_KEY or RAPIDAPI_KEY for compliant discovery.';
+    }
+    return { source: name, active, integration, reason };
+  });
 }
 function validRoleMatch(job, role) {
   const terms = roleTokens(role);
@@ -445,10 +533,13 @@ async function verifyMany(jobs, concurrency = 6) {
    GET /jobs/sources  — list configured structured sources
    ============================================================ */
 app.get('/jobs/sources', (req, res) => {
+  const configured = configuredSources();
   res.json({
-    sources: SOURCES.map(s => ({ source: s.name, home: s.home, description: s.description, requiresKey: !!s.requiresKey })),
+    sources: configured,
+    activeSources: configured.filter(s => s.active).map(s => s.source),
+    inactiveSources: configured.filter(s => !s.active).map(s => ({ source: s.source, reason: s.reason })),
     aiJobGeneration: false,
-    note: 'Only structured, verifiable job sources are used. AI never generates job openings.'
+    note: 'Only structured/API-backed job sources are used. LinkedIn/Indeed/Naukri-style boards require SERPAPI_KEY or RAPIDAPI_KEY; scraping is intentionally not used.'
   });
 });
 
@@ -489,21 +580,42 @@ app.get('/jobs/search', async (req, res) => {
     const maxDays = maxFreshDaysFromQuery(req.query.freshness || '7d');
     const limit = Math.max(1, Math.min(40, Number(req.query.limit || 12)));
     const verify = req.query.verify !== '0';
+    const selected = requestedSources(req);
+    const ctx = { role, location: loc, mode, freshness: req.query.freshness || '7d', selectedSources: selected };
 
-    const settled = await Promise.allSettled(SOURCES.map(s => s.fetch(role)));
-    const sources = [];
+    const runnable = SOURCES.filter(s => !selected || sourceAllowed(s.name, selected) || ['SerpAPI','JSearch'].includes(s.name));
+    const settled = await Promise.allSettled(runnable.map(s => s.fetch(role, ctx)));
+    const configured = configuredSources();
+    const sources = configured.map(x => ({ source: x.source, ok: false, count: 0, active: x.active, integration: x.integration, reason: x.reason || '' }));
+    const sourceIndex = new Map(sources.map((s, i) => [sourceKey(s.source), i]));
     let jobs = [];
-    SOURCES.forEach((s, i) => {
+    runnable.forEach((src, i) => {
       const r = settled[i];
-      if (r.status === 'fulfilled') { jobs.push(...r.value); sources.push({ source: s.name, ok: true, count: r.value.length }); }
-      else sources.push({ source: s.name, ok: false, count: 0, error: r.reason?.message || String(r.reason) });
+      if (r.status === 'fulfilled') {
+        const arr = (r.value || []).map(j => ({ ...j, source: inferSource(j, src.name) }));
+        jobs.push(...arr);
+        const grouped = new Map();
+        arr.forEach(j => grouped.set(j.source, (grouped.get(j.source) || 0) + 1));
+        for (const [name, count] of grouped) {
+          const ix = sourceIndex.get(sourceKey(name));
+          if (ix != null) { sources[ix].ok = true; sources[ix].active = true; sources[ix].count += count; sources[ix].reason = ''; }
+          else sources.push({ source: name, ok: true, active: true, count, integration: src.name, reason: '' });
+        }
+        const pix = sourceIndex.get(sourceKey(src.name));
+        if (pix != null && !grouped.size) { sources[pix].ok = true; sources[pix].active = true; }
+      } else {
+        const ix = sourceIndex.get(sourceKey(src.name));
+        if (ix != null) { sources[ix].ok = false; sources[ix].active = true; sources[ix].error = r.reason?.message || String(r.reason); }
+        else sources.push({ source: src.name, ok: false, active: true, count: 0, error: r.reason?.message || String(r.reason) });
+      }
     });
+    if (selected) jobs = jobs.filter(j => sourceAllowed(j.source, selected));
 
     const audit = [];
     const seen = new Set();
     let candidates = [];
     for (const j of jobs) {
-      j.source = j.source || sourceFromUrl(j.url);
+      j.source = inferSource(j, j.source || sourceFromUrl(j.url));
       let reason = '';
       if (!j.title || !j.company) reason = 'missing title/company';
       else if (!j.url || !/^https?:\/\//i.test(j.url)) reason = 'missing direct job URL';
@@ -524,11 +636,13 @@ app.get('/jobs/search', async (req, res) => {
       if (!reason) { seen.add(k); j._auditRow = row; candidates.push(j); }
     }
 
-    // newest first before verification so the freshest survive the limit
+    // newest first, then balanced by source so RemoteOK/Remotive cannot dominate the returned set
     candidates.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
-    const overflow = candidates.slice(limit * 2);
-    overflow.forEach(j => { if (j._auditRow) { j._auditRow.decision = 'EXCLUDED'; j._auditRow.reason = `beyond result cap (${limit})`; } });
-    candidates = candidates.slice(0, limit * 2);
+    const balanced = balancedBySource(candidates, limit * 2);
+    const chosenKeys = new Set(balanced.map(j => jobKey(j)));
+    const overflow = candidates.filter(j => !chosenKeys.has(jobKey(j)));
+    overflow.forEach(j => { if (j._auditRow) { j._auditRow.decision = 'EXCLUDED'; j._auditRow.reason = `beyond balanced result cap (${limit})`; } });
+    candidates = balanced;
 
     let kept = candidates;
     if (verify) {
@@ -548,12 +662,17 @@ app.get('/jobs/search', async (req, res) => {
     }
 
     kept.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
-    kept = kept.slice(0, limit);
+    kept = balancedBySource(kept, limit);
     // strip internal helper before returning
     kept.forEach(j => { delete j._auditRow; });
 
     res.json({
       jobs: kept, sources, audit, verified: verify,
+      sourceSummary: {
+        active: sources.filter(s => s.active).map(s => s.source),
+        inactive: sources.filter(s => !s.active).map(s => ({ source: s.source, reason: s.reason })),
+        returned: Object.fromEntries([...new Set(kept.map(j => j.source))].map(src => [src, kept.filter(j => j.source === src).length]))
+      },
       freshnessDays: maxDays, fetchedAt: new Date().toISOString(),
       note: verify ? 'Only structured-source jobs that passed URL verification are returned. No AI-generated jobs.'
                    : 'URL verification disabled (verify=0). Still structured-source only — no AI-generated jobs.'

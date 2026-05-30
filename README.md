@@ -1,5 +1,17 @@
 # Career Autopilot
 
+## Vercel deployment fix
+
+This version includes `vercel.json`, an explicit `/` route, SPA fallback, and `export default app` so Vercel can serve the frontend instead of showing `Cannot GET /`.
+
+Required Vercel environment variables:
+- `SESSION_SECRET`
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_MODEL`
+- `FRONTEND_ORIGIN=https://your-vercel-domain.vercel.app`
+- Optional job source keys: `SERPAPI_KEY` and/or `RAPIDAPI_KEY` for LinkedIn/Indeed/Naukri-style coverage; `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_EMAIL`, `USAJOBS_API_KEY` for additional APIs
+
+
 An AI job-application studio: upload a resume, analyze it for ATS, find **real, currently-open, URL-verified** jobs, truthfully tailor your resume per job, prep interviews, use the **assisted apply** flow for LinkedIn/Indeed, and track applications — with an **OAuth-ready** backend.
 
 
@@ -168,3 +180,18 @@ Structured sources now include public sources such as Remotive, RemoteOK, Arbeit
 - `RAPIDAPI_KEY` for JSearch
 
 Job search still does not use AI-generated openings. In strict mode, blocked, timed-out, or unreachable job pages are excluded instead of shown.
+
+### Multi-source job search
+
+The job engine now uses a provider-based backend pipeline. Public fallback APIs remain available without keys, but major boards such as LinkedIn, Indeed, Naukri, Foundit/Monster, Wellfound, Instahyre, Cutshort, Hirist, Shine and TimesJobs are enabled through SerpAPI/JSearch-style search-provider APIs. This avoids brittle server-side scraping and stays compatible with Vercel.
+
+Recommended for India coverage:
+
+```env
+SERPAPI_KEY=your-serpapi-key
+RAPIDAPI_KEY=your-rapidapi-jsearch-key
+DEFAULT_JOB_LOCATION=India
+ADZUNA_COUNTRY=in
+```
+
+The UI shows active/inactive sources, fetched count per source, source filters, and a warning when only one or two sources return results.
