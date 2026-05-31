@@ -2140,7 +2140,7 @@ function caRenderAuditSection(){
   const kept=rows.filter(r=>r.decision==='INCLUDED').length;
   const rejected=rows.filter(r=>r.decision==='EXCLUDED');
   const srcHtml = sources.length
-    ? '<div class="chips" style="margin:10px 0">'+sources.map(s=>'<span class="badge-soft '+(s.ok?'good':'bad')+'">'+esc(s.source)+': '+(s.ok?(s.count+' fetched'):'failed')+'</span>').join('')+'</div>'
+    ? '<div class="chips" style="margin:10px 0">'+sources.map(s=>{const st=s.status||(s.ok?'fetched':(s.active?'ready':'inactive')); const cls=st==='fetched'?'good':(st==='ready'?'warn':'bad'); const txt=st==='fetched'?(s.count+' fetched'):(st==='ready'?'ready via provider':(st==='inactive'?'inactive':'failed')); return '<span class="badge-soft '+cls+'" title="'+esc(s.reason||s.error||s.integration||'')+'">'+esc(s.source)+': '+esc(txt)+'</span>';}).join('')+'</div>'
     : '';
   const warn = S._jobBackendError ? '<div class="flag" style="margin:10px 0;border-color:var(--rose);background:rgba(255,122,107,.08)"><div><b>Backend error:</b> '+esc(S._jobBackendError)+'</div></div>' : '';
   const tableHtml = rows.length
@@ -3204,14 +3204,18 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     const audit=$('#freshnessAudit');
     if(!audit) return;
     const sources=S._lastJobSources||[];
-    const returned=sources.filter(s=>s.ok && Number(s.count||0)>0);
+    const returned=sources.filter(s=>s.status==='fetched' || (s.ok && Number(s.count||0)>0));
     const active=sources.filter(s=>s.active);
     const inactive=sources.filter(s=>!s.active);
+    const failed=sources.filter(s=>s.status==='failed' || s.error);
+    const ready=sources.filter(s=>s.status==='ready');
     const old=$('#sourceCoverageBox'); if(old) old.remove();
     const warn=returned.length && returned.length<=2
-      ? '<div class="flag" style="margin-top:10px;border-color:var(--amber);background:rgba(255,209,102,.08)"><b>Low source diversity:</b> only '+returned.length+' source(s) returned jobs. Configure <span class="mono">SERPAPI_KEY</span> or <span class="mono">RAPIDAPI_KEY</span> to unlock LinkedIn/Indeed/Naukri-style coverage.</div>' : '';
+      ? '<div class="flag" style="margin-top:10px;border-color:var(--amber);background:rgba(255,209,102,.08)"><b>Low source diversity:</b> only '+returned.length+' source(s) returned jobs. This can happen when RapidAPI is not subscribed to JSearch, the selected freshness window is too strict, or the board did not publish fresh matches.</div>' : '';
+    const readyHtml=ready.length?'<div class="hint" style="margin-top:8px">Ready through provider, 0 direct matches this search: '+ready.slice(0,10).map(s=>esc(s.source)).join(', ')+(ready.length>10?'…':'')+'</div>':'';
+    const failedHtml=failed.length?'<div class="hint" style="margin-top:8px;color:var(--bad)">Failed providers: '+failed.slice(0,8).map(s=>esc(s.source)+(s.reason?': '+esc(String(s.reason).slice(0,90)):'')).join(' · ')+(failed.length>8?'…':'')+'</div>':'';
     const inactiveHtml=inactive.length?'<div class="hint" style="margin-top:8px">Inactive/needs key: '+inactive.slice(0,10).map(s=>esc(s.source)).join(', ')+(inactive.length>10?'…':'')+'</div>':'';
-    audit.insertAdjacentHTML('afterbegin','<div id="sourceCoverageBox" class="mini-card" style="margin-bottom:12px"><b>Source coverage</b><div class="hint" style="margin-top:6px">Active configured sources: '+active.length+' · Returned jobs: '+returned.length+' source(s). RemoteOK/Remotive are fallback sources, not the only target.</div>'+warn+inactiveHtml+'</div>');
+    audit.insertAdjacentHTML('afterbegin','<div id="sourceCoverageBox" class="mini-card" style="margin-bottom:12px"><b>Source coverage</b><div class="hint" style="margin-top:6px">Active configured sources: '+active.length+' · Returned jobs: '+returned.length+' source(s). RemoteOK/Remotive are fallback sources, not the only target.</div>'+warn+readyHtml+failedHtml+inactiveHtml+'</div>');
   };
 
   ensureEnhancedState(); save();

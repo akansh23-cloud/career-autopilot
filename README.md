@@ -195,3 +195,39 @@ ADZUNA_COUNTRY=in
 ```
 
 The UI shows active/inactive sources, fetched count per source, source filters, and a warning when only one or two sources return results.
+
+
+## Job source provider notes
+
+LinkedIn, Indeed, Naukri, Foundit, Instahyre, Cutshort, Hirist, Shine and TimesJobs are queried through compliant search providers such as RapidAPI JSearch or SerpAPI. They are not scraped directly from Vercel.
+
+For RapidAPI JSearch, set:
+
+```env
+RAPIDAPI_KEY=your_rapidapi_key
+RAPIDAPI_HOST=jsearch.p.rapidapi.com
+DEFAULT_JOB_LOCATION=India
+JSEARCH_COUNTRY=in
+```
+
+After adding the key in Vercel, redeploy. Also make sure the RapidAPI app is subscribed to the JSearch API plan; otherwise the diagnostics endpoint will show a 401/403/subscription error.
+
+Use `/jobs/diagnostics?role=DevOps%20Engineer&location=India` to confirm whether JSearch is reachable without exposing the key.
+
+## v3.7 RapidAPI/JSearch rate-limit fix
+
+This build fixes the `JSearch: failed 429 Too Many Requests` issue by making only **one** JSearch call per job search instead of firing many parallel board-specific calls for LinkedIn, Indeed, Naukri, Foundit, Instahyre, Cutshort, Hirist, Shine, TimesJobs, and Wellfound. Those boards are now treated as provider-backed sources from the same JSearch response and are inferred from the returned publisher/apply URL.
+
+Recommended env variables:
+
+```env
+RAPIDAPI_KEY=your_rapidapi_key
+RAPIDAPI_HOST=jsearch.p.rapidapi.com
+DEFAULT_JOB_LOCATION=India
+JSEARCH_COUNTRY=in
+JSEARCH_NUM_PAGES=1
+JSEARCH_CACHE_TTL_MS=600000
+STRICT_JOB_VERIFICATION=0
+```
+
+If `429 Too Many Requests` still appears after this build, the RapidAPI plan/quota is rate-limited or exhausted. Wait for the rate window to reset or upgrade the JSearch subscription.

@@ -31,7 +31,9 @@ app.get('/', (req, res) => {
 
 const JOB_FETCH_TIMEOUT  = Number(process.env.JOB_FETCH_TIMEOUT  || 12000);
 const JOB_VERIFY_TIMEOUT = Number(process.env.JOB_VERIFY_TIMEOUT || 9000);
-const STRICT_JOB_VERIFICATION = process.env.STRICT_JOB_VERIFICATION !== '0';
+const STRICT_JOB_VERIFICATION = process.env.STRICT_JOB_VERIFICATION === '1';
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || process.env.X_RAPIDAPI_KEY || process.env.RAPID_API_KEY || '';
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'jsearch.p.rapidapi.com';
 
 /* ============================================================
    SHARED HELPERS
@@ -75,9 +77,44 @@ async function fetchJson(url, timeout = JOB_FETCH_TIMEOUT, headers = {}) {
   const t = setTimeout(() => ctrl.abort(), timeout);
   try {
     const r = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json', 'User-Agent': 'CareerAutopilot/3.0 (+job-verification)', ...headers } });
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    return await r.json();
+    const text = await r.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text.slice(0, 500) }; }
+    if (!r.ok) {
+      const msg = data?.message || data?.error || data?.raw || r.statusText;
+      throw new Error(`${r.status} ${r.statusText}: ${String(msg).slice(0, 220)}`);
+    }
+    return data;
   } finally { clearTimeout(t); }
+}
+
+
+function jsearchFreshness(f) {
+  if (f === '24h') return 'today';
+  if (f === '3d') return '3days';
+  return 'week';
+}
+function jsearchCountry(loc) {
+  const s = String(loc || process.env.DEFAULT_JOB_LOCATION || '').toLowerCase();
+  if (/india|pune|mumbai|bangalore|bengaluru|hyderabad|delhi|gurgaon|gurugram|noida|chennai|kolkata/.test(s)) return 'in';
+  if (/united states|usa|us|new york|california|texas|seattle|austin/.test(s)) return 'us';
+  if (/united kingdom|uk|london|england/.test(s)) return 'gb';
+  if (/canada|toronto|vancouver/.test(s)) return 'ca';
+  return process.env.JSEARCH_COUNTRY || 'in';
+}
+function boardQueryTarget(q) {
+  const s = String(q || '').toLowerCase();
+  if (s.includes('linkedin')) return 'LinkedIn';
+  if (s.includes('indeed')) return 'Indeed';
+  if (s.includes('naukri')) return 'Naukri';
+  if (s.includes('foundit') || s.includes('monster')) return 'Foundit/Monster';
+  if (s.includes('wellfound') || s.includes('startup')) return 'Wellfound';
+  if (s.includes('instahyre')) return 'Instahyre';
+  if (s.includes('cutshort')) return 'Cutshort';
+  if (s.includes('hirist')) return 'Hirist';
+  if (s.includes('shine')) return 'Shine';
+  if (s.includes('timesjobs')) return 'TimesJobs';
+  return 'JSearch';
 }
 
 /* ============================================================
@@ -225,49 +262,83 @@ if (process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY) {
   });
 }
 
-if (process.env.RAPIDAPI_KEY) {
+
+/* ---- RapidAPI JSearch.
+   Important fix: do NOT fire 8-10 parallel board-targeted JSearch calls.
+   RapidAPI free/test plans commonly return 429 when the app does that.
+   We make one broad provider-backed request per user search and infer the
+   real publisher from each returned job/apply URL. */
+if (RAPIDAPI_KEY) {
+  const JSEARCH_CACHE = new Map();
   SOURCES.push({
     name: 'JSearch',
     home: 'https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch',
-    description: 'JSearch/RapidAPI jobs API. Expands coverage across LinkedIn, Indeed, Naukri and other publishers when available.',
+    description: 'JSearch/RapidAPI jobs API. Broad provider-backed search across LinkedIn, Indeed, Naukri and other publishers when available.',
     requiresKey: true,
     fetch: async (role, ctx = {}) => {
       const loc = ctx.location || process.env.DEFAULT_JOB_LOCATION || 'India';
-      const queries = [
-        `${role || 'software engineer'} ${loc}`,
-        `${role || 'software engineer'} LinkedIn ${loc}`,
-        `${role || 'software engineer'} Indeed ${loc}`,
-        `${role || 'software engineer'} Naukri ${loc}`,
-        `${role || 'software engineer'} Instahyre Cutshort Hirist ${loc}`
-      ];
-      const calls = queries.map(q => fetchJson(`https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(q)}&date_posted=week&num_pages=1`, JOB_FETCH_TIMEOUT, {
-        'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
-        'X-RapidAPI-Host': 'jsearch.p.rapidapi.com'
-      }));
-      const settled = await Promise.allSettled(calls);
-      const out = [];
-      for (const r of settled) if (r.status === 'fulfilled') out.push(...(r.value.data || []));
-      return out.map(x => {
-        const url = x.job_apply_link || x.job_google_link || '';
+      const roleQ = role || 'software engineer';
+      const country = jsearchCountry(loc);
+      const freshness = jsearchFreshness(ctx.freshness);
+      const selected = ctx.selectedSources;
+      const selectedList = selected ? [...selected].filter(Boolean).map(x => String(x)) : [];
+      const boardHint = selectedList.length === 1 && !/all|jsearch/i.test(selectedList[0]) ? ` ${selectedList[0]}` : '';
+      const q = `${roleQ}${boardHint} ${loc}`.replace(/\s+/g, ' ').trim();
+      const cacheKey = JSON.stringify({ q: q.toLowerCase(), country, freshness });
+      const ttlMs = Number(process.env.JSEARCH_CACHE_TTL_MS || 10 * 60 * 1000);
+      const cached = JSEARCH_CACHE.get(cacheKey);
+      if (cached && Date.now() - cached.ts < ttlMs) return cached.jobs;
+
+      const qs = new URLSearchParams({
+        query: q,
+        date_posted: freshness,
+        num_pages: String(Number(process.env.JSEARCH_NUM_PAGES || 1)),
+        page: '1',
+        country
+      });
+      const endpoint = `https://${RAPIDAPI_HOST}/search?${qs.toString()}`;
+      let data;
+      try {
+        data = await fetchJson(endpoint, JOB_FETCH_TIMEOUT, {
+          'X-RapidAPI-Key': RAPIDAPI_KEY,
+          'X-RapidAPI-Host': RAPIDAPI_HOST
+        });
+      } catch (e) {
+        const msg = String(e.message || e);
+        if (/429|too many requests/i.test(msg)) {
+          throw new Error('RapidAPI JSearch limit hit (429 Too Many Requests). This version now makes only 1 JSearch call per search; wait a minute or check your RapidAPI plan/quota if it still appears.');
+        }
+        if (/401|403/i.test(msg)) {
+          throw new Error('RapidAPI JSearch authorization failed. Check RAPIDAPI_KEY and confirm you subscribed to the JSearch API.');
+        }
+        throw e;
+      }
+
+      const arr = data?.data || data?.jobs || [];
+      const jobs = arr.map(x => {
+        const url = x.job_apply_link || x.job_google_link || x.job_offer_url || '';
         const publisher = x.job_publisher || sourceFromUrl(url) || 'JSearch';
         const src = inferSource({ url, source: publisher }, 'JSearch');
+        const postedRaw = x.job_posted_at_datetime_utc || x.job_posted_at_timestamp || x.job_posted_at || x.job_posted_at_string;
         return {
           title: x.job_title,
           company: x.employer_name,
-          location: [x.job_city, x.job_state, x.job_country].filter(Boolean).join(', ') || '—',
+          location: [x.job_city, x.job_state, x.job_country].filter(Boolean).join(', ') || x.job_location || loc || '—',
           mode: x.job_is_remote ? 'Remote' : 'On-site/Hybrid',
           experience: '',
-          salary: '',
+          salary: [x.job_min_salary, x.job_max_salary].filter(Boolean).join('-') || '',
           companyType: x.employer_company_type || '',
           source: src,
-          sourceProvider: 'JSearch',
-          postedDate: isoDate(x.job_posted_at_datetime_utc || x.job_posted_at_timestamp),
-          postedDays: ageDays(x.job_posted_at_datetime_utc || x.job_posted_at_timestamp),
+          sourceProvider: 'JSearch / RapidAPI',
+          postedDate: isoDate(postedRaw),
+          postedDays: ageDays(postedRaw),
           url,
           summary: stripHtml(x.job_description).slice(0, 260),
           requiredSkills: (x.job_required_skills || []).slice(0, 12)
         };
       }).filter(j => j.url);
+      JSEARCH_CACHE.set(cacheKey, { ts: Date.now(), jobs });
+      return jobs;
     }
   });
 }
@@ -449,7 +520,7 @@ function configuredSources() {
     let integration = active ? 'direct/public API' : 'requires API/search provider';
     let reason = active ? '' : 'Not directly queryable from Vercel without an approved API or search-provider key.';
     if (['LinkedIn','Indeed','Naukri','Foundit/Monster','Wellfound','Instahyre','Cutshort','Hirist','Shine','TimesJobs'].includes(name)) {
-      active = !!(process.env.SERPAPI_KEY || process.env.RAPIDAPI_KEY);
+      active = !!(process.env.SERPAPI_KEY || RAPIDAPI_KEY);
       integration = active ? 'via SerpAPI/JSearch search provider' : 'inactive: set SERPAPI_KEY or RAPIDAPI_KEY';
       reason = active ? '' : 'These boards block/limit unauthenticated scraping; configure SERPAPI_KEY or RAPIDAPI_KEY for compliant discovery.';
     }
@@ -528,6 +599,26 @@ async function verifyMany(jobs, concurrency = 6) {
   await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length || 1) }, worker));
   return out;
 }
+
+
+/* ============================================================
+   GET /jobs/diagnostics — sanitized provider health
+   ============================================================ */
+app.get('/jobs/diagnostics', async (req, res) => {
+  const role = req.query.role || 'software engineer';
+  const location = req.query.location || process.env.DEFAULT_JOB_LOCATION || 'India';
+  const out = { time: new Date().toISOString(), env: { rapidapiConfigured: !!RAPIDAPI_KEY, serpapiConfigured: !!process.env.SERPAPI_KEY, rapidapiHost: RAPIDAPI_HOST }, checks: [] };
+  if (RAPIDAPI_KEY) {
+    try {
+      const qs = new URLSearchParams({ query: `${role} ${location}`, date_posted: '3days', num_pages: '1', page: '1', country: jsearchCountry(location) });
+      const d = await fetchJson(`https://${RAPIDAPI_HOST}/search?${qs.toString()}`, JOB_FETCH_TIMEOUT, { 'X-RapidAPI-Key': RAPIDAPI_KEY, 'X-RapidAPI-Host': RAPIDAPI_HOST });
+      out.checks.push({ provider: 'JSearch / RapidAPI', ok: true, count: (d.data || []).length, message: 'API reachable' });
+    } catch (e) {
+      out.checks.push({ provider: 'JSearch / RapidAPI', ok: false, count: 0, message: String(e.message || e).replace(RAPIDAPI_KEY, '[redacted]') });
+    }
+  } else out.checks.push({ provider: 'JSearch / RapidAPI', ok: false, count: 0, message: 'RAPIDAPI_KEY missing' });
+  res.json(out);
+});
 
 /* ============================================================
    GET /jobs/sources  — list configured structured sources
@@ -663,6 +754,21 @@ app.get('/jobs/search', async (req, res) => {
 
     kept.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
     kept = balancedBySource(kept, limit);
+    // Provider-backed board targets are not direct API calls; do not label them as failed merely because
+    // JSearch/SerpAPI did not return that exact board in this query.
+    for (const s of sources) {
+      if (!s.ok && s.active && !s.error && /SerpAPI|JSearch|search provider/i.test(s.integration || '')) {
+        s.status = 'ready';
+        s.reason = 'Ready via JSearch/SerpAPI; this query returned 0 direct matches from this board.';
+      } else if (s.ok && Number(s.count || 0) > 0) {
+        s.status = 'fetched';
+      } else if (s.error) {
+        s.status = 'failed';
+        s.reason = s.error;
+      } else if (!s.active) {
+        s.status = 'inactive';
+      }
+    }
     // strip internal helper before returning
     kept.forEach(j => { delete j._auditRow; });
 
