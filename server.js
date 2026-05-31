@@ -287,12 +287,13 @@ if (RAPIDAPI_KEY) {
       diag.country = country;
 
       // Broad, effective query: "<role> jobs in <location>".
-      // For India, nudge JSearch toward Indian boards INSIDE the single query (no extra API calls).
-      let q = `${roleQ} jobs in ${loc}`.replace(/\s+/g, ' ').trim();
-      if (country === 'in') q = `${q} LinkedIn Naukri Indeed Instahyre Cutshort`;
+      // Do NOT append board names like LinkedIn/Naukri/Indeed to the query.
+      // JSearch treats them as literal keywords and often returns 0 jobs.
+      const cleanLoc = /^(in|ind|india)$/i.test(loc) ? 'India' : loc;
+      const q = `${roleQ} jobs in ${cleanLoc}`.replace(/\s+/g, ' ').trim();
       diag.query = q;
 
-      const cacheKey = JSON.stringify({ q: q.toLowerCase(), country, freshness });
+      const cacheKey = JSON.stringify({ q: q.toLowerCase(), country, freshness, loc: cleanLoc.toLowerCase() });
       const ttlMs = Number(process.env.JSEARCH_CACHE_TTL_MS || 10 * 60 * 1000);
       const cached = JSEARCH_CACHE.get(cacheKey);
       if (cached && Date.now() - cached.ts < ttlMs) {
@@ -300,34 +301,64 @@ if (RAPIDAPI_KEY) {
         return cached.jobs;
       }
 
-      const qs = new URLSearchParams({
-        query: q,
-        date_posted: freshness,
-        num_pages: String(Number(process.env.JSEARCH_NUM_PAGES || 1)),
-        page: '1',
-        country
-      });
-      const endpoint = `https://${RAPIDAPI_HOST}/search?${qs.toString()}`;
-
-      // ONE request only. Capture exact status for diagnostics.
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), JOB_FETCH_TIMEOUT);
-      let resp, bodyText = '';
-      try {
-        resp = await fetch(endpoint, {
-          signal: ctrl.signal,
-          headers: { Accept: 'application/json', 'X-RapidAPI-Key': RAPIDAPI_KEY, 'X-RapidAPI-Host': RAPIDAPI_HOST }
+      async function callJSearch(query, datePosted) {
+        const qs = new URLSearchParams({
+          query,
+          date_posted: datePosted,
+          num_pages: String(Number(process.env.JSEARCH_NUM_PAGES || 1)),
+          page: '1',
+          country
         });
-        bodyText = await resp.text();
+        const endpoint = `https://${RAPIDAPI_HOST}/search?${qs.toString()}`;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), JOB_FETCH_TIMEOUT);
+        let resp, bodyText = '';
+        try {
+          resp = await fetch(endpoint, {
+            signal: ctrl.signal,
+            headers: { Accept: 'application/json', 'X-RapidAPI-Key': RAPIDAPI_KEY, 'X-RapidAPI-Host': RAPIDAPI_HOST }
+          });
+          bodyText = await resp.text();
+        } finally { clearTimeout(t); }
+        return { resp, bodyText, query, datePosted };
+      }
+
+      let resp, bodyText = '', usedQuery = q, usedFreshness = freshness;
+      try {
+        let result = await callJSearch(q, freshness);
+        resp = result.resp; bodyText = result.bodyText;
+        diag.reachable = true; diag.statusCode = resp.status;
+
+        if (resp.ok) {
+          const firstData = bodyText ? JSON.parse(bodyText) : {};
+          let firstArr = firstData?.data || firstData?.jobs || [];
+          // Fallback only when the API is healthy but the query is too narrow.
+          // Keep this to at most 2 extra calls to avoid 429 on free plans.
+          if (!firstArr.length && freshness !== 'all') {
+            result = await callJSearch(q, 'all');
+            resp = result.resp; bodyText = result.bodyText; usedFreshness = 'all';
+            diag.statusCode = resp.status;
+          }
+          if (resp.ok) {
+            const secondData = bodyText ? JSON.parse(bodyText) : {};
+            const secondArr = secondData?.data || secondData?.jobs || [];
+            if (!secondArr.length && /\bjobs?\b/i.test(q)) {
+              const q2 = `${roleQ} ${cleanLoc}`.replace(/\s+/g, ' ').trim();
+              result = await callJSearch(q2, 'all');
+              resp = result.resp; bodyText = result.bodyText; usedQuery = q2; usedFreshness = 'all';
+              diag.statusCode = resp.status;
+            }
+          }
+        }
       } catch (e) {
         diag.reachable = false; diag.statusCode = 0;
         diag.errorCode = 'NETWORK';
         diag.errorMessage = `Could not reach JSearch: ${String(e.message || e)}`;
         throw new Error(diag.errorMessage);
-      } finally { clearTimeout(t); }
+      }
 
-      diag.reachable = true;
-      diag.statusCode = resp.status;
+      diag.query = usedQuery;
+      diag.usedFreshness = usedFreshness;
 
       if (resp.status === 401 || resp.status === 403) {
         diag.errorCode = /not subscribed|you are not subscribed|subscribe/i.test(bodyText) ? 'NOT_SUBSCRIBED' : 'INVALID_KEY';
@@ -338,7 +369,7 @@ if (RAPIDAPI_KEY) {
       }
       if (resp.status === 429) {
         diag.errorCode = 'RATE_LIMITED';
-        diag.errorMessage = 'JSearch rate limit hit (429). Only 1 call per search is made now; wait a minute or upgrade your RapidAPI plan.';
+        diag.errorMessage = 'JSearch rate limit hit (429). Wait a minute or lower repeated searches; the app now uses one main call plus limited fallback only for zero-result queries.';
         throw new Error(diag.errorMessage);
       }
       if (!resp.ok) {
@@ -354,7 +385,7 @@ if (RAPIDAPI_KEY) {
       const arr = data?.data || data?.jobs || [];
       diag.returnedCount = arr.length;
       diag.firstPublishers = arr.slice(0, 3).map(x => x?.job_publisher || x?.employer_name || 'unknown');
-      if (!arr.length) { diag.errorCode = 'NO_RESULTS'; diag.errorMessage = 'JSearch reachable but returned 0 jobs for this query.'; }
+      if (!arr.length) { diag.errorCode = 'NO_RESULTS'; diag.errorMessage = 'JSearch reachable but returned 0 jobs after fallback queries.'; }
 
       const jobs = arr.map(x => {
         const url = x.job_apply_link || x.job_google_link || x.job_offer_url || '';
@@ -585,7 +616,10 @@ function validLocationMatch(job, loc) {
   const q = normText(loc);
   if (!q) return true;
   if (/remote/i.test(job.mode || '') || /remote/i.test(job.location || '')) return true;   // remote satisfies any location
-  return normText(`${job.location} ${job.summary}`).includes(q.split(' ')[0]);
+  const hay = normText(`${job.location} ${job.summary}`);
+  if (/^(in|ind|india)$/.test(q)) return /\bindia\b|\bin\b/.test(hay);
+  const first = q.split(' ')[0];
+  return hay.includes(first);
 }
 function validModeMatch(job, mode) {
   if (!mode || mode === 'Any') return true;

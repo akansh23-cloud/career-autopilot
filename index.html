@@ -3200,6 +3200,7 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     q.set('freshness',(S.prefs&&S.prefs.freshness)||'7d');
     q.set('limit',(S.prefs&&S.prefs.jobCount)||12);
     q.set('verify','1');
+    q.set('strict',(S.prefs&&S.prefs.strict)?'1':'0');
     const src=(S.prefs&&S.prefs.sources)||'All';
     if(src && src!=='All') q.set('sources',src);
     return base+'/jobs/search?'+q.toString();
@@ -3212,6 +3213,7 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     S.prefs={
       location:$('#jLoc').value, mode:$('#jMode').value, experience:$('#jExp').value, salary:$('#jSal').value,
       freshness:$('#jFresh').value,
+      strict:$('#jStrict')?$('#jStrict').checked:false,
       companyType:$('#jCompanyType')?$('#jCompanyType').value:'Any',
       minMatch:$('#jMinMatch')?$('#jMinMatch').value:'0',
       jobCount:$('#jCount')?$('#jCount').value:'12',
