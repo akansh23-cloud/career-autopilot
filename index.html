@@ -1113,7 +1113,7 @@ const _oldGo=go;
 go=function(id,skipHistory){ensureEnhancedState();current=id;renderTabs();
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('show',v.dataset.view===id));
   ({dash:renderDash,resume:renderResume,editor:(window.renderEditor||function(){}),jobs:renderJobs,tracker:renderTracker,growth:renderGrowth,settings:renderSettings}[id]||function(){})();
-  if(!skipHistory && history && history.pushState) history.pushState({view:id},'',`#${id}`);
+  if(!skipHistory && history && history.pushState){try{history.pushState({view:id},'',`#${id}`);}catch(e){}}
   window.scrollTo({top:0,behavior:'smooth'});
 };
 window.addEventListener('popstate',e=>{const id=(e.state&&e.state.view)||location.hash.replace('#','')||'dash'; if(VIEWS.some(v=>v.id===id))go(id,true);});
@@ -1802,6 +1802,64 @@ renderTailorModal=function(job,t,docs){
   if(modalEl && !$('#assistApplyFromPackage')){
     const src=APPLY_SOURCES[applySource(job)].label;
     modalEl.insertAdjacentHTML('beforeend',`<div class="flag lime" id="assistApplyFromPackage" style="margin-top:14px"><div><b>Ready to apply on ${esc(src)}?</b><div class="hint" style="margin:4px 0 8px">Use the assisted flow to open the posting, download this resume, copy messages, confirm applied, and set follow-up.</div><button class="btn sm primary" onclick="openAssistedApply('${job.id}')">⚡ Open Assisted Apply</button></div></div>`);
+  }
+};
+
+/* ============================================================
+   TAILORED KIT → RESUME EDITOR  (Open in Resume Editor + downloads)
+   ============================================================ */
+window.openInResumeEditor=function(jobId){
+  const job=S.jobs.find(j=>j.id===jobId);
+  const t=job&&job._tailored;
+  if(!job||!t){toast('Generate the tailored package first',true);return;}
+  const jd=[job.summary||'',((job.requiredSkills||[]).join(', '))].filter(Boolean).join('\n');
+  window.loadTailoredIntoEditor({
+    raw:t.tailoredResume||'',
+    latex:t.latexResume||'',
+    summary:t.summary||'',
+    atsBefore:typeof clamp==='function'?clamp(t.atsBefore):t.atsBefore,
+    atsAfter:typeof clamp==='function'?clamp(t.atsAfter):t.atsAfter,
+    matchedKeywords:t.matchedKeywords||[],
+    stillMissing:t.stillMissing||[],
+    changeNotes:t.changeNotes||[],
+    job:{title:job.title,company:job.company,matchScore:typeof clamp==='function'?clamp(job.matchScore):job.matchScore},
+    template:'jakes',
+    jd
+  });
+  if(typeof closeModal==='function')closeModal();
+  go('editor');
+  toast('Loaded tailored resume into the editor');
+};
+window.downloadTailored=function(jobId,fmt){
+  const job=S.jobs.find(j=>j.id===jobId);
+  const t=job&&job._tailored;
+  if(!job||!t){toast('Generate the tailored package first',true);return;}
+  const base=`Tailored_Resume_${slug(job.company)}_${slug(job.title)}`;
+  if(fmt==='tex') window.__cur={body:t.latexResume||'',base:base};
+  else window.__cur={body:t.tailoredResume||'',base:base};
+  const dummy=document.createElement('button'); dummy.innerHTML='dl';
+  downloadDoc(fmt,dummy);
+};
+
+const caKitRenderTailorModal=renderTailorModal;
+renderTailorModal=function(job,t,docs){
+  caKitRenderTailorModal(job,t,docs);
+  const modalEl=$('#modal');
+  if(modalEl && !$('#edKitBar')){
+    const hasLatex=!!(t&&t.latexResume&&t.latexResume.trim());
+    const bar=`<div id="edKitBar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 4px;padding:10px;border:1px solid var(--lime-dim);border-radius:12px;background:rgba(200,250,60,.05)">
+      <button class="btn sm primary" onclick="openInResumeEditor('${job.id}')">✎ Open in Resume Editor</button>
+      <span class="hint" style="margin-right:auto">Download the tailored resume:</span>
+      <button class="btn sm" onclick="downloadTailored('${job.id}','pdf')">⬇ PDF</button>
+      <button class="btn sm" onclick="downloadTailored('${job.id}','docx')">⬇ DOCX</button>
+      <button class="btn sm ghost" onclick="downloadTailored('${job.id}','txt')">⬇ TXT</button>
+      ${hasLatex?`<button class="btn sm ghost" onclick="downloadTailored('${job.id}','tex')">⬇ LaTeX</button>`:''}
+      <span class="hint" id="dlMsg" style="flex-basis:100%;min-height:14px;margin-top:2px"></span>
+    </div>`;
+    // place the bar right under the modal header (first child)
+    const header=modalEl.firstElementChild;
+    if(header) header.insertAdjacentHTML('afterend',bar);
+    else modalEl.insertAdjacentHTML('afterbegin',bar);
   }
 };
 
@@ -3277,35 +3335,71 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
 
 /* boot */
 
-/* ===== Resume Editor module (in main scope: sees S, VIEWS, esc, uid) ===== */
+/* ===== Resume Editor module (in main scope: sees S, VIEWS, esc, uid, store, save, toast, callClaude, go, dl, slug) ===== */
 
 /* ============================================================
-   RESUME EDITOR MODULE (Wonsulting-style) — additive, theme-consistent.
-   Reuses callClaude (Anthropic proxy), pdf.js + mammoth (parse),
-   JSZip (DOCX). No fake/placeholder data is ever inserted.
+   RESUME EDITOR MODULE  — full rebuild (v3.9)
+   • Never blank: renders form + live A4 preview + ATS + JD tailoring.
+   • Loads tailored resume from Job Discovery ("Open in Resume Editor"),
+     else current resume, else analyzed resume, else empty template.
+   • 4 templates, single/multi page, AI rewrite actions, exports.
+   • localStorage keys:
+       careerAutopilot_currentResume   (live structured resume)
+       careerAutopilot_tailoredResume  (tailored payload + job context)
+       careerAutopilot_selectedJob     (job context)
+       careerAutopilot_selectedTemplate(template id)
+       careerAutopilot_resumeVersions  (saved version snapshots)
+   No fabricated content is ever inserted.
    ============================================================ */
 (function(){
+  /* ---- localStorage keys ---- */
+  const K_CUR='careerAutopilot_currentResume',
+        K_TAIL='careerAutopilot_tailoredResume',
+        K_JOB='careerAutopilot_selectedJob',
+        K_TPL='careerAutopilot_selectedTemplate',
+        K_VER='careerAutopilot_resumeVersions';
+
+  const TEMPLATES={
+    jakes   :{label:'Jake Tech Compact', defPage:'single'},
+    ats     :{label:'ATS Compact Classic',defPage:'single'},
+    sidebar :{label:'Modern Sidebar',     defPage:'single'},
+    executive:{label:'Executive Clean',   defPage:'multi'}
+  };
+
+  /* add the Editor tab right after Resume (idempotent) */
   if(typeof VIEWS!=='undefined' && !VIEWS.some(v=>v.id==='editor')){
-    VIEWS.splice(2,0,{id:'editor',label:'Editor'});   // after Resume
+    VIEWS.splice(2,0,{id:'editor',label:'Editor'});
   }
   S.settings = S.settings || {};
-  if(!S.settings.edTemplate) S.settings.edTemplate='modern';   // 'jakes' | 'modern'
-  if(!S.settings.edPageMode) S.settings.edPageMode='single';   // 'single' | 'multi'
+  if(!S.settings.edTemplate || !TEMPLATES[S.settings.edTemplate]) S.settings.edTemplate='jakes';
+  if(!S.settings.edPageMode) S.settings.edPageMode='single';
 
-  const E = id => document.getElementById(id);
-  const escE = s => (typeof esc==='function'?esc(s):String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+  const E   = id => document.getElementById(id);
+  const escE= s  => (typeof esc==='function'?esc(s):String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
   const nid = ()=> (typeof uid==='function'?uid():Math.random().toString(36).slice(2,9));
+  function lsGet(k){try{return JSON.parse(store.getItem(k)||'null');}catch(e){return null;}}
+  function lsSet(k,v){try{store.setItem(k,JSON.stringify(v));}catch(e){}}
 
   /* ---------- structured resume model (no fabrication) ---------- */
   function emptyResume(){
     return {header:{name:'',title:'',email:'',phone:'',location:'',links:[]},summary:'',
-      experience:[],projects:[],skills:[],education:[],certifications:[]};
+      experience:[],projects:[],skills:[],education:[],certifications:[],_jd:''};
   }
-  function ensureResume(){
-    if(!S.editorResume) S.editorResume = seedFromAnalysis() || emptyResume();
-    return S.editorResume;
+  function normalize(r){
+    r=r||{}; const o=emptyResume();
+    o.header=Object.assign(o.header, r.header||{});
+    if(!Array.isArray(o.header.links)) o.header.links=o.header.links?[o.header.links]:[];
+    o.summary=r.summary||'';
+    o.skills=Array.isArray(r.skills)?r.skills.slice():[];
+    o._jd=r._jd||'';
+    (r.experience||[]).forEach(x=>o.experience.push({id:x.id||nid(),role:x.role||'',company:x.company||'',location:x.location||'',start:x.start||'',end:x.end||'',bullets:(x.bullets||[]).map(b=>({id:(b&&b.id)||nid(),text:typeof b==='string'?b:(b.text||'')}))}));
+    (r.projects||[]).forEach(x=>o.projects.push({id:x.id||nid(),name:x.name||'',tech:x.tech||'',link:x.link||'',bullets:(x.bullets||[]).map(b=>({id:(b&&b.id)||nid(),text:typeof b==='string'?b:(b.text||'')}))}));
+    (r.education||[]).forEach(x=>o.education.push({id:x.id||nid(),degree:x.degree||'',school:x.school||'',location:x.location||'',start:x.start||'',end:x.end||'',detail:x.detail||''}));
+    (r.certifications||[]).forEach(x=>o.certifications.push({id:x.id||nid(),name:x.name||String(x||''),issuer:x.issuer||'',year:x.year||''}));
+    return o;
   }
-  // Seed ONLY from data the user already provided/parsed — never invent.
+
+  /* Seed ONLY from data the user already provided/parsed — never invent. */
   function seedFromAnalysis(){
     const a=S.analysis; if(!a) return null;
     const r=emptyResume();
@@ -3314,102 +3408,264 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     if(Array.isArray(a.links)) r.header.links=a.links.slice();
     r.summary=a.summary||'';
     r.skills=Array.isArray(a.skills)?a.skills.slice(0,40):[];
-    (a.experience||a.workExperience||[]).forEach(x=>{
-      r.experience.push({id:nid(),role:x.role||x.title||'',company:x.company||'',location:x.location||'',
-        start:x.start||x.from||'',end:x.end||x.to||'',
-        bullets:(x.bullets||x.highlights||[]).map(b=>({id:nid(),text:String(b)}))});
-    });
-    (a.projects||[]).forEach(x=>r.projects.push({id:nid(),name:x.name||x.title||'',tech:(x.tech||x.stack||[]).join?x.tech.join(', '):(x.tech||''),link:x.link||'',bullets:(x.bullets||[]).map(b=>({id:nid(),text:String(b)}))}));
+    (a.experience||a.workExperience||[]).forEach(x=>r.experience.push({id:nid(),role:x.role||x.title||'',company:x.company||'',location:x.location||'',start:x.start||x.from||'',end:x.end||x.to||'',bullets:(x.bullets||x.highlights||[]).map(b=>({id:nid(),text:String(b)}))}));
+    (a.projects||[]).forEach(x=>r.projects.push({id:nid(),name:x.name||x.title||'',tech:(x.tech&&x.tech.join)?x.tech.join(', '):(x.tech||x.stack||''),link:x.link||'',bullets:(x.bullets||[]).map(b=>({id:nid(),text:String(b)}))}));
     (a.education||[]).forEach(x=>r.education.push({id:nid(),degree:x.degree||'',school:x.school||x.institution||'',location:x.location||'',start:x.start||'',end:x.end||x.year||'',detail:x.detail||x.gpa||''}));
     (a.certifications||a.certs||[]).forEach(x=>r.certifications.push({id:nid(),name:x.name||String(x),issuer:x.issuer||'',year:x.year||''}));
     return r;
   }
 
-  /* ---------- AI helpers (reuse backend proxy) ---------- */
-  function aiReady(){ return typeof callClaude==='function'; }
-  async function aiText(system,prompt){
-    if(!aiReady()) throw new Error('AI not available');
-    return (await callClaude({system,prompt,max_tokens:600})).trim();
+  /* Parse a plain-text resume (e.g. tailored output) into the structured model.
+     Reflows the candidate's REAL text only — never fabricates. */
+  function parseResumeText(text){
+    const r=emptyResume();
+    if(!text || !String(text).trim()) return r;
+    const lines=String(text).replace(/\r/g,'').split('\n').map(l=>l.replace(/[ \t]+$/,''));
+    const HEAD=/^[A-Z][A-Z0-9 &\/\-]{2,40}$/;
+    const isHeader=l=>HEAD.test(l.trim());
+    const isBullet=l=>/^\s*[-•*▪◦‣·]/.test(l);
+    const sectionOf=h=>{h=h.toUpperCase();
+      if(/SUMMARY|OBJECTIVE|PROFILE|ABOUT/.test(h))return 'summary';
+      if(/EXPERIENCE|EMPLOYMENT|WORK HISTORY/.test(h))return 'experience';
+      if(/PROJECT/.test(h))return 'projects';
+      if(/SKILL|TECHNOLOG|TECH STACK/.test(h))return 'skills';
+      if(/EDUCATION|ACADEMIC/.test(h))return 'education';
+      if(/CERTIF|LICENS/.test(h))return 'certifications';
+      if(/ACHIEV|AWARD|HONOR/.test(h))return 'achievements';
+      return null;
+    };
+    let i=0;
+    while(i<lines.length && !lines[i].trim()) i++;
+    r.header.name=(lines[i]||'').trim(); i++;
+    while(i<lines.length && !lines[i].trim()) i++;
+    // contact line (before first section header)
+    if(i<lines.length && !isHeader(lines[i]) && /[@|·•]|https?:|\d{3}/.test(lines[i])){
+      lines[i].split(/\s*[|·•]\s*| {2,}/).map(s=>s.trim()).filter(Boolean).forEach(p=>{
+        if(/@/.test(p)&&!r.header.email) r.header.email=p;
+        else if(/https?:|linkedin|github|gitlab|portfolio|\.com|\.io|\.dev|\.me/i.test(p)) r.header.links.push(p.replace(/^https?:\/\//,''));
+        else if(/^[+(]?\d[\d\s\-().]{6,}$/.test(p)&&!r.header.phone) r.header.phone=p;
+        else if(!r.header.location) r.header.location=p;
+        else r.header.links.push(p);
+      });
+      i++;
+    }
+    let sec=null,curExp=null,curProj=null,summaryBuf=[],skillsBuf=[],eduBuf=[];
+    function flushEdu(){
+      if(!eduBuf.length) return;
+      eduBuf.forEach(t=>{
+        const dm=t.match(/(\b(19|20)\d{2}\b[^|]*?(present|current|\b(19|20)\d{2}\b)?)\s*$/i);
+        const dates=dm?dm[0].trim():'';
+        let head=dates?t.slice(0,t.length-dates.length):t;
+        const parts=head.split(/\s*[|—–-]\s{1,}|\s{2,}/).map(s=>s.trim()).filter(Boolean);
+        r.education.push({id:nid(),degree:parts[0]||head.trim(),school:parts[1]||'',location:parts[2]||'',start:'',end:dates,detail:parts[3]||''});
+      });
+      eduBuf=[];
+    }
+    for(; i<lines.length; i++){
+      const ln=lines[i], t=ln.trim();
+      if(isHeader(ln)){ flushEdu(); const s=sectionOf(t); sec=s; curExp=null; curProj=null; continue; }
+      if(!t) continue;
+      if(sec==='summary'){ summaryBuf.push(t); continue; }
+      if(sec==='skills'){ skillsBuf.push(t.replace(/^[A-Za-z ]+:\s*/,'')); continue; }
+      if(sec==='education'){ eduBuf.push(t); continue; }
+      if(sec==='certifications'||sec==='achievements'){
+        r.certifications.push({id:nid(),name:t.replace(/^[-•*▪◦‣·]\s*/,''),issuer:'',year:(t.match(/\b(19|20)\d{2}\b/)||[''])[0]});
+        continue;
+      }
+      if(sec==='experience'){
+        if(isBullet(ln)){ if(!curExp){curExp={id:nid(),role:'',company:'',location:'',start:'',end:'',bullets:[]};r.experience.push(curExp);} curExp.bullets.push({id:nid(),text:t.replace(/^[-•*▪◦‣·]\s*/,'')}); }
+        else{
+          const dm=t.match(/((19|20)\d{2}[^|]*?(present|current|(19|20)\d{2})?)\s*$/i);
+          const dates=dm?dm[0].trim():'';
+          let head=dates?t.slice(0,t.length-dates.length):t;
+          const parts=head.split(/\s*[|—–]\s*|\s{2,}/).map(s=>s.trim()).filter(Boolean);
+          curExp={id:nid(),role:parts[0]||head.trim(),company:parts[1]||'',location:parts[2]||'',start:'',end:dates,bullets:[]};
+          r.experience.push(curExp);
+        }
+        continue;
+      }
+      if(sec==='projects'){
+        if(isBullet(ln)){ if(!curProj){curProj={id:nid(),name:'',tech:'',link:'',bullets:[]};r.projects.push(curProj);} curProj.bullets.push({id:nid(),text:t.replace(/^[-•*▪◦‣·]\s*/,'')}); }
+        else{
+          const parts=t.split(/\s*[|—–]\s*/).map(s=>s.trim()).filter(Boolean);
+          curProj={id:nid(),name:parts[0]||t,tech:parts[1]||'',link:(parts.find(p=>/https?:|github|\.com|\.io/i.test(p))||'').replace(/^https?:\/\//,''),bullets:[]};
+          r.projects.push(curProj);
+        }
+        continue;
+      }
+      // no section yet → treat as title/summary
+      if(!r.header.title && !sec){ r.header.title=t; continue; }
+      summaryBuf.push(t);
+    }
+    flushEdu();
+    r.summary=summaryBuf.join(' ').trim();
+    if(skillsBuf.length) r.skills=skillsBuf.join(', ').split(/\s*[,·•|]\s*/).map(s=>s.trim()).filter(Boolean);
+    return r;
   }
-  const REWRITE = {
-    improve:'Rewrite this resume bullet to be clearer and more impactful. Keep it one line, start with a strong past-tense action verb. Return ONLY the rewritten bullet, no quotes.',
-    ats:'Rewrite this resume bullet to be ATS-friendly: plain text, relevant hard-skill keywords, no symbols/tables. One line. Return ONLY the bullet.',
-    metrics:'Rewrite this resume bullet to include a realistic quantified metric (%, time, scale, money). If no number is known, add a clearly-bracketed placeholder like [X%] for the user to fill — do NOT invent a specific false number. One line. Return ONLY the bullet.',
-    shorten:'Shorten this resume bullet to under 20 words while keeping the achievement and metrics. Return ONLY the bullet.'
+
+  /* ---------- persistence ---------- */
+  function persist(){
+    S.editorResume=working;
+    try{ if(typeof save==='function') save(); }catch(e){}
+    lsSet(K_CUR, working);
+    lsSet(K_TPL, S.settings.edTemplate);
+  }
+
+  /* ---------- working model resolution (req 9 priority) ---------- */
+  let working=null;
+  function resolveInitial(){
+    if(S.editorResume) return normalize(S.editorResume);
+    const cur=lsGet(K_CUR); if(cur) return normalize(cur);
+    const tail=lsGet(K_TAIL); if(tail && tail.resume) return normalize(tail.resume);
+    const seeded=seedFromAnalysis(); if(seeded) return normalize(seeded);
+    return emptyResume();
+  }
+  function ensureResume(){ if(!working) working=resolveInitial(); return working; }
+
+  /* Public: called by "Open in Resume Editor" before navigating. */
+  window.loadTailoredIntoEditor=function(payload){
+    // payload: {resume?, raw, latex, summary, atsBefore, atsAfter, matchedKeywords, stillMissing, changeNotes, job, template, jd}
+    const structured = payload.resume ? normalize(payload.resume)
+                     : normalize(parseResumeText(payload.raw||''));
+    if(payload.summary && !structured.summary) structured.summary=payload.summary;
+    structured._jd = payload.jd || structured._jd || '';
+    working=structured;
+    if(payload.template && TEMPLATES[payload.template]) S.settings.edTemplate=payload.template;
+    S.editorJobContext={
+      title:(payload.job&&payload.job.title)||'',
+      company:(payload.job&&payload.job.company)||'',
+      atsBefore:payload.atsBefore, atsAfter:payload.atsAfter,
+      matchScore:(payload.job&&payload.job.matchScore)||null,
+      matched:payload.matchedKeywords||[], missing:payload.stillMissing||[],
+      changeNotes:payload.changeNotes||[], rawLatex:payload.latex||''
+    };
+    lsSet(K_TAIL,{resume:structured,raw:payload.raw||'',latex:payload.latex||'',summary:payload.summary||'',atsBefore:payload.atsBefore,atsAfter:payload.atsAfter,matchedKeywords:payload.matchedKeywords||[],stillMissing:payload.stillMissing||[],changeNotes:payload.changeNotes||[],ctx:S.editorJobContext,jd:structured._jd});
+    lsSet(K_JOB,{title:S.editorJobContext.title,company:S.editorJobContext.company,atsScore:payload.atsAfter,matchScore:S.editorJobContext.matchScore,matchedKeywords:S.editorJobContext.matched,missingKeywords:S.editorJobContext.missing,template:S.settings.edTemplate});
+    persist();
   };
-  function roleRewritePrompt(role){
-    return `Rewrite this resume bullet to be stronger for a ${role} role: emphasize ${role}-relevant tools, scope and outcomes, strong action verb, keep one line. Return ONLY the bullet.`;
+
+  /* ---------- AI helpers (reuse backend proxy; clear failure messages) ---------- */
+  async function aiText(system,prompt){
+    if(typeof callClaude!=='function') throw new Error('AI is not available in this build');
+    const out=await callClaude({system,prompt,max_tokens:600});
+    return String(out||'').trim();
   }
+  const REWRITE={
+    improve:'Rewrite this resume bullet to be clearer and more impactful. Keep it one line, start with a strong past-tense action verb. Do not invent facts. Return ONLY the rewritten bullet, no quotes.',
+    ats:'Rewrite this resume bullet to be ATS-friendly: plain text, relevant hard-skill keywords, no symbols/tables. One line. Return ONLY the bullet.',
+    metrics:'Rewrite this resume bullet to surface a quantified outcome. If no real number is known, insert a clearly-bracketed placeholder like [X%] for the user to fill — never invent a specific false number. One line. Return ONLY the bullet.',
+    shorten:'Shorten this resume bullet to under 20 words while keeping the achievement and any metrics. Return ONLY the bullet.'
+  };
+  function tailorPrompt(jd){
+    return `Rewrite this resume bullet so it aligns with the target job below — weave in genuinely relevant keywords, strong action verb, one line, no fabricated facts or fake metrics (use [X] for unknown numbers). Return ONLY the bullet.\n\nJOB:\n${(jd||'').slice(0,1200)}`;
+  }
+  function aiErr(e){ const m=(e&&e.message)||String(e); return 'AI unavailable: '+m+'. Add your API key in Settings (or configure the backend proxy) to enable AI rewrites.'; }
 
   /* ============================================================ RENDER */
   function renderEditor(){
-    const r=ensureResume();
-    E('editorBody').innerHTML = `
-      <div class="ed-toolbar">
-        <input type="file" id="edUpload" accept=".pdf,.docx" style="display:none">
-        <button class="btn sm" onclick="document.getElementById('edUpload').click()">⬆ Import PDF/DOCX</button>
-        <button class="btn sm ghost" id="edFromResume">↺ Pull from analyzed resume</button>
-        <span style="flex:1"></span>
-        <label class="fl" style="margin:0">Template</label>
-        <select id="edTpl" class="ed-field" style="width:auto;margin:0">
-          <option value="modern" ${S.settings.edTemplate==='modern'?'selected':''}>Modern ATS</option>
-          <option value="jakes" ${S.settings.edTemplate==='jakes'?'selected':''}>Jake's Resume</option>
-        </select>
-        <label class="fl" style="margin:0">Length</label>
-        <select id="edPage" class="ed-field" style="width:auto;margin:0">
-          <option value="single" ${S.settings.edPageMode==='single'?'selected':''}>Single page</option>
-          <option value="multi" ${S.settings.edPageMode==='multi'?'selected':''}>Multi page</option>
-        </select>
-      </div>
-      <div id="edImportMsg" class="hint" style="margin-bottom:10px"></div>
-      <div class="ed-layout">
-        <div id="edForm"></div>
-        <div>
-          <div class="ed-preview-wrap">
-            <div class="ed-toolbar" style="margin-bottom:8px">
-              <button class="btn sm primary" id="edPDF">⬇ PDF</button>
-              <button class="btn sm" id="edDOCX">⬇ DOCX</button>
-              <button class="btn sm ghost" id="edTXT">⎘ ATS text</button>
-              <span id="edPageWarn" class="hint" style="margin-left:auto"></span>
+    try{
+      const r=ensureResume();
+      const ctx=S.editorJobContext;
+      const tplOpts=Object.keys(TEMPLATES).map(k=>`<option value="${k}" ${S.settings.edTemplate===k?'selected':''}>${TEMPLATES[k].label}</option>`).join('');
+      const verCount=(lsGet(K_VER)||[]).length;
+      E('editorBody').innerHTML=`
+        ${ctx?`<div class="ed-jobctx">
+          <div class="ed-jobctx-main">
+            <div class="eyebrow">Tailored for</div>
+            <div class="ed-jobctx-title">${escE(ctx.title||'Job')} <span style="color:var(--muted);font-weight:400">· ${escE(ctx.company||'')}</span></div>
+            <div class="ed-jobctx-chips">
+              ${ctx.atsAfter!=null?`<span class="chip lime">ATS ${ctx.atsBefore!=null?escE(ctx.atsBefore)+' → ':''}${escE(ctx.atsAfter)}</span>`:''}
+              ${ctx.matchScore!=null?`<span class="chip">Match ${escE(ctx.matchScore)}</span>`:''}
+              <span class="chip">Template: ${escE(TEMPLATES[S.settings.edTemplate].label)}</span>
             </div>
-            <div class="ed-scale"><div class="ed-page"><div id="edPreview"></div></div></div>
-            <div id="edAts"></div>
+            ${(ctx.matched&&ctx.matched.length)?`<div class="ed-kwline"><b>Matched:</b> ${ctx.matched.slice(0,16).map(k=>`<span class="kw-chip kw-hit">${escE(k)}</span>`).join('')}</div>`:''}
+            ${(ctx.missing&&ctx.missing.length)?`<div class="ed-kwline"><b>Missing:</b> ${ctx.missing.slice(0,16).map(k=>`<span class="kw-chip kw-miss">${escE(k)}</span>`).join('')}</div>`:''}
+          </div>
+          <button class="btn sm ghost" id="edClearCtx">Clear job context</button>
+        </div>`:''}
+
+        <div class="ed-toolbar">
+          <input type="file" id="edUpload" accept=".pdf,.docx" style="display:none">
+          <button class="btn sm" onclick="document.getElementById('edUpload').click()">⬆ Import PDF/DOCX</button>
+          <button class="btn sm ghost" id="edFromResume">↺ Pull from analyzed resume</button>
+          <button class="btn sm ghost" id="edFromTailored" ${lsGet(K_TAIL)?'':'style="display:none"'}>★ Reload tailored</button>
+          <span style="flex:1"></span>
+          <label class="fl" style="margin:0 4px 0 0">Template</label>
+          <select id="edTpl" class="ed-field" style="width:auto;margin:0">${tplOpts}</select>
+          <label class="fl" style="margin:0 4px 0 8px">Length</label>
+          <select id="edPage" class="ed-field" style="width:auto;margin:0">
+            <option value="single" ${S.settings.edPageMode==='single'?'selected':''}>Single page</option>
+            <option value="multi" ${S.settings.edPageMode==='multi'?'selected':''}>Multi page</option>
+          </select>
+        </div>
+        <div id="edImportMsg" class="hint" style="margin-bottom:10px"></div>
+
+        <div class="ed-layout">
+          <div id="edForm"></div>
+          <div>
+            <div class="ed-preview-wrap">
+              <div class="ed-export-bar">
+                <button class="btn sm primary" id="edPDF">⬇ PDF</button>
+                <button class="btn sm" id="edDOCX">⬇ DOCX</button>
+                <button class="btn sm" id="edTXT">⬇ ATS TXT</button>
+                <button class="btn sm ghost" id="edCopy">⎘ Copy text</button>
+                <button class="btn sm ghost" id="edSaveVer">💾 Save version${verCount?` (${verCount})`:''}</button>
+                <span id="edPageWarn" class="hint" style="margin-left:auto"></span>
+              </div>
+              <div id="edVerList"></div>
+              <div class="ed-scale"><div class="ed-page"><div id="edPreview"></div></div></div>
+              <div id="edAts"></div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="ed-sec" style="margin-top:14px">
-        <h4>🎯 Tailor to a job description</h4>
-        <textarea id="edJD" class="ed-field" placeholder="Paste the full job description here…" style="min-height:90px">${escE((S.editorResume&&S.editorResume._jd)||'')}</textarea>
-        <button class="btn sm primary" id="edTailor" style="margin-top:8px">Analyze match</button>
-        <div id="edTailorOut" style="margin-top:10px"></div>
-      </div>`;
-    E('edUpload').onchange = onImport;
-    E('edFromResume').onclick = ()=>{ const s=seedFromAnalysis(); if(!s){toast('Analyze a resume first (Resume tab)',true);return;} S.editorResume=s; save(); renderEditor(); toast('Loaded from analyzed resume'); };
-    E('edTpl').onchange=e=>{S.settings.edTemplate=e.target.value;save();renderPreview();};
-    E('edPage').onchange=e=>{S.settings.edPageMode=e.target.value;save();renderPreview();};
-    E('edPDF').onclick=exportPDF; E('edDOCX').onclick=exportDOCX; E('edTXT').onclick=copyATS;
-    E('edTailor').onclick=tailor;
-    E('edJD').onchange=e=>{ensureResume()._jd=e.target.value;save();};
-    renderForm(); renderPreview(); renderAts();
+
+        <div class="ed-sec" style="margin-top:14px">
+          <h4>🎯 Tailor to a job description</h4>
+          <textarea id="edJD" class="ed-field" placeholder="Paste the full job description here…" style="min-height:90px">${escE(r._jd||'')}</textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn sm primary" id="edAnalyze">Analyze JD</button>
+            <button class="btn sm" id="edTailorBtn">Tailor Resume (AI)</button>
+            <button class="btn sm ghost" id="edMissing">Show Missing Keywords</button>
+          </div>
+          <div id="edTailorOut" style="margin-top:12px"></div>
+        </div>`;
+
+      E('edUpload').onchange=onImport;
+      E('edFromResume').onclick=()=>{const s=seedFromAnalysis();if(!s){toast('Analyze a resume first (Resume tab)',true);return;}working=normalize(s);persist();renderEditor();toast('Loaded from analyzed resume');};
+      const rt=E('edFromTailored'); if(rt) rt.onclick=()=>{const tl=lsGet(K_TAIL);if(!tl){toast('No tailored resume saved',true);return;}working=normalize(tl.resume||parseResumeText(tl.raw||''));if(tl.ctx)S.editorJobContext=tl.ctx;persist();renderEditor();toast('Tailored resume reloaded');};
+      const cc=E('edClearCtx'); if(cc) cc.onclick=()=>{S.editorJobContext=null;try{save();}catch(e){}renderEditor();};
+      E('edTpl').onchange=e=>{S.settings.edTemplate=e.target.value;lsSet(K_TPL,e.target.value);try{save();}catch(e2){}renderPreview();renderEditor();};
+      E('edPage').onchange=e=>{S.settings.edPageMode=e.target.value;try{save();}catch(e2){}renderPreview();};
+      E('edPDF').onclick=exportPDF; E('edDOCX').onclick=exportDOCX; E('edTXT').onclick=exportTXT; E('edCopy').onclick=copyATS; E('edSaveVer').onclick=saveVersion;
+      E('edJD').oninput=e=>{ensureResume()._jd=e.target.value;livePersist();};
+      E('edAnalyze').onclick=()=>analyzeJD(false);
+      E('edMissing').onclick=()=>analyzeJD('missing');
+      E('edTailorBtn').onclick=aiTailor;
+
+      renderForm(); renderVersions(); renderPreview(); renderAts();
+    }catch(err){
+      // never leave the page blank
+      E('editorBody').innerHTML=`<div class="ed-sec"><h4>Editor error</h4><div class="hint" style="color:var(--rose)">${escE(err.message||err)}</div><button class="btn sm" onclick="window.renderEditor&&window.renderEditor()">Retry</button></div>`;
+      console.error('renderEditor failed',err);
+    }
   }
 
+  /* ============================================================ FORM */
   function renderForm(){
-    const r=ensureResume();
-    const h=r.header;
-    let html='';
-    html+=`<div class="ed-sec"><h4>Header</h4>
+    const r=ensureResume(); const h=r.header; let html='';
+    html+=`<div class="ed-sec"><h4>Header / Contact</h4>
       <div class="ed-row"><input class="ed-field" data-h="name" placeholder="Full name" value="${escE(h.name)}"><input class="ed-field" data-h="title" placeholder="Headline / target role" value="${escE(h.title)}"></div>
       <div class="ed-row"><input class="ed-field" data-h="email" placeholder="Email" value="${escE(h.email)}"><input class="ed-field" data-h="phone" placeholder="Phone" value="${escE(h.phone)}"></div>
       <div class="ed-row"><input class="ed-field" data-h="location" placeholder="Location" value="${escE(h.location)}"><input class="ed-field" data-h="links" placeholder="Links (comma separated)" value="${escE((h.links||[]).join(', '))}"></div></div>`;
 
-    html+=`<div class="ed-sec"><h4>Summary <button class="ed-mini" data-ai-sum>✦ Make stronger</button></h4>
-      <textarea class="ed-field" data-summary placeholder="Professional summary…">${escE(r.summary)}</textarea></div>`;
+    html+=`<div class="ed-sec"><h4>Professional Summary <button class="ed-mini" data-ai-sum>✦ Improve</button></h4>
+      <textarea class="ed-field" data-summary placeholder="2–3 line professional summary…">${escE(r.summary)}</textarea></div>`;
 
-    html+=`<div class="ed-sec"><h4>Experience <button class="ed-mini" data-add="experience">+ add</button></h4>${r.experience.map((x,i)=>expItem(x,i)).join('')||'<div class="hint">No experience yet — add one.</div>'}</div>`;
-    html+=`<div class="ed-sec"><h4>Projects <button class="ed-mini" data-add="projects">+ add</button></h4>${r.projects.map((x,i)=>projItem(x,i)).join('')||'<div class="hint">No projects yet.</div>'}</div>`;
     html+=`<div class="ed-sec"><h4>Skills</h4><textarea class="ed-field" data-skills placeholder="Comma-separated skills">${escE((r.skills||[]).join(', '))}</textarea></div>`;
-    html+=`<div class="ed-sec"><h4>Education <button class="ed-mini" data-add="education">+ add</button></h4>${r.education.map((x,i)=>eduItem(x,i)).join('')||'<div class="hint">No education yet.</div>'}</div>`;
-    html+=`<div class="ed-sec"><h4>Certifications <button class="ed-mini" data-add="certifications">+ add</button></h4>${r.certifications.map((x,i)=>certItem(x,i)).join('')||'<div class="hint">No certifications yet.</div>'}</div>`;
+    html+=`<div class="ed-sec"><h4>Experience <button class="ed-mini" data-add="experience">+ add</button></h4>${r.experience.map(x=>expItem(x)).join('')||'<div class="hint">No experience yet — click “+ add”.</div>'}</div>`;
+    html+=`<div class="ed-sec"><h4>Projects <button class="ed-mini" data-add="projects">+ add</button></h4>${r.projects.map(x=>projItem(x)).join('')||'<div class="hint">No projects yet.</div>'}</div>`;
+    html+=`<div class="ed-sec"><h4>Education <button class="ed-mini" data-add="education">+ add</button></h4>${r.education.map(x=>eduItem(x)).join('')||'<div class="hint">No education yet.</div>'}</div>`;
+    html+=`<div class="ed-sec"><h4>Certifications <button class="ed-mini" data-add="certifications">+ add</button></h4>${r.certifications.map(x=>certItem(x)).join('')||'<div class="hint">No certifications yet.</div>'}</div>`;
     E('edForm').innerHTML=html;
     bindForm();
   }
@@ -3419,15 +3675,13 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
       <button class="ed-mini" data-delbullet="${secKey}:${itemId}:${b.id}">✕</button></div>
       <div class="ed-aibar" data-aibar="${secKey}:${itemId}:${b.id}">
         <button class="ed-ai" data-rw="improve">Improve</button>
-        <button class="ed-ai" data-rw="ats">ATS</button>
+        <button class="ed-ai" data-rw="ats">ATS-friendly</button>
         <button class="ed-ai" data-rw="metrics">+Metrics</button>
         <button class="ed-ai" data-rw="shorten">Shorten</button>
-        <button class="ed-ai" data-rw="devops">DevOps</button>
-        <button class="ed-ai" data-rw="sde">SDE</button>
-        <button class="ed-ai" data-rw="data">Data</button>
+        <button class="ed-ai" data-rw="tailor">Tailor to job</button>
       </div>`;
   }
-  function expItem(x,i){
+  function expItem(x){
     return `<div class="ed-item" data-exp="${x.id}">
       <div class="ed-row"><input class="ed-field" data-f="experience:${x.id}:role" placeholder="Role" value="${escE(x.role)}"><input class="ed-field" data-f="experience:${x.id}:company" placeholder="Company" value="${escE(x.company)}"></div>
       <div class="ed-row"><input class="ed-field" data-f="experience:${x.id}:location" placeholder="Location" value="${escE(x.location)}"><div class="ed-row"><input class="ed-field" data-f="experience:${x.id}:start" placeholder="Start" value="${escE(x.start)}"><input class="ed-field" data-f="experience:${x.id}:end" placeholder="End" value="${escE(x.end)}"></div></div>
@@ -3436,7 +3690,7 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
   }
   function projItem(x){
     return `<div class="ed-item" data-proj="${x.id}">
-      <div class="ed-row"><input class="ed-field" data-f="projects:${x.id}:name" placeholder="Project name" value="${escE(x.name)}"><input class="ed-field" data-f="projects:${x.id}:tech" placeholder="Tech" value="${escE(x.tech)}"></div>
+      <div class="ed-row"><input class="ed-field" data-f="projects:${x.id}:name" placeholder="Project name" value="${escE(x.name)}"><input class="ed-field" data-f="projects:${x.id}:tech" placeholder="Tech / stack" value="${escE(x.tech)}"></div>
       <input class="ed-field" data-f="projects:${x.id}:link" placeholder="Link (optional)" value="${escE(x.link)}">
       ${(x.bullets||[]).map(b=>bulletRow('projects',x.id,b)).join('')}
       <div style="display:flex;gap:6px;margin-top:6px"><button class="ed-mini" data-addbullet="projects:${x.id}">+ bullet</button><button class="ed-mini" data-del="projects:${x.id}">delete</button></div></div>`;
@@ -3453,75 +3707,90 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
       <div class="ed-row"><input class="ed-field" data-f="certifications:${x.id}:name" placeholder="Certification" value="${escE(x.name)}"><div class="ed-row"><input class="ed-field" data-f="certifications:${x.id}:issuer" placeholder="Issuer" value="${escE(x.issuer)}"><input class="ed-field" data-f="certifications:${x.id}:year" placeholder="Year" value="${escE(x.year)}"></div></div>
       <button class="ed-mini" data-del="certifications:${x.id}" style="margin-top:6px">delete</button></div>`;
   }
-
   function findItem(secKey,id){ return (ensureResume()[secKey]||[]).find(x=>x.id===id); }
   function bindForm(){
     const root=E('edForm'); const r=ensureResume();
-    root.querySelectorAll('[data-h]').forEach(el=>el.oninput=()=>{ r.header[el.dataset.h]= el.dataset.h==='links'?el.value.split(',').map(s=>s.trim()).filter(Boolean):el.value; livePersist(); });
+    root.querySelectorAll('[data-h]').forEach(el=>el.oninput=()=>{r.header[el.dataset.h]= el.dataset.h==='links'?el.value.split(',').map(s=>s.trim()).filter(Boolean):el.value; livePersist();});
     const sum=root.querySelector('[data-summary]'); if(sum) sum.oninput=()=>{r.summary=sum.value;livePersist();};
     const sk=root.querySelector('[data-skills]'); if(sk) sk.oninput=()=>{r.skills=sk.value.split(',').map(s=>s.trim()).filter(Boolean);livePersist();};
     root.querySelectorAll('[data-f]').forEach(el=>el.oninput=()=>{const[sec,id,field]=el.dataset.f.split(':');const it=findItem(sec,id);if(it){it[field]=el.value;livePersist();}});
     root.querySelectorAll('[data-bullet]').forEach(el=>el.oninput=()=>{const[sec,id,bid]=el.dataset.bullet.split(':');const it=findItem(sec,id);const b=it&&it.bullets.find(x=>x.id===bid);if(b){b.text=el.value;livePersist();}});
     root.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>addItem(b.dataset.add));
-    root.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const[sec,id]=b.dataset.del.split(':');r[sec]=r[sec].filter(x=>x.id!==id);save();renderForm();renderPreview();renderAts();});
-    root.querySelectorAll('[data-addbullet]').forEach(b=>b.onclick=()=>{const[sec,id]=b.dataset.addbullet.split(':');const it=findItem(sec,id);it.bullets.push({id:nid(),text:''});save();renderForm();renderPreview();});
-    root.querySelectorAll('[data-delbullet]').forEach(b=>b.onclick=()=>{const[sec,id,bid]=b.dataset.delbullet.split(':');const it=findItem(sec,id);it.bullets=it.bullets.filter(x=>x.id!==bid);save();renderForm();renderPreview();renderAts();});
+    root.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const[sec,id]=b.dataset.del.split(':');r[sec]=r[sec].filter(x=>x.id!==id);persist();renderForm();renderPreview();renderAts();});
+    root.querySelectorAll('[data-addbullet]').forEach(b=>b.onclick=()=>{const[sec,id]=b.dataset.addbullet.split(':');const it=findItem(sec,id);it.bullets.push({id:nid(),text:''});persist();renderForm();renderPreview();});
+    root.querySelectorAll('[data-delbullet]').forEach(b=>b.onclick=()=>{const[sec,id,bid]=b.dataset.delbullet.split(':');const it=findItem(sec,id);it.bullets=it.bullets.filter(x=>x.id!==bid);persist();renderForm();renderPreview();renderAts();});
     const sumAi=root.querySelector('[data-ai-sum]'); if(sumAi) sumAi.onclick=()=>rewriteSummary(sumAi);
-    root.querySelectorAll('[data-aibar]').forEach(bar=>{
-      const key=bar.dataset.aibar;
-      bar.querySelectorAll('[data-rw]').forEach(btn=>btn.onclick=()=>rewriteBullet(key,btn.dataset.rw,bar));
-    });
+    root.querySelectorAll('[data-aibar]').forEach(bar=>{const key=bar.dataset.aibar;bar.querySelectorAll('[data-rw]').forEach(btn=>btn.onclick=()=>rewriteBullet(key,btn.dataset.rw,bar));});
   }
-  let _t; function livePersist(){ clearTimeout(_t); _t=setTimeout(()=>{save();renderPreview();renderAts();},250); }
-
+  let _t; function livePersist(){ clearTimeout(_t); _t=setTimeout(()=>{persist();renderPreview();renderAts();},250); }
   function addItem(sec){
     const r=ensureResume();
     if(sec==='experience') r.experience.push({id:nid(),role:'',company:'',location:'',start:'',end:'',bullets:[{id:nid(),text:''}]});
     if(sec==='projects') r.projects.push({id:nid(),name:'',tech:'',link:'',bullets:[{id:nid(),text:''}]});
     if(sec==='education') r.education.push({id:nid(),degree:'',school:'',location:'',start:'',end:'',detail:''});
     if(sec==='certifications') r.certifications.push({id:nid(),name:'',issuer:'',year:''});
-    save();renderForm();renderPreview();
+    persist();renderForm();renderPreview();
   }
 
+  /* ---------- AI rewrite ---------- */
   async function rewriteBullet(key,kind,bar){
     const[sec,id,bid]=key.split(':'); const it=findItem(sec,id); const b=it&&it.bullets.find(x=>x.id===bid);
-    if(!b||!b.text.trim()){toast('Write something first',true);return;}
-    if(!aiReady()){toast('AI backend not configured',true);return;}
-    const role=kind==='devops'?'DevOps / Platform Engineering':kind==='sde'?'Software Engineer (SDE)':kind==='data'?'Data Engineer/Analyst':null;
+    if(!b||!b.text.trim()){toast('Write something in the bullet first',true);return;}
     const sys='You are an expert resume writer. Output only the rewritten bullet, nothing else.';
-    const prompt=(role?roleRewritePrompt(role):REWRITE[kind])+'\n\nBullet: '+b.text;
+    let prompt;
+    if(kind==='tailor'){ const jd=(ensureResume()._jd||'').trim(); if(!jd){toast('Paste a job description below first',true);return;} prompt=tailorPrompt(jd)+'\n\nBullet: '+b.text; }
+    else prompt=REWRITE[kind]+'\n\nBullet: '+b.text;
     bar.querySelectorAll('.ed-ai').forEach(x=>x.disabled=true);
-    try{ const out=await aiText(sys,prompt); b.text=out.replace(/^[-•*"\s]+|["\s]+$/g,''); save();renderForm();renderPreview();renderAts(); toast('Bullet rewritten'); }
-    catch(e){ toast(e.message||'AI failed',true); bar.querySelectorAll('.ed-ai').forEach(x=>x.disabled=false); }
+    try{ const out=await aiText(sys,prompt); b.text=out.replace(/^[-•*"\s]+|["\s]+$/g,''); persist();renderForm();renderPreview();renderAts(); toast('Bullet rewritten'); }
+    catch(e){ toast(aiErr(e),true); bar.querySelectorAll('.ed-ai').forEach(x=>x.disabled=false); }
   }
   async function rewriteSummary(btn){
     const r=ensureResume(); if(!r.summary.trim()){toast('Write a summary first',true);return;}
-    if(!aiReady()){toast('AI backend not configured',true);return;}
     btn.disabled=true;
-    try{ const out=await aiText('You are an expert resume writer. Output only the rewritten 2-3 sentence summary.', 'Rewrite this resume summary to be sharper, ATS-friendly and impact-focused. Keep 2-3 sentences. Return ONLY the summary.\n\n'+r.summary); r.summary=out.trim(); save();renderForm();renderPreview();renderAts(); toast('Summary improved'); }
-    catch(e){ toast(e.message||'AI failed',true);} finally{btn.disabled=false;}
+    try{ const out=await aiText('You are an expert resume writer. Output only the rewritten 2-3 sentence summary.','Rewrite this resume summary to be sharper, ATS-friendly and impact-focused. Keep 2-3 sentences, no fabricated facts. Return ONLY the summary.\n\n'+r.summary); r.summary=out.trim(); persist();renderForm();renderPreview();renderAts(); toast('Summary improved'); }
+    catch(e){ toast(aiErr(e),true);} finally{btn.disabled=false;}
   }
 
-  /* ============================================================ PREVIEW */
+  /* ============================================================ PREVIEW (4 templates) */
+  function contactBits(h){ return [h.email,h.phone,h.location].concat(h.links||[]).filter(Boolean); }
+  function sectionExp(r){ if(!r.experience.length) return '';
+    return '<div class="rp-sec"><h2>Experience</h2>'+r.experience.map(x=>{
+      const bl=(x.bullets||[]).filter(b=>b.text.trim());
+      return `<div class="rp-job"><div class="r1"><span>${escE(x.role||'')}</span><span>${escE([x.start,x.end].filter(Boolean).join(' – '))}</span></div><div class="r2"><span>${escE(x.company||'')}</span><span>${escE(x.location||'')}</span></div>${bl.length?'<ul>'+bl.map(b=>`<li>${escE(b.text)}</li>`).join('')+'</ul>':''}</div>`;
+    }).join('')+'</div>'; }
+  function sectionProj(r){ if(!r.projects.length) return '';
+    return '<div class="rp-sec"><h2>Projects</h2>'+r.projects.map(x=>{
+      const bl=(x.bullets||[]).filter(b=>b.text.trim());
+      return `<div class="rp-job"><div class="r1"><span>${escE(x.name||'')}${x.tech?' · '+escE(x.tech):''}</span><span>${x.link?escE(x.link):''}</span></div>${bl.length?'<ul>'+bl.map(b=>`<li>${escE(b.text)}</li>`).join('')+'</ul>':''}</div>`;
+    }).join('')+'</div>'; }
+  function sectionEdu(r){ if(!r.education.length) return '';
+    return '<div class="rp-sec"><h2>Education</h2>'+r.education.map(x=>`<div class="rp-job"><div class="r1"><span>${escE(x.degree||'')}</span><span>${escE([x.start,x.end].filter(Boolean).join(' – '))}</span></div><div class="r2"><span>${escE(x.school||'')}</span><span>${escE(x.location||'')}</span></div>${x.detail?`<div>${escE(x.detail)}</div>`:''}</div>`).join('')+'</div>'; }
+  function sectionSkills(r){ if(!r.skills.length) return ''; return `<div class="rp-sec"><h2>Skills</h2><div class="rp-skills">${escE(r.skills.join(' · '))}</div></div>`; }
+  function sectionSummary(r){ if(!r.summary) return ''; return `<div class="rp-sec"><h2>Summary</h2><div>${escE(r.summary)}</div></div>`; }
+  function sectionCerts(r){ if(!r.certifications.length) return ''; return '<div class="rp-sec"><h2>Certifications</h2><ul>'+r.certifications.map(c=>`<li>${escE([c.name,c.issuer,c.year].filter(Boolean).join(' — '))}</li>`).join('')+'</ul></div>'; }
+
   function previewHTML(){
-    const r=ensureResume(); const tpl=S.settings.edTemplate;
-    const h=r.header;
-    const contact=[h.email,h.phone,h.location].concat(h.links||[]).filter(Boolean).map(x=>`<span>${escE(x)}</span>`).join('');
+    const r=ensureResume(); const tpl=S.settings.edTemplate; const h=r.header;
+    const contact=contactBits(h).map(x=>`<span>${escE(x)}</span>`).join('');
+    if(tpl==='sidebar'){
+      const side=`<div class="rp-side">
+        ${contact?`<div class="rp-block"><h3>Contact</h3><div class="rp-contact-col">${contactBits(h).map(x=>`<div>${escE(x)}</div>`).join('')}</div></div>`:''}
+        ${r.skills.length?`<div class="rp-block"><h3>Skills</h3><div class="rp-skills">${r.skills.map(s=>`<span class="rp-skill">${escE(s)}</span>`).join('')}</div></div>`:''}
+        ${r.education.length?`<div class="rp-block"><h3>Education</h3>${r.education.map(x=>`<div class="rp-edu"><b>${escE(x.degree||'')}</b><div>${escE(x.school||'')}</div><div class="rp-dim">${escE([x.start,x.end].filter(Boolean).join(' – '))}${x.detail?' · '+escE(x.detail):''}</div></div>`).join('')}</div>`:''}
+        ${r.certifications.length?`<div class="rp-block"><h3>Certifications</h3>${r.certifications.map(c=>`<div>${escE([c.name,c.issuer,c.year].filter(Boolean).join(' — '))}</div>`).join('')}</div>`:''}
+      </div>`;
+      const main=`<div class="rp-main">
+        <h1>${escE(h.name||'Your Name')}</h1>${h.title?`<div class="rp-title">${escE(h.title)}</div>`:''}
+        ${sectionSummary(r)}${sectionExp(r)}${sectionProj(r)}
+      </div>`;
+      return `<div class="rp tpl-sidebar"><div class="rp-grid">${side}${main}</div></div>`;
+    }
+    // single-column templates: jakes / ats / executive
     let s='<div class="rp tpl-'+tpl+'">';
     s+=`<h1>${escE(h.name||'Your Name')}</h1>`;
     if(h.title)s+=`<div class="rp-title">${escE(h.title)}</div>`;
     if(contact)s+=`<div class="rp-contact">${contact}</div>`;
-    if(r.summary)s+=`<div class="rp-sec"><h2>Summary</h2><div>${escE(r.summary)}</div></div>`;
-    if(r.experience.length){s+='<div class="rp-sec"><h2>Experience</h2>';r.experience.forEach(x=>{
-      s+=`<div class="rp-job"><div class="r1"><span>${escE(x.role||'')}</span><span>${escE([x.start,x.end].filter(Boolean).join(' – '))}</span></div><div class="r2"><span>${escE(x.company||'')}</span><span>${escE(x.location||'')}</span></div>`;
-      const bl=(x.bullets||[]).filter(b=>b.text.trim()); if(bl.length)s+='<ul>'+bl.map(b=>`<li>${escE(b.text)}</li>`).join('')+'</ul>'; s+='</div>';});s+='</div>';}
-    if(r.projects.length){s+='<div class="rp-sec"><h2>Projects</h2>';r.projects.forEach(x=>{
-      s+=`<div class="rp-job"><div class="r1"><span>${escE(x.name||'')}${x.tech?' · '+escE(x.tech):''}</span><span>${x.link?escE(x.link):''}</span></div>`;
-      const bl=(x.bullets||[]).filter(b=>b.text.trim()); if(bl.length)s+='<ul>'+bl.map(b=>`<li>${escE(b.text)}</li>`).join('')+'</ul>'; s+='</div>';});s+='</div>';}
-    if(r.skills.length)s+=`<div class="rp-sec"><h2>Skills</h2><div class="rp-skills">${escE(r.skills.join(' · '))}</div></div>`;
-    if(r.education.length){s+='<div class="rp-sec"><h2>Education</h2>';r.education.forEach(x=>{
-      s+=`<div class="rp-job"><div class="r1"><span>${escE(x.degree||'')}</span><span>${escE([x.start,x.end].filter(Boolean).join(' – '))}</span></div><div class="r2"><span>${escE(x.school||'')}</span><span>${escE(x.location||'')}</span></div>${x.detail?`<div>${escE(x.detail)}</div>`:''}</div>`;});s+='</div>';}
-    if(r.certifications.length){s+='<div class="rp-sec"><h2>Certifications</h2><ul>'+r.certifications.map(c=>`<li>${escE([c.name,c.issuer,c.year].filter(Boolean).join(' — '))}</li>`).join('')+'</ul></div>';}
+    s+=sectionSummary(r)+sectionExp(r)+sectionProj(r)+sectionSkills(r)+sectionEdu(r)+sectionCerts(r);
     s+='</div>';
     return s;
   }
@@ -3531,39 +3800,37 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     paper.className='ed-paper '+(S.settings.edPageMode==='multi'?'multi':'single');
     paper.innerHTML=previewHTML();
     host.innerHTML=''; host.appendChild(paper);
-    // scale to container width so the A4 sheet fits without horizontal scroll
     requestAnimationFrame(()=>{
       const wrap=host.closest('.ed-scale'); if(!wrap) return;
-      const scale=Math.min(1, (wrap.clientWidth) / 794);
+      const scale=Math.min(1,(wrap.clientWidth)/794);
       paper.style.transform='scale('+scale+')';
-      paper.style.height=(paper.scrollHeight*scale)+'px';
-      host.parentElement.style.height=(paper.scrollHeight*scale)+'px';
-      // single-page overflow warning
+      const h=paper.scrollHeight*scale;
+      paper.style.height=(paper.scrollHeight)+'px';
+      host.parentElement.style.height=h+'px';
       const warn=E('edPageWarn');
       if(warn){
-        if(S.settings.edPageMode==='single' && paper.scrollHeight>1135){
-          warn.innerHTML='<span style="color:var(--amber)">⚠ Content exceeds one A4 page — trim or switch to Multi page.</span>';
-        } else warn.textContent='';
+        if(S.settings.edPageMode==='single' && paper.scrollHeight>1135) warn.innerHTML='<span style="color:var(--amber)">⚠ Over one A4 page — trim or switch to Multi page.</span>';
+        else warn.textContent='';
       }
     });
   }
 
   /* ============================================================ ATS PANEL */
-  const ACTION_VERBS=['led','built','designed','implemented','developed','automated','optimized','reduced','increased','migrated','deployed','architected','launched','delivered','improved','created','managed','scaled','engineered','shipped','owned','drove','spearheaded','streamlined','resolved'];
+  const ACTION_VERBS=['led','built','designed','implemented','developed','automated','optimized','reduced','increased','migrated','deployed','architected','launched','delivered','improved','created','managed','scaled','engineered','shipped','owned','drove','spearheaded','streamlined','resolved','orchestrated','accelerated'];
   function plainText(){
     const r=ensureResume(); const h=r.header; const L=[];
-    L.push(h.name||''); if(h.title)L.push(h.title); L.push([h.email,h.phone,h.location].concat(h.links||[]).filter(Boolean).join(' | '));
+    L.push(h.name||''); if(h.title)L.push(h.title); L.push(contactBits(h).join(' | '));
     if(r.summary){L.push('','SUMMARY',r.summary);}
-    if(r.experience.length){L.push('','EXPERIENCE');r.experience.forEach(x=>{L.push(`${x.role} | ${x.company} | ${x.location} | ${[x.start,x.end].filter(Boolean).join(' - ')}`);(x.bullets||[]).filter(b=>b.text.trim()).forEach(b=>L.push('- '+b.text));});}
-    if(r.projects.length){L.push('','PROJECTS');r.projects.forEach(x=>{L.push(`${x.name}${x.tech?' | '+x.tech:''}${x.link?' | '+x.link:''}`);(x.bullets||[]).filter(b=>b.text.trim()).forEach(b=>L.push('- '+b.text));});}
     if(r.skills.length){L.push('','SKILLS',r.skills.join(', '));}
-    if(r.education.length){L.push('','EDUCATION');r.education.forEach(x=>L.push(`${x.degree} | ${x.school} | ${[x.start,x.end].filter(Boolean).join(' - ')}${x.detail?' | '+x.detail:''}`));}
+    if(r.experience.length){L.push('','EXPERIENCE');r.experience.forEach(x=>{L.push(`${[x.role,x.company,x.location].filter(Boolean).join(' | ')}${(x.start||x.end)?' | '+[x.start,x.end].filter(Boolean).join(' - '):''}`);(x.bullets||[]).filter(b=>b.text.trim()).forEach(b=>L.push('- '+b.text));});}
+    if(r.projects.length){L.push('','PROJECTS');r.projects.forEach(x=>{L.push(`${x.name}${x.tech?' | '+x.tech:''}${x.link?' | '+x.link:''}`);(x.bullets||[]).filter(b=>b.text.trim()).forEach(b=>L.push('- '+b.text));});}
+    if(r.education.length){L.push('','EDUCATION');r.education.forEach(x=>L.push(`${[x.degree,x.school].filter(Boolean).join(' | ')}${(x.start||x.end)?' | '+[x.start,x.end].filter(Boolean).join(' - '):''}${x.detail?' | '+x.detail:''}`));}
     if(r.certifications.length){L.push('','CERTIFICATIONS');r.certifications.forEach(c=>L.push([c.name,c.issuer,c.year].filter(Boolean).join(' — ')));}
     return L.join('\n');
   }
   function allBullets(){const r=ensureResume();let b=[];r.experience.forEach(x=>b=b.concat((x.bullets||[]).map(y=>y.text)));r.projects.forEach(x=>b=b.concat((x.bullets||[]).map(y=>y.text)));return b.filter(t=>t&&t.trim());}
   function jdKeywords(jd){
-    const stop=new Set('the and for with you your our are will have has from this that role team work years experience job description requirements responsibilities a an to of in on at as is be or we us it'.split(' '));
+    const stop=new Set('the and for with you your our are will have has from this that role team work years experience job description requirements responsibilities a an to of in on at as is be or we us it they their able strong good ability using use within across including etc'.split(' '));
     const freq={};(jd.toLowerCase().match(/[a-z][a-z0-9+#.]{2,}/g)||[]).forEach(w=>{if(!stop.has(w))freq[w]=(freq[w]||0)+1;});
     return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,30).map(x=>x[0]);
   }
@@ -3571,7 +3838,7 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     const host=E('edAts'); if(!host) return;
     const r=ensureResume(); const text=plainText().toLowerCase(); const bullets=allBullets();
     const jd=(r._jd||'').trim();
-    let kw=100, kwDetail='No JD pasted';
+    let kw=100,kwDetail='No JD pasted';
     if(jd){const ks=jdKeywords(jd);const hit=ks.filter(k=>text.includes(k));kw=Math.round(100*hit.length/Math.max(1,ks.length));kwDetail=hit.length+'/'+ks.length+' JD keywords present';}
     const skillsCov=Math.min(100,(r.skills.length/12)*100)|0;
     const verbHits=bullets.filter(b=>ACTION_VERBS.some(v=>new RegExp('^\\s*'+v,'i').test(b))).length;
@@ -3581,12 +3848,11 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     const issues=[];
     if(!r.header.email)issues.push('Missing email');
     if(!r.summary)issues.push('Missing summary');
-    if(bullets.some(b=>b.split(/\s+/).length>32))issues.push('Some bullets are too long (>32 words)');
+    if(bullets.some(b=>b.split(/\s+/).length>32))issues.push('Some bullets too long (>32 words)');
     if(r.skills.length<6)issues.push('Add more skills (target 8-15)');
     const wc=plainText().split(/\s+/).filter(Boolean).length;
     const paper=host.parentElement.querySelector('.ed-paper');
-    const pageMsg = (S.settings.edPageMode==='single' && paper && paper.scrollHeight>1135)?'Over one page — trim for single-page':(wc<180?'Looks short for experienced roles':'Length OK');
-    const overall=Math.round((kw*(jd?1:0)+skillsCov+verbs+quant+(issues.length?40:100))/(jd?5:4));
+    const pageMsg=(S.settings.edPageMode==='single'&&paper&&paper.scrollHeight>1135)?'Over one page — trim for single-page':(wc<180?'Looks short for experienced roles':'Length OK');
     const cell=(n,l,c)=>`<div class="score-cell"><div class="n" style="color:${c}">${n}</div><div class="l">${l}</div></div>`;
     const col=v=>v>=75?'var(--lime)':v>=50?'var(--amber)':'var(--rose)';
     host.innerHTML=`<div class="ed-sec" style="margin-top:12px"><h4>ATS Score</h4>
@@ -3601,59 +3867,129 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     </div>`;
   }
 
-  /* ============================================================ TAILOR */
-  async function tailor(){
-    const r=ensureResume(); const jd=(E('edJD').value||'').trim(); r._jd=jd; save();
-    if(!jd){toast('Paste a job description first',true);return;}
-    const out=E('edTailorOut');
-    // Local keyword diff always works (no AI needed)
+  /* ============================================================ JD TAILORING (in-editor) */
+  function localMatch(jd){
     const ks=jdKeywords(jd); const text=plainText().toLowerCase();
-    const missing=ks.filter(k=>!text.includes(k)); const hit=ks.filter(k=>text.includes(k));
+    const hit=ks.filter(k=>text.includes(k)); const missing=ks.filter(k=>!text.includes(k));
     const score=Math.round(100*hit.length/Math.max(1,ks.length));
-    out.innerHTML=`<div class="score-cell" style="display:inline-block;margin-bottom:8px"><div class="n" style="color:${score>=70?'var(--lime)':score>=45?'var(--amber)':'var(--rose)'}">${score}</div><div class="l">Role match</div></div>
-      <div><b style="font-size:12px">Present:</b> ${hit.slice(0,18).map(k=>`<span class="kw-chip kw-hit">${escE(k)}</span>`).join('')||'<span class="hint">none</span>'}</div>
-      <div style="margin-top:6px"><b style="font-size:12px">Missing keywords:</b> ${missing.slice(0,18).map(k=>`<span class="kw-chip kw-miss">${escE(k)}</span>`).join('')||'<span class="hint">none</span>'}</div>
-      <div id="edTailorAi" style="margin-top:8px"></div>`;
-    if(!aiReady()) return;
-    const aiBox=E('edTailorAi'); aiBox.innerHTML='<span class="spin"></span> AI analyzing weak sections & suggested edits…';
+    return {ks,hit,missing,score};
+  }
+  function analyzeJD(missingOnly){
+    const r=ensureResume(); const jd=(E('edJD').value||'').trim(); r._jd=jd; persist();
+    const out=E('edTailorOut');
+    if(!jd){toast('Paste a job description first',true);out.innerHTML='';return;}
+    const m=localMatch(jd);
+    const skillSet=new Set((r.skills||[]).map(s=>s.toLowerCase()));
+    const suggestedSkills=m.missing.filter(k=>/^[a-z0-9+#.]+$/.test(k)&&k.length>2&&!skillSet.has(k)).slice(0,12);
+    if(missingOnly){
+      out.innerHTML=`<div><b style="font-size:12px">Missing keywords (${m.missing.length}):</b> ${m.missing.length?m.missing.map(k=>`<span class="kw-chip kw-miss" data-addsk="${escE(k)}" title="Add to skills" style="cursor:pointer">${escE(k)} +</span>`).join(''):'<span class="hint">none — strong coverage</span>'}</div>
+        <div class="hint" style="margin-top:6px">Click a keyword to add it to your Skills (only add ones you genuinely have).</div>`;
+    } else {
+      out.innerHTML=`
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+          <div class="score-cell" style="min-width:120px"><div class="n" style="color:${m.score>=70?'var(--lime)':m.score>=45?'var(--amber)':'var(--rose)'}">${m.score}</div><div class="l">ATS before</div></div>
+          <div class="hint">${m.hit.length}/${m.ks.length} JD keywords already present</div>
+        </div>
+        <div><b style="font-size:12px">Matched keywords:</b> ${m.hit.slice(0,18).map(k=>`<span class="kw-chip kw-hit">${escE(k)}</span>`).join('')||'<span class="hint">none</span>'}</div>
+        <div style="margin-top:6px"><b style="font-size:12px">Missing keywords:</b> ${m.missing.slice(0,18).map(k=>`<span class="kw-chip kw-miss" data-addsk="${escE(k)}" style="cursor:pointer">${escE(k)} +</span>`).join('')||'<span class="hint">none</span>'}</div>
+        ${suggestedSkills.length?`<div style="margin-top:6px"><b style="font-size:12px">Suggested skills to consider:</b> ${suggestedSkills.map(k=>`<span class="kw-chip" data-addsk="${escE(k)}" style="cursor:pointer">${escE(k)} +</span>`).join('')}</div>`:''}
+        <div class="hint" style="margin-top:8px">Use “Tailor Resume (AI)” for suggested summary &amp; bullet rewrites. Only add keywords you truly have.</div>`;
+    }
+    out.querySelectorAll('[data-addsk]').forEach(el=>el.onclick=()=>{const k=el.dataset.addsk;const rr=ensureResume();if(!rr.skills.map(s=>s.toLowerCase()).includes(k.toLowerCase())){rr.skills.push(k);persist();renderForm();renderPreview();renderAts();toast('Added “'+k+'” to skills');}});
+  }
+  async function aiTailor(){
+    const r=ensureResume(); const jd=(E('edJD').value||'').trim(); r._jd=jd; persist();
+    if(!jd){toast('Paste a job description first',true);return;}
+    const before=localMatch(jd).score;
+    const out=E('edTailorOut');
+    out.innerHTML=`<div class="hint"><span class="spin"></span> AI analyzing & generating tailored suggestions…</div>`;
     try{
-      const res=await callClaude({json:true,max_tokens:1400,
-        system:'You are an expert resume coach. Return ONLY valid JSON.',
-        prompt:`Compare this resume to the job description. Return JSON: {"weakSections":[".."],"suggestedSummary":"..","suggestedBullets":["..",".."]}. Suggested bullets must reuse the candidate's real experience (do not invent employers or fake metrics; use [X] placeholders for unknown numbers).\n\nJOB DESCRIPTION:\n${jd.slice(0,3500)}\n\nRESUME:\n${plainText().slice(0,3500)}`});
+      const res=await callClaude({json:true,max_tokens:1500,
+        system:'You are an expert resume coach. Return ONLY valid JSON. Never invent employers, dates or fake metrics; use [X] placeholders for unknown numbers.',
+        prompt:`Compare this resume to the job description. Return JSON: {"suggestedSummary":"..","suggestedBullets":["..",".."],"weakSections":["..",".."],"suggestedSkills":["..",".."]}. Suggested bullets must reuse the candidate's real experience.\n\nJOB DESCRIPTION:\n${jd.slice(0,3500)}\n\nRESUME:\n${plainText().slice(0,3500)}`});
+      const m=localMatch(jd);
+      // estimate "after" if missing-suggested skills/keywords were incorporated
+      const proj=Math.min(100, m.score + Math.round((m.missing.length?Math.min(m.missing.length,(res.suggestedSkills||[]).length):0)/Math.max(1,m.ks.length)*100));
       const weak=(res.weakSections||[]).map(w=>`<li>${escE(w)}</li>`).join('');
-      const sb=(res.suggestedBullets||[]).map(b=>`<li>${escE(b)} <button class="ed-mini" data-addsugg="${escE(b).replace(/"/g,'&quot;')}">+ add to first role</button></li>`).join('');
-      aiBox.innerHTML=`${weak?`<b style="font-size:12px">Weak sections:</b><ul style="margin:4px 0 8px">${weak}</ul>`:''}
+      const sb=(res.suggestedBullets||[]).map((b,i)=>`<li>${escE(b)} <button class="ed-mini" data-addsugg="${i}">+ add to first role</button></li>`).join('');
+      window.__edSuggBullets=res.suggestedBullets||[];
+      out.innerHTML=`
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+          <div class="score-cell" style="min-width:110px"><div class="n" style="color:var(--rose)">${before}</div><div class="l">ATS before</div></div>
+          <div style="font-size:20px;color:var(--lime)">→</div>
+          <div class="score-cell" style="min-width:110px"><div class="n" style="color:var(--lime)">${proj}</div><div class="l">ATS after (est.)</div></div>
+        </div>
+        ${weak?`<b style="font-size:12px">Weak sections:</b><ul style="margin:4px 0 8px">${weak}</ul>`:''}
         ${res.suggestedSummary?`<b style="font-size:12px">Suggested summary:</b><div class="ed-item" style="margin:4px 0">${escE(res.suggestedSummary)} <button class="ed-mini" id="edUseSummary">use</button></div>`:''}
-        ${sb?`<b style="font-size:12px">Suggested bullets:</b><ul style="margin:4px 0">${sb}</ul>`:''}`;
-      const us=E('edUseSummary'); if(us)us.onclick=()=>{r.summary=res.suggestedSummary;save();renderForm();renderPreview();renderAts();toast('Summary applied');};
-      aiBox.querySelectorAll('[data-addsugg]').forEach(b=>b.onclick=()=>{const r2=ensureResume();if(!r2.experience.length)r2.experience.push({id:nid(),role:'',company:'',location:'',start:'',end:'',bullets:[]});r2.experience[0].bullets.push({id:nid(),text:b.dataset.addsugg});save();renderForm();renderPreview();renderAts();toast('Bullet added');});
-    }catch(e){ aiBox.innerHTML='<span class="hint">AI suggestions unavailable ('+escE(e.message||'')+'). Keyword analysis above still applies.</span>'; }
+        ${sb?`<b style="font-size:12px">Suggested bullets:</b><ul style="margin:4px 0">${sb}</ul>`:''}
+        ${(res.suggestedSkills||[]).length?`<div style="margin-top:6px"><b style="font-size:12px">Suggested skills:</b> ${res.suggestedSkills.map(k=>`<span class="kw-chip" data-addsk="${escE(k)}" style="cursor:pointer">${escE(k)} +</span>`).join('')}</div>`:''}`;
+      const us=E('edUseSummary'); if(us)us.onclick=()=>{r.summary=res.suggestedSummary;persist();renderForm();renderPreview();renderAts();toast('Summary applied');};
+      out.querySelectorAll('[data-addsugg]').forEach(b=>b.onclick=()=>{const idx=+b.dataset.addsugg;const txt=(window.__edSuggBullets||[])[idx];if(!txt)return;const rr=ensureResume();if(!rr.experience.length)rr.experience.push({id:nid(),role:'',company:'',location:'',start:'',end:'',bullets:[]});rr.experience[0].bullets.push({id:nid(),text:txt});persist();renderForm();renderPreview();renderAts();toast('Bullet added');});
+      out.querySelectorAll('[data-addsk]').forEach(el=>el.onclick=()=>{const k=el.dataset.addsk;const rr=ensureResume();if(!rr.skills.map(s=>s.toLowerCase()).includes(k.toLowerCase())){rr.skills.push(k);persist();renderForm();renderPreview();renderAts();toast('Added “'+k+'” to skills');}});
+    }catch(e){
+      const m=localMatch(jd);
+      out.innerHTML=`<div class="flag" style="margin-bottom:8px"><div>${escE(aiErr(e))}</div></div>
+        <div class="hint">Local keyword analysis still works:</div>
+        <div style="margin-top:6px"><b style="font-size:12px">Missing keywords:</b> ${m.missing.slice(0,18).map(k=>`<span class="kw-chip kw-miss">${escE(k)}</span>`).join('')||'none'}</div>`;
+    }
+  }
+
+  /* ============================================================ VERSIONS */
+  function saveVersion(){
+    const r=ensureResume();
+    const vers=lsGet(K_VER)||[];
+    const label=(S.editorJobContext&&S.editorJobContext.title)?`${S.editorJobContext.title} @ ${S.editorJobContext.company}`:(r.header.name||'Resume');
+    vers.unshift({id:nid(),ts:Date.now(),label,template:S.settings.edTemplate,resume:JSON.parse(JSON.stringify(r))});
+    lsSet(K_VER,vers.slice(0,20));
+    renderVersions(); renderEditor(); toast('Version saved ('+Math.min(vers.length,20)+')');
+  }
+  function renderVersions(){
+    const host=E('edVerList'); if(!host) return;
+    const vers=lsGet(K_VER)||[];
+    if(!vers.length){host.innerHTML='';return;}
+    host.innerHTML=`<details class="ed-versions"><summary>Saved versions (${vers.length})</summary>
+      <div class="ed-verbox">${vers.map(v=>`<div class="ed-verrow"><div><b>${escE(v.label)}</b><div class="hint">${new Date(v.ts).toLocaleString()} · ${escE(TEMPLATES[v.template]?TEMPLATES[v.template].label:v.template)}</div></div><div style="display:flex;gap:6px"><button class="ed-mini" data-restore="${v.id}">Restore</button><button class="ed-mini" data-delver="${v.id}">✕</button></div></div>`).join('')}</div></details>`;
+    host.querySelectorAll('[data-restore]').forEach(b=>b.onclick=()=>{const v=(lsGet(K_VER)||[]).find(x=>x.id===b.dataset.restore);if(!v)return;working=normalize(v.resume);if(v.template&&TEMPLATES[v.template])S.settings.edTemplate=v.template;persist();renderEditor();toast('Version restored');});
+    host.querySelectorAll('[data-delver]').forEach(b=>b.onclick=()=>{lsSet(K_VER,(lsGet(K_VER)||[]).filter(x=>x.id!==b.dataset.delver));renderVersions();renderEditor();});
   }
 
   /* ============================================================ EXPORT */
+  function fileBase(){ const r=ensureResume(); return (r.header.name||'resume').replace(/\s+/g,'_'); }
   function exportPDF(){
-    const win=window.open('','_blank'); if(!win){toast('Allow popups to export PDF',true);return;}
-    const css=document.getElementById('ed-paper-css').innerHTML;
-    const name=(ensureResume().header.name||'resume').replace(/\s+/g,'_');
-    win.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+name+'</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet"><style>'+css+' body{background:#fff}</style></head><body>'+previewHTML()+'<script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script></body></html>');
+    const win=window.open('','_blank'); if(!win){toast('Allow pop-ups to export PDF',true);return;}
+    const paperCss=(document.getElementById('ed-paper-css')||{}).innerHTML||'';
+    const name=fileBase();
+    win.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+name+'</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Georgia&display=swap" rel="stylesheet"><style>'+paperCss+' body{background:#fff;margin:0}.ed-paper{box-shadow:none}</style></head><body><div class="ed-paper '+(S.settings.edPageMode==='multi'?'multi':'single')+'">'+previewHTML()+'</div><script>window.onload=function(){setTimeout(function(){window.print();},350);}<\/script></body></html>');
     win.document.close();
+    toast('Opening print dialog — choose “Save as PDF”');
   }
+  function exportTXT(){
+    const u=(typeof dl==='function')?dl(new Blob([plainText()],{type:'text/plain;charset=utf-8'}),fileBase()+'.txt'):null;
+    if(!u){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([plainText()],{type:'text/plain'}));a.download=fileBase()+'.txt';a.click();}
+    toast('ATS TXT downloaded');
+  }
+  function copyATS(){
+    const t=plainText();
+    if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>toast('Plain text copied')).catch(()=>fallbackCopy(t));
+    else fallbackCopy(t);
+  }
+  function fallbackCopy(t){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('Plain text copied');}catch(e){toast('Copy failed',true);}ta.remove();}
   async function exportDOCX(){
     if(typeof JSZip==='undefined'){toast('DOCX engine not loaded',true);return;}
-    const r=ensureResume(); const name=(r.header.name||'resume').replace(/\s+/g,'_');
-    const esc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const P=(t,o={})=>`<w:p>${o.h?`<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>`:o.center?`<w:pPr><w:jc w:val="center"/></w:pPr>`:''}<w:r><w:rPr>${o.b||o.h?'<w:b/>':''}${o.sz?`<w:sz w:val="${o.sz}"/>`:''}</w:rPr><w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`;
-    const B=t=>`<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`;
+    const r=ensureResume(); const name=fileBase();
+    const x=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const P=(t,o={})=>`<w:p>${o.h?`<w:pPr><w:spacing w:before="160" w:after="40"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="333333"/></w:pBdr></w:pPr>`:o.center?`<w:pPr><w:jc w:val="center"/></w:pPr>`:''}<w:r><w:rPr>${o.b||o.h?'<w:b/>':''}${o.h?'<w:caps/>':''}${o.sz?`<w:sz w:val="${o.sz}"/>`:''}</w:rPr><w:t xml:space="preserve">${x(t)}</w:t></w:r></w:p>`;
+    const B=t=>`<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">${x(t)}</w:t></w:r></w:p>`;
     let body='';
     body+=P(r.header.name||'Your Name',{b:true,sz:40,center:true});
     if(r.header.title)body+=P(r.header.title,{center:true,sz:24});
-    body+=P([r.header.email,r.header.phone,r.header.location].concat(r.header.links||[]).filter(Boolean).join('  |  '),{center:true});
-    if(r.summary){body+=P('SUMMARY',{h:true});body+=P(r.summary);}
-    if(r.experience.length){body+=P('EXPERIENCE',{h:true});r.experience.forEach(x=>{body+=P(`${x.role}  —  ${x.company}  (${[x.start,x.end].filter(Boolean).join(' – ')})`,{b:true});(x.bullets||[]).filter(b=>b.text.trim()).forEach(b=>body+=B(b.text));});}
-    if(r.projects.length){body+=P('PROJECTS',{h:true});r.projects.forEach(x=>{body+=P(`${x.name}${x.tech?'  —  '+x.tech:''}`,{b:true});(x.bullets||[]).filter(b=>b.text.trim()).forEach(b=>body+=B(b.text));});}
-    if(r.skills.length){body+=P('SKILLS',{h:true});body+=P(r.skills.join(', '));}
-    if(r.education.length){body+=P('EDUCATION',{h:true});r.education.forEach(x=>body+=P(`${x.degree} — ${x.school} (${[x.start,x.end].filter(Boolean).join(' – ')})${x.detail?' — '+x.detail:''}`));}
-    if(r.certifications.length){body+=P('CERTIFICATIONS',{h:true});r.certifications.forEach(c=>body+=B([c.name,c.issuer,c.year].filter(Boolean).join(' — ')));}
+    body+=P(contactBits(r.header).join('  |  '),{center:true,sz:18});
+    if(r.summary){body+=P('Summary',{h:true});body+=P(r.summary);}
+    if(r.skills.length){body+=P('Skills',{h:true});body+=P(r.skills.join(', '));}
+    if(r.experience.length){body+=P('Experience',{h:true});r.experience.forEach(e=>{body+=P(`${[e.role,e.company,e.location].filter(Boolean).join('  —  ')}${(e.start||e.end)?'  ('+[e.start,e.end].filter(Boolean).join(' – ')+')':''}`,{b:true});(e.bullets||[]).filter(b=>b.text.trim()).forEach(b=>body+=B(b.text));});}
+    if(r.projects.length){body+=P('Projects',{h:true});r.projects.forEach(p=>{body+=P(`${p.name}${p.tech?'  —  '+p.tech:''}`,{b:true});(p.bullets||[]).filter(b=>b.text.trim()).forEach(b=>body+=B(b.text));});}
+    if(r.education.length){body+=P('Education',{h:true});r.education.forEach(e=>body+=P(`${[e.degree,e.school].filter(Boolean).join(' — ')}${(e.start||e.end)?'  ('+[e.start,e.end].filter(Boolean).join(' – ')+')':''}${e.detail?'  —  '+e.detail:''}`));}
+    if(r.certifications.length){body+=P('Certifications',{h:true});r.certifications.forEach(c=>body+=B([c.name,c.issuer,c.year].filter(Boolean).join(' — ')));}
     const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="794" w:right="794" w:bottom="794" w:left="794"/></w:sectPr></w:body></w:document>`;
     const numbering=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3673,12 +4009,6 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
     if(typeof dl==='function')dl(blob,name+'.docx'); else {const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'.docx';a.click();}
     toast('DOCX downloaded');
   }
-  function copyATS(){
-    const t=plainText();
-    if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>toast('ATS plain text copied')).catch(()=>fallbackCopy(t));
-    else fallbackCopy(t);
-  }
-  function fallbackCopy(t){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('ATS plain text copied');}catch(e){toast('Copy failed',true);}ta.remove();}
 
   /* ---------- import (PDF/DOCX) ---------- */
   async function onImport(e){
@@ -3691,32 +4021,31 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
         const pdf=await pdfjsLib.getDocument({data:buf}).promise;
         for(let p=1;p<=pdf.numPages;p++){const pg=await pdf.getPage(p);const c=await pg.getTextContent();text+=c.items.map(i=>i.str).join(' ')+'\n';}
       } else if(/\.docx$/i.test(f.name)){
-        const buf=await f.arrayBuffer();
-        text=(await mammoth.extractRawText({arrayBuffer:buf})).value;
-      } else { throw new Error('Use a .pdf or .docx file'); }
+        const buf=await f.arrayBuffer(); text=(await mammoth.extractRawText({arrayBuffer:buf})).value;
+      } else throw new Error('Use a .pdf or .docx file');
       if(!text.trim()) throw new Error('No text found in file');
-      if(!aiReady()){ // no AI — still keep raw text as summary so nothing is fabricated
-        const r=emptyResume(); r.summary=text.slice(0,1200); S.editorResume=r; save(); renderEditor();
-        msg.innerHTML='<span style="color:var(--amber)">Parsed raw text (AI off — structure it manually).</span>'; return;
+      let structured=null;
+      try{
+        msg.innerHTML='<span class="spin"></span> Structuring sections with AI…';
+        const res=await callClaude({json:true,max_tokens:2600,
+          system:'You extract resume data. Return ONLY valid JSON, copying the candidate\'s real content verbatim. Never invent employers, dates, metrics or skills not in the text.',
+          prompt:`Parse this resume text into JSON exactly matching: {"header":{"name":"","title":"","email":"","phone":"","location":"","links":[]},"summary":"","experience":[{"role":"","company":"","location":"","start":"","end":"","bullets":[""]}],"projects":[{"name":"","tech":"","link":"","bullets":[""]}],"skills":[""],"education":[{"degree":"","school":"","location":"","start":"","end":"","detail":""}],"certifications":[{"name":"","issuer":"","year":""}]}\n\nRESUME TEXT:\n${text.slice(0,8000)}`});
+        structured=normalize(res);
+      }catch(aiE){
+        // AI off/unavailable → fall back to local heuristic parse (no fabrication)
+        structured=normalize(parseResumeText(text));
+        msg.innerHTML='<span style="color:var(--amber)">Parsed locally (AI off). Review every section.</span>';
       }
-      msg.innerHTML='<span class="spin"></span> Structuring sections with AI…';
-      const res=await callClaude({json:true,max_tokens:2600,
-        system:'You extract resume data. Return ONLY valid JSON, copying the candidate\'s real content verbatim. Never invent employers, dates, metrics or skills not in the text.',
-        prompt:`Parse this resume text into JSON exactly matching this shape: {"header":{"name":"","title":"","email":"","phone":"","location":"","links":[]},"summary":"","experience":[{"role":"","company":"","location":"","start":"","end":"","bullets":[""]}],"projects":[{"name":"","tech":"","link":"","bullets":[""]}],"skills":[""],"education":[{"degree":"","school":"","location":"","start":"","end":"","detail":""}],"certifications":[{"name":"","issuer":"","year":""}]}\n\nRESUME TEXT:\n${text.slice(0,8000)}`});
-      const r=emptyResume();
-      Object.assign(r.header,res.header||{}); r.summary=res.summary||'';
-      r.skills=Array.isArray(res.skills)?res.skills:[];
-      (res.experience||[]).forEach(x=>r.experience.push({id:nid(),role:x.role||'',company:x.company||'',location:x.location||'',start:x.start||'',end:x.end||'',bullets:(x.bullets||[]).map(b=>({id:nid(),text:String(b)}))}));
-      (res.projects||[]).forEach(x=>r.projects.push({id:nid(),name:x.name||'',tech:x.tech||'',link:x.link||'',bullets:(x.bullets||[]).map(b=>({id:nid(),text:String(b)}))}));
-      (res.education||[]).forEach(x=>r.education.push({id:nid(),degree:x.degree||'',school:x.school||'',location:x.location||'',start:x.start||'',end:x.end||'',detail:x.detail||''}));
-      (res.certifications||[]).forEach(x=>r.certifications.push({id:nid(),name:x.name||String(x),issuer:x.issuer||'',year:x.year||''}));
-      S.editorResume=r; save(); renderEditor(); msg.innerHTML='<span style="color:var(--green)">Imported & structured. Review every section.</span>';
-    }catch(err){ msg.innerHTML='<span style="color:var(--rose)">Import failed: '+escE(err.message||err)+'</span>'; }
+      working=structured; persist();
+      const wasAi=!/Parsed locally/.test(msg.innerHTML);
+      renderEditor();
+      E('edImportMsg').innerHTML=wasAi?'<span style="color:var(--green)">Imported &amp; structured. Review every section.</span>':'<span style="color:var(--amber)">Parsed locally (AI off). Review every section.</span>';
+    }catch(err){ E('edImportMsg').innerHTML='<span style="color:var(--rose)">Import failed: '+escE(err.message||err)+'</span>'; }
   }
 
-  // expose + hook navigation (go() render-map already routes 'editor' here)
+  /* expose + hooks */
   window.renderEditor=renderEditor;
-  window.addEventListener('resize',()=>{ const sec=document.querySelector('.view[data-view="editor"]'); if(sec&&sec.classList.contains('show')) renderPreview(); });
+  window.addEventListener('resize',()=>{const sec=document.querySelector('.view[data-view="editor"]');if(sec&&sec.classList.contains('show'))renderPreview();});
 })();
 
 renderTabs();go('dash');maybeOnboard();
@@ -3758,6 +4087,18 @@ textarea.ed-field{resize:vertical;min-height:54px;line-height:1.5}
 .kw-chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin:2px}
 .kw-miss{background:rgba(255,122,107,.14);color:var(--rose)}
 .kw-hit{background:rgba(127,224,138,.14);color:var(--green)}
+/* job context banner */
+.ed-jobctx{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;border:1px solid var(--lime-dim);background:rgba(200,250,60,.06);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;flex-wrap:wrap}
+.ed-jobctx-title{font-size:18px;font-weight:700;margin:2px 0 8px}
+.ed-jobctx-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.ed-kwline{font-size:11.5px;margin-top:4px;color:var(--muted)}
+.ed-kwline b{color:var(--ink);margin-right:4px}
+.ed-export-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.ed-versions{margin-bottom:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.ed-versions summary{cursor:pointer;padding:8px 12px;font-size:12.5px;color:var(--lime-dim);font-weight:600}
+.ed-verbox{padding:0 12px 10px}
+.ed-verrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.ed-verrow b{font-size:13px}
 </style>
 
 <!-- A4 / paper styles applied to BOTH on-screen preview and the printed PDF -->
@@ -3769,21 +4110,52 @@ textarea.ed-field{resize:vertical;min-height:54px;line-height:1.5}
 .rp .rp-contact span{margin-right:10px}
 .rp h2{font-size:11pt;text-transform:uppercase;letter-spacing:.6px;border-bottom:1.5px solid #111;padding-bottom:2px;margin:13px 0 6px;font-weight:700}
 .rp .rp-job{margin-bottom:9px;break-inside:avoid;page-break-inside:avoid}
-.rp .rp-job .r1{display:flex;justify-content:space-between;font-weight:700;font-size:10.5pt}
-.rp .rp-job .r2{display:flex;justify-content:space-between;font-style:italic;color:#374151;font-size:9.5pt;margin-bottom:2px}
+.rp .rp-job .r1{display:flex;justify-content:space-between;font-weight:700;font-size:10.5pt;gap:10px}
+.rp .rp-job .r2{display:flex;justify-content:space-between;font-style:italic;color:#374151;font-size:9.5pt;margin-bottom:2px;gap:10px}
 .rp ul{margin:3px 0 0;padding-left:16px}
 .rp li{margin:1.5px 0}
 .rp .rp-skills{font-size:10pt}
 .rp .rp-sec{break-inside:avoid;page-break-inside:avoid}
-/* Jake style tweaks */
-.rp.tpl-jakes h1{text-align:center}
+
+/* ---- 1) Jake Tech Compact: centered head, tight, classic ---- */
+.rp.tpl-jakes h1{text-align:center;font-size:19pt}
 .rp.tpl-jakes .rp-title,.rp.tpl-jakes .rp-contact{text-align:center}
-/* Modern ATS tweaks */
-.rp.tpl-modern h2{color:#1e3a8a;border-bottom-color:#1e3a8a}
+.rp.tpl-jakes h2{font-size:10.5pt;margin:11px 0 4px}
+.rp.tpl-jakes .rp-job{margin-bottom:7px}
+.rp.tpl-jakes li{margin:1pt 0}
+
+/* ---- 2) ATS Compact Classic: plain Arial, left aligned, no flourish ---- */
+.rp.tpl-ats{font-family:Arial,Helvetica,sans-serif}
+.rp.tpl-ats h1{font-size:18pt;text-align:left}
+.rp.tpl-ats h2{border-bottom:1px solid #000;letter-spacing:.3px;color:#000}
+.rp.tpl-ats .rp-job .r1,.rp.tpl-ats .rp-job .r2{font-style:normal}
+
+/* ---- 3) Modern Sidebar: two-column ---- */
+.rp.tpl-sidebar .rp-grid{display:grid;grid-template-columns:31% 1fr;gap:0}
+.rp.tpl-sidebar .rp-side{background:#0f3d2e;color:#eef6f0;padding:22px 18px;margin:-48px 0 -48px -54px;min-height:100%}
+.rp.tpl-sidebar .rp-main{padding-left:22px}
+.rp.tpl-sidebar .rp-side h3{font-size:10pt;text-transform:uppercase;letter-spacing:.8px;color:#bff0c8;border-bottom:1px solid #2e6b52;padding-bottom:3px;margin:0 0 7px}
+.rp.tpl-sidebar .rp-block{margin-bottom:16px}
+.rp.tpl-sidebar .rp-contact-col div{font-size:8.6pt;margin:2px 0;word-break:break-word}
+.rp.tpl-sidebar .rp-skill{display:inline-block;background:#1d5640;color:#eef6f0;font-size:8.4pt;padding:2px 7px;border-radius:10px;margin:2px 3px 2px 0}
+.rp.tpl-sidebar .rp-edu{margin-bottom:8px;font-size:8.8pt}
+.rp.tpl-sidebar .rp-edu .rp-dim{color:#b9d7c6;font-size:8.2pt}
+.rp.tpl-sidebar .rp-main h1{font-size:21pt;color:#0f3d2e}
+.rp.tpl-sidebar .rp-main h2{color:#0f3d2e;border-bottom-color:#0f3d2e}
+
+/* ---- 4) Executive Clean: airy, serif headings ---- */
+.rp.tpl-executive{font-family:Georgia,'Times New Roman',serif;line-height:1.5}
+.rp.tpl-executive h1{font-size:23pt;letter-spacing:.5px;font-weight:700}
+.rp.tpl-executive .rp-title{font-size:11.5pt;color:#555}
+.rp.tpl-executive h2{font-family:'Inter',Arial,sans-serif;font-size:10.5pt;letter-spacing:1.5px;border-bottom:none;color:#1a1a1a;margin:16px 0 6px}
+.rp.tpl-executive h2:after{content:"";display:block;width:38px;height:2px;background:#1a1a1a;margin-top:3px}
+.rp.tpl-executive .rp-job{margin-bottom:12px}
+
 @media print{
   @page{size:A4;margin:14mm}
   body{margin:0}
   .rp{font-size:10.5pt}
+  .rp.tpl-sidebar .rp-side{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 </style>
 
