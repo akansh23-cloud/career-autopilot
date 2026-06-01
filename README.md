@@ -231,3 +231,41 @@ STRICT_JOB_VERIFICATION=0
 ```
 
 If `429 Too Many Requests` still appears after this build, the RapidAPI plan/quota is rate-limited or exhausted. Wait for the rate window to reset or upgrade the JSearch subscription.
+
+
+## Recruiter Contact + Referral API setup
+
+The Outreach module uses compliant provider APIs only. It does not scrape LinkedIn, use browser automation, cookies, CAPTCHA bypassing, or private APIs.
+
+Add these in Vercel → Project → Settings → Environment Variables, then redeploy:
+
+```env
+HUNTER_API_KEY=your_hunter_key
+PDL_API_KEY=your_people_data_labs_key
+SERPAPI_KEY=your_serpapi_key_optional
+```
+
+Supported aliases are also accepted by the backend:
+
+```env
+HUNTERIO_API_KEY=your_hunter_key
+HUNTER_KEY=your_hunter_key
+PEOPLE_DATA_LABS_API_KEY=your_pdl_key
+PEOPLEDATALABS_API_KEY=your_pdl_key
+```
+
+Use Hunter.io mainly for recruiter/HR email discovery by company domain. Use People Data Labs mainly for referral/current-employee style lookup by company and role. SerpAPI is optional and is used only to return safe public search-result links; it does not scrape profile pages.
+
+After deploy, test provider detection with:
+
+```text
+/contacts/providers
+```
+
+Test live provider calls with a company/domain:
+
+```text
+/contacts/diagnostics?company=Google&domain=google.com&title=DevOps%20Engineer
+```
+
+On a job card, use **Find Hiring Contact** for recruiter/HR contacts and **Find Referral** for possible employee/referral candidates. If the company domain is missing, enter it manually in the contact modal for better Hunter.io results.

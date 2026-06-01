@@ -1031,6 +1031,316 @@ app.post('/apply/:provider/submit', (req, res) => {
 });
 
 /* ============================================================
+   CONTACTS / REFERRALS  (compliant provider lookups)
+   ------------------------------------------------------------
+   COMPLIANCE: only official provider APIs gated behind env keys.
+   NO LinkedIn scraping, NO cookies/sessions, NO CAPTCHA bypass,
+   NO private APIs, NO browser automation. Missing keys never crash:
+   each provider is skipped and reported as inactive. Never fabricates
+   names/emails/URLs; guessed emails are returned only with
+   verified:false and a clear "guessed" label.
+   ============================================================ */
+const HUNTER_API_KEY = process.env.HUNTER_API_KEY || process.env.HUNTERIO_API_KEY || process.env.HUNTER_KEY || '';
+const APOLLO_API_KEY = process.env.APOLLO_API_KEY || '';
+const SNOV_API_KEY = process.env.SNOV_API_KEY || (process.env.SNOV_CLIENT_ID && process.env.SNOV_CLIENT_SECRET ? `${process.env.SNOV_CLIENT_ID}:${process.env.SNOV_CLIENT_SECRET}` : '');
+const PDL_API_KEY = process.env.PDL_API_KEY || process.env.PEOPLE_DATA_LABS_API_KEY || process.env.PEOPLEDATALABS_API_KEY || '';
+const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY || '';
+
+const CONTACT_PROVIDERS = {
+  hunter:      () => !!HUNTER_API_KEY,
+  apollo:      () => !!APOLLO_API_KEY,
+  snov:        () => !!SNOV_API_KEY,
+  pdl:         () => !!PDL_API_KEY,
+  rocketreach: () => !!ROCKETREACH_API_KEY,
+  serpapi:     () => !!process.env.SERPAPI_KEY
+};
+function providersConfigured() {
+  const o = {};
+  for (const k of Object.keys(CONTACT_PROVIDERS)) o[k] = CONTACT_PROVIDERS[k]();
+  return o;
+}
+async function timedFetch(url, opts = {}, timeout = 9000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    const text = await r.text();
+    let data = null; try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: (text || '').slice(0, 300) }; }
+    if (!r.ok) throw new Error((data && (data.message || data.error || data.raw)) || `${r.status} ${r.statusText}`);
+    return data;
+  } finally { clearTimeout(t); }
+}
+function cleanDomain(d) {
+  return String(d || '').trim().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase();
+}
+const ROLE_HINTS = {
+  recruiter: 'recruiter', 'technical recruiter': 'technical recruiter',
+  'talent acquisition': 'talent acquisition', HR: 'human resources',
+  'hiring manager': 'hiring manager', 'engineering manager': 'engineering manager'
+};
+
+/* Hunter.io — Domain Search (official API). Returns real, source-attributed emails. */
+async function hunterDomain(domain, diagnostics) {
+  if (!CONTACT_PROVIDERS.hunter() || !domain) return [];
+  try {
+    const url = `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&limit=10&api_key=${encodeURIComponent(HUNTER_API_KEY)}`;
+    const d = await timedFetch(url, {}, 9000);
+    const emails = (d && d.data && d.data.emails) || [];
+    diagnostics.push({ provider: 'hunter', ok: true, count: emails.length });
+    return emails.map(e => ({
+      name: [e.first_name, e.last_name].filter(Boolean).join(' '),
+      title: e.position || '', company: (d.data.organization || ''), email: e.value || '',
+      linkedinUrl: e.linkedin || '', source: 'Hunter.io',
+      confidence: typeof e.confidence === 'number' ? e.confidence : 60,
+      verified: (e.verification && e.verification.status === 'valid') || false,
+      reason: `Found via Hunter.io domain search${e.department ? ' (' + e.department + ')' : ''}.`,
+      contactType: classifyTitle(e.position)
+    }));
+  } catch (err) { diagnostics.push({ provider: 'hunter', ok: false, error: err.message }); return []; }
+}
+/* Apollo.io — People Search (official API). */
+async function apolloPeople(ctx, diagnostics) {
+  if (!CONTACT_PROVIDERS.apollo()) return [];
+  try {
+    const body = {
+      api_key: APOLLO_API_KEY,
+      q_organization_domains: ctx.domain || undefined,
+      organization_names: ctx.company ? [ctx.company] : undefined,
+      person_titles: ['recruiter', 'talent acquisition', 'technical recruiter', 'hiring manager', 'engineering manager'],
+      page: 1, per_page: 10
+    };
+    const d = await timedFetch('https://api.apollo.io/v1/mixed_people/search',
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }, body: JSON.stringify(body) }, 9000);
+    const people = (d && (d.people || d.contacts)) || [];
+    diagnostics.push({ provider: 'apollo', ok: true, count: people.length });
+    return people.map(p => ({
+      name: p.name || [p.first_name, p.last_name].filter(Boolean).join(' '),
+      title: p.title || '', company: (p.organization && p.organization.name) || ctx.company || '',
+      email: p.email && !/email_not_unlocked/i.test(p.email) ? p.email : '',
+      linkedinUrl: p.linkedin_url || '', source: 'Apollo',
+      confidence: 65, verified: !!(p.email && /@/.test(p.email) && !/not_unlocked/i.test(p.email)),
+      reason: 'Matched via Apollo people search by company + role.',
+      contactType: classifyTitle(p.title)
+    }));
+  } catch (err) { diagnostics.push({ provider: 'apollo', ok: false, error: err.message }); return []; }
+}
+/* Snov.io — domain search (official API; uses client credentials). */
+async function snovDomain(ctx, diagnostics) {
+  if (!CONTACT_PROVIDERS.snov() || !ctx.domain) return [];
+  try {
+    // SNOV_API_KEY here is expected as "clientId:clientSecret"
+    const [cid, secret] = String(SNOV_API_KEY).split(':');
+    if (!cid || !secret) throw new Error('SNOV_API_KEY must be "clientId:clientSecret"');
+    const tok = await timedFetch('https://api.snov.io/v1/oauth/access_token',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grant_type: 'client_credentials', client_id: cid, client_secret: secret }) }, 8000);
+    const access = tok && tok.access_token; if (!access) throw new Error('Snov auth failed');
+    const url = `https://api.snov.io/v2/domain-emails-with-info?domain=${encodeURIComponent(ctx.domain)}&type=all&limit=10&access_token=${encodeURIComponent(access)}`;
+    const d = await timedFetch(url, {}, 9000);
+    const emails = (d && d.emails) || [];
+    diagnostics.push({ provider: 'snov', ok: true, count: emails.length });
+    return emails.map(e => ({
+      name: [e.firstName, e.lastName].filter(Boolean).join(' '), title: e.position || '',
+      company: ctx.company || '', email: e.email || '', linkedinUrl: e.sourcePage && /linkedin/.test(e.sourcePage) ? e.sourcePage : '',
+      source: 'Snov.io', confidence: 55, verified: (e.status === 'valid'),
+      reason: 'Found via Snov.io domain search.', contactType: classifyTitle(e.position)
+    }));
+  } catch (err) { diagnostics.push({ provider: 'snov', ok: false, error: err.message }); return []; }
+}
+/* People Data Labs — Person Search (official API). */
+async function pdlPeople(ctx, diagnostics, opts = {}) {
+  if (!CONTACT_PROVIDERS.pdl()) return [];
+  try {
+    const company = String(ctx.company || '').replace(/'/g, '').trim();
+    const domain = cleanDomain(ctx.domain || '');
+    if (!company && !domain) return [];
+
+    const companyWhere = company
+      ? `(job_company_name='${company}' OR job_company_name LIKE '%${company}%')`
+      : `job_company_website='${domain}'`;
+
+    const roleTerms = roleTokens(ctx.title || ctx.role || '').slice(0, 3);
+    let titleWhere;
+    if (opts.referral) {
+      const roleLike = roleTerms.length
+        ? roleTerms.map(t => `job_title LIKE '%${String(t).replace(/'/g, '')}%'`).join(' OR ')
+        : "job_title_role='engineering' OR job_title_role='information_technology' OR job_title LIKE '%engineer%' OR job_title LIKE '%developer%'";
+      titleWhere = `(${roleLike} OR job_title LIKE '%manager%' OR job_title LIKE '%lead%')`;
+    } else {
+      titleWhere = "(job_title_role='human_resources' OR job_title LIKE '%recruit%' OR job_title LIKE '%talent%' OR job_title LIKE '%hiring%' OR job_title LIKE '%people%')";
+    }
+
+    const body = { sql: `SELECT * FROM person WHERE ${companyWhere} AND ${titleWhere}`, size: 10 };
+    const d = await timedFetch('https://api.peopledatalabs.com/v5/person/search',
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Api-Key': PDL_API_KEY }, body: JSON.stringify(body) }, 9000);
+    const data = (d && d.data) || [];
+    diagnostics.push({ provider: 'pdl', ok: true, count: data.length, mode: opts.referral ? 'referral' : 'hiring-contact' });
+    return data.map(p => ({
+      name: p.full_name || '', title: p.job_title || '', company: p.job_company_name || ctx.company || '',
+      email: (p.work_email || (p.emails && p.emails[0] && p.emails[0].address)) || '',
+      linkedinUrl: p.linkedin_url ? (/^https?:/.test(p.linkedin_url) ? p.linkedin_url : 'https://' + p.linkedin_url) : '',
+      source: 'People Data Labs', confidence: p.work_email ? 72 : 58, verified: !!p.work_email,
+      reason: opts.referral ? 'Matched via People Data Labs as a possible employee/referral path.' : 'Matched via People Data Labs person search for recruiter/HR roles.',
+      contactType: opts.referral ? 'current employee' : classifyTitle(p.job_title),
+      relationshipSignal: opts.referral ? 'same company' : undefined,
+      referralFitReason: opts.referral ? 'Works at the target company in a potentially relevant function.' : undefined
+    }));
+  } catch (err) { diagnostics.push({ provider: 'pdl', ok: false, error: err.message, mode: opts.referral ? 'referral' : 'hiring-contact' }); return []; }
+}
+/* RocketReach — search (official API). */
+async function rocketreach(ctx, diagnostics) {
+  if (!CONTACT_PROVIDERS.rocketreach()) return [];
+  try {
+    const body = { query: { current_employer: ctx.company ? [ctx.company] : undefined, current_title: ['recruiter', 'talent acquisition', 'hiring manager'] }, page: 1, page_size: 10 };
+    const d = await timedFetch('https://api.rocketreach.co/api/v2/person/search',
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Api-Key': ROCKETREACH_API_KEY }, body: JSON.stringify(body) }, 9000);
+    const profiles = (d && d.profiles) || [];
+    diagnostics.push({ provider: 'rocketreach', ok: true, count: profiles.length });
+    return profiles.map(p => ({
+      name: p.name || '', title: p.current_title || '', company: p.current_employer || ctx.company || '',
+      email: '', linkedinUrl: p.linkedin_url || '', source: 'RocketReach',
+      confidence: 55, verified: false,
+      reason: 'Matched via RocketReach search (email lookup requires a separate credit-based call).',
+      contactType: classifyTitle(p.current_title)
+    }));
+  } catch (err) { diagnostics.push({ provider: 'rocketreach', ok: false, error: err.message }); return []; }
+}
+/* SerpAPI — Google search for PUBLIC profile/page links only (no scraping of LinkedIn itself). */
+async function serpPublic(ctx, diagnostics, referral) {
+  if (!CONTACT_PROVIDERS.serpapi()) return [];
+  try {
+    const q = referral
+      ? `site:linkedin.com/in "${ctx.company}" "${ctx.title || ''}"`
+      : `site:linkedin.com/in "${ctx.company}" ("recruiter" OR "talent acquisition")`;
+    const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(q)}&num=8&api_key=${encodeURIComponent(process.env.SERPAPI_KEY)}`;
+    const d = await timedFetch(url, {}, 9000);
+    const org = (d && d.organic_results) || [];
+    diagnostics.push({ provider: 'serpapi', ok: true, count: org.length });
+    // We return these as public-profile *links* only — never as confirmed people with emails.
+    return org.slice(0, 8).map(r => ({
+      name: (r.title || '').replace(/\s*[-|].*$/, '').trim(), title: '', company: ctx.company || '',
+      email: '', linkedinUrl: r.link || '', source: 'SerpAPI (public Google result)',
+      confidence: 20, verified: false,
+      reason: 'Public Google result link. Open to verify; no profile data was scraped.',
+      contactType: 'public profile result',
+      relationshipSignal: referral ? 'weak public match' : undefined
+    }));
+  } catch (err) { diagnostics.push({ provider: 'serpapi', ok: false, error: err.message }); return []; }
+}
+function classifyTitle(t) {
+  const s = String(t || '').toLowerCase();
+  if (/technical recruit/.test(s)) return 'technical recruiter';
+  if (/recruit/.test(s)) return 'recruiter';
+  if (/talent/.test(s)) return 'talent acquisition';
+  if (/engineering manager|eng manager|head of eng/.test(s)) return 'engineering manager';
+  if (/hiring manager/.test(s)) return 'hiring manager';
+  if (/\bhr\b|human resresource|human resources|people ops|people operations/.test(s)) return 'HR';
+  return 'recruiter';
+}
+function dedupePeople(list) {
+  const seen = new Set(); const out = [];
+  for (const p of list) {
+    if (!p || (!p.name && !p.email && !p.linkedinUrl)) continue;
+    const k = (p.email || p.linkedinUrl || p.name || '').toLowerCase();
+    if (seen.has(k)) continue; seen.add(k); out.push(p);
+  }
+  return out;
+}
+
+
+app.get('/contacts/diagnostics', async (req, res) => {
+  const company = String(req.query.company || '').trim();
+  const domain = cleanDomain(req.query.domain || '');
+  const out = {
+    ok: true,
+    time: new Date().toISOString(),
+    providersConfigured: providersConfigured(),
+    acceptedEnvNames: {
+      hunter: ['HUNTER_API_KEY', 'HUNTERIO_API_KEY', 'HUNTER_KEY'],
+      pdl: ['PDL_API_KEY', 'PEOPLE_DATA_LABS_API_KEY', 'PEOPLEDATALABS_API_KEY']
+    },
+    checks: []
+  };
+  if (CONTACT_PROVIDERS.hunter()) {
+    if (!domain) out.checks.push({ provider: 'hunter', ok: false, count: 0, message: 'Hunter key detected. Add a company domain to test domain-search.' });
+    else {
+      const dx = [];
+      const rows = await hunterDomain(domain, dx);
+      out.checks.push({ provider: 'hunter', ok: dx.some(x => x.provider === 'hunter' && x.ok), count: rows.length, message: dx.find(x => x.provider === 'hunter')?.error || 'Hunter domain-search tested.' });
+    }
+  } else out.checks.push({ provider: 'hunter', ok: false, count: 0, message: 'HUNTER_API_KEY missing.' });
+
+  if (CONTACT_PROVIDERS.pdl()) {
+    const dx = [];
+    const rows = await pdlPeople({ company, domain, title: req.query.title || 'software engineer' }, dx, { referral: true });
+    out.checks.push({ provider: 'pdl', ok: dx.some(x => x.provider === 'pdl' && x.ok), count: rows.length, message: dx.find(x => x.provider === 'pdl')?.error || 'People Data Labs person-search tested.' });
+  } else out.checks.push({ provider: 'pdl', ok: false, count: 0, message: 'PDL_API_KEY / PEOPLE_DATA_LABS_API_KEY missing.' });
+  res.json(out);
+});
+
+app.post('/contacts/find', async (req, res) => {
+  const ctx = req.body || {};
+  ctx.domain = cleanDomain(ctx.domain);
+  const diagnostics = [];
+  let contacts = [];
+  try {
+    const batches = await Promise.allSettled([
+      hunterDomain(ctx.domain, diagnostics),
+      apolloPeople(ctx, diagnostics),
+      snovDomain(ctx, diagnostics),
+      pdlPeople(ctx, diagnostics),
+      rocketreach(ctx, diagnostics),
+      serpPublic(ctx, diagnostics, false)
+    ]);
+    for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) contacts = contacts.concat(b.value);
+    contacts = dedupePeople(contacts).map(c => ({ ...c, relatedJobId: ctx.jobId || null }));
+    res.json({
+      ok: true, contacts, diagnostics,
+      providersConfigured: providersConfigured(),
+      lookupCount: contacts.length,
+      note: 'Compliant provider lookups + public search links only. No scraping. Guessed/unverified items are labelled.'
+    });
+  } catch (e) {
+    res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, providersConfigured: providersConfigured() });
+  }
+});
+
+app.post('/contacts/referrals', async (req, res) => {
+  const ctx = req.body || {};
+  ctx.domain = cleanDomain(ctx.domain);
+  const diagnostics = [];
+  let contacts = [];
+  try {
+    const batches = await Promise.allSettled([
+      apolloPeople(ctx, diagnostics),     // current employees by company + role
+      pdlPeople(ctx, diagnostics, { referral: true }),
+      hunterDomain(ctx.domain, diagnostics),
+      snovDomain(ctx, diagnostics),
+      rocketreach(ctx, diagnostics),
+      serpPublic(ctx, diagnostics, true)
+    ]);
+    for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) contacts = contacts.concat(b.value);
+    contacts = dedupePeople(contacts).map(c => ({
+      ...c, relatedJobId: ctx.jobId || null,
+      contactType: c.contactType === 'public profile result' ? 'public profile result' : (/(recruit|talent)/i.test(c.title || '') ? 'recruiter' : 'current employee'),
+      relationshipSignal: c.relationshipSignal || (c.company && ctx.company && c.company.toLowerCase().includes(String(ctx.company).toLowerCase()) ? 'same company' : 'weak public match'),
+      referralFitReason: c.reason || 'Possible referral path at the target company.'
+    }));
+    res.json({
+      ok: true, contacts, diagnostics,
+      providersConfigured: providersConfigured(),
+      lookupCount: contacts.length,
+      note: 'Imported contacts are matched client-side first. These are compliant API + public search results. No scraping.'
+    });
+  } catch (e) {
+    res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, providersConfigured: providersConfigured() });
+  }
+});
+
+app.get('/contacts/providers', (req, res) => {
+  res.json({ providersConfigured: providersConfigured(), time: new Date().toISOString() });
+});
+
+/* ============================================================
    AI PROXY  (keeps the Anthropic key server-side — NOT in the browser)
    Used ONLY for resume analysis, tailoring, cover letters, recruiter
    messages, interview prep and the growth plan. NEVER for job search.
@@ -1052,7 +1362,7 @@ app.post('/ai/messages', async (req, res) => {
 });
 
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health).*/, (req, res) => {
+app.get(/^\/(?!jobs|auth|apply|ai|health|contacts).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 

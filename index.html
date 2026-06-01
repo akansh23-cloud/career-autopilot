@@ -235,6 +235,14 @@ tr:hover td{background:var(--bg2)}
     <div id="trackerBody"></div>
   </section>
 
+  <!-- ============ CONTACTS & OUTREACH ============ -->
+  <section class="view" data-view="contacts">
+    <div class="section-title"><span class="eyebrow">Step 3.5</span></div>
+    <h2 style="font-size:30px;margin-bottom:6px">Contacts &amp; Outreach</h2>
+    <p class="lead" style="margin-bottom:22px">Find recruiters and referral paths for each job, generate personalized, non-spammy outreach, and track every contact and follow-up. Compliant by design — no scraping, only provider APIs, imports, and safe search links.</p>
+    <div id="contactsBody"></div>
+  </section>
+
   <!-- ============ GROWTH ============ -->
   <section class="view" data-view="growth">
     <div class="section-title"><span class="eyebrow">Edge</span></div>
@@ -4048,6 +4056,723 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
   window.addEventListener('resize',()=>{const sec=document.querySelector('.view[data-view="editor"]');if(sec&&sec.classList.contains('show'))renderPreview();});
 })();
 
+
+/* ===== CONTACTS, REFERRAL & OUTREACH ASSISTANT ===== */
+/* ============================================================
+   CONTACTS, REFERRAL & OUTREACH ASSISTANT  (client module)
+   Runs in the main script scope (after all prior overrides) so it can
+   use: S, save, esc, uid, toast, modal, closeModal, callClaude, clamp,
+   today, addDays, caOAuthBase, go, VIEWS, renderTabs, jobCard,
+   renderJobs, renderTracker, store.
+   COMPLIANCE: no LinkedIn scraping, no cookies/sessions, no CAPTCHA
+   bypass, no private APIs, no Puppeteer. Only compliant provider APIs
+   (server-side, env-gated) + safe generated search links + user imports.
+   Never invents names/emails/URLs. Never marks guessed data verified.
+   ============================================================ */
+(function(){
+  const LS={
+    contacts:'careerAutopilot_contacts',
+    referrals:'careerAutopilot_referrals',
+    messages:'careerAutopilot_outreachMessages',
+    imported:'careerAutopilot_importedContacts',
+    tracker:'careerAutopilot_outreachTracker',
+    usage:'careerAutopilot_usageLimits',
+    tier:'careerAutopilot_userTier',
+    diag:'careerAutopilot_providerDiag'
+  };
+  const ST=(typeof store!=='undefined')?store:localStorage;
+  const E=id=>document.getElementById(id);
+  const X=s=>(typeof esc==='function'?esc(s):String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+  const NID=p=>(p||'')+((typeof uid==='function'?uid():Math.random().toString(36).slice(2,10)));
+  const TODAY=()=>(typeof today==='function'?today():new Date().toISOString().slice(0,10));
+  const ADD=(d,n)=>(typeof addDays==='function'?addDays(d,n):new Date(new Date(d||TODAY()).getTime()+n*864e5).toISOString().slice(0,10));
+  const CL=(n,a=0,b=100)=>(typeof clamp==='function'?clamp(n,a,b):Math.max(a,Math.min(b,Math.round(n||0))));
+  function lget(k,def){try{const v=ST.getItem(k);return v==null?def:JSON.parse(v);}catch(e){return def;}}
+  function lset(k,v){try{ST.setItem(k,JSON.stringify(v));}catch(e){}}
+  function base(){return (typeof caOAuthBase==='function')?caOAuthBase():'';}
+  function aiOn(){return !!base() || !!(typeof S!=='undefined'&&S.settings&&S.settings.apiKey);}
+
+  /* ---------- usage limits / tiers ---------- */
+  const LIMITS={free:{recruiter:3,referral:3,message:10},pro:{recruiter:100,referral:100,message:300},premium:{recruiter:1000,referral:1000,message:3000}};
+  function tier(){const t=lget(LS.tier,'free');return LIMITS[t]?t:'free';}
+  function setTier(t){if(LIMITS[t]){lset(LS.tier,t);}}
+  function month(){return new Date().toISOString().slice(0,7);}
+  function usage(){let u=lget(LS.usage,null);if(!u||u.month!==month()){u={month:month(),recruiter:0,referral:0,message:0};lset(LS.usage,u);}return u;}
+  function limitInfo(type){const u=usage();const lim=LIMITS[tier()][type];return {ok:u[type]<lim,used:u[type],limit:lim,tier:tier()};}
+  function consume(type){const u=usage();u[type]=(u[type]||0)+1;lset(LS.usage,u);}
+  function upgradeModal(type){
+    const i=limitInfo(type);
+    modal(`<div class="coa-modal"><div class="coa-mhead"><h2>Monthly limit reached</h2><button class="x" onclick="closeModal()">×</button></div>
+      <div class="flag" style="border-color:var(--amber);background:rgba(255,181,71,.08)"><div><b>${X(type)} lookups: ${i.used}/${i.limit}</b> on the <b>${X(i.tier)}</b> plan this month. Your core job search is never blocked — only this assist action.</div></div>
+      <p class="hint" style="margin:12px 0">Upgrade to raise limits:</p>
+      <div class="callout-grid">
+        <div class="mini-card"><b>Pro</b><div class="hint">100 recruiter · 100 referral · 300 messages /mo</div><button class="btn sm primary" style="margin-top:8px" onclick="COA.setTier('pro')">Switch to Pro</button></div>
+        <div class="mini-card"><b>Premium</b><div class="hint">Configurable high limits</div><button class="btn sm" style="margin-top:8px" onclick="COA.setTier('premium')">Switch to Premium</button></div>
+      </div>
+      <p class="hint" style="margin-top:12px">No billing backend is wired yet, so plan changes are local for now.</p>
+      <div style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Close</button></div></div>`);
+  }
+
+  /* ---------- job context extraction ---------- */
+  function hostOf(u){try{return new URL(u).hostname.replace(/^www\./,'');}catch(e){return '';}}
+  const BOARDS=/linkedin|indeed|glassdoor|naukri|monster|ziprecruiter|lever\.co|greenhouse|workday|serpapi|google|bing|jsearch|adzuna|wellfound|angel\.co/i;
+  function domainFor(job){
+    if(job&&job._companyDomain) return job._companyDomain;
+    const h=hostOf(job&&job.url);
+    if(h && !BOARDS.test(h)) return h;
+    return '';
+  }
+  function jobCtx(job){
+    const t=job._tailored||{};
+    const matched=[].concat(t.matchedKeywords||[],job.matchReasons||[]).filter(Boolean);
+    const missing=[].concat(t.stillMissing||[],job.gaps||[]).filter(Boolean);
+    const resume=(typeof S!=='undefined'&&((S.editorResume&&textFromResume(S.editorResume))||S.resumeText))||'';
+    return {
+      jobId:job.id,title:job.title||'',company:job.company||'',domain:domainFor(job),
+      location:job.location||'',url:job.url||'',summary:job.summary||'',
+      requiredSkills:job.requiredSkills||[],matched:[...new Set(matched)].slice(0,12),
+      missing:[...new Set(missing)].slice(0,12),resume:resume,tailored:t.tailoredResume||'',
+      atsAfter:t.atsAfter
+    };
+  }
+  function textFromResume(r){try{if(!r)return '';const h=r.header||{};return [h.name,h.title,r.summary,(r.skills||[]).map(s=>(s.items||[]).join(', ')).join(', ')].filter(Boolean).join(' ');}catch(e){return '';}}
+
+  /* ---------- safe fallback search links (no scraping) ---------- */
+  function gq(s){return 'https://www.google.com/search?q='+encodeURIComponent(s);}
+  function fallbackLinks(c){
+    const co=c.company||'',ro=c.title||c.role||'',dom=c.domain||'';
+    const out=[
+      {label:`Google · ${co} recruiter / talent acquisition (LinkedIn)`,url:gq(`site:linkedin.com/in "${co}" ("recruiter" OR "talent acquisition")`),type:'google'},
+      {label:`Google · ${co} ${ro} engineering/hiring manager (LinkedIn)`,url:gq(`site:linkedin.com/in "${co}" "${ro}" ("engineering manager" OR "hiring manager")`),type:'google'},
+      {label:`Google · ${co} careers contact`,url:gq(`"${co}" careers contact email`),type:'careers'},
+      {label:`Google · ${co} HR email`,url:gq(`"${co}" "HR" email`),type:'hr'},
+      {label:`LinkedIn people search · ${co}${ro?(' '+ro):''}`,url:'https://www.linkedin.com/search/results/people/?keywords='+encodeURIComponent((co+' '+ro).trim()),type:'linkedin'}
+    ];
+    if(dom){
+      out.push({label:`${co} careers page`,url:`https://${dom}/careers`,type:'careers'});
+      out.push({label:`${co} contact page`,url:`https://${dom}/contact`,type:'contact'});
+    }
+    return out;
+  }
+  function referralLinks(c){
+    const co=c.company||'',ro=c.title||c.role||'',dom=c.domain||'';
+    const out=[
+      {label:`LinkedIn people · current ${co} employees`,url:'https://www.linkedin.com/search/results/people/?keywords='+encodeURIComponent(co+' '+ro)+'&origin=GLOBAL_SEARCH_HEADER',type:'linkedin'},
+      {label:`Google · ${co} ${ro} on LinkedIn`,url:gq(`site:linkedin.com/in "${co}" "${ro}"`),type:'google'},
+      {label:`Google · ${co} team / people page`,url:gq(`"${co}" (team OR people OR "our team")`),type:'team'}
+    ];
+    if(dom) out.push({label:`${co} team page`,url:`https://${dom}/team`,type:'team'});
+    return out;
+  }
+  function guessed(domain){
+    if(!domain) return [];
+    return ['careers','hr','jobs','recruiting','talent'].map(u=>normContact({
+      name:`${u}@${domain}`,title:'Generic company inbox',email:`${u}@${domain}`,
+      source:'Domain pattern',confidence:25,verified:false,
+      reason:'Guessed from a common domain pattern — NOT verified. Confirm before using.',
+      contactType:'guessed pattern',company:''
+    },'hiring',null));
+  }
+  function searchSuggestion(link,kind,jobId,company){
+    return (kind==='referral'?normReferral:normContact)({
+      name:link.label,title:'',company:company||'',email:'',linkedinUrl:link.url,
+      source:'Search suggestion',confidence:0,verified:false,
+      reason:'Public search link — open it to evaluate. No profile data was fetched or scraped.',
+      contactType:kind==='referral'?'search suggestion':'public search suggestion',
+      relationshipSignal:'weak public match'
+    },kind,jobId);
+  }
+
+  /* ---------- normalization (never invent / never mark guessed verified) ---------- */
+  const GUESSY=/guessed|search suggestion|public search/i;
+  function normContact(r,kind,jobId){
+    const ct=r.contactType||'recruiter';
+    let verified=!!r.verified; if(GUESSY.test(ct)) verified=false;
+    return {
+      id:r.id||('hc_'+NID('')),name:String(r.name||'').trim(),title:String(r.title||'').trim(),
+      company:String(r.company||'').trim(),email:String(r.email||'').trim(),
+      linkedinUrl:String(r.linkedinUrl||'').trim(),source:String(r.source||'').trim()||'—',
+      confidence:CL(r.confidence),verified,reason:String(r.reason||'').trim(),
+      contactType:ct,relatedJobId:r.relatedJobId||jobId||null,createdAt:r.createdAt||new Date().toISOString()
+    };
+  }
+  function normReferral(r,kind,jobId){
+    const ct=r.contactType||'current employee';
+    let verified=!!r.verified; if(GUESSY.test(ct)) verified=false;
+    return {
+      id:r.id||('rf_'+NID('')),name:String(r.name||'').trim(),title:String(r.title||'').trim(),
+      company:String(r.company||'').trim(),email:String(r.email||'').trim(),
+      linkedinUrl:String(r.linkedinUrl||'').trim(),source:String(r.source||'').trim()||'—',
+      confidence:CL(r.confidence),verified,
+      relationshipSignal:r.relationshipSignal||'unknown',
+      referralFitReason:String(r.referralFitReason||r.reason||'').trim(),
+      contactType:ct,relatedJobId:r.relatedJobId||jobId||null,createdAt:r.createdAt||new Date().toISOString()
+    };
+  }
+
+  /* ---------- store + dedupe ---------- */
+  function key(c){return [(c.email||'').toLowerCase(),(c.linkedinUrl||'').toLowerCase(),(c.name||'').toLowerCase(),(c.relatedJobId||'')].join('|');}
+  function saveContacts(list){const cur=lget(LS.contacts,[]);const seen=new Set(cur.map(key));list.forEach(c=>{if(GUESSY.test(c.contactType))return;const k=key(c);if(!seen.has(k)){seen.add(k);cur.push(c);}});lset(LS.contacts,cur);return cur;}
+  function saveReferrals(list){const cur=lget(LS.referrals,[]);const seen=new Set(cur.map(key));list.forEach(c=>{if(GUESSY.test(c.contactType))return;const k=key(c);if(!seen.has(k)){seen.add(k);cur.push(c);}});lset(LS.referrals,cur);return cur;}
+
+  /* ---------- remote provider lookup (server proxy only) ---------- */
+  async function remote(kind,ctx){
+    const b=base();
+    if(!b) return null;
+    const url=b+(kind==='referral'?'/contacts/referrals':'/contacts/find');
+    const ctrl=new AbortController();const tm=setTimeout(()=>ctrl.abort(),12000);
+    try{
+      const r=await fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(ctx),signal:ctrl.signal});
+      const d=await r.json().catch(()=>null);
+      if(!r.ok) throw new Error((d&&(d.error||d.message))||('HTTP '+r.status));
+      return d;
+    }catch(e){return {ok:false,error:String(e.message||e),diagnostics:[],contacts:[]};}
+    finally{clearTimeout(tm);}
+  }
+  function recordDiag(kind,resp,fallbackUsed){
+    const d={at:new Date().toISOString(),kind,
+      providers:(resp&&resp.providersConfigured)||providerGuess(),
+      diagnostics:(resp&&resp.diagnostics)||[],
+      lastStatus:resp?(resp.ok===false?('error: '+(resp.error||'unknown')):'ok'):'offline (no backend) — used safe fallback links',
+      lookupCount:(resp&&resp.lookupCount)||((lget(LS.diag,{}).lookupCount||0)+1),
+      fallbackUsed:!!fallbackUsed};
+    lset(LS.diag,d);return d;
+  }
+  function providerGuess(){return {hunter:false,apollo:false,snov:false,pdl:false,rocketreach:false,serpapi:false};}
+
+  /* ---------- imported contacts + matching ---------- */
+  function importedContacts(){return lget(LS.imported,[]);}
+  function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+  function roleFamily(t){const n=norm(t);for(const f of ['devops','data','backend','frontend','full stack','software','engineer','product','design','marketing','sales','analyst','manager']){if(n.includes(f))return f;}return n.split(' ')[0]||'';}
+  function matchImported(ctx){
+    const co=norm(ctx.company),dom=norm(ctx.domain),rf=roleFamily(ctx.title),loc=norm(ctx.location);
+    return importedContacts().map(c=>{
+      const cc=norm(c.company),signals=[];let score=0;
+      if(co&&cc&&(cc===co||cc.includes(co)||co.includes(cc))){score+=55;signals.push('same company');}
+      if(dom&&norm(c.email).includes(dom)){score+=25;signals.push('same company');}
+      if(rf&&roleFamily(c.title)===rf){score+=20;signals.push('same role family');}
+      if(loc&&norm(c.location)&&norm(c.location).includes(loc.split(' ')[0])){score+=10;signals.push('same location');}
+      return {c,score,signal:signals[0]||'user contact'};
+    }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score)
+      .map(x=>normReferral({name:x.c.name,title:x.c.title,company:x.c.company,email:x.c.email,linkedinUrl:x.c.linkedin||x.c.linkedinUrl,source:'Imported contact',confidence:Math.min(95,40+x.score),verified:!!(x.c.email||x.c.linkedin||x.c.linkedinUrl),relationshipSignal:x.signal==='user contact'?'user contact':x.signal,referralFitReason:'Matched from your imported contacts ('+x.signal+')',contactType:'user-provided contact'},'referral',ctx.jobId));
+  }
+
+  /* ============================================================
+     HIRING CONTACT FINDER
+     ============================================================ */
+  window.coaFindContacts=async function(jobId){
+    const job=(S.jobs||[]).find(j=>j.id===jobId);if(!job){toast('Job not found',true);return;}
+    const lim=limitInfo('recruiter');
+    if(!lim.ok){upgradeModal('recruiter');return;}
+    const ctx=jobCtx(job);
+    openContactModal(job,ctx,'hiring','Loading hiring contacts…');
+    consume('recruiter');
+    const resp=await remote('hiring',ctx);
+    let found=(resp&&resp.contacts||[]).map(c=>normContact(c,'hiring',jobId));
+    let fallbackUsed=false;
+    if(!found.length){fallbackUsed=true;found=found.concat(guessed(ctx.domain));}
+    const diag=recordDiag('hiring',resp,fallbackUsed||!resp);
+    const sugg=fallbackLinks(ctx).map(l=>searchSuggestion(l,'hiring',jobId,ctx.company));
+    job._coaContacts=found;job._coaContactSugg=sugg;if(typeof save==='function')save();
+    saveContacts(found);                                   // persist real contacts (guessed/suggestions are skipped inside)
+    renderContactModalBody(job,ctx,'hiring',found,sugg,diag);
+  };
+
+  /* ============================================================
+     REFERRAL FINDER
+     ============================================================ */
+  window.coaFindReferral=async function(jobId){
+    const job=(S.jobs||[]).find(j=>j.id===jobId);if(!job){toast('Job not found',true);return;}
+    const lim=limitInfo('referral');
+    if(!lim.ok){upgradeModal('referral');return;}
+    const ctx=jobCtx(job);
+    openContactModal(job,ctx,'referral','Finding referral candidates…');
+    consume('referral');
+    const mine=matchImported(ctx);                       // imported contacts FIRST
+    const resp=await remote('referral',ctx);
+    let found=mine.concat((resp&&resp.contacts||[]).map(c=>normReferral(c,'referral',jobId)));
+    let fallbackUsed=!found.length;
+    const diag=recordDiag('referral',resp,fallbackUsed||!resp);
+    const sugg=referralLinks(ctx).map(l=>searchSuggestion(l,'referral',jobId,ctx.company));
+    job._coaReferrals=found;job._coaReferralSugg=sugg;if(typeof save==='function')save();
+    saveReferrals(found);                                  // persist real referrers (suggestions are skipped inside)
+    renderContactModalBody(job,ctx,'referral',found,sugg,diag);
+  };
+
+  /* ---------- shared result modal ---------- */
+  function openContactModal(job,ctx,kind,loadingMsg){
+    const title=kind==='referral'?'Referral candidates':'Hiring contacts';
+    modal(`<div class="coa-modal" id="coaModal">
+      <div class="coa-mhead"><div><h2>${X(title)}</h2><div class="hint">${X(job.title)} · ${X(job.company)}</div></div><button class="x" onclick="closeModal()">×</button></div>
+      <div class="coa-ctxbar">
+        <input id="coaDomain" class="coa-in" placeholder="company.com (optional — improves results)" value="${X(ctx.domain)}">
+        <button class="btn sm" onclick="COA.reSearch('${kind}','${job.id}')">↻ Re-search</button>
+        ${kind==='referral'?'<button class="btn sm ghost" onclick="COA.importUI()">⬆ Import contacts</button>':''}
+        <button class="btn sm ghost" onclick="COA.manualAdd('${kind}','${job.id}')">+ Add manually</button>
+      </div>
+      <div id="coaResults"><div class="coa-loading"><span class="spin lime"></span>${X(loadingMsg)}</div></div>
+    </div>`);
+  }
+  window.COA=window.COA||{};
+  COA.reSearch=function(kind,jobId){const job=(S.jobs||[]).find(j=>j.id===jobId);if(!job)return;const d=E('coaDomain');if(d)job._companyDomain=d.value.trim().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];if(typeof save==='function')save();(kind==='referral'?coaFindReferral:coaFindContacts)(jobId);};
+  COA.setTier=function(t){setTier(t);toast('Plan set to '+t);closeModal();if(curView()==='contacts')renderContacts();};
+
+  function badge(c){
+    if(GUESSY.test(c.contactType)) return c.contactType==='guessed pattern'
+      ? '<span class="coa-badge guess">Guessed · not verified</span>'
+      : '<span class="coa-badge sugg">Search suggestion</span>';
+    return c.verified?'<span class="coa-badge ok">Verified</span>':'<span class="coa-badge warn">Unverified</span>';
+  }
+  function conf(c){const v=CL(c.confidence);const cls=v>=75?'ok':v>=40?'warn':'low';return `<div class="coa-conf"><div class="coa-confbar"><i class="${cls}" style="width:${v}%"></i></div><span>${v}%</span></div>`;}
+  function statusSel(kind,id,cur){
+    const opts=(kind==='referral'?REF_STATUS:CON_STATUS);
+    return `<select class="coa-status" onchange="COA.setStatus('${kind}','${id}',this.value)">${opts.map(s=>`<option ${s===cur?'selected':''}>${X(s)}</option>`).join('')}</select>`;
+  }
+  function cardHTML(c,kind,jobId){
+    const isRef=kind==='referral';
+    const inTrk=(lget(LS.tracker,[]).find(e=>e.refId===c.id));
+    const cur=inTrk?inTrk.status:(isRef?'Not asked':'Not contacted');
+    return `<div class="coa-card" data-id="${X(c.id)}">
+      <div class="coa-crow">
+        <div style="flex:1;min-width:0">
+          <div class="coa-cname">${X(c.name||'(no name returned)')} ${badge(c)}</div>
+          <div class="hint">${X(c.title||c.contactType)}${c.company?(' · '+X(c.company)):''}</div>
+          <div class="coa-tags"><span class="tag">${X(c.contactType)}</span>${isRef&&c.relationshipSignal?`<span class="tag lime">${X(c.relationshipSignal)}</span>`:''}<span class="tag">${X(c.source)}</span></div>
+          ${(c.reason||c.referralFitReason)?`<div class="hint" style="margin-top:6px">${X(c.reason||c.referralFitReason)}</div>`:''}
+        </div>
+        <div style="min-width:110px">${conf(c)}</div>
+      </div>
+      <div class="coa-cmeta">
+        ${c.email?`<span class="coa-meta">✉ ${X(c.email)}</span>`:''}
+        ${c.linkedinUrl?`<a class="coa-meta" href="${X(c.linkedinUrl)}" target="_blank" rel="noopener">↗ ${GUESSY.test(c.contactType)?'Open search':'Profile / link'}</a>`:''}
+      </div>
+      <div class="coa-cbtns">
+        ${c.email?`<button class="btn sm ghost" onclick="COA.copy('${X(c.email)}')">⧉ Email</button>`:''}
+        ${c.linkedinUrl?`<button class="btn sm ghost" onclick="COA.copy('${encodeURIComponent(c.linkedinUrl)}',true)">⧉ Link</button>`:''}
+        ${!GUESSY.test(c.contactType)||c.email?`<button class="btn sm primary" onclick="COA.msg('${kind}','${jobId}','${c.id}')">✉ Message</button>`:''}
+        ${!GUESSY.test(c.contactType)?`<button class="btn sm" onclick="COA.track('${kind}','${jobId}','${c.id}')">＋ Track</button>`:''}
+        ${!GUESSY.test(c.contactType)?statusSel(kind,c.id,cur):''}
+      </div>
+    </div>`;
+  }
+  function renderContactModalBody(job,ctx,kind,found,sugg,diag){
+    const real=found.filter(c=>!GUESSY.test(c.contactType));
+    const guess=found.filter(c=>c.contactType==='guessed pattern');
+    const box=E('coaResults');if(!box)return;
+    box.innerHTML=`
+      ${providerPanel(diag)}
+      ${real.length?`<div class="coa-sec"><h4>${kind==='referral'?'Candidates':'Contacts'} (${real.length})</h4>${real.map(c=>cardHTML(c,kind,job.id)).join('')}</div>`
+        :`<div class="coa-empty">No ${kind==='referral'?'referrers':'people'} returned by configured providers.${diag.fallbackUsed?' Showing safe fallbacks below.':''}</div>`}
+      ${guess.length?`<div class="coa-sec"><h4>Generic inboxes (guessed — verify before use)</h4>${guess.map(c=>cardHTML(c,kind,job.id)).join('')}</div>`:''}
+      <div class="coa-sec"><h4>Safe search links (no scraping)</h4>
+        <div class="coa-links">${sugg.map(s=>`<a class="coa-link" href="${X(s.linkedinUrl)}" target="_blank" rel="noopener">🔎 ${X(s.name)}</a>`).join('')}</div>
+        <div class="hint" style="margin-top:8px">These open public searches in a new tab. The app never fetches, scrapes, or stores profile data from them.${kind==='referral'?' You can also <b>import contacts</b> or <b>add one manually</b> above, or generate a generic referral request.':''}</div>
+        ${kind==='referral'?`<button class="btn sm ghost" style="margin-top:10px" onclick="COA.msg('referral','${job.id}','')">✉ Generic referral request</button>`:''}
+      </div>`;
+  }
+  function providerPanel(diag){
+    const p=diag.providers||providerGuess();
+    const names={hunter:'Hunter',apollo:'Apollo',snov:'Snov',pdl:'PDL',rocketreach:'RocketReach',serpapi:'SerpAPI'};
+    const pills=Object.keys(names).map(k=>`<span class="coa-prov ${p[k]?'on':'off'}">${names[k]}: ${p[k]?'active':'inactive'}</span>`).join('');
+    const errs=(diag.diagnostics||[]).filter(d=>d.error).map(d=>`${d.provider}: ${d.error}`);
+    return `<div class="coa-diag">
+      <div class="coa-provs">${pills}</div>
+      <div class="hint" style="margin-top:6px">Last lookup: ${X(diag.lastStatus)} · lookups: ${X(diag.lookupCount)} · fallback used: ${diag.fallbackUsed?'yes':'no'}</div>
+      ${errs.length?`<div class="hint" style="color:var(--rose);margin-top:4px">Provider errors: ${X(errs.join(' | '))}</div>`:''}
+    </div>`;
+  }
+
+  /* ---------- manual add ---------- */
+  COA.manualAdd=function(kind,jobId){
+    const isRef=kind==='referral';
+    modal(`<div class="coa-modal"><div class="coa-mhead"><h2>Add ${isRef?'referrer':'contact'} manually</h2><button class="x" onclick="closeModal()">×</button></div>
+      <div class="coa-form">
+        <input id="maName" class="coa-in" placeholder="Name">
+        <input id="maTitle" class="coa-in" placeholder="Title / role">
+        <input id="maCompany" class="coa-in" placeholder="Company">
+        <input id="maEmail" class="coa-in" placeholder="Email (optional)">
+        <input id="maLinked" class="coa-in" placeholder="LinkedIn URL (optional)">
+        ${isRef?'<input id="maRel" class="coa-in" placeholder="Relationship signal (e.g. same school)">':''}
+      </div>
+      <div style="margin-top:12px"><button class="btn primary" onclick="COA.saveManual('${kind}','${jobId}')">Save</button> <button class="btn ghost" onclick="closeModal()">Cancel</button></div></div>`);
+  };
+  COA.saveManual=function(kind,jobId){
+    const v=id=>{const el=E(id);return el?el.value.trim():'';};
+    if(!v('maName')&&!v('maEmail')&&!v('maLinked')){toast('Add at least a name, email or link',true);return;}
+    const raw={name:v('maName'),title:v('maTitle'),company:v('maCompany'),email:v('maEmail'),linkedinUrl:v('maLinked'),source:'Manual entry',confidence:60,verified:!!v('maEmail'),reason:'Added manually by you',contactType:kind==='referral'?'user-provided contact':'hiring manager',relationshipSignal:v('maRel')||'user contact',referralFitReason:'Added manually'};
+    const c=(kind==='referral'?normReferral:normContact)(raw,kind,jobId);
+    if(kind==='referral')saveReferrals([c]);else saveContacts([c]);
+    toast('Saved'); closeModal();
+    if(curView()==='contacts')renderContacts();
+  };
+
+  /* ============================================================
+     CONTACT IMPORT (CSV + manual)
+     ============================================================ */
+  COA.importUI=function(){
+    const list=importedContacts();
+    modal(`<div class="coa-modal"><div class="coa-mhead"><h2>Import contacts</h2><button class="x" onclick="closeModal()">×</button></div>
+      <p class="hint">Upload a CSV (headers: name, company, title, email, linkedin, location, notes) or add one by hand. Imported contacts are matched <b>first</b> for referrals. Stored only in your browser.</p>
+      <div class="coa-ctxbar" style="margin-top:10px">
+        <input type="file" id="coaCsv" accept=".csv,text/csv" class="coa-in">
+        <button class="btn sm" onclick="COA.addImportRow()">+ Add row</button>
+      </div>
+      <div id="coaImpManual" class="coa-form" style="margin-top:10px"></div>
+      <div id="coaImpList" style="margin-top:14px">${importListHTML(list)}</div>
+    </div>`);
+    const f=E('coaCsv'); if(f) f.onchange=COA.onCsv;
+  };
+  function importListHTML(list){
+    if(!list.length) return '<div class="coa-empty">No imported contacts yet.</div>';
+    return `<div class="hint" style="margin-bottom:8px">${list.length} imported contact${list.length>1?'s':''}</div>`+
+      list.map(c=>`<div class="coa-card"><div class="coa-crow"><div style="flex:1"><div class="coa-cname">${X(c.name||'—')}</div><div class="hint">${X([c.title,c.company,c.location].filter(Boolean).join(' · '))}</div><div class="hint">${X(c.email||'')}${c.linkedin?(' · '+X(c.linkedin)):''}</div></div><button class="btn sm danger ghost" onclick="COA.delImport('${X(c.id)}')">✕</button></div></div>`).join('');
+  }
+  COA.onCsv=function(ev){
+    const file=ev.target.files&&ev.target.files[0];if(!file)return;
+    const rd=new FileReader();
+    rd.onload=()=>{try{const rows=parseCSV(String(rd.result||''));const cur=importedContacts();rows.forEach(r=>cur.push(r));lset(LS.imported,cur);toast(rows.length+' contact'+(rows.length!==1?'s':'')+' imported');const l=E('coaImpList');if(l)l.innerHTML=importListHTML(cur);}catch(e){toast('CSV parse failed: '+e.message,true);}};
+    rd.onerror=()=>toast('Could not read file',true);
+    rd.readAsText(file);
+  };
+  function parseCSV(text){
+    const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
+    if(!lines.length)return [];
+    const split=l=>{const out=[];let cur='',q=false;for(let i=0;i<l.length;i++){const ch=l[i];if(q){if(ch==='"'){if(l[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}else{if(ch==='"')q=true;else if(ch===','){out.push(cur);cur='';}else cur+=ch;}}out.push(cur);return out.map(s=>s.trim());};
+    const head=split(lines[0]).map(h=>h.toLowerCase());
+    const looksHeader=head.some(h=>/name|email|company|title|linkedin|location|note/.test(h));
+    const idx=n=>head.findIndex(h=>h.includes(n));
+    const map={name:idx('name'),company:idx('company'),title:idx('title'),email:idx('email'),linkedin:idx('linkedin'),location:idx('location'),notes:idx('note')};
+    const dataLines=looksHeader?lines.slice(1):lines;
+    return dataLines.map(l=>{const c=split(l);const g=(k,d)=>map[k]>=0?(c[map[k]]||''):(d!=null?(c[d]||''):'');
+      return {id:'ic_'+NID(''),name:g('name',0),company:g('company',1),title:g('title',2),email:g('email',3),linkedin:g('linkedin',4),location:g('location',5),notes:g('notes',6)};
+    }).filter(r=>r.name||r.email||r.linkedin);
+  }
+  COA.addImportRow=function(){
+    const box=E('coaImpManual');if(!box)return;
+    box.innerHTML=`<input id="icName" class="coa-in" placeholder="Name"><input id="icCompany" class="coa-in" placeholder="Company"><input id="icTitle" class="coa-in" placeholder="Title"><input id="icEmail" class="coa-in" placeholder="Email"><input id="icLinked" class="coa-in" placeholder="LinkedIn URL"><input id="icLoc" class="coa-in" placeholder="Location"><div style="grid-column:1/-1"><button class="btn sm primary" onclick="COA.saveImportRow()">Save contact</button></div>`;
+  };
+  COA.saveImportRow=function(){
+    const v=id=>{const e=E(id);return e?e.value.trim():'';};
+    if(!v('icName')&&!v('icEmail')){toast('Name or email required',true);return;}
+    const cur=importedContacts();cur.push({id:'ic_'+NID(''),name:v('icName'),company:v('icCompany'),title:v('icTitle'),email:v('icEmail'),linkedin:v('icLinked'),location:v('icLoc'),notes:''});
+    lset(LS.imported,cur);toast('Contact added');const l=E('coaImpList');if(l)l.innerHTML=importListHTML(cur);const m=E('coaImpManual');if(m)m.innerHTML='';
+  };
+  COA.delImport=function(id){let cur=importedContacts();cur=cur.filter(c=>c.id!==id);lset(LS.imported,cur);const l=E('coaImpList');if(l)l.innerHTML=importListHTML(cur);};
+
+  /* ============================================================
+     OUTREACH MESSAGE GENERATOR
+     ============================================================ */
+  const MSG_KINDS=[
+    {id:'recruiterEmail',label:'Recruiter email',channel:'email'},
+    {id:'linkedinNote',label:'LinkedIn connection note',channel:'linkedin'},
+    {id:'linkedinRecruiter',label:'LinkedIn recruiter message',channel:'linkedin'},
+    {id:'hiringManager',label:'Hiring manager message',channel:'linkedin'},
+    {id:'referralRequest',label:'Referral request',channel:'linkedin'},
+    {id:'referralFollowup3',label:'Referral follow-up (3 days)',channel:'linkedin'},
+    {id:'referralFollowup7',label:'Second follow-up (7 days)',channel:'linkedin'},
+    {id:'thankYou',label:'Thank-you message',channel:'email'},
+    {id:'applicationStatus',label:'Application status follow-up',channel:'email'}
+  ];
+  function firstName(n){return String(n||'').trim().split(/\s+/)[0]||'there';}
+  function meName(){try{return (S.analysis&&S.analysis.name)||(S.editorResume&&S.editorResume.header&&S.editorResume.header.name)||'';}catch(e){return '';}}
+  function skillsLine(ctx){const s=(ctx.matched&&ctx.matched.length?ctx.matched:ctx.requiredSkills||[]).slice(0,3);return s.join(', ');}
+  function template(kind,ctx,c){
+    const role=ctx.title||'the role',co=ctx.company||'your team',sk=skillsLine(ctx);
+    const me=meName(),sig=meName()?(`\n\n— ${me}`):'';
+    const skClause=sk?` My background lines up closely with ${sk}.`:'';
+    const decline='\n\nNo worries at all if now isn’t a good time — I appreciate you reading this.';
+    const hi=`Hi ${firstName(c&&c.name)},`;
+    switch(kind){
+      case 'recruiterEmail':return {subject:`Application — ${role} at ${co}`,body:`${hi}\n\nI’m reaching out about the ${role} position at ${co}.${skClause} I’d love to be considered and am happy to share anything that would help your review.${decline}${sig}`};
+      case 'linkedinNote':return {body:`${hi} I saw the ${role} opening at ${co} and would love to connect — I think my work with ${sk||'this area'} is a strong fit. Thank you!`};
+      case 'linkedinRecruiter':return {body:`${hi}\n\nI’m interested in the ${role} role at ${co}.${skClause} Would you be open to a quick chat, or could you point me to the right next step?${decline}${sig}`};
+      case 'hiringManager':return {body:`${hi}\n\nI’m exploring the ${role} role on your team at ${co}.${skClause} If you’re open to it, I’d welcome a short conversation about what success looks like in the role.${decline}${sig}`};
+      case 'referralRequest':return {body:`${hi}\n\nHope you’re doing well${c&&c.company?` at ${c.company}`:''}. I’m applying for the ${role} role at ${co} and wanted to ask — would you feel comfortable referring me or pointing me to the right person?${skClause} Totally understand if you’d rather not, and I’m glad to send anything that makes it easy.${sig}`};
+      case 'referralFollowup3':return {body:`${hi}\n\nJust a gentle follow-up on my note about the ${role} role at ${co}. No pressure at all — if it’s not something you can help with, that’s completely fine. Thanks for considering it!${sig}`};
+      case 'referralFollowup7':return {body:`${hi}\n\nLast nudge on the ${role} role at ${co} — I know things get busy. If you’re able to help with a referral I’d be grateful; if not, no problem at all and thanks again.${sig}`};
+      case 'thankYou':return {subject:`Thank you — ${role}`,body:`${hi}\n\nThank you for taking the time to speak with me about the ${role} role at ${co}. I enjoyed the conversation and am even more excited about the opportunity. Happy to provide anything else that helps.${sig}`};
+      case 'applicationStatus':return {subject:`Following up — ${role} application`,body:`${hi}\n\nI wanted to check in on my application for the ${role} role at ${co}. I remain very interested${skClause?` and believe my experience with ${sk} fits well`:''}. Any update on timing would be helpful, and thanks for your time.${decline}${sig}`};
+      default:return {body:`${hi}\n\nI’m interested in the ${role} role at ${co}.${decline}${sig}`};
+    }
+  }
+  async function aiMessage(kind,ctx,c){
+    const meta=MSG_KINDS.find(m=>m.id===kind)||{label:kind,channel:'email'};
+    const sys='You write short, polite, specific, non-spammy job-search outreach. Rules: mention the exact role; reference 1-3 relevant skills only if supported by the resume; include one clear but soft ask; give the reader an easy way to decline; never claim a relationship that is not stated; never invent experience, titles, or facts; keep it concise. Output ONLY JSON.';
+    const wantSubject=meta.channel==='email';
+    const prompt=`Write a ${meta.label} (${meta.channel}).\nRole: ${ctx.title}\nCompany: ${ctx.company}\nJob summary: ${(ctx.summary||'').slice(0,500)}\nRequired skills: ${(ctx.requiredSkills||[]).slice(0,10).join(', ')}\nMy matched skills: ${(ctx.matched||[]).slice(0,8).join(', ')}\nMy resume facts: """${(ctx.tailored||ctx.resume||'').slice(0,1500)}"""\nContact: ${c?((c.name||'(unknown)')+' — '+(c.title||c.contactType)):'(no specific person)'}\n${c&&c.relationshipSignal?('Relationship signal (only mention if real): '+c.relationshipSignal):''}\nReturn JSON: ${wantSubject?'{"subject":"...","body":"..."}':'{"body":"..."}'}. Keep ${meta.channel==='linkedin'?'under 90 words':'under 130 words'}.`;
+    const out=await callClaude({system:sys,prompt,max_tokens:600,json:true});
+    if(out&&(out.body||out.subject))return {subject:out.subject||'',body:out.body||'',ai:true};
+    throw new Error('Empty AI message');
+  }
+  COA.msg=async function(kind,jobId,contactId){
+    const job=(S.jobs||[]).find(j=>j.id===jobId);if(!job){toast('Job not found',true);return;}
+    const lim=limitInfo('message');
+    if(!lim.ok){upgradeModal('message');return;}
+    const ctx=jobCtx(job);
+    const pool=(job._coaContacts||[]).concat(job._coaReferrals||[],lget(LS.contacts,[]),lget(LS.referrals,[]));
+    const c=contactId?pool.find(x=>x.id===contactId):null;
+    const isRefKind=/referral/i.test(kind);
+    openMsgModal(job,ctx,c,kind,isRefKind);
+  };
+  function openMsgModal(job,ctx,c,kind,isRefKind){
+    const kinds=isRefKind?MSG_KINDS.filter(m=>/referral/i.test(m.id)):MSG_KINDS;
+    modal(`<div class="coa-modal" id="coaMsgModal"><div class="coa-mhead"><div><h2>Generate outreach</h2><div class="hint">${X(job.title)} · ${X(job.company)}${c?(' · to '+X(c.name||c.contactType)):''}</div></div><button class="x" onclick="closeModal()">×</button></div>
+      <div class="coa-ctxbar">
+        <select id="coaMsgKind" class="coa-in">${kinds.map(m=>`<option value="${m.id}" ${m.id===kind?'selected':''}>${X(m.label)}</option>`).join('')}</select>
+        <button class="btn sm primary" onclick="COA.genMsg('${job.id}','${c?c.id:''}')">✦ Generate</button>
+        ${!aiOn()?'<span class="coa-badge warn">AI off · template mode</span>':''}
+      </div>
+      <div id="coaMsgOut"><div class="coa-empty">Pick a type and generate. ${aiOn()?'AI will personalise it from your resume + the job.':'No AI key configured — deterministic templates will be used.'}</div></div>
+    </div>`);
+    COA.genMsg(job.id,c?c.id:'');
+  }
+  COA.genMsg=async function(jobId,contactId){
+    const job=(S.jobs||[]).find(j=>j.id===jobId);if(!job)return;
+    const ctx=jobCtx(job);
+    const pool=(job._coaContacts||[]).concat(job._coaReferrals||[],lget(LS.contacts,[]),lget(LS.referrals,[]));
+    const c=contactId?pool.find(x=>x.id===contactId):null;
+    const kind=(E('coaMsgKind')&&E('coaMsgKind').value)||'recruiterEmail';
+    const out=E('coaMsgOut');if(out)out.innerHTML='<div class="coa-loading"><span class="spin lime"></span>Writing…</div>';
+    const lim=limitInfo('message');if(!lim.ok){upgradeModal('message');return;}
+    let res,viaAI=false,note='';
+    if(aiOn()){try{res=await aiMessage(kind,ctx,c);viaAI=true;}catch(e){res=template(kind,ctx,c);note='AI generation failed — used a template. ('+(e.message||e)+')';}}
+    else{res=template(kind,ctx,c);note='No AI key configured — generated from a deterministic template.';}
+    consume('message');
+    const rec={id:'om_'+NID(''),kind,jobId,contactId:contactId||null,channel:(MSG_KINDS.find(m=>m.id===kind)||{}).channel||'email',subject:res.subject||'',body:res.body||'',ai:viaAI,createdAt:new Date().toISOString(),title:job.title,company:job.company};
+    const all=lget(LS.messages,[]);all.unshift(rec);lset(LS.messages,all);
+    if(out)out.innerHTML=`
+      ${note?`<div class="hint" style="color:var(--amber);margin-bottom:8px">${X(note)}</div>`:`<div class="hint" style="margin-bottom:8px">${viaAI?'Personalised with AI.':''} Edit freely before sending.</div>`}
+      ${res.subject!=null&&(MSG_KINDS.find(m=>m.id===kind)||{}).channel==='email'?`<label class="coa-lbl">Subject</label><input id="coaMsgSubj" class="coa-in" value="${X(res.subject||'')}">`:''}
+      <label class="coa-lbl">Message</label>
+      <textarea id="coaMsgBody" class="coa-area" rows="10">${X(res.body||'')}</textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn sm primary" onclick="COA.copyMsg()">⧉ Copy</button>
+        <button class="btn sm" onclick="COA.regen('${jobId}','${contactId||''}')">↻ Regenerate</button>
+        ${contactId?`<button class="btn sm ghost" onclick="COA.track('${/referral/i.test(kind)?'referral':'hiring'}','${jobId}','${contactId}')">＋ Save to tracker</button>`:''}
+      </div>`;
+  };
+  COA.regen=function(jobId,contactId){COA.genMsg(jobId,contactId);};
+  COA.copyMsg=function(){const s=E('coaMsgSubj'),b=E('coaMsgBody');const txt=(s&&s.value?('Subject: '+s.value+'\n\n'):'')+((b&&b.value)||'');doCopy(txt);};
+
+  /* ============================================================
+     TRACKER INTEGRATION (contacts + referrals + follow-ups)
+     ============================================================ */
+  const CON_STATUS=['Not contacted','Contacted','Follow-up due','Replied','Interview','Rejected','Archived'];
+  const REF_STATUS=['Not asked','Referral requested','Follow-up due','Referred','Declined','No response','Archived'];
+  const WAITING=/contacted|referral requested|follow-up due|no response/i;
+  function tracker(){return lget(LS.tracker,[]);}
+  function findEntry(refId){return tracker().find(e=>e.refId===refId);}
+  COA.track=function(kind,jobId,contactId){
+    const job=(S.jobs||[]).find(j=>j.id===jobId);
+    const pool=(job&&job._coaContacts||[]).concat(job&&job._coaReferrals||[],lget(LS.contacts,[]),lget(LS.referrals,[]));
+    const c=pool.find(x=>x.id===contactId);if(!c){toast('Select a contact first',true);return;}
+    if(kind==='referral')saveReferrals([c]);else saveContacts([c]);
+    const all=tracker();let e=all.find(x=>x.refId===c.id);
+    if(!e){e={id:'ot_'+NID(''),refId:c.id,kind:kind==='referral'?'referral':'contact',name:c.name,title:c.title,company:c.company||(job&&job.company)||'',email:c.email,linkedinUrl:c.linkedinUrl,relatedJobId:jobId,jobTitle:job&&job.title,contactType:c.contactType,relationshipSignal:c.relationshipSignal||'',status:kind==='referral'?'Not asked':'Not contacted',lastContacted:'',followUpDue:'',followUp2Due:'',followUpDone:false,followUp2Done:false,notes:'',createdAt:new Date().toISOString()};all.push(e);lset(LS.tracker,all);toast('Saved to tracker');}
+    else toast('Already in tracker');
+    if(curView()==='contacts')renderContacts();
+    if(curView()==='tracker'&&typeof renderTracker==='function')renderTracker();
+    // refresh modal status selects if open
+    const sel=document.querySelector(`.coa-card[data-id="${c.id}"] .coa-status`);if(sel)sel.value=e.status;
+  };
+  COA.setStatus=function(kind,refId,status){
+    const job=(S.jobs||[]);
+    let all=tracker();let e=all.find(x=>x.refId===refId);
+    if(!e){ // create from any known list
+      const pool=lget(LS.contacts,[]).concat(lget(LS.referrals,[]));
+      const c=pool.find(x=>x.id===refId);
+      if(c){COA.track(kind,c.relatedJobId,refId);all=tracker();e=all.find(x=>x.refId===refId);}
+    }
+    if(!e)return;
+    e.status=status;
+    if(/contacted|referral requested/i.test(status)){e.lastContacted=TODAY();e.followUpDue=ADD(TODAY(),3);e.followUp2Due=ADD(TODAY(),7);e.followUpDone=false;e.followUp2Done=false;}
+    if(/replied|referred|declined|rejected|interview|archived/i.test(status)){e.followUpDone=true;e.followUp2Done=true;}
+    lset(LS.tracker,all);
+    if(curView()==='contacts')renderContacts();
+    if(curView()==='tracker'&&typeof renderTracker==='function')renderTracker();
+  };
+  COA.markFollow=function(entryId,which){const all=tracker();const e=all.find(x=>x.id===entryId);if(!e)return;if(which===2)e.followUp2Done=true;else e.followUpDone=true;lset(LS.tracker,all);if(curView()==='contacts')renderContacts();if(curView()==='tracker'&&typeof renderTracker==='function')renderTracker();};
+  COA.delTrack=function(entryId){let all=tracker();all=all.filter(x=>x.id!==entryId);lset(LS.tracker,all);if(curView()==='contacts')renderContacts();if(curView()==='tracker'&&typeof renderTracker==='function')renderTracker();};
+  function dueItems(){const t=TODAY();return tracker().filter(e=>WAITING.test(e.status)&&((e.followUpDue&&!e.followUpDone&&e.followUpDue<=t)||(e.followUp2Due&&!e.followUp2Done&&e.followUp2Due<=t)));}
+  COA.dueCount=()=>dueItems().length;
+
+  /* ---------- copy helpers ---------- */
+  function doCopy(txt){try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>toast('Copied'),()=>fallbackCopy(txt));}else fallbackCopy(txt);}catch(e){fallbackCopy(txt);}}
+  function fallbackCopy(txt){try{const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);toast('Copied');}catch(e){toast('Copy failed — select manually',true);}}
+  COA.copy=function(v,enc){doCopy(enc?decodeURIComponent(v):v);};
+
+  /* ============================================================
+     CONTACTS & OUTREACH VIEW
+     ============================================================ */
+  function curView(){try{const s=document.querySelector('.view.show');return s?s.dataset.view:'';}catch(e){return '';}}
+  let COA_FILTER='All';
+  const FILTERS=['All','Recruiters','Hiring Managers','Referrers','User Contacts','Verified','Search Suggestions','Follow-up Due'];
+  COA.filter=function(f){COA_FILTER=f;renderContacts();};
+  function matchFilter(item,kind,entry){
+    switch(COA_FILTER){
+      case 'All':return true;
+      case 'Recruiters':return /recruit|talent acquisition/i.test(item.contactType);
+      case 'Hiring Managers':return /hiring manager|engineering manager/i.test(item.contactType);
+      case 'Referrers':return kind==='referral';
+      case 'User Contacts':return /user-provided|imported/i.test(item.contactType)||/user contact/i.test(item.relationshipSignal||'');
+      case 'Verified':return !!item.verified;
+      case 'Search Suggestions':return GUESSY.test(item.contactType);
+      case 'Follow-up Due':return entry&&WAITING.test(entry.status)&&((entry.followUpDue&&!entry.followUpDone&&entry.followUpDue<=TODAY())||(entry.followUp2Due&&!entry.followUp2Done&&entry.followUp2Due<=TODAY()));
+      default:return true;
+    }
+  }
+  function viewCard(item,kind){
+    const entry=findEntry(item.id);
+    const due=entry&&WAITING.test(entry.status)&&((entry.followUpDue&&!entry.followUpDone&&entry.followUpDue<=TODAY())||(entry.followUp2Due&&!entry.followUp2Done&&entry.followUp2Due<=TODAY()));
+    const job=(S.jobs||[]).find(j=>j.id===item.relatedJobId);
+    return `<div class="coa-card" data-id="${X(item.id)}">
+      <div class="coa-crow"><div style="flex:1;min-width:0">
+        <div class="coa-cname">${X(item.name||'—')} ${badge(item)} ${due?'<span class="coa-badge due">Follow-up due</span>':''}</div>
+        <div class="hint">${X(item.title||item.contactType)}${item.company?(' · '+X(item.company)):''}</div>
+        <div class="hint">${job?('For: '+X(job.title)+' · '+X(job.company)):(item.relatedJobId?'Linked job':'No linked job')}</div>
+        <div class="coa-tags"><span class="tag">${X(item.contactType)}</span>${kind==='referral'&&item.relationshipSignal?`<span class="tag lime">${X(item.relationshipSignal)}</span>`:''}<span class="tag">${X(item.source)}</span></div>
+        <div class="coa-cmeta" style="margin-top:6px">${item.email?`<span class="coa-meta">✉ ${X(item.email)}</span>`:''}${item.linkedinUrl?`<a class="coa-meta" href="${X(item.linkedinUrl)}" target="_blank" rel="noopener">↗ link</a>`:''}</div>
+      </div><div style="min-width:110px">${conf(item)}</div></div>
+      <div class="coa-cbtns">
+        ${item.email?`<button class="btn sm ghost" onclick="COA.copy('${X(item.email)}')">⧉ Email</button>`:''}
+        ${item.linkedinUrl?`<button class="btn sm ghost" onclick="COA.copy('${encodeURIComponent(item.linkedinUrl)}',true)">⧉ Link</button>`:''}
+        <button class="btn sm primary" onclick="COA.msg('${kind}','${item.relatedJobId||''}','${item.id}')">✉ Message</button>
+        ${statusSel(kind,item.id,entry?entry.status:(kind==='referral'?'Not asked':'Not contacted'))}
+        ${entry&&entry.followUpDue?`<span class="hint" style="align-self:center">next: ${X(entry.followUp2Done?'—':(entry.followUpDone?entry.followUp2Due:entry.followUpDue))}</span>`:''}
+      </div></div>`;
+  }
+  window.renderContacts=function(){
+    try{
+      const body=E('contactsBody');if(!body)return;
+      const contacts=lget(LS.contacts,[]),referrals=lget(LS.referrals,[]),msgs=lget(LS.messages,[]);
+      const diag=lget(LS.diag,{providers:providerGuess(),lastStatus:'no lookups yet',lookupCount:0,fallbackUsed:false,diagnostics:[]});
+      const u=usage(),t=tier();
+      const fc=contacts.filter(c=>matchFilter(c,'contact',findEntry(c.id)));
+      const fr=referrals.filter(c=>matchFilter(c,'referral',findEntry(c.id)));
+      const due=dueItems();
+      body.innerHTML=`
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+            <div class="eyebrow">Provider diagnostics</div>
+            <div class="hint">Plan: <b>${X(t)}</b> · recruiter ${u.recruiter}/${LIMITS[t].recruiter} · referral ${u.referral}/${LIMITS[t].referral} · messages ${u.message}/${LIMITS[t].message} (this month)</div>
+          </div>
+          ${providerPanel(diag)}
+          <div class="hint" style="margin-top:8px">Add provider keys server-side (Hunter, Apollo, Snov, PDL, RocketReach, SerpAPI) to enable real lookups. Without keys the app still gives you safe search links and manual entry — and never scrapes.</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="COA.importUI()">⬆ Import contacts</button><button class="btn sm ghost" data-go="jobs">Find a job to research</button></div>
+        </div>
+        <div class="coa-filters">${FILTERS.map(f=>`<button class="coa-fbtn ${f===COA_FILTER?'on':''}" onclick="COA.filter('${f}')">${X(f)}${f==='Follow-up Due'&&due.length?` (${due.length})`:''}</button>`).join('')}</div>
+        <div class="coa-grid2">
+          <div class="card"><div class="eyebrow">Hiring contacts (${contacts.length})</div>${fc.length?fc.map(c=>viewCard(c,'contact')).join(''):'<div class="coa-empty">No saved hiring contacts'+(COA_FILTER!=='All'?' for this filter':'')+'. Open a job → Find Hiring Contact.</div>'}</div>
+          <div class="card"><div class="eyebrow">Referral candidates (${referrals.length})</div>${fr.length?fr.map(c=>viewCard(c,'referral')).join(''):'<div class="coa-empty">No saved referrers'+(COA_FILTER!=='All'?' for this filter':'')+'. Open a job → Find Referral, or import contacts.</div>'}</div>
+        </div>
+        <div class="card"><div class="eyebrow">Generated messages (${msgs.length})</div>
+          ${msgs.length?msgs.slice(0,30).map(m=>`<div class="coa-card"><div class="coa-crow"><div style="flex:1"><div class="coa-cname">${X((MSG_KINDS.find(k=>k.id===m.kind)||{}).label||m.kind)} ${m.ai?'<span class="coa-badge ok">AI</span>':'<span class="coa-badge warn">Template</span>'}</div><div class="hint">${X(m.title||'')} · ${X(m.company||'')} · ${X((m.createdAt||'').slice(0,10))}</div></div><button class="btn sm ghost" onclick="COA.copyStored('${m.id}')">⧉ Copy</button></div>${m.subject?`<div class="hint" style="margin-top:6px"><b>Subject:</b> ${X(m.subject)}</div>`:''}<div class="coa-msgprev">${X((m.body||'').slice(0,260))}${(m.body||'').length>260?'…':''}</div></div>`).join(''):'<div class="coa-empty">No messages yet. Generate one from a contact or job.</div>'}
+        </div>`;
+    }catch(err){const body=E('contactsBody');if(body)body.innerHTML='<div class="card"><div class="coa-empty">Could not render this page: '+X(err.message||err)+'</div></div>';}
+  };
+  COA.copyStored=function(id){const m=lget(LS.messages,[]).find(x=>x.id===id);if(!m)return;doCopy((m.subject?('Subject: '+m.subject+'\n\n'):'')+(m.body||''));};
+
+  /* ============================================================
+     JOB CARD INTEGRATION  (counts + action buttons)
+     ============================================================ */
+  function jobCounts(jobId){
+    const c=lget(LS.contacts,[]).filter(x=>x.relatedJobId===jobId).length;
+    const r=lget(LS.referrals,[]).filter(x=>x.relatedJobId===jobId).length;
+    const entries=tracker().filter(e=>e.relatedJobId===jobId);
+    const con=entries.filter(e=>e.kind==='contact');
+    const ref=entries.filter(e=>e.kind==='referral');
+    const due=entries.some(e=>WAITING.test(e.status)&&((e.followUpDue&&!e.followUpDone&&e.followUpDue<=TODAY())||(e.followUp2Due&&!e.followUp2Done&&e.followUp2Due<=TODAY())));
+    const outreach=con.length?con[0].status:'Not contacted';
+    const refStatus=ref.length?ref[0].status:'Not asked';
+    return {c,r,outreach,refStatus,due};
+  }
+  function jobBar(jobId){
+    const k=jobCounts(jobId);
+    return '<div class="coa-jobbar">'+
+      '<div class="coa-jbcounts">'+
+        '<span class="tag">🔎 recruiters: '+k.c+'</span>'+
+        '<span class="tag">🤝 referrals: '+k.r+'</span>'+
+        '<span class="tag">✉ '+X(k.outreach)+'</span>'+
+        '<span class="tag">🎯 '+X(k.refStatus)+'</span>'+
+        (k.due?'<span class="coa-badge due">Follow-up due</span>':'')+
+      '</div>'+
+      '<div class="coa-jbbtns">'+
+        '<button class="btn sm" onclick="coaFindContacts(\''+jobId+'\')">🔎 Find hiring contact</button>'+
+        '<button class="btn sm" onclick="coaFindReferral(\''+jobId+'\')">🤝 Find referral</button>'+
+        '<button class="btn sm ghost" onclick="COA.outreach(\''+jobId+'\')">✉ Generate outreach</button>'+
+        '<button class="btn sm ghost" data-go="contacts">📋 Track / view</button>'+
+      '</div></div>';
+  }
+  COA.outreach=function(jobId){const job=(S.jobs||[]).find(j=>j.id===jobId);if(!job)return;const ctx=jobCtx(job);openMsgModal(job,ctx,null,'recruiterEmail',false);};
+
+  if(typeof jobCard==='function'){
+    const prevJobCard=jobCard;
+    jobCard=function(j){
+      let html=prevJobCard(j);
+      try{
+        const bar=jobBar(j.id);
+        // insert before the final closing </div> of the card
+        const idx=html.lastIndexOf('</div>');
+        if(idx>=0) html=html.slice(0,idx)+bar+html.slice(idx);
+        else html+=bar;
+      }catch(e){}
+      return html;
+    };
+  }
+
+  /* ---------- Tracker page: append follow-up section ---------- */
+  if(typeof renderTracker==='function'){
+    const prevRT=renderTracker;
+    renderTracker=function(){
+      prevRT();
+      try{
+        const body=E('trackerBody');if(!body)return;
+        if(E('coaTrkSection'))E('coaTrkSection').remove();
+        const due=dueItems();
+        const all=tracker();
+        const html=`<div id="coaTrkSection" style="margin-top:22px">
+          <div class="section-title"><span class="eyebrow">Outreach & referrals</span></div>
+          <div class="card" style="padding:0;overflow:auto">
+            ${all.length?`<table><thead><tr><th>Person</th><th>Type</th><th>Job</th><th>Status</th><th>Follow-up</th><th></th></tr></thead><tbody>${all.map(trkRow).join('')}</tbody></table>`:'<div class="coa-empty" style="padding:16px">No tracked contacts or referrals yet. Open a job → Find Hiring Contact / Find Referral → Track.</div>'}
+          </div>
+          ${due.length?`<div class="flag" style="margin-top:12px;border-color:var(--amber);background:rgba(255,181,71,.08)"><div><b>${due.length} follow-up${due.length>1?'s':''} due.</b> 1st follow-up after 3 days, 2nd after 7 days.</div></div>`:''}
+        </div>`;
+        body.insertAdjacentHTML('beforeend',html);
+      }catch(e){}
+    };
+  }
+  function trkRow(e){
+    const opts=e.kind==='referral'?REF_STATUS:CON_STATUS;
+    const job=(S.jobs||[]).find(j=>j.id===e.relatedJobId);
+    const t=TODAY();
+    const due1=e.followUpDue&&!e.followUpDone&&WAITING.test(e.status);
+    const due2=e.followUp2Due&&!e.followUp2Done&&WAITING.test(e.status);
+    const next=e.followUp2Done?'—':(e.followUpDone?e.followUp2Due:e.followUpDue);
+    const overdue=next&&next<=t;
+    return `<tr><td><b>${X(e.name||'—')}</b><div class="hint">${X(e.title||e.contactType)}${e.email?(' · '+X(e.email)):''}</div></td>
+      <td><span class="tag">${X(e.kind)}</span></td>
+      <td class="hint">${X(job?job.title:(e.jobTitle||'—'))}<div class="hint">${X(e.company||'')}</div></td>
+      <td><select class="coa-status" onchange="COA.setStatus('${e.kind}','${e.refId}',this.value)">${opts.map(s=>`<option ${s===e.status?'selected':''}>${X(s)}</option>`).join('')}</select></td>
+      <td>${next?`<div class="${overdue?'follow-overdue':'hint'}" style="font-size:12px">${overdue?'due':'next'}: ${X(next)}</div>`:'<span class="hint">—</span>'}${(due1||due2)&&overdue?`<button class="btn sm ghost" style="margin-top:4px" onclick="COA.markFollow('${e.id}',${e.followUpDone?2:1})">Mark done</button>`:''}</td>
+      <td><button class="btn sm danger ghost" onclick="COA.delTrack('${e.id}')">✕</button></td></tr>`;
+  }
+
+  /* ---------- register the new view ---------- */
+  if(typeof VIEWS!=='undefined' && !VIEWS.some(v=>v.id==='contacts')){
+    const ti=VIEWS.findIndex(v=>v.id==='tracker');
+    VIEWS.splice(ti<0?VIEWS.length:ti+1,0,{id:'contacts',label:'Outreach',count:()=>{try{return lget(LS.contacts,[]).length+lget(LS.referrals,[]).length;}catch(e){return 0;}}});
+    if(typeof renderTabs==='function')try{renderTabs();}catch(e){}
+  }
+  if(typeof go==='function'){
+    const prevGo=go;
+    go=function(id,skip){prevGo(id,skip);if(id==='contacts'){try{renderContacts();}catch(e){}}};
+  }
+
+  /* expose a few for inline handlers already used above */
+  COA.renderContacts=renderContacts;
+})();
+
 renderTabs();go('dash');maybeOnboard();
 
 
@@ -4157,6 +4882,61 @@ textarea.ed-field{resize:vertical;min-height:54px;line-height:1.5}
   .rp{font-size:10.5pt}
   .rp.tpl-sidebar .rp-side{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* ===== Contacts, Referral & Outreach Assistant ===== */
+.coa-jobbar{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line2)}
+.coa-jbcounts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.coa-jbbtns{display:flex;gap:8px;flex-wrap:wrap}
+.coa-modal{max-height:82vh;overflow:auto}
+.coa-mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.coa-mhead h2{font-size:22px;margin:0}
+.coa-ctxbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.coa-in{background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--ink);padding:9px 11px;font-size:13px;min-width:150px;flex:1}
+.coa-area{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--ink);padding:11px;font-size:13px;line-height:1.5;font-family:inherit;resize:vertical}
+.coa-lbl{display:block;font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin:8px 0 4px}
+.coa-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:560px){.coa-form{grid-template-columns:1fr}}
+.coa-loading{display:flex;align-items:center;gap:10px;color:var(--muted);padding:24px 4px;font-size:14px}
+.coa-empty{color:var(--muted);font-size:13px;padding:16px;text-align:center;border:1px dashed var(--line2);border-radius:12px}
+.coa-sec{margin-top:16px}
+.coa-sec h4{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 10px}
+.coa-card{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px;margin-bottom:10px}
+.coa-crow{display:flex;gap:12px;align-items:flex-start}
+.coa-cname{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.coa-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.coa-cmeta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px}
+.coa-meta{color:var(--green);text-decoration:none}
+.coa-meta:hover{text-decoration:underline}
+.coa-cbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.coa-badge{font-size:10.5px;font-weight:700;letter-spacing:.3px;padding:2px 8px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.coa-badge.ok{background:rgba(127,224,138,.16);color:var(--green);border:1px solid rgba(127,224,138,.4)}
+.coa-badge.warn{background:rgba(255,181,71,.14);color:var(--amber);border:1px solid rgba(255,181,71,.4)}
+.coa-badge.guess{background:rgba(255,122,107,.14);color:var(--rose);border:1px solid rgba(255,122,107,.4)}
+.coa-badge.sugg{background:rgba(154,160,126,.16);color:var(--muted);border:1px solid var(--line2)}
+.coa-badge.due{background:rgba(255,181,71,.18);color:var(--amber);border:1px solid rgba(255,181,71,.5)}
+.coa-conf{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.coa-confbar{flex:1;height:6px;background:var(--bg);border-radius:999px;overflow:hidden;border:1px solid var(--line2)}
+.coa-confbar i{display:block;height:100%}
+.coa-confbar i.ok{background:var(--green)}
+.coa-confbar i.warn{background:var(--amber)}
+.coa-confbar i.low{background:var(--rose)}
+.coa-status{background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--ink);padding:6px 8px;font-size:12px}
+.coa-diag{background:var(--bg);border:1px solid var(--line2);border-radius:12px;padding:12px;margin-bottom:6px}
+.coa-provs{display:flex;gap:6px;flex-wrap:wrap}
+.coa-prov{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;border:1px solid var(--line2)}
+.coa-prov.on{background:rgba(127,224,138,.14);color:var(--green);border-color:rgba(127,224,138,.4)}
+.coa-prov.off{background:transparent;color:var(--muted)}
+.coa-links{display:flex;flex-direction:column;gap:6px}
+.coa-link{display:block;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:9px 11px;color:var(--ink);text-decoration:none;font-size:13px}
+.coa-link:hover{border-color:var(--lime);color:var(--lime)}
+.coa-filters{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}
+.coa-fbtn{background:var(--panel);border:1px solid var(--line2);border-radius:999px;color:var(--muted);padding:6px 13px;font-size:12.5px;font-weight:600;cursor:pointer}
+.coa-fbtn:hover{color:var(--ink)}
+.coa-fbtn.on{background:var(--lime);color:#0a0c08;border-color:var(--lime)}
+.coa-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.coa-grid2{grid-template-columns:1fr}}
+.coa-msgprev{margin-top:8px;font-size:12.5px;color:var(--muted);white-space:pre-wrap;line-height:1.5;max-height:120px;overflow:auto}
+.tag.lime{background:rgba(200,250,60,.12);color:var(--lime);border-color:rgba(200,250,60,.35)}
 </style>
 
 
