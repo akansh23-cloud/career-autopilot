@@ -1361,8 +1361,436 @@ app.post('/ai/messages', async (req, res) => {
   }
 });
 
+/* ============================================================
+   OPPORTUNITY ARENA  (hackathons, hiring challenges & competitions)
+   COMPLIANCE: public APIs (Codeforces, Devpost public JSON), public
+   pages, SerpAPI public Google links (only when SERPAPI_KEY is set) and
+   curated static fallback search links. NO scraping, NO CAPTCHA bypass,
+   NO login/cookie/session scraping, NO Puppeteer/Playwright. The app is
+   fully functional without SERPAPI_KEY (curated fallbacks are returned).
+   ============================================================ */
+const OPP_FETCH_TIMEOUT = Number(process.env.OPP_FETCH_TIMEOUT || 9000);
+
+const OPP_TYPES = ['hackathon','hiring challenge','coding contest','case competition','innovation challenge','internship challenge','campus challenge','open source program','data science competition','cybersecurity challenge','cloud/devops challenge'];
+const OPP_MODES = ['online','offline','hybrid','unknown'];
+const OPP_DIFFICULTY = ['beginner','intermediate','advanced','open'];
+
+function oppId(seed) { return 'opp_' + crypto.createHash('sha1').update(String(seed || Math.random())).digest('hex').slice(0, 12); }
+function oppNorm(s) { return String(s || '').toLowerCase(); }
+
+/* hiring / internship / full-time detection from free text */
+function detectHiring(text) {
+  const s = oppNorm(text);
+  const hiring = /(hiring challenge|recruitment challenge|interview opportunity|job opportunity|pre[\s-]*placement interview|\bppi\b|get hired|fast[\s-]*track interview)/.test(s);
+  const internship = /(internship opportunity|internship challenge|intern hiring|summer intern|winter intern|internship offer)/.test(s);
+  const fulltime = /(full[\s-]*time opportunity|full[\s-]*time offer|fte\b|placement|on[\s-]*roll position)/.test(s);
+  return { hiringOpportunity: hiring || internship || fulltime, internshipOpportunity: internship, fullTimeOpportunity: fulltime };
+}
+function inferCategory(text) {
+  const s = oppNorm(text);
+  if (/(machine learning|deep learning|\bml\b|\bai\b|nlp|computer vision|llm|generative)/.test(s)) return 'AI/ML';
+  if (/(data science|data analytics|kaggle|analytics|statistic)/.test(s)) return 'Data Science';
+  if (/(cyber|security|infosec|ctf|capture the flag|pentest)/.test(s)) return 'Cybersecurity';
+  if (/(devops|cloud|kubernetes|docker|aws|azure|gcp|terraform|sre|ci\/cd)/.test(s)) return 'DevOps/Cloud';
+  if (/(frontend|react|web app|website|full[\s-]*stack|javascript|html|css)/.test(s)) return 'Web Development';
+  if (/(android|ios|mobile|flutter|react native|kotlin|swift)/.test(s)) return 'Mobile Development';
+  if (/(open source|oss|gsoc|hacktoberfest)/.test(s)) return 'Open Source';
+  if (/(product manage|product management|\bpm\b)/.test(s)) return 'Product Management';
+  if (/(design|ui\/ux|ux|figma)/.test(s)) return 'Design';
+  if (/(fintech|finance|trading|banking|quant)/.test(s)) return 'Finance';
+  if (/(case competition|business|consult|strategy|b-?school)/.test(s)) return 'Business/Case';
+  if (/(software|coding|programming|algorithm|developer|engineering)/.test(s)) return 'Software Development';
+  return 'General';
+}
+function inferType(text, platform) {
+  const s = oppNorm(text + ' ' + platform);
+  if (/case competition/.test(s)) return 'case competition';
+  if (/(ctf|cyber|security challenge)/.test(s)) return 'cybersecurity challenge';
+  if (/(devops|cloud|kubernetes|sre)/.test(s)) return 'cloud/devops challenge';
+  if (/(data science|kaggle|analytics competition)/.test(s)) return 'data science competition';
+  if (/(open source|gsoc|hacktoberfest|oss)/.test(s)) return 'open source program';
+  if (/(internship challenge|intern hiring)/.test(s)) return 'internship challenge';
+  if (/(campus|college fest)/.test(s)) return 'campus challenge';
+  if (/(innovation|ideathon|startup challenge)/.test(s)) return 'innovation challenge';
+  if (/(hiring challenge|recruitment|ppi|pre[\s-]*placement)/.test(s)) return 'hiring challenge';
+  if (/(codeforces|codechef|leetcode|topcoder|contest|round\b)/.test(s)) return 'coding contest';
+  return 'hackathon';
+}
+function inferDifficulty(text) {
+  const s = oppNorm(text);
+  if (/(beginner|newbie|fresher|student|first[\s-]*time|div\.?\s*[34]|easy)/.test(s)) return 'beginner';
+  if (/(advanced|expert|hard|div\.?\s*1|grandmaster|senior)/.test(s)) return 'advanced';
+  if (/(intermediate|div\.?\s*2|medium)/.test(s)) return 'intermediate';
+  return 'open';
+}
+function inferMode(text) {
+  const s = oppNorm(text);
+  if (/(online|virtual|remote)/.test(s)) return 'online';
+  if (/(hybrid)/.test(s)) return 'hybrid';
+  if (/(offline|on[\s-]*site|in[\s-]*person|venue)/.test(s)) return 'offline';
+  return 'unknown';
+}
+function extractSkills(text) {
+  const KW = ['python','java','javascript','typescript','react','node','node.js','angular','vue','docker','kubernetes','aws','azure','gcp','terraform','ansible','sql','mongodb','postgresql','machine learning','tensorflow','pytorch','nlp','c++','go','rust','django','flask','spring','figma','flutter','kotlin','swift','solidity','blockchain','data analysis','pandas','numpy','spark','kafka','graphql','rest api','ci/cd','linux','git'];
+  const s = oppNorm(text); const out = [];
+  for (const k of KW) if (s.includes(k) && !out.includes(k)) out.push(k);
+  return out.slice(0, 8);
+}
+
+function normalizeOpportunity(raw) {
+  const text = [raw.title, raw.description, raw.organizer, raw.company, (raw.skills || []).join(' '), raw.category, raw.type].filter(Boolean).join(' ');
+  const det = detectHiring(text);
+  const o = {
+    id: raw.id || oppId(raw.sourceUrl || raw.registrationUrl || raw.title),
+    title: raw.title || 'Untitled opportunity',
+    platform: raw.platform || raw.source || '',
+    organizer: raw.organizer || '',
+    company: raw.company || '',
+    category: raw.category || inferCategory(text),
+    type: OPP_TYPES.includes(raw.type) ? raw.type : inferType(text, raw.platform || ''),
+    description: stripHtml(raw.description || '').slice(0, 600),
+    eligibility: raw.eligibility || 'Open to all / check official page',
+    mode: OPP_MODES.includes(raw.mode) ? raw.mode : inferMode(text),
+    location: raw.location || '',
+    deadline: raw.deadline || '',
+    startDate: raw.startDate || '',
+    endDate: raw.endDate || '',
+    prize: raw.prize || '',
+    hiringOpportunity: raw.hiringOpportunity != null ? !!raw.hiringOpportunity : det.hiringOpportunity,
+    internshipOpportunity: raw.internshipOpportunity != null ? !!raw.internshipOpportunity : det.internshipOpportunity,
+    fullTimeOpportunity: raw.fullTimeOpportunity != null ? !!raw.fullTimeOpportunity : det.fullTimeOpportunity,
+    skills: (raw.skills && raw.skills.length) ? raw.skills.slice(0, 8) : extractSkills(text),
+    difficulty: OPP_DIFFICULTY.includes(raw.difficulty) ? raw.difficulty : inferDifficulty(text),
+    teamSize: raw.teamSize || '',
+    registrationUrl: raw.registrationUrl || raw.sourceUrl || '',
+    sourceUrl: raw.sourceUrl || raw.registrationUrl || '',
+    source: raw.source || raw.platform || '',
+    verified: !!raw.verified,
+    createdAt: raw.createdAt || new Date().toISOString()
+  };
+  return o;
+}
+
+/* ---- Codeforces public API (no key, no scraping) ---- */
+async function oppCodeforces(diagnostics) {
+  try {
+    const d = await fetchJson('https://codeforces.com/api/contest.list?gym=false', OPP_FETCH_TIMEOUT);
+    if (!d || d.status !== 'OK' || !Array.isArray(d.result)) throw new Error('Bad Codeforces response');
+    const upcoming = d.result.filter(c => c.phase === 'BEFORE').slice(0, 12);
+    diagnostics && diagnostics.push({ provider: 'Codeforces', ok: true, count: upcoming.length });
+    return upcoming.map(c => normalizeOpportunity({
+      title: c.name, platform: 'Codeforces', organizer: 'Codeforces', category: 'Software Development',
+      type: 'coding contest', description: `${c.name}. Competitive programming contest on Codeforces.`,
+      mode: 'online', startDate: c.startTimeSeconds ? new Date(c.startTimeSeconds * 1000).toISOString().slice(0, 10) : '',
+      deadline: c.startTimeSeconds ? new Date(c.startTimeSeconds * 1000).toISOString().slice(0, 10) : '',
+      difficulty: inferDifficulty(c.name), skills: ['c++', 'algorithms', 'data structures'],
+      registrationUrl: `https://codeforces.com/contests/${c.id}`, sourceUrl: `https://codeforces.com/contests/${c.id}`,
+      source: 'Codeforces', verified: true
+    }));
+  } catch (e) { diagnostics && diagnostics.push({ provider: 'Codeforces', ok: false, error: e.message }); return []; }
+}
+
+/* ---- Devpost public hackathons JSON (no key, no scraping) ---- */
+async function oppDevpost(keyword, diagnostics) {
+  try {
+    const qs = new URLSearchParams({ status: 'open', order_by: 'deadline' });
+    if (keyword) qs.set('search', keyword);
+    const d = await fetchJson(`https://devpost.com/api/hackathons?${qs.toString()}`, OPP_FETCH_TIMEOUT);
+    const list = (d && d.hackathons) || [];
+    diagnostics && diagnostics.push({ provider: 'Devpost', ok: true, count: list.length });
+    return list.slice(0, 12).map(h => {
+      const dates = h.submission_period_dates || '';
+      const prize = (h.prize_amount ? stripHtml(h.prize_amount) : '') || '';
+      const themes = (h.themes || []).map(t => t.name).join(', ');
+      return normalizeOpportunity({
+        title: h.title, platform: 'Devpost', organizer: h.organization_name || 'Devpost',
+        description: `${h.title}. ${themes ? 'Themes: ' + themes + '. ' : ''}${dates}`,
+        category: inferCategory(h.title + ' ' + themes), type: 'hackathon',
+        mode: (h.open_state === 'open' && /online|virtual/i.test(JSON.stringify(h.displayed_location || ''))) ? 'online' : inferMode(JSON.stringify(h.displayed_location || '')),
+        location: (h.displayed_location && h.displayed_location.location) || 'Online',
+        prize, skills: extractSkills(h.title + ' ' + themes),
+        registrationUrl: h.url, sourceUrl: h.url, source: 'Devpost', verified: true
+      });
+    });
+  } catch (e) { diagnostics && diagnostics.push({ provider: 'Devpost', ok: false, error: e.message }); return []; }
+}
+
+/* ---- SerpAPI public Google results -> safe links only (key-gated) ---- */
+async function oppSerp(keyword, diagnostics) {
+  if (!process.env.SERPAPI_KEY) return [];
+  try {
+    const q = `${keyword || 'hackathon hiring challenge'} (hackathon OR "hiring challenge" OR competition) ${process.env.OPP_DEFAULT_LOCATION || 'India'}`;
+    const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(q)}&num=10&api_key=${encodeURIComponent(process.env.SERPAPI_KEY)}`;
+    const d = await timedFetch(url, {}, OPP_FETCH_TIMEOUT);
+    const org = (d && d.organic_results) || [];
+    diagnostics && diagnostics.push({ provider: 'SerpAPI', ok: true, count: org.length });
+    return org.slice(0, 10).map(r => normalizeOpportunity({
+      title: (r.title || '').replace(/\s*[-|–].*$/, '').trim() || r.title, platform: 'Google (SerpAPI)',
+      organizer: r.displayed_link || '', description: r.snippet || '', source: 'SerpAPI (public Google result)',
+      registrationUrl: r.link, sourceUrl: r.link, verified: false
+    }));
+  } catch (e) { diagnostics && diagnostics.push({ provider: 'SerpAPI', ok: false, error: e.message }); return []; }
+}
+
+/* ---- Curated platform search-link fallbacks (always available) ---- */
+function oppSearchLinks(keyword) {
+  const k = encodeURIComponent(keyword || 'hackathon hiring challenge');
+  const g = q => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  return [
+    { platform: 'Unstop', label: 'Unstop hiring challenges & hackathons', url: `https://unstop.com/hackathons?searchTerm=${k}` },
+    { platform: 'Unstop', label: 'Unstop hiring challenges', url: `https://unstop.com/competitions?searchTerm=${k}` },
+    { platform: 'HackerEarth', label: 'HackerEarth challenges & hiring challenges', url: `https://www.hackerearth.com/challenges/` },
+    { platform: 'Devfolio', label: 'Devfolio hackathons', url: `https://devfolio.co/hackathons` },
+    { platform: 'Devpost', label: 'Devpost hackathons', url: `https://devpost.com/hackathons?search=${k}` },
+    { platform: 'MLH', label: 'MLH events', url: `https://mlh.io/seasons/2026/events` },
+    { platform: 'Kaggle', label: 'Kaggle competitions', url: `https://www.kaggle.com/competitions` },
+    { platform: 'Topcoder', label: 'Topcoder challenges', url: `https://www.topcoder.com/challenges` },
+    { platform: 'CodeChef', label: 'CodeChef contests', url: `https://www.codechef.com/contests` },
+    { platform: 'Codeforces', label: 'Codeforces contests', url: `https://codeforces.com/contests` },
+    { platform: 'Google', label: '"DevOps hiring challenge India students"', url: g('DevOps hiring challenge India students') },
+    { platform: 'Google', label: '"cloud hackathon hiring challenge"', url: g('cloud hackathon hiring challenge') },
+    { platform: 'Google', label: '"software engineer hiring challenge India"', url: g('software engineer hiring challenge India') },
+    { platform: 'Google', label: '"internship coding challenge students India"', url: g('internship coding challenge students India') },
+    { platform: 'Google', label: '"PPI hackathon India"', url: g('PPI hackathon India') },
+    { platform: 'Google', label: '"pre placement interview hackathon"', url: g('pre placement interview hackathon') }
+  ];
+}
+
+/* ---- Curated static opportunities so the page is never blank ---- */
+function oppCurated() {
+  const raw = [
+    { title: 'Unstop Hiring Challenges (rolling)', platform: 'Unstop', organizer: 'Unstop (Dare2Compete)', company: '', type: 'hiring challenge', description: 'Company hiring challenges and pre-placement interview opportunities across software, data, product and design roles for students and freshers in India.', eligibility: 'Students & freshers (India)', mode: 'online', location: 'India', prize: 'Job offers, PPI, prizes', skills: ['python', 'java', 'sql', 'data structures'], difficulty: 'open', registrationUrl: 'https://unstop.com/competitions', sourceUrl: 'https://unstop.com/competitions', source: 'Unstop', hiringOpportunity: true },
+    { title: 'HackerEarth Hiring Challenges', platform: 'HackerEarth', organizer: 'HackerEarth', type: 'hiring challenge', description: 'Recruitment coding challenges run by tech companies; top performers get interview opportunities and full-time/internship offers.', eligibility: 'Developers & students', mode: 'online', location: 'Global / India', prize: 'Interview opportunities, jobs', skills: ['python', 'java', 'c++', 'algorithms'], difficulty: 'intermediate', registrationUrl: 'https://www.hackerearth.com/challenges/hiring/', sourceUrl: 'https://www.hackerearth.com/challenges/hiring/', source: 'HackerEarth', hiringOpportunity: true },
+    { title: 'Smart India Hackathon', platform: 'SIH', organizer: 'Government of India / AICTE', type: 'innovation challenge', description: 'Nationwide innovation hackathon solving real problem statements from ministries and companies. Strong portfolio + networking + prize money.', eligibility: 'College students (India)', mode: 'hybrid', location: 'India', prize: '₹1,00,000+ per problem statement', skills: ['python', 'react', 'machine learning', 'iot'], difficulty: 'open', registrationUrl: 'https://www.sih.gov.in/', sourceUrl: 'https://www.sih.gov.in/', source: 'Curated', verified: true },
+    { title: 'MLH Hackathons (season)', platform: 'MLH', organizer: 'Major League Hacking', type: 'hackathon', description: 'Global beginner-friendly student hackathons. Great for portfolio projects, swag, networking and learning new stacks.', eligibility: 'Students (beginner friendly)', mode: 'hybrid', location: 'Global', prize: 'Swag, prizes, sponsor tracks', skills: ['javascript', 'react', 'node.js', 'python'], difficulty: 'beginner', registrationUrl: 'https://mlh.io/seasons/2026/events', sourceUrl: 'https://mlh.io/seasons/2026/events', source: 'Curated' },
+    { title: 'Kaggle Competitions', platform: 'Kaggle', organizer: 'Kaggle / Google', type: 'data science competition', description: 'Public machine learning and data science competitions with prize money, leaderboards and strong portfolio value.', eligibility: 'Open to all', mode: 'online', location: 'Online', prize: 'Prize money + medals', skills: ['python', 'machine learning', 'pandas', 'pytorch'], difficulty: 'intermediate', registrationUrl: 'https://www.kaggle.com/competitions', sourceUrl: 'https://www.kaggle.com/competitions', source: 'Curated' },
+    { title: 'Topcoder Open Challenges', platform: 'Topcoder', organizer: 'Topcoder', type: 'coding contest', description: 'Algorithm, development, data science and QA challenges with cash prizes; strong for freelancing-style portfolio.', eligibility: 'Open to all', mode: 'online', location: 'Online', prize: 'Cash prizes', skills: ['java', 'c++', 'algorithms', 'react'], difficulty: 'advanced', registrationUrl: 'https://www.topcoder.com/challenges', sourceUrl: 'https://www.topcoder.com/challenges', source: 'Curated' },
+    { title: 'Google Summer of Code', platform: 'GSoC', organizer: 'Google Open Source', type: 'open source program', description: 'Global open-source internship program. Stipend, mentorship, real OSS contributions and excellent resume/portfolio value.', eligibility: 'Students & beginners to OSS (18+)', mode: 'online', location: 'Online', prize: 'Stipend + mentorship', skills: ['python', 'c++', 'git', 'open source'], difficulty: 'intermediate', registrationUrl: 'https://summerofcode.withgoogle.com/', sourceUrl: 'https://summerofcode.withgoogle.com/', source: 'Curated', internshipOpportunity: true },
+    { title: 'DevOps / Cloud Hiring Hackathon (search)', platform: 'Multiple', organizer: 'Various companies', type: 'cloud/devops challenge', description: 'Recruitment cloud/DevOps hackathons where companies hire SRE/DevOps/Cloud engineers. Includes pre-placement interview opportunities.', eligibility: 'Students & experienced', mode: 'online', location: 'India', prize: 'Jobs, internships, PPI', skills: ['docker', 'kubernetes', 'aws', 'terraform', 'ci/cd'], difficulty: 'intermediate', registrationUrl: 'https://www.google.com/search?q=' + encodeURIComponent('cloud devops hiring challenge India'), sourceUrl: 'https://www.google.com/search?q=' + encodeURIComponent('cloud devops hiring challenge India'), source: 'Curated', hiringOpportunity: true }
+  ];
+  return raw.map(normalizeOpportunity);
+}
+
+/* ---- filter + sort helpers ---- */
+function oppMatches(o, q) {
+  if (q.keyword) { const k = oppNorm(q.keyword); const hay = oppNorm(o.title + ' ' + o.description + ' ' + o.organizer + ' ' + o.company + ' ' + (o.skills || []).join(' ') + ' ' + o.platform); if (!hay.includes(k)) return false; }
+  if (q.category && q.category !== 'All' && o.category !== q.category) return false;
+  if (q.type && q.type !== 'All' && o.type !== q.type) return false;
+  if (q.platform && q.platform !== 'All' && oppNorm(o.platform).indexOf(oppNorm(q.platform)) < 0 && oppNorm(o.source).indexOf(oppNorm(q.platform)) < 0) return false;
+  if (q.mode && q.mode !== 'All' && o.mode !== q.mode) return false;
+  if (q.location && oppNorm(o.location).indexOf(oppNorm(q.location)) < 0 && oppNorm(o.location) !== '' ) { if (oppNorm(o.location) !== 'online') return false; }
+  if (oppBool(q.hiringOnly) && !o.hiringOpportunity) return false;
+  if (oppBool(q.internshipOnly) && !o.internshipOpportunity) return false;
+  if (oppBool(q.beginnerFriendly) && o.difficulty !== 'beginner' && o.difficulty !== 'open') return false;
+  if (q.skills) { const want = String(q.skills).split(',').map(s => oppNorm(s).trim()).filter(Boolean); if (want.length) { const have = (o.skills || []).map(oppNorm); if (!want.some(w => have.some(h => h.includes(w)))) return false; } }
+  return true;
+}
+function oppBool(v) { return v === true || v === 'true' || v === '1' || v === 1; }
+
+app.get('/opportunities/providers', (req, res) => {
+  res.json({
+    ok: true,
+    providers: {
+      codeforces: { active: true, type: 'public API', note: 'codeforces.com public contest API (no key, no scraping)' },
+      devpost: { active: true, type: 'public API', note: 'devpost.com public hackathons JSON (no key, no scraping)' },
+      serpapi: { active: !!process.env.SERPAPI_KEY, type: 'public Google results', note: process.env.SERPAPI_KEY ? 'SERPAPI_KEY configured' : 'inactive: set SERPAPI_KEY to add public Google result links' },
+      curated: { active: true, type: 'static fallback', note: 'curated opportunities + safe public search links — always available' }
+    },
+    types: OPP_TYPES, modes: OPP_MODES, difficulty: OPP_DIFFICULTY,
+    time: new Date().toISOString()
+  });
+});
+
+app.get('/opportunities/search', async (req, res) => {
+  const q = req.query || {};
+  const diagnostics = [];
+  let items = [];
+  try {
+    const batches = await Promise.allSettled([
+      oppCodeforces(diagnostics),
+      oppDevpost(q.keyword, diagnostics),
+      oppSerp(q.keyword, diagnostics)
+    ]);
+    for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) items = items.concat(b.value);
+    items = items.concat(oppCurated());
+    // dedupe by registration url / title
+    const seen = new Set(); const dedup = [];
+    for (const o of items) { const key = oppNorm(o.registrationUrl || o.title); if (seen.has(key)) continue; seen.add(key); dedup.push(o); }
+    let filtered = dedup.filter(o => oppMatches(o, q));
+    // sort: verified + hiring first, then those with a deadline soonest
+    filtered.sort((a, b) => (Number(b.hiringOpportunity) - Number(a.hiringOpportunity)) || (Number(b.verified) - Number(a.verified)) || String(a.deadline || 'z').localeCompare(String(b.deadline || 'z')));
+    res.json({
+      ok: true, count: filtered.length, opportunities: filtered, diagnostics,
+      searchLinks: oppSearchLinks(q.keyword),
+      serpapiConfigured: !!process.env.SERPAPI_KEY,
+      note: 'Public APIs (Codeforces, Devpost), optional SerpAPI public links, and curated fallbacks. No scraping, no CAPTCHA bypass, no login/cookie scraping.'
+    });
+  } catch (e) {
+    res.json({ ok: false, error: e.message || String(e), opportunities: oppCurated(), searchLinks: oppSearchLinks(q.keyword), serpapiConfigured: !!process.env.SERPAPI_KEY, diagnostics });
+  }
+});
+
+app.get('/opportunities/details/:id', async (req, res) => {
+  const id = req.params.id;
+  const diagnostics = [];
+  let items = [];
+  try {
+    const batches = await Promise.allSettled([oppCodeforces(diagnostics), oppDevpost('', diagnostics)]);
+    for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) items = items.concat(b.value);
+    items = items.concat(oppCurated());
+    const found = items.find(o => o.id === id);
+    if (found) return res.json({ ok: true, opportunity: found });
+    return res.json({ ok: false, error: 'Opportunity not found on server. It may be a client-cached or search-link item.', searchLinks: oppSearchLinks('') });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+/* deterministic prep plan (AI optional client-side via /ai/messages) */
+function buildPrepPlan(o) {
+  o = o || {};
+  const cat = o.category || 'General';
+  const type = o.type || 'hackathon';
+  const skills = (o.skills && o.skills.length) ? o.skills : ['core fundamentals', 'version control (git)', 'a demo-ready stack'];
+  const isContest = /contest/.test(type);
+  const isData = /data science/.test(type) || cat === 'AI/ML' || cat === 'Data Science';
+  const isDevops = /devops|cloud/.test(type) || cat === 'DevOps/Cloud';
+  const isCyber = /cyber/.test(type) || cat === 'Cybersecurity';
+
+  let projectIdea = `A focused ${cat} project that solves one clear problem from the ${o.title || 'challenge'} brief, with a working demo and a clean README.`;
+  if (isDevops) projectIdea = 'A cloud-native deployment demo: containerize a small app, add a CI/CD pipeline, deploy to a free cloud tier, and add basic monitoring/logging.';
+  if (isData) projectIdea = 'A reproducible notebook: clean the dataset, build a baseline model, iterate to a stronger model, and present clear evaluation metrics and a short writeup.';
+  if (isCyber) projectIdea = 'A small security tool or CTF writeup: pick one vulnerability class, build a safe lab/demo, and document detection + mitigation.';
+
+  const sevenDay = isDevops ? [
+    'Day 1: Understand the problem statement and design the architecture.',
+    'Day 2: Build a Dockerized app and a CI/CD pipeline.',
+    'Day 3: Deploy to a free cloud tier and record a demo video.',
+    'Day 4: Add monitoring/logging and basic alerts.',
+    'Day 5: Write the README and architecture diagram.',
+    'Day 6: Test edge cases and harden the deploy.',
+    'Day 7: Submit and rehearse the pitch.'
+  ] : isData ? [
+    'Day 1: Read the brief, explore the data, set the metric.',
+    'Day 2: Build a clean baseline model and a validation split.',
+    'Day 3: Feature engineering and error analysis.',
+    'Day 4: Try stronger models / tuning; track experiments.',
+    'Day 5: Finalize the pipeline; make it reproducible.',
+    'Day 6: Write the report and visualizations.',
+    'Day 7: Submit and rehearse the explanation.'
+  ] : isContest ? [
+    'Day 1: Revise core data structures (arrays, strings, hashmaps).',
+    'Day 2: Practice two-pointers, sliding window, prefix sums.',
+    'Day 3: Graphs + BFS/DFS + shortest paths.',
+    'Day 4: Dynamic programming patterns.',
+    'Day 5: Greedy + math + number theory basics.',
+    'Day 6: Timed mock contest; review every miss.',
+    'Day 7: Light revision; contest day strategy + fast templates.'
+  ] : [
+    'Day 1: Understand the problem statement and pick a sharp scope.',
+    'Day 2: Design the solution and set up the repo + skeleton.',
+    'Day 3: Build the core feature end to end.',
+    'Day 4: Add the second feature and polish the UX.',
+    'Day 5: Write the README and prepare visuals.',
+    'Day 6: Test edge cases and fix bugs.',
+    'Day 7: Record the demo, submit, and rehearse the pitch.'
+  ];
+  const threeDay = [sevenDay[0], 'Day 2: Build the core working demo (the single most important feature).', 'Day 3: Polish, write the README, record a short demo, and submit.'];
+
+  return {
+    title: o.title || 'Opportunity',
+    requiredSkills: skills,
+    suggestedProject: projectIdea,
+    threeDayPlan: threeDay,
+    sevenDayPlan: sevenDay,
+    submissionChecklist: [
+      'Public repo link works and is not private.',
+      'README explains what it does, how to run it, and the stack.',
+      'Working demo (hosted link or 60–90s video).',
+      'All required submission fields filled before the deadline.',
+      'Screenshots / architecture diagram included.'
+    ],
+    teamStrategy: [
+      'Assign clear owners: build, demo/pitch, README/docs.',
+      'Lock scope early — one strong feature beats three half-built ones.',
+      'Commit small and often; integrate daily, not at the end.',
+      'Reserve the final block for demo + rehearsal, not new features.'
+    ],
+    demoPitchChecklist: [
+      'Open with the problem and who it helps (15 seconds).',
+      'Show the working demo, not slides, first.',
+      'State the tech stack and one hard thing you solved.',
+      'End with impact and what you would build next.'
+    ],
+    readmeChecklist: [
+      'Title + one-line description.',
+      'Problem statement and motivation.',
+      'Features and screenshots.',
+      'Tech stack and architecture.',
+      'Setup / run instructions.',
+      'Demo link + team + license.'
+    ],
+    judgingPrep: [
+      'Map your build directly to the stated judging criteria.',
+      'Prepare a crisp answer for "what is novel here?".',
+      'Have metrics or a before/after ready.',
+      'Anticipate the "how would this scale?" question.'
+    ]
+  };
+}
+
+app.post('/opportunities/prep-plan', (req, res) => {
+  try { res.json({ ok: true, plan: buildPrepPlan(req.body && req.body.opportunity), generatedBy: 'template', note: 'Deterministic template. Configure ANTHROPIC_API_KEY and use the in-app AI button for a tailored plan.' }); }
+  catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+/* deterministic hackathon -> resume artifacts (no invented winning status) */
+function buildResumeProject(o, opts) {
+  o = o || {}; opts = opts || {};
+  const win = opts.outcome && /winner|shortlist/i.test(opts.outcome) ? opts.outcome : '';
+  const stack = (o.skills && o.skills.length ? o.skills : ['relevant tools']).slice(0, 5).join(', ');
+  const dur = /hackathon/.test(o.type || '') ? 'a time-boxed hackathon' : `the ${o.title || 'competition'}`;
+  const what = o.description ? o.description.replace(/\.$/, '') : `a working ${o.category || 'software'} solution`;
+  const bullet = `Built ${o.title ? o.title.replace(/\.$/, '') : 'a working solution'} during ${dur} using ${stack}, delivering a demoable end-to-end build${win ? ` (${win})` : ''}.`;
+  const bullet2 = `Designed, built and demoed the project end to end, owning ${o.category || 'the full'} implementation and presenting it under a strict deadline.`;
+  return {
+    resumeBullets: [bullet, bullet2],
+    projectDescription: `${o.title || 'Project'} — ${what}. Built ${/hackathon/.test(o.type || '') ? 'during a hackathon' : 'for ' + (o.platform || 'a competition')}${o.organizer ? ' organized by ' + o.organizer : ''}. Stack: ${stack}.${win ? ' Outcome: ' + win + '.' : ''}`,
+    githubReadme: [
+      `# ${o.title || 'Project'}`,
+      `> ${what}.`,
+      '',
+      '## Problem',
+      `What this solves and who it helps.`,
+      '## Features',
+      '- Core feature 1\n- Core feature 2',
+      '## Tech stack',
+      `${stack}`,
+      '## Run locally',
+      '```bash\n# install\n# run\n```',
+      '## Demo',
+      'Add a hosted link or a 60–90s demo video.',
+      `## Built at`,
+      `${o.platform || ''}${o.organizer ? ' · ' + o.organizer : ''}`
+    ].join('\n'),
+    linkedinPost: `Just wrapped ${o.title || 'a competition'}${o.platform ? ' on ' + o.platform : ''}! 🚀\n\nIn a short, intense build I shipped a working ${o.category || 'software'} project using ${stack}.${win ? ' ' + win + '.' : ''}\n\nBiggest lesson: scope tight, demo early, and let the build do the talking.\n\nRepo + demo in comments 👇\n\n#hackathon #${(o.category || 'tech').replace(/[^a-z0-9]/gi, '')} #buildinpublic`,
+    portfolioEntry: { name: o.title || 'Project', role: 'Builder', context: `${o.platform || 'Competition'}${o.organizer ? ' · ' + o.organizer : ''}`, stack: (o.skills || []).slice(0, 5), summary: what, link: o.registrationUrl || o.sourceUrl || '', outcome: win || 'Participated' },
+    interviewExplanation: `I built ${o.title || 'this project'} under a deadline. The hardest part was scoping it small enough to actually ship while still being impressive. I owned the ${o.category || 'core'} build, integrated the pieces, and demoed it live. If I had more time I'd harden it and add tests.`,
+    starStory: {
+      situation: `I joined ${o.title || 'a competition'}${o.platform ? ' on ' + o.platform : ''} with a tight deadline.`,
+      task: `Deliver a working, demoable ${o.category || 'software'} solution from scratch.`,
+      action: `I scoped to one strong feature, built it end to end with ${stack}, and prepared a clear demo + README.`,
+      result: `I shipped a complete demo on time${win ? ' and ' + win.toLowerCase() : ''}, and turned it into a portfolio project.`
+    },
+    invented: false
+  };
+}
+
+app.post('/opportunities/convert-to-resume', (req, res) => {
+  try { res.json({ ok: true, artifacts: buildResumeProject(req.body && req.body.opportunity, req.body || {}), note: 'Deterministic; winning status only included if you mark the opportunity as winner/shortlisted.' }); }
+  catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health|contacts).*/, (req, res) => {
+app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 

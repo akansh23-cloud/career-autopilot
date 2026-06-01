@@ -257,6 +257,14 @@ tr:hover td{background:var(--bg2)}
     <p class="lead" style="margin-bottom:22px">Engine + data controls.</p>
     <div id="settingsBody"></div>
   </section>
+  <!-- ============ OPPORTUNITY ARENA ============ -->
+  <section class="view" data-view="opportunities">
+    <div class="section-title"><span class="eyebrow">Arena</span></div>
+    <h2 style="font-size:30px;margin-bottom:6px">Hackathons, Hiring Challenges &amp; Competitions</h2>
+    <p class="lead" style="margin-bottom:22px">Discover hackathons, hiring challenges, coding &amp; case competitions, innovation and internship programs that lead to jobs, internships, referrals, portfolio projects and prize money. Compliant by design — public APIs, public pages and safe search links only, no scraping.</p>
+    <div id="oppBody"></div>
+  </section>
+
   <!-- ============ RESUME EDITOR (Wonsulting-style) ============ -->
   <section class="view" data-view="editor">
     <div class="section-title"><span class="eyebrow">Editor</span></div>
@@ -4773,6 +4781,665 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
   COA.renderContacts=renderContacts;
 })();
 
+/* ============================================================
+   OPPORTUNITY ARENA  (client module)
+   Runs in the main script scope (after all prior overrides) so it can use
+   S, save, esc, uid, toast, modal, closeModal, callClaude, clamp, today,
+   addDays, dl, go, VIEWS, renderTabs, renderDash, renderTracker, store.
+   COMPLIANCE: public APIs (Codeforces, Devpost), optional SerpAPI public
+   links, curated fallbacks + safe search links. No scraping, no CAPTCHA
+   bypass, no login/cookie/session scraping, no Puppeteer/Playwright.
+   Never invents winning status.
+   ============================================================ */
+(function(){
+  const LS={
+    opportunities:'careerAutopilot_opportunities',
+    saved:'careerAutopilot_savedOpportunities',
+    tracker:'careerAutopilot_opportunityTracker',
+    teamFinder:'careerAutopilot_teamFinder',
+    prepPlans:'careerAutopilot_opportunityPrepPlans',
+    resumeProjects:'careerAutopilot_opportunityResumeProjects',
+    usage:'careerAutopilot_opportunityUsage',
+    tier:'careerAutopilot_userTier'
+  };
+  const ST=(typeof store!=='undefined')?store:localStorage;
+  const E=id=>document.getElementById(id);
+  const X=s=>(typeof esc==='function'?esc(s):String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+  const NID=p=>(p||'opp_')+((typeof uid==='function'?uid():Math.random().toString(36).slice(2,10)));
+  const TODAY=()=>(typeof today==='function'?today():new Date().toISOString().slice(0,10));
+  const CL=(n,a=0,b=100)=>(typeof clamp==='function'?clamp(n,a,b):Math.max(a,Math.min(b,Math.round(n||0))));
+  function lget(k,def){try{const v=ST.getItem(k);return v==null?def:JSON.parse(v);}catch(e){return def;}}
+  function lset(k,v){try{ST.setItem(k,JSON.stringify(v));}catch(e){}}
+  function base(){return (typeof caOAuthBase==='function')?caOAuthBase():'';}
+  function aiOn(){return !!base() || !!(typeof S!=='undefined'&&S.settings&&S.settings.apiKey);}
+  function toastMsg(m,e){if(typeof toast==='function')toast(m,e);}
+
+  const TYPES=['hackathon','hiring challenge','coding contest','case competition','innovation challenge','internship challenge','campus challenge','open source program','data science competition','cybersecurity challenge','cloud/devops challenge'];
+  const MODES=['online','offline','hybrid','unknown'];
+  const CATS=['AI/ML','Software Development','DevOps/Cloud','Data Science','Cybersecurity','Web Development','Mobile Development','Product Management','Design','Business/Case','Open Source','Finance','General'];
+  const PLATFORMS=['Unstop','HackerEarth','Devfolio','Devpost','MLH','Kaggle','Topcoder','CodeChef','Codeforces','Google (SerpAPI)','Curated'];
+  const TRACK_STATUS=['Saved','Registered','Team Needed','Team Formed','In Progress','Submitted','Shortlisted','Winner','Rejected','Converted to Resume Project','Archived'];
+  const TEAM_ROLES=['Frontend Developer','Backend Developer','ML Developer','DevOps Developer','UI/UX Designer','Product/Business','Data Scientist'];
+
+  /* ---------- usage limits / tiers (shared tier key with Outreach) ---------- */
+  const LIMITS={free:{save:5,prep:3,resume:2},pro:{save:100000,prep:50,resume:50},premium:{save:100000,prep:100000,resume:100000}};
+  function tier(){const t=lget(LS.tier,'free');return LIMITS[t]?t:'free';}
+  function month(){return new Date().toISOString().slice(0,7);}
+  function usage(){let u=lget(LS.usage,null);if(!u||u.month!==month()){u={month:month(),prep:0,resume:0};lset(LS.usage,u);}return u;}
+  function bumpUsage(k){const u=usage();u[k]=(u[k]||0)+1;lset(LS.usage,u);}
+  function savedCount(){return lget(LS.saved,[]).length;}
+  function canSave(){const t=tier();return savedCount()<LIMITS[t].save;}
+  function canPrep(){const t=tier();return usage().prep<LIMITS[t].prep;}
+  function canResume(){const t=tier();return usage().resume<LIMITS[t].resume;}
+
+  /* ---------- state ---------- */
+  let OPPS=lget(LS.opportunities,[]);
+  let FILTERS={keyword:'',category:'All',type:'All',platform:'All',mode:'All',eligibility:'',deadline:'All',hiringOnly:false,internshipOnly:false,beginnerFriendly:false,skills:'',location:'',serpLinks:null};
+  let LOADING=false, SEARCHED=false, DIAG=[];
+
+  /* ---------- deadline urgency ---------- */
+  function deadlineState(d){
+    if(!d)return{label:'No deadline',cls:'opp-b-soft',days:null};
+    const t=new Date(TODAY()), dl=new Date(d);
+    if(isNaN(dl))return{label:String(d),cls:'opp-b-soft',days:null};
+    const days=Math.round((dl-t)/86400000);
+    if(days<0)return{label:'Expired',cls:'opp-b-rose',days};
+    if(days<=2)return{label:'Urgent · '+days+'d left',cls:'opp-b-rose',days};
+    if(days<=7)return{label:'Soon · '+days+'d left',cls:'opp-b-amber',days};
+    return{label:days+'d left',cls:'opp-b-soft',days};
+  }
+
+  /* ---------- fit score (client, uses resume/profile) ---------- */
+  function userSkills(){const a=(typeof S!=='undefined'&&S.analysis)||{};return [].concat(a.skills||[],a.tools||[]).map(x=>String(x).toLowerCase());}
+  function targetRole(){return ((typeof S!=='undefined'&&S.targetRole)||'').toLowerCase();}
+  function roleCatMap(r){
+    if(/devops|cloud|sre|site reliab/.test(r))return'DevOps/Cloud';
+    if(/data scien|machine learning|ml engineer/.test(r))return /machine learning|ml/.test(r)?'AI/ML':'Data Science';
+    if(/front/.test(r))return'Web Development';
+    if(/back|full stack|software|engineer/.test(r))return'Software Development';
+    if(/security/.test(r))return'Cybersecurity';
+    if(/mobile/.test(r))return'Mobile Development';
+    if(/product/.test(r))return'Product Management';
+    if(/business|analyst/.test(r))return'Business/Case';
+    return'General';
+  }
+  function fitScore(o){
+    const us=userSkills(), os=(o.skills||[]).map(x=>String(x).toLowerCase());
+    const strong=[], missing=[];
+    os.forEach(s=>{ if(us.some(u=>u.includes(s)||s.includes(u))) strong.push(s); else missing.push(s); });
+    let score=0;
+    // skill overlap (0-45)
+    score += os.length? Math.round(45*(strong.length/os.length)) : 22;
+    // category relevance (0-20)
+    if(o.category===roleCatMap(targetRole()))score+=20; else if(o.category==='General')score+=8; else score+=5;
+    // difficulty match (0-10)
+    const exp=(typeof S!=='undefined'&&S.analysis&&S.analysis.yearsExperience)||0;
+    if(o.difficulty==='open')score+=8;
+    else if(o.difficulty==='beginner')score+=exp<2?10:5;
+    else if(o.difficulty==='intermediate')score+=exp>=1?9:6;
+    else score+=exp>=2?9:4;
+    // hiring/internship relevance (0-15)
+    if(o.hiringOpportunity)score+=8;
+    if(o.internshipOpportunity&&exp<2)score+=4;
+    if(o.fullTimeOpportunity&&exp>=1)score+=3;
+    if(!o.hiringOpportunity&&!o.internshipOpportunity)score+=4;
+    // deadline urgency (0-10) — reachable but not expired
+    const ds=deadlineState(o.deadline);
+    if(ds.days==null)score+=6;
+    else if(ds.days<0)score+=0;
+    else if(ds.days<=2)score+=4;
+    else if(ds.days<=21)score+=10;
+    else score+=7;
+    score=CL(score);
+    let suggestion='Solid fit. Read the brief and prepare a small, demoable build.';
+    if(score>=80)suggestion='Strong match for your profile. Prepare a focused demo and apply soon.';
+    else if(score>=55)suggestion=missing.length?('Good fit. Brush up on '+missing.slice(0,2).join(' & ')+' before applying.'):'Good fit — get a small portfolio demo ready.';
+    else suggestion=missing.length?('Stretch opportunity. Learn '+missing.slice(0,2).join(' & ')+' first, or use it to build new skills.'):'Use this to build a new portfolio project and skills.';
+    if(o.category==='DevOps/Cloud'&&missing.length)suggestion='Good opportunity for your profile. Prepare a small cloud deployment demo before applying.';
+    return {score,strong:strong.slice(0,6),missing:missing.slice(0,6),suggestion};
+  }
+
+  /* ---------- badges ---------- */
+  function badges(o){
+    const b=[];
+    if(o.hiringOpportunity&&!o.internshipOpportunity&&!o.fullTimeOpportunity)b.push(['Hiring Challenge','ok']);
+    if(o.internshipOpportunity)b.push(['Internship Opportunity','ok']);
+    if(o.fullTimeOpportunity)b.push(['Full-time Opportunity','ok']);
+    if(!o.hiringOpportunity&&!o.internshipOpportunity&&!o.fullTimeOpportunity){
+      if(o.prize)b.push(['Prize Only','amber']);
+      b.push(['Portfolio Builder','soft']);
+    }
+    if(/hackathon|innovation|case/.test(o.type))b.push(['Networking Opportunity','soft']);
+    if(o.difficulty==='beginner'||o.difficulty==='open')b.push(['Beginner Friendly','sky']);
+    return b;
+  }
+
+  /* ---------- normalize a raw item from server/local ---------- */
+  function normalize(raw){
+    return {
+      id:raw.id||NID(),title:raw.title||'Untitled opportunity',platform:raw.platform||raw.source||'',
+      organizer:raw.organizer||'',company:raw.company||'',category:CATS.includes(raw.category)?raw.category:'General',
+      type:TYPES.includes(raw.type)?raw.type:'hackathon',description:raw.description||'',
+      eligibility:raw.eligibility||'Open / check official page',mode:MODES.includes(raw.mode)?raw.mode:'unknown',
+      location:raw.location||'',deadline:raw.deadline||'',startDate:raw.startDate||'',endDate:raw.endDate||'',
+      prize:raw.prize||'',hiringOpportunity:!!raw.hiringOpportunity,internshipOpportunity:!!raw.internshipOpportunity,
+      fullTimeOpportunity:!!raw.fullTimeOpportunity,skills:(raw.skills||[]).slice(0,8),
+      difficulty:['beginner','intermediate','advanced','open'].includes(raw.difficulty)?raw.difficulty:'open',
+      teamSize:raw.teamSize||'',registrationUrl:raw.registrationUrl||raw.sourceUrl||'',sourceUrl:raw.sourceUrl||raw.registrationUrl||'',
+      source:raw.source||raw.platform||'',verified:!!raw.verified,createdAt:raw.createdAt||new Date().toISOString()
+    };
+  }
+
+  /* ---------- local curated fallback (frontend-only deploy or backend down) ---------- */
+  function localCurated(){
+    return [
+      {title:'Unstop Hiring Challenges (rolling)',platform:'Unstop',organizer:'Unstop (Dare2Compete)',type:'hiring challenge',category:'Software Development',description:'Company hiring challenges & pre-placement interview opportunities across software, data, product & design roles for students and freshers in India.',eligibility:'Students & freshers (India)',mode:'online',location:'India',prize:'Job offers, PPI, prizes',skills:['python','java','sql','data structures'],difficulty:'open',registrationUrl:'https://unstop.com/competitions',source:'Unstop',hiringOpportunity:true},
+      {title:'HackerEarth Hiring Challenges',platform:'HackerEarth',organizer:'HackerEarth',type:'hiring challenge',category:'Software Development',description:'Recruitment coding challenges run by tech companies; top performers get interview opportunities and full-time/internship offers.',eligibility:'Developers & students',mode:'online',location:'Global / India',prize:'Interview opportunities, jobs',skills:['python','java','c++','algorithms'],difficulty:'intermediate',registrationUrl:'https://www.hackerearth.com/challenges/hiring/',source:'HackerEarth',hiringOpportunity:true},
+      {title:'Smart India Hackathon',platform:'SIH',organizer:'Government of India / AICTE',type:'innovation challenge',category:'Software Development',description:'Nationwide innovation hackathon solving real ministry/company problem statements. Strong portfolio + networking + prize money.',eligibility:'College students (India)',mode:'hybrid',location:'India',prize:'₹1,00,000+ per problem statement',skills:['python','react','machine learning'],difficulty:'open',registrationUrl:'https://www.sih.gov.in/',source:'Curated',verified:true},
+      {title:'MLH Hackathons (season)',platform:'MLH',organizer:'Major League Hacking',type:'hackathon',category:'Web Development',description:'Global beginner-friendly student hackathons. Great for portfolio projects, swag, networking and learning new stacks.',eligibility:'Students (beginner friendly)',mode:'hybrid',location:'Global',prize:'Swag, prizes, sponsor tracks',skills:['javascript','react','node.js','python'],difficulty:'beginner',registrationUrl:'https://mlh.io/seasons/2026/events',source:'Curated'},
+      {title:'Kaggle Competitions',platform:'Kaggle',organizer:'Kaggle / Google',type:'data science competition',category:'Data Science',description:'Public ML & data science competitions with prize money, leaderboards and strong portfolio value.',eligibility:'Open to all',mode:'online',location:'Online',prize:'Prize money + medals',skills:['python','machine learning','pandas','pytorch'],difficulty:'intermediate',registrationUrl:'https://www.kaggle.com/competitions',source:'Curated'},
+      {title:'Topcoder Open Challenges',platform:'Topcoder',organizer:'Topcoder',type:'coding contest',category:'Software Development',description:'Algorithm, development, data science & QA challenges with cash prizes; strong freelancing-style portfolio.',eligibility:'Open to all',mode:'online',location:'Online',prize:'Cash prizes',skills:['java','c++','algorithms','react'],difficulty:'advanced',registrationUrl:'https://www.topcoder.com/challenges',source:'Curated'},
+      {title:'Google Summer of Code',platform:'GSoC',organizer:'Google Open Source',type:'open source program',category:'Open Source',description:'Global open-source internship program. Stipend, mentorship, real OSS contributions and excellent resume/portfolio value.',eligibility:'Beginners to OSS (18+)',mode:'online',location:'Online',prize:'Stipend + mentorship',skills:['python','c++','git','open source'],difficulty:'intermediate',registrationUrl:'https://summerofcode.withgoogle.com/',source:'Curated',internshipOpportunity:true},
+      {title:'CodeChef Contests (rolling)',platform:'CodeChef',organizer:'CodeChef',type:'coding contest',category:'Software Development',description:'Monthly Long, Cook-off and Starters competitive programming contests. Good for consistent practice and ratings.',eligibility:'Open to all',mode:'online',location:'Online',prize:'Goodies / ratings',skills:['c++','python','algorithms'],difficulty:'open',registrationUrl:'https://www.codechef.com/contests',source:'Curated'},
+      {title:'DevOps / Cloud Hiring Hackathon (search)',platform:'Multiple',organizer:'Various companies',type:'cloud/devops challenge',category:'DevOps/Cloud',description:'Recruitment cloud/DevOps hackathons where companies hire SRE/DevOps/Cloud engineers, with pre-placement interview opportunities.',eligibility:'Students & experienced',mode:'online',location:'India',prize:'Jobs, internships, PPI',skills:['docker','kubernetes','aws','terraform','ci/cd'],difficulty:'intermediate',registrationUrl:'https://www.google.com/search?q='+encodeURIComponent('cloud devops hiring challenge India'),source:'Curated',hiringOpportunity:true}
+    ].map(normalize);
+  }
+  function localSearchLinks(k){
+    const q=encodeURIComponent(k||'hackathon hiring challenge');
+    const g=s=>'https://www.google.com/search?q='+encodeURIComponent(s);
+    return [
+      {platform:'Unstop',label:'Unstop hiring challenges',url:'https://unstop.com/competitions?searchTerm='+q},
+      {platform:'Unstop',label:'Unstop hackathons',url:'https://unstop.com/hackathons?searchTerm='+q},
+      {platform:'HackerEarth',label:'HackerEarth hiring challenges',url:'https://www.hackerearth.com/challenges/hiring/'},
+      {platform:'Devfolio',label:'Devfolio hackathons',url:'https://devfolio.co/hackathons'},
+      {platform:'Devpost',label:'Devpost hackathons',url:'https://devpost.com/hackathons?search='+q},
+      {platform:'MLH',label:'MLH events',url:'https://mlh.io/seasons/2026/events'},
+      {platform:'Kaggle',label:'Kaggle competitions',url:'https://www.kaggle.com/competitions'},
+      {platform:'Topcoder',label:'Topcoder challenges',url:'https://www.topcoder.com/challenges'},
+      {platform:'CodeChef',label:'CodeChef contests',url:'https://www.codechef.com/contests'},
+      {platform:'Codeforces',label:'Codeforces contests',url:'https://codeforces.com/contests'},
+      {platform:'Google',label:'"DevOps hiring challenge India students"',url:g('DevOps hiring challenge India students')},
+      {platform:'Google',label:'"cloud hackathon hiring challenge"',url:g('cloud hackathon hiring challenge')},
+      {platform:'Google',label:'"software engineer hiring challenge India"',url:g('software engineer hiring challenge India')},
+      {platform:'Google',label:'"internship coding challenge students India"',url:g('internship coding challenge students India')},
+      {platform:'Google',label:'"PPI hackathon India"',url:g('PPI hackathon India')},
+      {platform:'Google',label:'"pre placement interview hackathon"',url:g('pre placement interview hackathon')}
+    ];
+  }
+
+  /* ---------- fetch from backend (graceful) ---------- */
+  async function search(){
+    LOADING=true;render();
+    const qp=new URLSearchParams();
+    if(FILTERS.keyword)qp.set('keyword',FILTERS.keyword);
+    if(FILTERS.category!=='All')qp.set('category',FILTERS.category);
+    if(FILTERS.type!=='All')qp.set('type',FILTERS.type);
+    if(FILTERS.platform!=='All')qp.set('platform',FILTERS.platform);
+    if(FILTERS.mode!=='All')qp.set('mode',FILTERS.mode);
+    if(FILTERS.location)qp.set('location',FILTERS.location);
+    if(FILTERS.skills)qp.set('skills',FILTERS.skills);
+    if(FILTERS.hiringOnly)qp.set('hiringOnly','true');
+    if(FILTERS.internshipOnly)qp.set('internshipOnly','true');
+    if(FILTERS.beginnerFriendly)qp.set('beginnerFriendly','true');
+    let got=null;
+    try{
+      const b=base();
+      const r=await fetch((b||'')+'/opportunities/search?'+qp.toString(),{credentials:b?'include':'same-origin'});
+      if(r.ok)got=await r.json();
+    }catch(e){}
+    if(got&&got.opportunities){
+      OPPS=got.opportunities.map(normalize);
+      FILTERS.serpLinks=got.searchLinks||localSearchLinks(FILTERS.keyword);
+      DIAG=got.diagnostics||[];
+    }else{
+      OPPS=localCurated();
+      FILTERS.serpLinks=localSearchLinks(FILTERS.keyword);
+      DIAG=[{provider:'backend',ok:false,error:'Backend search unavailable — showing curated opportunities & safe search links.'}];
+    }
+    lset(LS.opportunities,OPPS);
+    LOADING=false;SEARCHED=true;render();
+  }
+
+  /* ---------- client-side filter (over fetched OPPS) ---------- */
+  function visible(){
+    const f=FILTERS, k=(f.keyword||'').toLowerCase();
+    return OPPS.filter(o=>{
+      if(k){const hay=(o.title+' '+o.description+' '+o.organizer+' '+o.company+' '+(o.skills||[]).join(' ')+' '+o.platform).toLowerCase();if(!hay.includes(k))return false;}
+      if(f.category!=='All'&&o.category!==f.category)return false;
+      if(f.type!=='All'&&o.type!==f.type)return false;
+      if(f.platform!=='All'&&!(o.platform||'').toLowerCase().includes(f.platform.toLowerCase())&&!(o.source||'').toLowerCase().includes(f.platform.toLowerCase()))return false;
+      if(f.mode!=='All'&&o.mode!==f.mode)return false;
+      if(f.eligibility&&!(o.eligibility||'').toLowerCase().includes(f.eligibility.toLowerCase()))return false;
+      if(f.location){const l=(o.location||'').toLowerCase();if(!l.includes(f.location.toLowerCase())&&l!=='online'&&l!=='')return false;}
+      if(f.hiringOnly&&!o.hiringOpportunity)return false;
+      if(f.internshipOnly&&!o.internshipOpportunity)return false;
+      if(f.beginnerFriendly&&o.difficulty!=='beginner'&&o.difficulty!=='open')return false;
+      if(f.skills){const want=f.skills.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);const have=(o.skills||[]).map(s=>s.toLowerCase());if(want.length&&!want.some(w=>have.some(h=>h.includes(w))))return false;}
+      if(f.deadline!=='All'){const ds=deadlineState(o.deadline);if(f.deadline==='urgent'&&!(ds.days!=null&&ds.days>=0&&ds.days<=2))return false;if(f.deadline==='soon'&&!(ds.days!=null&&ds.days>=0&&ds.days<=7))return false;if(f.deadline==='open'&&ds.days!=null&&ds.days<0)return false;}
+      return true;
+    }).map(o=>({o,fit:fitScore(o)})).sort((a,b)=>b.fit.score-a.fit.score);
+  }
+
+  /* ---------- card ---------- */
+  function card(o,fit){
+    const ds=deadlineState(o.deadline);
+    const isSaved=lget(LS.saved,[]).some(x=>x.id===o.id);
+    const fc=fit.score>=75?'var(--lime)':fit.score>=50?'var(--amber)':'var(--rose)';
+    return `<div class="opp-card">
+      <div class="opp-top">
+        <div style="flex:1;min-width:0">
+          <div class="opp-title">${X(o.title)}</div>
+          <div class="opp-sub">${X(o.organizer||o.company||o.platform||'')}${o.location?(' · '+X(o.location)):''}</div>
+          <div class="opp-chips">
+            <span class="opp-tag">${X(o.platform||o.source)}</span>
+            <span class="opp-tag">${X(o.type)}</span>
+            <span class="opp-tag">${X(o.category)}</span>
+            <span class="opp-tag">${X(o.mode)}</span>
+            <span class="opp-tag">${X(o.difficulty)}</span>
+            <span class="opp-b ${ds.cls}">${X(ds.label)}</span>
+            ${o.prize?`<span class="opp-b opp-b-green">🏆 ${X(o.prize)}</span>`:''}
+            <span class="opp-b ${o.verified?'opp-b-green':'opp-b-soft'}">${o.verified?'✔ verified source':'source link'}</span>
+          </div>
+          <div class="opp-badges">${badges(o).map(b=>`<span class="opp-badge ${b[1]}">${X(b[0])}</span>`).join('')}</div>
+        </div>
+        <div class="opp-fit"><div class="n" style="color:${fc}">${fit.score}%</div><div class="t">Fit</div></div>
+      </div>
+      ${o.eligibility?`<div class="opp-elig">🎓 ${X(o.eligibility)}</div>`:''}
+      ${o.description?`<div class="opp-desc">${X(o.description).slice(0,200)}${o.description.length>200?'…':''}</div>`:''}
+      ${(o.skills||[]).length?`<div class="opp-chips" style="margin-top:8px">${o.skills.map(s=>`<span class="opp-skill">${X(s)}</span>`).join('')}</div>`:''}
+      <div class="opp-btns">
+        <button class="btn sm ghost" onclick="OPP.details('${o.id}')">View Details</button>
+        ${o.registrationUrl?`<a class="btn sm primary" href="${X(o.registrationUrl)}" target="_blank" rel="noopener">Register / Apply ↗</a>`:''}
+        <button class="btn sm ghost" onclick="OPP.prep('${o.id}')">⚡ Generate Prep Plan</button>
+        <button class="btn sm ${isSaved?'':'ghost'}" onclick="OPP.toggleSave('${o.id}')">${isSaved?'✓ Saved':'＋ Add to Tracker'}</button>
+        <button class="btn sm ghost" onclick="OPP.resume('${o.id}')">📄 Convert to Resume Project</button>
+        <button class="btn sm ghost" onclick="OPP.linkedin('${o.id}')">in Generate LinkedIn Post</button>
+      </div>
+    </div>`;
+  }
+
+  /* ---------- main render ---------- */
+  function render(){
+    const body=E('oppBody');if(!body)return;
+    const t=tier();
+    const list=visible();
+    const sd=lget(LS.saved,[]);
+    const filtersHtml=`
+      <div class="opp-filters card">
+        <div class="opp-frow">
+          <input class="opp-in" id="oppKw" placeholder="Search hackathons, hiring challenges, skills…" value="${X(FILTERS.keyword)}">
+          <button class="btn primary" id="oppSearch">${LOADING?'Searching…':'Search'}</button>
+        </div>
+        <div class="opp-frow">
+          ${selectF('oppCat','Category',['All'].concat(CATS),FILTERS.category)}
+          ${selectF('oppType','Type',['All'].concat(TYPES),FILTERS.type)}
+          ${selectF('oppPlat','Platform',['All'].concat(PLATFORMS),FILTERS.platform)}
+          ${selectF('oppMode','Mode',['All'].concat(MODES),FILTERS.mode)}
+          ${selectF('oppDl','Deadline',[['All','Any deadline'],['urgent','Urgent (≤48h)'],['soon','Soon (≤7d)'],['open','Not expired']],FILTERS.deadline,true)}
+        </div>
+        <div class="opp-frow">
+          <input class="opp-in" id="oppLoc" placeholder="Location (e.g. India, Online)" value="${X(FILTERS.location)}">
+          <input class="opp-in" id="oppSkills" placeholder="Skill tags (comma separated)" value="${X(FILTERS.skills)}">
+          <input class="opp-in" id="oppElig" placeholder="Eligibility (e.g. student)" value="${X(FILTERS.eligibility)}">
+        </div>
+        <div class="opp-toggles">
+          ${toggle('hiringOnly','Hiring opportunity only')}
+          ${toggle('internshipOnly','Internship only')}
+          ${toggle('beginnerFriendly','Beginner friendly')}
+          <button class="btn sm ghost" id="oppReset">Reset filters</button>
+        </div>
+      </div>`;
+
+    const tierBar=`<div class="opp-tierbar">
+      <span class="opp-b ${t==='free'?'opp-b-amber':'opp-b-green'}">Plan: ${t.toUpperCase()}</span>
+      <span class="opp-b opp-b-soft">Saved ${savedCount()}${LIMITS[t].save<1000?(' / '+LIMITS[t].save):''}</span>
+      <span class="opp-b opp-b-soft">Prep plans ${usage().prep}${LIMITS[t].prep<1000?(' / '+LIMITS[t].prep):''}/mo</span>
+      <span class="opp-b opp-b-soft">Resume conversions ${usage().resume}${LIMITS[t].resume<1000?(' / '+LIMITS[t].resume):''}/mo</span>
+      ${t==='free'?`<button class="btn sm ghost" onclick="OPP.upgrade()">Upgrade ↗</button>`:`<button class="btn sm ghost" onclick="OPP.setTier('free')">Switch to Free</button>`}
+    </div>`;
+
+    let listHtml;
+    if(LOADING) listHtml=`<div class="opp-loading">⏳ Fetching opportunities from public sources…</div>`;
+    else if(!SEARCHED&&!OPPS.length) listHtml=`<div class="opp-empty"><h3>Discover your next opportunity</h3><p class="hint">Search hackathons, hiring challenges, coding & case competitions. Compliant sources only — public APIs, public pages and safe search links.</p><button class="btn primary" onclick="OPP.search()" style="margin-top:10px">Load opportunities</button></div>`;
+    else if(!list.length) listHtml=`<div class="opp-empty"><h3>No matches</h3><p class="hint">Try clearing filters, or use a safe search link below.</p></div>`;
+    else listHtml=list.map(x=>card(x.o,x.fit)).join('');
+
+    const links=(FILTERS.serpLinks||localSearchLinks(FILTERS.keyword));
+    const linksHtml=`<div class="opp-sec"><div class="section-title"><span class="eyebrow">Safe search links${FILTERS.serpLinks===null?'':''}</span></div>
+      <p class="hint" style="margin-bottom:8px">No scraping — these open the official platform or a normal search in a new tab.</p>
+      <div class="opp-links">${links.map(l=>`<a class="opp-link" href="${X(l.url)}" target="_blank" rel="noopener"><b>${X(l.platform)}</b> ${X(l.label)} ↗</a>`).join('')}</div></div>`;
+
+    const teamHtml=teamFinderSection();
+
+    body.innerHTML=tierBar+filtersHtml+
+      `<div class="opp-resultcount">${SEARCHED?(list.length+' opportunit'+(list.length===1?'y':'ies')):''}</div>`+
+      listHtml+linksHtml+teamHtml;
+
+    // wire filters
+    const kw=E('oppKw'); if(kw)kw.oninput=e=>{FILTERS.keyword=e.target.value;};
+    const sb=E('oppSearch'); if(sb)sb.onclick=()=>{FILTERS.keyword=(E('oppKw')||{}).value||'';search();};
+    if(kw)kw.onkeydown=e=>{if(e.key==='Enter'){FILTERS.keyword=kw.value;search();}};
+    bindSel('oppCat','category');bindSel('oppType','type');bindSel('oppPlat','platform');bindSel('oppMode','mode');bindSel('oppDl','deadline');
+    const lo=E('oppLoc');if(lo)lo.oninput=e=>{FILTERS.location=e.target.value;debouncedRerender();};
+    const sk=E('oppSkills');if(sk)sk.oninput=e=>{FILTERS.skills=e.target.value;debouncedRerender();};
+    const el=E('oppElig');if(el)el.oninput=e=>{FILTERS.eligibility=e.target.value;debouncedRerender();};
+    ['hiringOnly','internshipOnly','beginnerFriendly'].forEach(k=>{const c=E('opp_'+k);if(c)c.onchange=e=>{FILTERS[k]=e.target.checked;render();};});
+    const rs=E('oppReset');if(rs)rs.onclick=()=>{FILTERS={keyword:'',category:'All',type:'All',platform:'All',mode:'All',eligibility:'',deadline:'All',hiringOnly:false,internshipOnly:false,beginnerFriendly:false,skills:'',location:'',serpLinks:FILTERS.serpLinks};render();};
+    wireTeamFinder();
+  }
+  function selectF(id,label,opts,val,pairs){
+    const o=opts.map(op=>{const v=pairs?op[0]:op,t=pairs?op[1]:op;return `<option value="${X(v)}" ${v===val?'selected':''}>${X(t===v&&!pairs?(v==='All'?(label):v):t)}</option>`;}).join('');
+    return `<select class="opp-sel" id="${id}" title="${X(label)}"><option value="All" ${val==='All'?'selected':''} disabled hidden>${X(label)}</option>${o}</select>`;
+  }
+  function toggle(k,label){return `<label class="opp-toggle"><input type="checkbox" id="opp_${k}" ${FILTERS[k]?'checked':''}> ${X(label)}</label>`;}
+  function bindSel(id,key){const s=E(id);if(s)s.onchange=e=>{FILTERS[key]=e.target.value;render();};}
+  let _t=null;function debouncedRerender(){clearTimeout(_t);_t=setTimeout(render,350);}
+
+  function getOpp(id){return OPPS.find(o=>o.id===id)||lget(LS.saved,[]).find(o=>o.id===id)||(lget(LS.tracker,[]).find(t=>t.id===id)||{}).opp;}
+
+  /* ---------- save / tracker ---------- */
+  function toggleSave(id){
+    const o=getOpp(id);if(!o)return;
+    let sd=lget(LS.saved,[]);let tr=lget(LS.tracker,[]);
+    const i=sd.findIndex(x=>x.id===id);
+    if(i>=0){sd.splice(i,1);tr=tr.filter(t=>t.id!==id);lset(LS.saved,sd);lset(LS.tracker,tr);toastMsg('Removed from tracker');}
+    else{
+      if(!canSave()){OPP.upgrade('You have reached the free plan limit of '+LIMITS.free.save+' saved opportunities.');return;}
+      sd.push(o);
+      tr.push({id:o.id,opp:o,status:'Saved',nextAction:'Review brief & register before deadline',progress:0,createdAt:new Date().toISOString()});
+      lset(LS.saved,sd);lset(LS.tracker,tr);toastMsg('Added to Opportunity Tracker');
+    }
+    render();syncTabs();if(typeof renderDash==='function'&&curView()==='dash')renderDash();
+    if(curView()==='tracker')renderOppTracker();
+  }
+
+  /* ---------- details modal ---------- */
+  function details(id){
+    const o=getOpp(id);if(!o){toastMsg('Details unavailable',1);return;}
+    const fit=fitScore(o);const ds=deadlineState(o.deadline);
+    modal(`<div class="opp-modal">
+      <div class="opp-mhead"><div><h2>${X(o.title)}</h2><div class="opp-sub">${X(o.organizer||o.company||o.platform||'')}</div></div><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+      <div class="opp-chips" style="margin-bottom:10px">
+        <span class="opp-tag">${X(o.platform||o.source)}</span><span class="opp-tag">${X(o.type)}</span>
+        <span class="opp-tag">${X(o.category)}</span><span class="opp-tag">${X(o.mode)}</span><span class="opp-tag">${X(o.difficulty)}</span>
+        <span class="opp-b ${ds.cls}">${X(ds.label)}</span>${o.prize?`<span class="opp-b opp-b-green">🏆 ${X(o.prize)}</span>`:''}
+      </div>
+      <div class="opp-badges" style="margin-bottom:12px">${badges(o).map(b=>`<span class="opp-badge ${b[1]}">${X(b[0])}</span>`).join('')}</div>
+      ${o.description?`<p class="opp-desc">${X(o.description)}</p>`:''}
+      <div class="opp-kv"><b>Eligibility</b><span>${X(o.eligibility||'—')}</span></div>
+      <div class="opp-kv"><b>Location</b><span>${X(o.location||'—')}</span></div>
+      <div class="opp-kv"><b>Deadline</b><span>${X(o.deadline||'—')}</span></div>
+      ${o.startDate?`<div class="opp-kv"><b>Starts</b><span>${X(o.startDate)}</span></div>`:''}
+      ${o.teamSize?`<div class="opp-kv"><b>Team size</b><span>${X(o.teamSize)}</span></div>`:''}
+      <div class="opp-kv"><b>Skills</b><span>${(o.skills||[]).map(s=>X(s)).join(', ')||'—'}</span></div>
+      <div class="opp-fitbox">
+        <div class="opp-fitrow"><b>Fit Score</b><span class="opp-fitn">${fit.score}%</span></div>
+        ${fit.strong.length?`<div class="opp-kv"><b>Strong match</b><span>${fit.strong.map(s=>`<span class="opp-skill hit">${X(s)}</span>`).join(' ')}</span></div>`:''}
+        ${fit.missing.length?`<div class="opp-kv"><b>Missing</b><span>${fit.missing.map(s=>`<span class="opp-skill miss">${X(s)}</span>`).join(' ')}</span></div>`:''}
+        <div class="opp-sugg">💡 ${X(fit.suggestion)}</div>
+      </div>
+      <div class="opp-btns" style="margin-top:14px">
+        ${o.registrationUrl?`<a class="btn sm primary" href="${X(o.registrationUrl)}" target="_blank" rel="noopener">Register / Apply ↗</a>`:''}
+        <button class="btn sm ghost" onclick="OPP.prep('${o.id}')">⚡ Prep Plan</button>
+        <button class="btn sm ghost" onclick="OPP.toggleSave('${o.id}');closeModal()">＋ Add to Tracker</button>
+        <button class="btn sm ghost" onclick="OPP.resume('${o.id}')">📄 Resume Project</button>
+        <button class="btn sm ghost" onclick="OPP.linkedin('${o.id}')">in LinkedIn Post</button>
+      </div>
+    </div>`);
+  }
+
+  /* ---------- prep plan ---------- */
+  function deterministicPrep(o){
+    const cat=o.category, type=o.type;
+    const isDevops=/devops|cloud/.test(type)||cat==='DevOps/Cloud';
+    const isData=/data science/.test(type)||cat==='AI/ML'||cat==='Data Science';
+    const isContest=/contest/.test(type);
+    const isCyber=/cyber/.test(type)||cat==='Cybersecurity';
+    const skills=(o.skills&&o.skills.length)?o.skills:['core fundamentals','git','a demo-ready stack'];
+    let project=`A focused ${cat} project that solves one clear problem from the brief, with a working demo and a clean README.`;
+    if(isDevops)project='A cloud-native deployment demo: containerize a small app, add a CI/CD pipeline, deploy to a free cloud tier, add basic monitoring/logging.';
+    if(isData)project='A reproducible notebook: clean the dataset, build a baseline model, iterate to a stronger model, present clear metrics and a short writeup.';
+    if(isCyber)project='A small security tool or CTF writeup: pick one vulnerability class, build a safe lab/demo, document detection + mitigation.';
+    const seven=isDevops?['Day 1: Understand the problem statement and design the architecture.','Day 2: Build a Dockerized app and CI/CD pipeline.','Day 3: Deploy to a free cloud tier and record a demo video.','Day 4: Add monitoring/logging and basic alerts.','Day 5: Write the README and architecture diagram.','Day 6: Test edge cases and harden the deploy.','Day 7: Submit and rehearse the pitch.']
+      :isData?['Day 1: Read brief, explore data, set the metric.','Day 2: Clean baseline model + validation split.','Day 3: Feature engineering and error analysis.','Day 4: Stronger models / tuning; track experiments.','Day 5: Finalize a reproducible pipeline.','Day 6: Write report + visualizations.','Day 7: Submit and rehearse the explanation.']
+      :isContest?['Day 1: Revise arrays, strings, hashmaps.','Day 2: Two-pointers, sliding window, prefix sums.','Day 3: Graphs, BFS/DFS, shortest paths.','Day 4: Dynamic programming patterns.','Day 5: Greedy + math + number theory.','Day 6: Timed mock contest; review every miss.','Day 7: Light revision; fast templates + contest strategy.']
+      :['Day 1: Understand the problem and pick a sharp scope.','Day 2: Design the solution; set up repo + skeleton.','Day 3: Build the core feature end to end.','Day 4: Add a second feature and polish UX.','Day 5: Write README and prepare visuals.','Day 6: Test edge cases and fix bugs.','Day 7: Record demo, submit, rehearse pitch.'];
+    const three=[seven[0],'Day 2: Build the single most important feature end to end.','Day 3: Polish, write README, record a short demo, submit.'];
+    return {requiredSkills:skills,suggestedProject:project,threeDayPlan:three,sevenDayPlan:seven,
+      submissionChecklist:['Public repo link works (not private).','README explains what/how/stack.','Working demo (hosted link or 60–90s video).','All required fields filled before deadline.','Screenshots / architecture diagram included.'],
+      teamStrategy:['Assign owners: build, demo/pitch, README.','Lock scope early — one strong feature wins.','Commit small and often; integrate daily.','Reserve final block for demo + rehearsal.'],
+      demoPitchChecklist:['Open with the problem & who it helps (15s).','Show the working demo first, not slides.','State the stack and one hard thing solved.','End with impact and what you would build next.'],
+      readmeChecklist:['Title + one-line description.','Problem statement & motivation.','Features + screenshots.','Tech stack & architecture.','Setup / run instructions.','Demo link + team + license.'],
+      judgingPrep:['Map your build to the stated judging criteria.','Prepare a crisp "what is novel here?" answer.','Have metrics or a before/after ready.','Anticipate "how would this scale?".']};
+  }
+  async function prep(id){
+    const o=getOpp(id);if(!o)return;
+    if(!canPrep()){OPP.upgrade('Free plan allows '+LIMITS.free.prep+' prep plans per month.');return;}
+    modal(`<div class="opp-modal"><div class="opp-mhead"><h2>Prep Plan</h2><button class="btn sm ghost" onclick="closeModal()">✕</button></div><div class="opp-loading">⏳ Building your plan for “${X(o.title)}”…</div></div>`);
+    let plan=deterministicPrep(o);
+    if(aiOn()){
+      try{
+        const sys='Output ONLY minified valid JSON. No prose, no code fences.';
+        const prompt=`Create a hackathon/competition prep plan for "${o.title}" (type:${o.type}, category:${o.category}, skills:${(o.skills||[]).join(',')}). Candidate role:${(typeof S!=='undefined'&&S.targetRole)||'student'}. Return JSON {requiredSkills:[],suggestedProject:"",threeDayPlan:["Day 1: ...","Day 2: ...","Day 3: ..."],sevenDayPlan:["Day 1: ...",...7],submissionChecklist:[],teamStrategy:[],demoPitchChecklist:[],readmeChecklist:[],judgingPrep:[]}.`;
+        const ai=await callClaude({system:sys,prompt,max_tokens:1500,json:true});
+        if(ai&&ai.sevenDayPlan)plan=ai;
+      }catch(e){}
+    }
+    const plans=lget(LS.prepPlans,{});plans[o.id]={plan,title:o.title,createdAt:new Date().toISOString()};lset(LS.prepPlans,plans);bumpUsage('prep');
+    // bump tracker progress
+    const tr=lget(LS.tracker,[]);const te=tr.find(t=>t.id===o.id);if(te){te.progress=Math.max(te.progress||0,25);lset(LS.tracker,tr);}
+    renderPrepModal(o,plan);
+    if(curView()==='tracker')renderOppTracker();
+  }
+  function listBlock(title,arr){return `<div class="opp-pb"><h4>${X(title)}</h4><ul>${(arr||[]).map(x=>`<li>${X(x)}</li>`).join('')}</ul></div>`;}
+  function renderPrepModal(o,p){
+    const text=`PREP PLAN — ${o.title}\n\nRequired skills: ${(p.requiredSkills||[]).join(', ')}\n\nSuggested project: ${p.suggestedProject}\n\n3-DAY PLAN\n${(p.threeDayPlan||[]).join('\n')}\n\n7-DAY PLAN\n${(p.sevenDayPlan||[]).join('\n')}\n\nSubmission checklist:\n- ${(p.submissionChecklist||[]).join('\n- ')}\n\nTeam strategy:\n- ${(p.teamStrategy||[]).join('\n- ')}\n\nDemo/pitch checklist:\n- ${(p.demoPitchChecklist||[]).join('\n- ')}\n\nREADME checklist:\n- ${(p.readmeChecklist||[]).join('\n- ')}\n\nJudging prep:\n- ${(p.judgingPrep||[]).join('\n- ')}`;
+    modal(`<div class="opp-modal">
+      <div class="opp-mhead"><div><h2>Prep Plan</h2><div class="opp-sub">${X(o.title)}</div></div><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+      <div class="opp-pb"><h4>Required skills</h4><div class="opp-chips">${(p.requiredSkills||[]).map(s=>`<span class="opp-skill">${X(s)}</span>`).join('')}</div></div>
+      <div class="opp-pb"><h4>Suggested project</h4><p class="opp-desc">${X(p.suggestedProject)}</p></div>
+      ${listBlock('3-day plan',p.threeDayPlan)}
+      ${listBlock('7-day plan',p.sevenDayPlan)}
+      ${listBlock('Submission checklist',p.submissionChecklist)}
+      ${listBlock('Team strategy',p.teamStrategy)}
+      ${listBlock('Demo / pitch checklist',p.demoPitchChecklist)}
+      ${listBlock('GitHub README checklist',p.readmeChecklist)}
+      ${listBlock('Judging criteria prep',p.judgingPrep)}
+      <div class="opp-btns" style="margin-top:12px">
+        <button class="btn sm" onclick="OPP.copy(this)" data-copy="${X(text)}">Copy plan</button>
+        <button class="btn sm ghost" onclick="OPP.dlText('${X(o.title).replace(/'/g,'')}-prep.txt',this)" data-copy="${X(text)}">Download .txt</button>
+        <button class="btn sm ghost" onclick="OPP.toggleSave('${o.id}')">＋ Add to Tracker</button>
+      </div>
+    </div>`);
+  }
+
+  /* ---------- resume converter ---------- */
+  function deterministicResume(o,outcome){
+    const win=outcome&&/winner|shortlist/i.test(outcome)?outcome:'';
+    const stack=(o.skills&&o.skills.length?o.skills:['relevant tools']).slice(0,5).join(', ');
+    const dur=/hackathon/.test(o.type||'')?'a time-boxed hackathon':('the '+(o.title||'competition'));
+    const what=o.description?o.description.replace(/\.$/,''):('a working '+(o.category||'software')+' solution');
+    return {
+      resumeBullets:[
+        `Built ${o.title?o.title.replace(/\.$/,''):'a working solution'} during ${dur} using ${stack}, delivering a demoable end-to-end build${win?(' ('+win+')'):''}.`,
+        `Designed, built and demoed the project end to end under a strict deadline, owning the ${o.category||'full'} implementation.`
+      ],
+      projectDescription:`${o.title||'Project'} — ${what}. Built ${/hackathon/.test(o.type||'')?'during a hackathon':('for '+(o.platform||'a competition'))}${o.organizer?(' organized by '+o.organizer):''}. Stack: ${stack}.${win?(' Outcome: '+win+'.'):''}`,
+      githubReadme:[`# ${o.title||'Project'}`,`> ${what}.`,'','## Problem','What this solves and who it helps.','## Features','- Core feature 1','- Core feature 2','## Tech stack',stack,'## Run locally','```bash','# install','# run','```','## Demo','Add a hosted link or a 60–90s demo video.','## Built at',`${o.platform||''}${o.organizer?(' · '+o.organizer):''}`].join('\n'),
+      linkedinPost:`Just wrapped ${o.title||'a competition'}${o.platform?(' on '+o.platform):''}! 🚀\n\nIn a short, intense build I shipped a working ${o.category||'software'} project using ${stack}.${win?(' '+win+'.'):''}\n\nBiggest lesson: scope tight, demo early, let the build do the talking.\n\nRepo + demo in comments 👇\n\n#hackathon #${(o.category||'tech').replace(/[^a-z0-9]/gi,'')} #buildinpublic`,
+      portfolioEntry:{name:o.title||'Project',role:'Builder',context:`${o.platform||'Competition'}${o.organizer?(' · '+o.organizer):''}`,stack:(o.skills||[]).slice(0,5),summary:what,link:o.registrationUrl||'',outcome:win||'Participated'},
+      interviewExplanation:`I built ${o.title||'this project'} under a deadline. The hardest part was scoping it small enough to ship while still being impressive. I owned the ${o.category||'core'} build, integrated the pieces and demoed it live. With more time I'd harden it and add tests.`,
+      starStory:{situation:`I joined ${o.title||'a competition'}${o.platform?(' on '+o.platform):''} with a tight deadline.`,task:`Deliver a working, demoable ${o.category||'software'} solution from scratch.`,action:`I scoped to one strong feature, built it end to end with ${stack}, prepared a clear demo + README.`,result:`I shipped a complete demo on time${win?(' and '+win.toLowerCase()):''}, and turned it into a portfolio project.`},
+      invented:false
+    };
+  }
+  async function resume(id){
+    const o=getOpp(id);if(!o)return;
+    if(!canResume()){OPP.upgrade('Free plan allows '+LIMITS.free.resume+' resume conversions per month.');return;}
+    const tr=lget(LS.tracker,[]);const te=tr.find(t=>t.id===o.id);
+    const outcome=te&&/winner|shortlist/i.test(te.status||'')?te.status:'';
+    modal(`<div class="opp-modal"><div class="opp-mhead"><h2>Convert to Resume Project</h2><button class="btn sm ghost" onclick="closeModal()">✕</button></div><div class="opp-loading">⏳ Generating resume artifacts for “${X(o.title)}”…</div></div>`);
+    let art=deterministicResume(o,outcome);
+    if(aiOn()){
+      try{
+        const sys='Output ONLY minified valid JSON. No prose, no code fences. Truthful only. Do NOT invent winning/placement unless an outcome is explicitly provided.';
+        const prompt=`Convert this hackathon/competition into resume artifacts. Opportunity:${JSON.stringify({title:o.title,type:o.type,category:o.category,platform:o.platform,organizer:o.organizer,skills:o.skills,description:(o.description||'').slice(0,300)})}. Explicit outcome:${outcome||'(none — do not claim winning)'}. Return JSON {resumeBullets:[2],projectDescription:"",githubReadme:"markdown string",linkedinPost:"",portfolioEntry:{name,role,context,stack:[],summary,link,outcome},interviewExplanation:"",starStory:{situation,task,action,result}}.`;
+        const ai=await callClaude({system:sys,prompt,max_tokens:1600,json:true});
+        if(ai&&ai.resumeBullets)art=ai;
+      }catch(e){}
+    }
+    const rp=lget(LS.resumeProjects,{});rp[o.id]={artifacts:art,title:o.title,createdAt:new Date().toISOString()};lset(LS.resumeProjects,rp);bumpUsage('resume');
+    if(te){te.status='Converted to Resume Project';te.progress=100;lset(LS.tracker,tr);}
+    renderResumeModal(o,art);
+    if(curView()==='tracker')renderOppTracker();
+  }
+  function renderResumeModal(o,a){
+    const pf=a.portfolioEntry||{};
+    const portText=`PORTFOLIO ENTRY\nName: ${pf.name||o.title}\nRole: ${pf.role||'Builder'}\nContext: ${pf.context||''}\nStack: ${(pf.stack||[]).join(', ')}\nSummary: ${pf.summary||''}\nLink: ${pf.link||''}\nOutcome: ${pf.outcome||'Participated'}`;
+    modal(`<div class="opp-modal">
+      <div class="opp-mhead"><div><h2>Resume Project</h2><div class="opp-sub">${X(o.title)}</div></div><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+      ${!a.invented?'<div class="opp-note">Outcome reflects only what you marked in the tracker — no winning status is invented.</div>':''}
+      <div class="opp-pb"><h4>Resume bullet points</h4><ul>${(a.resumeBullets||[]).map(b=>`<li>${X(b)}</li>`).join('')}</ul><button class="btn sm" onclick="OPP.copy(this)" data-copy="${X((a.resumeBullets||[]).map(b=>'• '+b).join('\n'))}">Copy bullets</button></div>
+      <div class="opp-pb"><h4>Project description</h4><p class="opp-desc">${X(a.projectDescription)}</p></div>
+      <div class="opp-pb"><h4>GitHub README outline</h4><pre class="opp-pre">${X(a.githubReadme)}</pre><button class="btn sm" onclick="OPP.copy(this)" data-copy="${X(a.githubReadme)}">Copy README</button> <button class="btn sm ghost" onclick="OPP.dlText('README.md',this)" data-copy="${X(a.githubReadme)}">Download README.md</button></div>
+      <div class="opp-pb"><h4>LinkedIn post</h4><p class="opp-desc" style="white-space:pre-wrap">${X(a.linkedinPost)}</p><button class="btn sm" onclick="OPP.copy(this)" data-copy="${X(a.linkedinPost)}">Copy post</button></div>
+      <div class="opp-pb"><h4>Portfolio entry</h4><div class="opp-kv"><b>Stack</b><span>${(pf.stack||[]).join(', ')}</span></div><div class="opp-kv"><b>Outcome</b><span>${X(pf.outcome||'Participated')}</span></div><button class="btn sm" onclick="OPP.copy(this)" data-copy="${X(portText)}">Copy entry</button></div>
+      <div class="opp-pb"><h4>Interview explanation</h4><p class="opp-desc">${X(a.interviewExplanation)}</p></div>
+      <div class="opp-pb"><h4>STAR story</h4><ul><li><b>Situation:</b> ${X((a.starStory||{}).situation)}</li><li><b>Task:</b> ${X((a.starStory||{}).task)}</li><li><b>Action:</b> ${X((a.starStory||{}).action)}</li><li><b>Result:</b> ${X((a.starStory||{}).result)}</li></ul></div>
+    </div>`);
+  }
+  async function linkedin(id){
+    const o=getOpp(id);if(!o)return;
+    const a=deterministicResume(o,'');
+    modal(`<div class="opp-modal"><div class="opp-mhead"><div><h2>LinkedIn Post</h2><div class="opp-sub">${X(o.title)}</div></div><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+      <p class="opp-desc" style="white-space:pre-wrap">${X(a.linkedinPost)}</p>
+      <div class="opp-btns"><button class="btn sm" onclick="OPP.copy(this)" data-copy="${X(a.linkedinPost)}">Copy post</button></div></div>`);
+  }
+
+  /* ---------- team finder MVP ---------- */
+  function teamFinderSection(){
+    const tf=lget(LS.teamFinder,{looking:false,myRoles:[],myProfile:'',needs:{}});
+    const sd=lget(LS.saved,[]);
+    return `<div class="opp-sec" id="oppTeamSec">
+      <div class="section-title"><span class="eyebrow">Team Finder · MVP (local)</span></div>
+      <div class="card">
+        <label class="opp-toggle" style="font-size:14px"><input type="checkbox" id="tfLooking" ${tf.looking?'checked':''}> I'm looking for a team</label>
+        <div class="opp-lbl" style="margin-top:10px">Roles I need</div>
+        <div class="opp-chips" id="tfRoles">${TEAM_ROLES.map(r=>`<span class="opp-rolechip ${tf.myRoles.includes(r)?'on':''}" data-role="${X(r)}">${X(r)}</span>`).join('')}</div>
+        <div class="opp-lbl" style="margin-top:10px">My skill profile</div>
+        <textarea class="opp-area" id="tfProfile" placeholder="e.g. Backend (Node, Postgres), some DevOps, can own deployment">${X(tf.myProfile)}</textarea>
+        <button class="btn sm" id="tfSave" style="margin-top:8px">Save team profile</button>
+        <p class="hint" style="margin-top:8px">Stored locally only. Public community matching will arrive when a backend community service is enabled — this is a local placeholder for that.</p>
+        ${sd.length?`<div class="opp-lbl" style="margin-top:12px">Set team needs per saved opportunity</div>${sd.map(o=>`<div class="opp-tfrow"><span>${X(o.title)}</span><input class="opp-in" data-need="${o.id}" placeholder="Roles needed (e.g. ML Dev, UI/UX)" value="${X((tf.needs||{})[o.id]||'')}"></div>`).join('')}`:''}
+      </div></div>`;
+  }
+  function wireTeamFinder(){
+    const sec=E('oppTeamSec');if(!sec)return;
+    let tf=lget(LS.teamFinder,{looking:false,myRoles:[],myProfile:'',needs:{}});
+    sec.querySelectorAll('.opp-rolechip').forEach(c=>c.onclick=()=>{const r=c.dataset.role;const i=tf.myRoles.indexOf(r);if(i>=0)tf.myRoles.splice(i,1);else tf.myRoles.push(r);c.classList.toggle('on');lset(LS.teamFinder,tf);});
+    const lk=E('tfLooking');if(lk)lk.onchange=e=>{tf.looking=e.target.checked;lset(LS.teamFinder,tf);};
+    const sv=E('tfSave');if(sv)sv.onclick=()=>{tf.myProfile=(E('tfProfile')||{}).value||'';tf.needs=tf.needs||{};sec.querySelectorAll('[data-need]').forEach(inp=>{tf.needs[inp.dataset.need]=inp.value;});lset(LS.teamFinder,tf);toastMsg('Team profile saved');if(curView()==='tracker')renderOppTracker();};
+  }
+
+  /* ---------- opportunity tracker (rendered inside Tracker view) ---------- */
+  function renderOppTracker(){
+    const host=E('trackerBody');if(!host)return;
+    if(E('oppTrkSection'))E('oppTrkSection').remove();
+    const tr=lget(LS.tracker,[]);
+    const tf=lget(LS.teamFinder,{needs:{}});
+    const rows=tr.map(t=>{
+      const o=t.opp||{};const ds=deadlineState(o.deadline);
+      const need=(tf.needs||{})[t.id]||'';
+      return `<tr>
+        <td><b>${X(o.title||'—')}</b><div class="hint">${X(o.platform||o.source||'')}</div>${need?`<div class="opp-need">👥 Team: ${X(need)}</div>`:''}</td>
+        <td><span class="opp-b ${ds.cls}">${X(ds.label)}</span><div class="hint">${X(o.deadline||'')}</div></td>
+        <td><select class="opp-status" onchange="OPP.setStatus('${t.id}',this.value)">${TRACK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${X(s)}</option>`).join('')}</select></td>
+        <td class="hint">${X(t.nextAction||'—')}</td>
+        <td><div class="opp-prog"><i style="width:${CL(t.progress||0)}%"></i></div><span class="hint">${CL(t.progress||0)}%</span></td>
+        <td>${o.registrationUrl?`<a class="opp-link inline" href="${X(o.registrationUrl)}" target="_blank" rel="noopener">open ↗</a>`:'—'}</td>
+        <td><button class="btn sm ghost" onclick="OPP.prep('${t.id}')">Prep</button> <button class="btn sm ghost" onclick="OPP.resume('${t.id}')">Resume</button> <button class="btn sm danger ghost" onclick="OPP.delTrack('${t.id}')">✕</button></td>
+      </tr>`;
+    }).join('');
+    const due=tr.filter(t=>{const ds=deadlineState((t.opp||{}).deadline);return ds.days!=null&&ds.days>=0&&ds.days<=7&&!/Submitted|Winner|Rejected|Archived|Converted/.test(t.status||'');});
+    const html=`<div id="oppTrkSection" style="margin-top:22px">
+      <div class="section-title"><span class="eyebrow">Opportunity Arena tracker</span></div>
+      <div class="card" style="padding:0;overflow:auto">
+        ${tr.length?`<table><thead><tr><th>Opportunity</th><th>Deadline</th><th>Status</th><th>Next action</th><th>Prep</th><th>Link</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="opp-empty" style="padding:16px">No saved opportunities yet. Open <b>Opportunity Arena</b> → Add to Tracker.</div>'}
+      </div>
+      ${due.length?`<div class="flag" style="margin-top:12px;border-color:var(--amber);background:rgba(255,181,71,.08)"><div><b>${due.length} opportunity deadline${due.length>1?'s':''} within 7 days.</b> Urgent = within 48 hours.</div></div>`:''}
+    </div>`;
+    host.insertAdjacentHTML('beforeend',html);
+  }
+
+  /* ---------- dashboard widget ---------- */
+  function renderDashWidget(){
+    const host=E('dashBody');if(!host)return;
+    if(E('oppDashWidget'))E('oppDashWidget').remove();
+    const tr=lget(LS.tracker,[]);
+    const upcoming=tr.map(t=>({t,ds:deadlineState((t.opp||{}).deadline)})).filter(x=>x.ds.days!=null&&x.ds.days>=0).sort((a,b)=>a.ds.days-b.ds.days).slice(0,4);
+    const hiring=OPPS.filter(o=>o.hiringOpportunity).slice(0,3);
+    const bestFit=OPPS.map(o=>({o,fit:fitScore(o)})).sort((a,b)=>b.fit.score-a.fit.score).slice(0,3);
+    const html=`<div id="oppDashWidget" class="card" style="margin-top:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <h3 style="font-size:19px">🏟️ Opportunity Arena</h3>
+        <button class="btn sm ghost" data-go="opportunities">Open arena →</button>
+      </div>
+      <div class="opp-dashgrid">
+        <div class="opp-dashcol"><div class="opp-dh">Upcoming deadlines</div>${upcoming.length?upcoming.map(x=>`<div class="opp-ditem"><span>${X((x.t.opp||{}).title||'')}</span><span class="opp-b ${x.ds.cls}">${X(x.ds.label)}</span></div>`).join(''):'<div class="hint">No saved deadlines yet.</div>'}</div>
+        <div class="opp-dashcol"><div class="opp-dh">Best-fit opportunities</div>${bestFit.length?bestFit.map(x=>`<div class="opp-ditem"><span>${X(x.o.title)}</span><span class="opp-b opp-b-green">${x.fit.score}%</span></div>`).join(''):'<div class="hint">Load the arena to see fits.</div>'}</div>
+        <div class="opp-dashcol"><div class="opp-dh">Hiring challenges</div>${hiring.length?hiring.map(o=>`<div class="opp-ditem"><span>${X(o.title)}</span><span class="opp-b ok">hiring</span></div>`).join(''):'<div class="hint">Search to find hiring challenges.</div>'}</div>
+        <div class="opp-dashcol"><div class="opp-dh">Saved</div><div class="opp-bignum">${savedCount()}</div><div class="hint">opportunities tracked</div></div>
+      </div>
+    </div>`;
+    host.insertAdjacentHTML('beforeend',html);
+  }
+
+  function curView(){try{return (typeof current!=='undefined')?current:(location.hash.replace('#','')||'dash');}catch(e){return 'dash';}}
+  function syncTabs(){if(typeof renderTabs==='function')try{renderTabs();}catch(e){}}
+
+  /* ---------- public API for inline handlers ---------- */
+  window.OPP={
+    search,details,prep,resume,linkedin,toggleSave,
+    setStatus(id,v){const tr=lget(LS.tracker,[]);const t=tr.find(x=>x.id===id);if(t){t.status=v;t.nextAction=({'Saved':'Review brief & register','Registered':'Build & form team','Team Needed':'Find teammates (Team Finder)','Team Formed':'Start building','In Progress':'Keep building toward demo','Submitted':'Await results; prep interview','Shortlisted':'Prepare interview/pitch','Winner':'Convert to resume project + post','Rejected':'Convert learnings to resume','Converted to Resume Project':'Add to portfolio','Archived':'—'})[v]||'—';if(/Submitted|Winner|Converted/.test(v))t.progress=Math.max(t.progress||0,/Converted/.test(v)?100:80);lset(LS.tracker,tr);renderOppTracker();if(curView()==='dash')renderDashWidget&&renderDashWidget();}},
+    delTrack(id){let tr=lget(LS.tracker,[]);tr=tr.filter(x=>x.id!==id);lset(LS.tracker,tr);let sd=lget(LS.saved,[]);sd=sd.filter(x=>x.id!==id);lset(LS.saved,sd);renderOppTracker();if(curView()==='opportunities')render();toastMsg('Removed');},
+    copy(btn){const t=btn.getAttribute('data-copy')||'';navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>toastMsg('Copied'),()=>toastMsg('Copy failed',1));},
+    dlText(name,btn){const t=btn.getAttribute('data-copy')||'';try{const blob=new Blob([t],{type:'text/plain'});if(typeof dl==='function')dl(blob,name);else{const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;a.click();}toastMsg('Downloaded');}catch(e){toastMsg('Download failed',1);}},
+    setTier(t){if(LIMITS[t]){lset(LS.tier,t);toastMsg('Plan set to '+t);closeModal();render();}},
+    upgrade(reason){
+      modal(`<div class="opp-modal"><div class="opp-mhead"><h2>Upgrade your plan</h2><button class="btn sm ghost" onclick="closeModal()">✕</button></div>
+        ${reason?`<div class="opp-note">${X(reason)}</div>`:''}
+        <div class="opp-plans">
+          <div class="opp-plan"><h4>Free</h4><ul><li>View opportunities</li><li>Save ${LIMITS.free.save} opportunities</li><li>${LIMITS.free.prep} prep plans / month</li><li>${LIMITS.free.resume} resume conversions / month</li></ul><button class="btn sm ghost" onclick="OPP.setTier('free')">Current / Select</button></div>
+          <div class="opp-plan hot"><h4>Pro</h4><ul><li>Unlimited saved opportunities</li><li>${LIMITS.pro.prep} prep plans / month</li><li>${LIMITS.pro.resume} resume conversions / month</li><li>Advanced fit score</li><li>Deadline reminders</li></ul><button class="btn sm primary" onclick="OPP.setTier('pro')">Choose Pro</button></div>
+          <div class="opp-plan"><h4>Premium</h4><ul><li>Daily opportunity radar</li><li>Advanced team finder</li><li>Interview / pitch prep</li><li>Portfolio builder integration</li></ul><button class="btn sm" onclick="OPP.setTier('premium')">Choose Premium</button></div>
+        </div>
+        <p class="hint" style="margin-top:10px">Local feature flags for now — connect billing later to enforce server-side.</p>
+      </div>`);
+    }
+  };
+
+  /* ---------- register view + hooks ---------- */
+  if(typeof VIEWS!=='undefined' && !VIEWS.some(v=>v.id==='opportunities')){
+    const ci=VIEWS.findIndex(v=>v.id==='contacts');
+    const ti=VIEWS.findIndex(v=>v.id==='tracker');
+    const at=ci>=0?ci+1:(ti>=0?ti+1:VIEWS.length);
+    VIEWS.splice(at,0,{id:'opportunities',label:'Opportunity Arena',count:()=>{try{return lget(LS.saved,[]).length;}catch(e){return 0;}}});
+    syncTabs();
+  }
+  if(typeof go==='function'){
+    const prevGo=go;
+    go=function(id,skip){prevGo(id,skip);if(id==='opportunities'){try{render();}catch(e){}}};
+  }
+  if(typeof renderTracker==='function'){
+    const prevRT=renderTracker;
+    renderTracker=function(){prevRT();try{renderOppTracker();}catch(e){}};
+  }
+  if(typeof renderDash==='function'){
+    const prevRD=renderDash;
+    renderDash=function(){prevRD();try{renderDashWidget();}catch(e){}};
+  }
+})();
+
 renderTabs();go('dash');maybeOnboard();
 
 
@@ -4941,5 +5608,96 @@ textarea.ed-field{resize:vertical;min-height:54px;line-height:1.5}
 
 
 
+<style>
+/* ===== Opportunity Arena ===== */
+.opp-tierbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.opp-filters{padding:14px;margin-bottom:16px}
+.opp-frow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.opp-in{flex:1;min-width:150px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--ink);padding:9px 11px;font-size:13px;font-family:inherit}
+.opp-in:focus{outline:none;border-color:var(--lime-dim)}
+.opp-sel{background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--ink);padding:9px 11px;font-size:13px;min-width:130px}
+.opp-toggles{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.opp-toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+.opp-toggle input{accent-color:var(--lime)}
+.opp-resultcount{font-size:12px;color:var(--muted);margin:4px 2px 12px}
+.opp-card{border:1px solid var(--line);background:var(--panel);border-radius:var(--r);padding:16px;margin-bottom:14px;transition:.15s}
+.opp-card:hover{border-color:var(--line2)}
+.opp-top{display:flex;gap:14px;align-items:flex-start;justify-content:space-between}
+.opp-title{font-family:'Fraunces',serif;font-size:19px;font-weight:600;line-height:1.2}
+.opp-sub{color:var(--muted);font-weight:600;font-size:13px;margin:3px 0 8px}
+.opp-chips{display:flex;gap:6px;flex-wrap:wrap}
+.opp-tag{font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid var(--line2);color:var(--muted);background:var(--panel2);text-transform:capitalize}
+.opp-skill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;background:rgba(200,250,60,.1);color:var(--lime-dim);border:1px solid rgba(200,250,60,.25);margin:1px 0}
+.opp-skill.hit{background:rgba(127,224,138,.16);color:var(--green);border-color:rgba(127,224,138,.4)}
+.opp-skill.miss{background:rgba(255,122,107,.14);color:var(--rose);border-color:rgba(255,122,107,.35)}
+.opp-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.opp-badge{font-size:10px;font-weight:700;letter-spacing:.3px;padding:2px 8px;border-radius:999px;text-transform:uppercase;border:1px solid var(--line2);color:var(--muted)}
+.opp-badge.ok{background:rgba(127,224,138,.16);color:var(--green);border-color:rgba(127,224,138,.4)}
+.opp-badge.amber{background:rgba(255,181,71,.14);color:var(--amber);border-color:rgba(255,181,71,.4)}
+.opp-badge.sky{background:rgba(127,212,255,.14);color:var(--sky);border-color:rgba(127,212,255,.4)}
+.opp-badge.soft{background:var(--panel2);color:var(--muted)}
+.opp-b{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.opp-b-soft{background:var(--panel2);color:var(--muted);border:1px solid var(--line2)}
+.opp-b-green{background:rgba(127,224,138,.16);color:var(--green);border:1px solid rgba(127,224,138,.4)}
+.opp-b-amber{background:rgba(255,181,71,.16);color:var(--amber);border:1px solid rgba(255,181,71,.45)}
+.opp-b-rose{background:rgba(255,122,107,.16);color:var(--rose);border:1px solid rgba(255,122,107,.45)}
+.opp-b.ok{background:rgba(127,224,138,.16);color:var(--green);border:1px solid rgba(127,224,138,.4)}
+.opp-fit{text-align:center;min-width:62px}
+.opp-fit .n{font-family:'Fraunces',serif;font-size:26px;font-weight:700;line-height:1}
+.opp-fit .t{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.opp-elig{font-size:12.5px;color:var(--muted);margin-top:10px}
+.opp-desc{font-size:13px;color:var(--ink);opacity:.9;line-height:1.5;margin-top:8px}
+.opp-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center}
+.opp-loading{display:flex;align-items:center;gap:10px;color:var(--muted);padding:30px 4px;font-size:14px}
+.opp-empty{color:var(--muted);font-size:13px;padding:30px 16px;text-align:center;border:1px dashed var(--line2);border-radius:14px}
+.opp-empty h3{font-size:20px;color:var(--ink);margin-bottom:6px}
+.opp-sec{margin-top:24px}
+.opp-links{display:flex;flex-direction:column;gap:6px}
+.opp-link{display:block;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:9px 11px;color:var(--ink);text-decoration:none;font-size:13px}
+.opp-link:hover{border-color:var(--lime);color:var(--lime)}
+.opp-link b{color:var(--lime-dim);margin-right:6px}
+.opp-link.inline{display:inline-block;padding:4px 8px;font-size:12px}
+.opp-modal{max-height:84vh;overflow:auto}
+.opp-mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.opp-mhead h2{font-size:22px;margin:0}
+.opp-kv{display:flex;gap:12px;font-size:13px;margin:6px 0;align-items:flex-start}
+.opp-kv b{min-width:96px;color:var(--muted);font-weight:600}
+.opp-kv span{flex:1}
+.opp-fitbox{border:1px solid var(--line2);border-radius:12px;padding:12px;margin-top:12px;background:var(--panel2)}
+.opp-fitrow{display:flex;justify-content:space-between;align-items:center}
+.opp-fitn{font-family:'Fraunces',serif;font-size:24px;font-weight:700;color:var(--lime)}
+.opp-sugg{margin-top:8px;font-size:13px;color:var(--amber)}
+.opp-pb{margin-top:14px}
+.opp-pb h4{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--lime-dim);margin:0 0 8px}
+.opp-pb ul{margin:0;padding-left:18px}
+.opp-pb li{margin:3px 0;font-size:13.5px}
+.opp-pre{background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:12px;white-space:pre-wrap;overflow:auto;max-height:240px}
+.opp-note{background:rgba(127,212,255,.08);border:1px solid rgba(127,212,255,.3);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--sky);margin-bottom:12px}
+.opp-status,.opp-sel{background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--ink);padding:6px 8px;font-size:12px}
+.opp-prog{height:7px;background:var(--bg);border:1px solid var(--line2);border-radius:999px;overflow:hidden;width:80px;display:inline-block;vertical-align:middle}
+.opp-prog i{display:block;height:100%;background:var(--lime)}
+.opp-need{font-size:11.5px;color:var(--sky);margin-top:4px}
+.opp-rolechip{font-size:12px;padding:4px 11px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:var(--panel2);cursor:pointer;user-select:none}
+.opp-rolechip.on{background:var(--lime);color:#0a0c08;border-color:var(--lime);font-weight:600}
+.opp-lbl{font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+.opp-area{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--ink);padding:10px;font-size:13px;font-family:inherit;resize:vertical;min-height:50px}
+.opp-tfrow{display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.opp-tfrow span{flex:1;min-width:140px;font-size:13px}
+.opp-dashgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:860px){.opp-dashgrid{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.opp-dashgrid{grid-template-columns:1fr}.opp-top{flex-direction:column}.opp-fit{align-self:flex-start}}
+.opp-dashcol{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2)}
+.opp-dh{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px}
+.opp-ditem{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12.5px;margin:6px 0}
+.opp-ditem span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opp-bignum{font-family:'Fraunces',serif;font-size:34px;font-weight:700;color:var(--lime)}
+.opp-plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px}
+@media(max-width:680px){.opp-plans{grid-template-columns:1fr}}
+.opp-plan{border:1px solid var(--line2);border-radius:12px;padding:14px;background:var(--panel2)}
+.opp-plan.hot{border-color:var(--lime);box-shadow:0 0 0 1px rgba(200,250,60,.3)}
+.opp-plan h4{font-size:16px;margin:0 0 8px}
+.opp-plan ul{margin:0 0 12px;padding-left:18px}
+.opp-plan li{font-size:12.5px;margin:4px 0;color:var(--muted)}
+</style>
 </body>
 </html>

@@ -269,3 +269,29 @@ Test live provider calls with a company/domain:
 ```
 
 On a job card, use **Find Hiring Contact** for recruiter/HR contacts and **Find Referral** for possible employee/referral candidates. If the company domain is missing, enter it manually in the contact modal for better Hunter.io results.
+
+---
+
+## Opportunity Arena
+
+A discovery module at **`/opportunities`** (navbar: **Opportunity Arena**) for hackathons, hiring challenges, coding/case competitions, innovation and internship programs that can lead to jobs, internships, referrals, networking, portfolio projects or prize money.
+
+**Compliant by design** — public APIs (Codeforces, Devpost), optional SerpAPI public search-result links, curated fallbacks and safe public search links only. No scraping, no CAPTCHA bypass, no login/cookie/session scraping, no browser automation.
+
+Works fully without any keys. Set `SERPAPI_KEY` to additionally surface safe public Google search-result links:
+
+```env
+SERPAPI_KEY=            # Optional. Returns safe public search-result links only.
+```
+
+Backend endpoints:
+
+```text
+GET  /opportunities/providers
+GET  /opportunities/search?keyword=&category=&type=&location=&mode=&skills=&hiringOnly=&internshipOnly=
+GET  /opportunities/details/:id
+POST /opportunities/prep-plan
+POST /opportunities/convert-to-resume
+```
+
+Integrated with the resume editor, tracker (statuses incl. Saved → Registered → Submitted → Shortlisted/Winner → Converted to Resume Project), contact/referral/outreach tools and the dashboard (upcoming deadlines, best-fit, hiring challenges, saved). Includes per-opportunity fit score, prep-plan generator, hackathon-to-resume converter, a local Team Finder MVP, deadline reminders and free/pro/premium usage limits. State persists in `localStorage` (`careerAutopilot_opportunities`, `careerAutopilot_savedOpportunities`, `careerAutopilot_opportunityTracker`, `careerAutopilot_teamFinder`, `careerAutopilot_opportunityPrepPlans`, `careerAutopilot_opportunityResumeProjects`).
