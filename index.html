@@ -1902,15 +1902,35 @@ trackerRow=function(a){
    session/token store. Configure the backend base URL in Settings.
 */
 function caEnsureOAuthState(){
-  S.oauth=S.oauth||{backendUrl:'',providers:{linkedin:{connected:false,profile:null,scopes:[]},indeed:{connected:false,profile:null,scopes:[]}},lastSync:null};
+  S.oauth=S.oauth||{backendUrl:'',providers:{linkedin:{connected:false,enabled:false,profile:null,scopes:[]},indeed:{connected:false,enabled:false,profile:null,scopes:[]}},lastSync:null};
   S.oauth.providers=S.oauth.providers||{};
-  S.oauth.providers.linkedin=S.oauth.providers.linkedin||{connected:false,profile:null,scopes:[]};
-  S.oauth.providers.indeed=S.oauth.providers.indeed||{connected:false,profile:null,scopes:[]};
+  S.oauth.providers.linkedin=S.oauth.providers.linkedin||{connected:false,enabled:false,profile:null,scopes:[]};
+  S.oauth.providers.indeed=S.oauth.providers.indeed||{connected:false,enabled:false,profile:null,scopes:[]};
+  if(S.oauth.providers.linkedin.enabled===undefined)S.oauth.providers.linkedin.enabled=false;
+  if(S.oauth.providers.indeed.enabled===undefined)S.oauth.providers.indeed.enabled=false;
+  // Student-first: a pasted LinkedIn profile URL (no OAuth/developer app needed).
+  S.linkedin=S.linkedin||{url:'',addedAt:null};
+  // Manual job preferences that drive search + matching.
+  S.jobPrefs=S.jobPrefs||{titles:[],locations:[],workMode:'Any',experienceLevel:'Any',salaryMin:'',salaryMax:'',salaryCurrency:'INR',skills:[],portals:[],completed:false,updatedAt:null};
   // When the page is served by the backend itself (http/https), default the backend URL to this origin.
   // Opened as a bare file:// it stays blank until the user enters one in Settings.
   if(!S.oauth.backendUrl && typeof location!=='undefined' && /^https?:$/.test(location.protocol)){
     S.oauth.backendUrl=location.origin;
   }
+}
+function caOAuthEnabled(p){caEnsureOAuthState();return !!(S.oauth.providers[p]&&S.oauth.providers[p].enabled);}
+function caLinkedInAdded(){caEnsureOAuthState();return !!(S.linkedin&&S.linkedin.url);}
+function caPrefsCompleted(){caEnsureOAuthState();const jp=S.jobPrefs||{};return !!jp.completed||((jp.titles||[]).length>0&&((jp.locations||[]).length>0||(jp.workMode&&jp.workMode!=='Any')));}
+/* Accepts linkedin.com/in/..., with or without scheme/www; returns normalized URL or ''. */
+function caNormalizeLinkedIn(raw){
+  let url=String(raw||'').trim();
+  if(!url)return '';
+  if(!/^https?:\/\//i.test(url))url='https://'+url;
+  let u;try{u=new URL(url);}catch(e){return '';}
+  const host=u.hostname.toLowerCase().replace(/^www\./,'');
+  if(host!=='linkedin.com'&&!host.endsWith('.linkedin.com'))return '';
+  if(!/^\/(in|pub|profile)\/[^/]+/i.test(u.pathname))return '';
+  return 'https://www.linkedin.com'+u.pathname.replace(/\/+$/,'');
 }
 function caOAuthBase(){caEnsureOAuthState();return (S.oauth.backendUrl||'').replace(/\/$/,'');}
 function caOAuthProviderLabel(p){return p==='linkedin'?'LinkedIn':p==='indeed'?'Indeed':p;}
@@ -1919,13 +1939,24 @@ function caOAuthStatusPill(p){
   const ok=caOAuthConnected(p), prof=(S.oauth.providers[p]||{}).profile||{};
   return `<span class="badge-soft ${ok?'good':'warn'}">${ok?'Connected':'Not connected'}${prof.name?' · '+esc(prof.name):''}</span>`;
 }
+function caCompletionBadge(state){
+  // state: 'done' | 'missing' | 'optional'
+  const map={done:['good','✓ Completed'],missing:['warn','Missing'],optional:['', 'Optional']};
+  const [cls,label]=map[state]||map.optional;
+  return `<span class="badge-soft ${cls}">${label}</span>`;
+}
 function caOAuthRequiredNotice(provider){
-  if(caOAuthConnected(provider))return `<div class="flag lime" style="margin:10px 0"><div><b>${esc(caOAuthProviderLabel(provider))} OAuth connected.</b><div class="hint">The tool will still keep final submit manual unless your backend has approved official apply permissions.</div></div></div>`;
-  return `<div class="flag" style="margin:10px 0"><div><b>${esc(caOAuthProviderLabel(provider))} OAuth not connected.</b><div class="hint">Connect only through the official OAuth screen. Do not enter LinkedIn/Indeed passwords into this tool.</div><button class="btn sm primary" style="margin-top:8px" onclick="caStartOAuth('${provider}')">Connect ${esc(caOAuthProviderLabel(provider))}</button></div></div>`;
+  const label=esc(caOAuthProviderLabel(provider));
+  if(caOAuthConnected(provider))return `<div class="flag lime" style="margin:10px 0"><div><b>${label} signed in.</b><div class="hint">Final submit stays manual unless your backend has provider-approved apply permissions.</div></div></div>`;
+  if(provider==='linkedin'&&caLinkedInAdded())return `<div class="flag lime" style="margin:10px 0"><div><b>LinkedIn profile added.</b><div class="hint">Your profile URL is saved for recruiter visibility. Apply on the official site using the steps below.</div></div></div>`;
+  if(caOAuthEnabled(provider))return `<div class="flag" style="margin:10px 0"><div><b>Optional: sign in with ${label}.</b><div class="hint">Sign in only through the official ${label} screen — never enter your password into this tool.</div><button class="btn sm primary" style="margin-top:8px" onclick="caStartOAuth('${provider}')">Sign in with ${label}</button></div></div>`;
+  // OAuth disabled on server — no scary errors, just the manual path.
+  return `<div class="flag" style="margin:10px 0"><div><b>No ${label} account needed.</b><div class="hint">Use the guided manual steps below to apply on the official ${label} site with your tailored resume.</div></div></div>`;
 }
 window.caStartOAuth=function(provider){
   const base=caOAuthBase();
-  if(!base){toast('Add OAuth backend URL in Settings first',true);go('settings');return;}
+  if(!base){toast('Add backend URL in Settings first',true);go('settings');return;}
+  if(!caOAuthEnabled(provider)){toast(`Sign in with ${caOAuthProviderLabel(provider)} is not enabled. You can still add your LinkedIn profile URL.`);return;}
   const ret=encodeURIComponent(location.origin+location.pathname+'?oauth_return='+provider);
   window.location.href=`${base}/auth/${encodeURIComponent(provider)}/start?returnTo=${ret}`;
 };
@@ -1945,12 +1976,30 @@ window.caRefreshOAuthStatus=async function(showToast=true){
     const d=await r.json();
     ['linkedin','indeed'].forEach(p=>{
       const v=(d.providers&&d.providers[p])||d[p]||{};
-      S.oauth.providers[p]={connected:!!v.connected,profile:v.profile||null,scopes:v.scopes||[]};
+      S.oauth.providers[p]={connected:!!v.connected,enabled:!!v.enabled,profile:v.profile||null,scopes:v.scopes||[]};
     });
     S.oauth.lastSync=new Date().toISOString();save();
-    if(showToast)toast('OAuth status refreshed');
+    if(showToast)toast('Status refreshed');
     if(current==='settings')renderSettings();
-  }catch(e){if(showToast)toast(e.message||'OAuth status failed',true);}
+  }catch(e){if(showToast)toast(e.message||'Status check failed',true);}
+};
+/* Pull saved LinkedIn URL + job preferences + oauth capability from the backend (if any). */
+window.caSyncCareerProfile=async function(){
+  caEnsureOAuthState();
+  const base=caOAuthBase();
+  if(!base)return; // offline / file:// — local state is the source of truth
+  try{
+    const r=await fetch(`${base}/profile/career`,{credentials:'include'});
+    if(!r.ok)return;
+    const d=await r.json();
+    if(d.oauth){
+      S.oauth.providers.linkedin.enabled=!!(d.oauth.linkedin&&d.oauth.linkedin.enabled);
+      S.oauth.providers.indeed.enabled=!!(d.oauth.indeed&&d.oauth.indeed.enabled);
+    }
+    if(d.linkedin&&d.linkedin.url)S.linkedin={url:d.linkedin.url,addedAt:d.linkedin.addedAt||S.linkedin.addedAt};
+    if(d.preferences)S.jobPrefs=Object.assign(S.jobPrefs,d.preferences);
+    save();
+  }catch(e){/* silent — local state still works */}
 };
 function caHandleOAuthReturn(){
   const q=new URLSearchParams(location.search);
@@ -1962,35 +2011,147 @@ function caHandleOAuthReturn(){
     });
   }
 }
-function caOAuthSettingsCard(){
+const WORK_MODES=['Any','Remote','Hybrid','On-site'];
+const EXPERIENCE_LEVELS=['Any','Student / Intern','Fresher (0-1 yr)','Junior (1-3 yr)','Mid (3-6 yr)','Senior (6+ yr)'];
+const JOB_PORTALS=['LinkedIn','Indeed','Naukri','Foundit','Wellfound','Instahyre','Cutshort','Hirist','Shine','Internshala','Company sites'];
+function caArrToText(a){return (a||[]).join(', ');}
+
+/* ---- LinkedIn profile URL (no OAuth required) ---- */
+window.caSaveLinkedIn=async function(){
+  caEnsureOAuthState();
+  const raw=($('#liProfileUrl')&&$('#liProfileUrl').value||'').trim();
+  const norm=caNormalizeLinkedIn(raw);
+  const msg=$('#liProfileMsg');
+  if(!norm){if(msg)msg.innerHTML=`<div class="flag" style="margin-top:10px;border-color:var(--rose);background:rgba(255,122,107,.08)">⚠ That doesn't look like a LinkedIn profile URL. Use e.g. <b>linkedin.com/in/your-name</b>.</div>`;return;}
+  S.linkedin={url:norm,addedAt:new Date().toISOString()};save();
+  const base=caOAuthBase();
+  if(base){try{await fetch(`${base}/profile/linkedin`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:norm})});}catch(e){}}
+  toast('LinkedIn Profile Added');renderSettings();
+};
+window.caRemoveLinkedIn=async function(){
+  caEnsureOAuthState();S.linkedin={url:'',addedAt:null};save();
+  const base=caOAuthBase();
+  if(base){try{await fetch(`${base}/profile/linkedin`,{method:'DELETE',credentials:'include'});}catch(e){}}
+  toast('LinkedIn profile removed');renderSettings();
+};
+/* ---- Manual job preferences (drive search + matching) ---- */
+window.caSaveJobPrefs=async function(){
+  caEnsureOAuthState();
+  const titles=($('#jpTitles').value||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,12);
+  const locations=($('#jpLocations').value||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,12);
+  const skills=($('#jpSkills').value||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,40);
+  const workMode=$('#jpMode').value, experienceLevel=$('#jpExp').value;
+  const salaryMin=($('#jpSalMin').value||'').trim(), salaryMax=($('#jpSalMax').value||'').trim();
+  const portals=Array.from(document.querySelectorAll('.jpPortal:checked')).map(c=>c.value);
+  const msg=$('#jpMsg');
+  if(salaryMin&&salaryMax&&Number(salaryMin)>Number(salaryMax)){if(msg)msg.innerHTML=`<div class="flag" style="margin-top:10px;border-color:var(--rose);background:rgba(255,122,107,.08)">⚠ Minimum salary can't be greater than maximum.</div>`;return;}
+  S.jobPrefs={titles,locations,workMode,experienceLevel,salaryMin,salaryMax,salaryCurrency:S.jobPrefs.salaryCurrency||'INR',skills,portals,completed:titles.length>0&&(locations.length>0||workMode!=='Any'),updatedAt:new Date().toISOString()};
+  // Feed the existing search/matching engine.
+  S.prefs=S.prefs||{};
+  if(titles.length){S.targetRole=titles[0];}
+  S.prefs.location=locations.join(', ');
+  S.prefs.mode=workMode;
+  S.prefs.experience=experienceLevel==='Any'?'Any':experienceLevel;
+  S.prefs.salary=salaryMin||salaryMax?`${salaryMin||'0'}${salaryMax?'-'+salaryMax:'+'} ${S.jobPrefs.salaryCurrency}`:'';
+  save();
+  const base=caOAuthBase();
+  if(base){try{await fetch(`${base}/profile/preferences`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(S.jobPrefs)});}catch(e){}}
+  toast('Job preferences saved');renderSettings();
+};
+
+function caLinkedInCard(){
+  caEnsureOAuthState();
+  const added=caLinkedInAdded();
+  const oauthOn=caOAuthEnabled('linkedin');
+  const signedIn=caOAuthConnected('linkedin');
+  return `<div class="card" style="margin-top:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="eyebrow">LinkedIn Profile</div>
+      ${added?caCompletionBadge('done'):caCompletionBadge('optional')}
+    </div>
+    <p class="hint" style="margin:8px 0 14px">Add your LinkedIn profile link so it travels with every application — great for recruiter visibility. <b>No developer account required.</b></p>
+    <label class="fl">Your LinkedIn profile URL</label>
+    <input id="liProfileUrl" value="${esc(S.linkedin.url||'')}" placeholder="linkedin.com/in/your-name">
+    <div class="hint" style="margin:6px 0 12px">We just validate and save the link — we never ask for your LinkedIn password.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" onclick="caSaveLinkedIn()">${added?'Update LinkedIn Profile':'Add LinkedIn Profile'}</button>
+      ${added?`<button class="btn ghost" onclick="caRemoveLinkedIn()">Remove</button>`:''}
+    </div>
+    ${added?`<div class="flag lime" style="margin-top:12px"><div><b>✓ LinkedIn Profile Added</b><div class="hint" style="word-break:break-all">${esc(S.linkedin.url)}</div></div></div>`:''}
+    <div id="liProfileMsg"></div>
+    <div class="divider"></div>
+    <div class="eyebrow" style="font-size:11px">Optional · advanced</div>
+    ${oauthOn
+      ? `<div class="mini-card" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>Sign in with LinkedIn</b>${caOAuthStatusPill('linkedin')}</div><div class="hint" style="margin:8px 0">Optional official sign-in for verified profile basics. Final apply stays manual.</div>${signedIn?`<button class="btn sm ghost" onclick="caDisconnectOAuth('linkedin')">Sign out</button>`:`<button class="btn sm primary" onclick="caStartOAuth('linkedin')">Sign in with LinkedIn</button>`}</div>`
+      : `<div class="flag" style="margin-top:8px"><div class="hint" style="margin:0">OAuth is not enabled yet. You can still add your LinkedIn profile URL above — that's all most students need.</div></div>`}
+  </div>`;
+}
+
+function caJobPrefsCard(){
+  caEnsureOAuthState();
+  const jp=S.jobPrefs, done=caPrefsCompleted();
+  const opt=(arr,sel)=>arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');
+  return `<div class="card" style="margin-top:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="eyebrow">Job Preferences</div>
+      ${done?caCompletionBadge('done'):caCompletionBadge('missing')}
+    </div>
+    <p class="hint" style="margin:8px 0 14px">Tell us what you're looking for and we'll use it to find &amp; rank jobs. <b>No Indeed account needed.</b></p>
+    <div class="kgrid" style="align-items:start;gap:14px">
+      <div>
+        <label class="fl">Preferred job titles (comma-separated)</label>
+        <input id="jpTitles" value="${esc(caArrToText(jp.titles))}" placeholder="e.g. Frontend Developer, Software Intern">
+        <label class="fl" style="margin-top:12px">Preferred locations (comma-separated)</label>
+        <input id="jpLocations" value="${esc(caArrToText(jp.locations))}" placeholder="e.g. Pune, Bengaluru, Remote">
+        <label class="fl" style="margin-top:12px">Work mode</label>
+        <select id="jpMode">${opt(WORK_MODES,jp.workMode)}</select>
+        <label class="fl" style="margin-top:12px">Experience level</label>
+        <select id="jpExp">${opt(EXPERIENCE_LEVELS,jp.experienceLevel)}</select>
+      </div>
+      <div>
+        <label class="fl">Expected salary (${esc(jp.salaryCurrency||'INR')} / year, optional)</label>
+        <div style="display:flex;gap:8px">
+          <input id="jpSalMin" value="${esc(jp.salaryMin)}" placeholder="Min" inputmode="numeric" style="flex:1">
+          <input id="jpSalMax" value="${esc(jp.salaryMax)}" placeholder="Max" inputmode="numeric" style="flex:1">
+        </div>
+        <label class="fl" style="margin-top:12px">Key skills (comma-separated)</label>
+        <input id="jpSkills" value="${esc(caArrToText(jp.skills))}" placeholder="e.g. React, Python, SQL">
+        <label class="fl" style="margin-top:12px">Preferred job portals</label>
+        <div class="chips" style="margin-top:6px">
+          ${JOB_PORTALS.map(p=>`<label class="chip" style="cursor:pointer;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" class="jpPortal" value="${esc(p)}" ${(jp.portals||[]).includes(p)?'checked':''}>${esc(p)}</label>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:14px"><button class="btn primary" onclick="caSaveJobPrefs()">${done?'Update Job Preferences':'Set Job Preferences'}</button></div>
+    <div id="jpMsg"></div>
+  </div>`;
+}
+
+function caBackendCard(){
   caEnsureOAuthState();
   const base=caOAuthBase();
   return `<div class="card" style="margin-top:18px">
-    <div class="eyebrow">Backend & OAuth Integrations</div>
-    <p class="hint" style="margin:8px 0 14px">One backend URL powers three things: the <b>fresh-job proxy</b> (avoids browser CORS), the <b>AI proxy</b> (keeps your Anthropic key server-side), and <b>OAuth</b> for LinkedIn/Indeed. The browser file never stores LinkedIn/Indeed passwords or client secrets.</p>
+    <div class="eyebrow">Backend (advanced)</div>
+    <p class="hint" style="margin:8px 0 14px">Optional. One backend URL powers the <b>fresh-job proxy</b>, the <b>AI proxy</b> (keeps your Anthropic key server-side), and syncs your profile/preferences. Most students can leave this as-is.</p>
     <label class="fl">Backend URL</label>
     <input id="oauthBackendUrl" value="${esc(base)}" placeholder="http://localhost:3000 or https://your-api.com">
-    <div class="hint" style="margin:6px 0 12px">Endpoints used: /jobs/search, /ai/messages, /auth/:provider/start, /auth/status, /auth/:provider/logout, /apply/:provider/submit.</div>
-    <button class="btn primary" id="saveOAuthUrl">Save OAuth backend</button>
-    <button class="btn" onclick="caRefreshOAuthStatus()">Refresh status</button>
-    <div class="divider"></div>
-    <div class="callout-grid">
-      <div class="mini-card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>LinkedIn</b>${caOAuthStatusPill('linkedin')}</div><div class="hint" style="margin:8px 0">Can authenticate the user and support approved LinkedIn APIs. Easy Apply auto-submit still needs official permission.</div><button class="btn sm primary" onclick="caStartOAuth('linkedin')">Connect LinkedIn</button> <button class="btn sm ghost" onclick="caDisconnectOAuth('linkedin')">Disconnect</button></div>
-      <div class="mini-card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>Indeed</b>${caOAuthStatusPill('indeed')}</div><div class="hint" style="margin:8px 0">Can authenticate through Indeed partner OAuth. Candidate/apply APIs require partner approval.</div><button class="btn sm primary" onclick="caStartOAuth('indeed')">Connect Indeed</button> <button class="btn sm ghost" onclick="caDisconnectOAuth('indeed')">Disconnect</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn primary" id="saveOAuthUrl">Save backend</button>
+      <button class="btn" onclick="caRefreshOAuthStatus()">Refresh status</button>
     </div>
-    <div class="flag" style="margin-top:14px"><div><b>Important:</b> OAuth is not the same as password login. It redirects to the official provider and returns limited access. Auto-apply is available only if your backend receives approved apply permissions from the provider.</div></div>
   </div>`;
 }
-/* Append OAuth UI to Settings. Works with existing renderSettings overrides. */
+
+/* Append the student-first Career Profile setup to Settings. */
 const caOAuthPrevRenderSettings=renderSettings;
 renderSettings=function(){
   caEnsureOAuthState();
   caOAuthPrevRenderSettings();
   const body=$('#settingsBody');
-  if(body && !$('#oauthBackendUrl')){
-    body.insertAdjacentHTML('beforeend',caOAuthSettingsCard());
+  if(body && !$('#liProfileUrl')){
+    body.insertAdjacentHTML('beforeend',caLinkedInCard()+caJobPrefsCard()+caBackendCard());
     const saveBtn=$('#saveOAuthUrl');
-    if(saveBtn)saveBtn.onclick=()=>{caEnsureOAuthState();S.oauth.backendUrl=$('#oauthBackendUrl').value.trim();save();toast('OAuth backend saved');renderSettings();};
+    if(saveBtn)saveBtn.onclick=()=>{caEnsureOAuthState();S.oauth.backendUrl=$('#oauthBackendUrl').value.trim();save();toast('Backend saved');caSyncCareerProfile().finally(renderSettings);};
   }
 };
 async function caOfficialApply(provider,job){
@@ -2038,6 +2199,72 @@ openAssistedApply=function(jobId){
 };
 caEnsureOAuthState();
 caHandleOAuthReturn();
+if(typeof caSyncCareerProfile==='function'){caSyncCareerProfile().then(()=>{if(current==='dash'&&typeof renderDash==='function')renderDash();if(current==='settings')renderSettings();});}
+
+/* ============================================================
+   STUDENT CAREER PROFILE  (dashboard card + value copy)
+   ============================================================ */
+function caCareerProfileRow(label,state,detail,cta){
+  return `<div class="mini-card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <div style="min-width:0">
+      <div style="font-weight:700;font-size:13.5px">${esc(label)}</div>
+      ${detail?`<div class="hint" style="margin-top:2px">${detail}</div>`:''}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${caCompletionBadge(state)}${cta||''}</div>
+  </div>`;
+}
+function caCareerProfileCard(){
+  caEnsureOAuthState();
+  const apps=S.applications||[];
+  const by=s=>apps.filter(a=>a.status===s).length;
+  const resumeDone=!!(S.resumeText&&S.resumeText.trim())||!!S.analysis;
+  const liDone=caLinkedInAdded();
+  const prefsDone=caPrefsCompleted();
+  const roleDone=!!(S.targetRole)||((S.jobPrefs.titles||[]).length>0);
+  const trackerDone=apps.length>0;
+  const ivDone=(S.jobs||[]).some(j=>j&&j._iv);
+  const goSet=`<button class="btn sm ghost" data-go="settings">Set up</button>`;
+  const goResume=`<button class="btn sm ghost" data-go="resume">Upload</button>`;
+  const goJobs=`<button class="btn sm ghost" data-go="jobs">Find jobs</button>`;
+  const trackerSummary=trackerDone?`${apps.length} tracked · ${by('Applied')+by('Pending')} active · ${by('Interview')} interview · ${by('Offer')} offer`:'No applications tracked yet';
+  return `<div class="card" style="margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="eyebrow">Career Profile</div>
+      <span class="badge-soft ${(resumeDone&&prefsDone)?'good':'warn'}">${[resumeDone,liDone,prefsDone,roleDone,trackerDone,ivDone].filter(Boolean).length}/6 complete</span>
+    </div>
+    <p class="hint" style="margin:8px 0 14px">Everything a student needs to apply faster — no LinkedIn or Indeed developer account required.</p>
+    <div style="display:grid;gap:10px">
+      ${caCareerProfileRow('Resume',resumeDone?'done':'missing',resumeDone?esc(S.resumeFileName||'Resume added'):'Upload your resume to unlock matching & tailoring',resumeDone?'':goResume)}
+      ${caCareerProfileRow('LinkedIn profile URL',liDone?'done':'optional',liDone?'Linked for recruiter visibility':'Optional — paste your profile link',liDone?'':goSet)}
+      ${caCareerProfileRow('Job preferences',prefsDone?'done':'missing',prefsDone?`${(S.jobPrefs.titles||[]).slice(0,2).join(', ')||'Saved'}`:'Titles, locations, salary & skills for matching',prefsDone?'':goSet)}
+      ${caCareerProfileRow('Target role',roleDone?'done':'missing',roleDone?esc(S.targetRole||(S.jobPrefs.titles||[])[0]):'Pick a target role',roleDone?'':goResume)}
+      ${caCareerProfileRow('Application tracker',trackerDone?'done':'optional',trackerSummary,trackerDone?'':goJobs)}
+      ${caCareerProfileRow('Interview preparation',ivDone?'done':'optional',ivDone?'Prep generated for at least one role':'Generate prep from a tailored job',ivDone?'':goJobs)}
+    </div>
+    <div class="divider"></div>
+    <div class="eyebrow" style="font-size:11px">How this helps you</div>
+    <div class="callout-grid" style="margin-top:10px">
+      <div class="mini-card hint">🔎 Find jobs matching your resume</div>
+      <div class="mini-card hint">🎯 Tailor your resume for each job</div>
+      <div class="mini-card hint">🗂️ Track where you applied</div>
+      <div class="mini-card hint">💬 Prepare interview answers from your resume</div>
+      <div class="mini-card hint">🔗 Keep your LinkedIn profile linked for recruiter visibility</div>
+      <div class="mini-card hint">✅ No developer account required</div>
+    </div>
+  </div>`;
+}
+const caPrevRenderDash=renderDash;
+renderDash=function(){
+  caPrevRenderDash();
+  caEnsureOAuthState();
+  const body=$('#dashBody');
+  if(body && !$('#caCareerProfileMount')){
+    const wrap=document.createElement('div');
+    wrap.id='caCareerProfileMount';
+    wrap.innerHTML=caCareerProfileCard();
+    body.insertBefore(wrap, body.firstChild);
+  }
+};
 
 
 

@@ -927,14 +927,83 @@ const providers = {
   }
 };
 
+/* OAuth is OPTIONAL/advanced. It is "enabled" only when BOTH client id + secret
+   are present in the environment. When disabled we never throw technical errors at
+   students — the UI hides the button and they simply add a profile URL instead. */
+function oauthEnabled(p) {
+  return !!(providers[p] && providers[p].clientId && providers[p].clientSecret
+    && !/^paste-/i.test(String(providers[p].clientId))
+    && !/^paste-/i.test(String(providers[p].clientSecret)));
+}
+
 function requireProvider(req, res, next) {
   const p = req.params.provider;
   if (!providers[p]) return res.status(404).json({ error: 'Unknown provider' });
-  if (!providers[p].clientId || !providers[p].clientSecret)
-    return res.status(400).json({ error: `${p} OAuth credentials are not configured on the server` });
+  // Only reached when the user EXPLICITLY hits an /auth/:provider/* route.
+  if (!oauthEnabled(p)) {
+    return res.status(400).json({
+      oauthEnabled: false,
+      provider: p,
+      error: 'oauth_not_enabled',
+      message: `Sign in with ${p === 'linkedin' ? 'LinkedIn' : 'Indeed'} is not enabled on this server. You can still add your profile URL and job preferences.`
+    });
+  }
   next();
 }
 function randomState() { return crypto.randomBytes(24).toString('hex'); }
+
+/* Lightweight, dependency-free validators reused by the profile routes. */
+function validateLinkedInUrl(raw) {
+  let url = String(raw || '').trim();
+  if (!url) return { ok: false, error: 'Please paste your LinkedIn profile URL.' };
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;       // tolerate "linkedin.com/in/..."
+  let u;
+  try { u = new URL(url); } catch { return { ok: false, error: 'That does not look like a valid URL.' }; }
+  const host = u.hostname.toLowerCase().replace(/^www\./, '');
+  const okHost = host === 'linkedin.com' || host.endsWith('.linkedin.com');
+  const okPath = /^\/(in|pub|profile)\/[^/]+/i.test(u.pathname);
+  if (!okHost) return { ok: false, error: 'URL must be a linkedin.com address.' };
+  if (!okPath) return { ok: false, error: 'Use your public profile URL, e.g. linkedin.com/in/your-name.' };
+  // Normalise: strip query/hash, drop trailing slash.
+  const clean = `https://www.linkedin.com${u.pathname.replace(/\/+$/, '')}`;
+  return { ok: true, url: clean };
+}
+
+const WORK_MODES = ['Any', 'Remote', 'Hybrid', 'On-site'];
+const EXPERIENCE_LEVELS = ['Any', 'Student / Intern', 'Fresher (0-1 yr)', 'Junior (1-3 yr)', 'Mid (3-6 yr)', 'Senior (6+ yr)'];
+function asCleanArray(v, max = 25) {
+  if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean).slice(0, max);
+  if (typeof v === 'string') return v.split(',').map(s => s.trim()).filter(Boolean).slice(0, max);
+  return [];
+}
+function sanitizePreferences(body = {}) {
+  const errors = [];
+  const titles = asCleanArray(body.titles ?? body.jobTitles, 12);
+  const skills = asCleanArray(body.skills, 40);
+  const portals = asCleanArray(body.portals ?? body.preferredPortals, 20);
+  const locations = asCleanArray(body.locations, 12);
+  let workMode = String(body.workMode ?? body.mode ?? 'Any').trim();
+  if (!WORK_MODES.includes(workMode)) workMode = 'Any';
+  let experienceLevel = String(body.experienceLevel ?? body.experience ?? 'Any').trim();
+  if (!EXPERIENCE_LEVELS.includes(experienceLevel)) experienceLevel = 'Any';
+  const salaryMin = body.salaryMin === '' || body.salaryMin == null ? '' : Number(body.salaryMin);
+  const salaryMax = body.salaryMax === '' || body.salaryMax == null ? '' : Number(body.salaryMax);
+  if (salaryMin !== '' && (!Number.isFinite(salaryMin) || salaryMin < 0)) errors.push('Minimum salary must be a positive number.');
+  if (salaryMax !== '' && (!Number.isFinite(salaryMax) || salaryMax < 0)) errors.push('Maximum salary must be a positive number.');
+  if (salaryMin !== '' && salaryMax !== '' && Number.isFinite(salaryMin) && Number.isFinite(salaryMax) && salaryMin > salaryMax)
+    errors.push('Minimum salary cannot be greater than maximum salary.');
+  const prefs = {
+    titles, locations, workMode, experienceLevel,
+    salaryMin: salaryMin === '' ? '' : salaryMin,
+    salaryMax: salaryMax === '' ? '' : salaryMax,
+    salaryCurrency: String(body.salaryCurrency || 'INR').trim().slice(0, 8) || 'INR',
+    skills, portals,
+    updatedAt: new Date().toISOString()
+  };
+  // "Completed" once a student has given the basics that power matching.
+  prefs.completed = titles.length > 0 && (locations.length > 0 || workMode !== 'Any');
+  return { errors, prefs };
+}
 
 app.get('/auth/:provider/start', requireProvider, (req, res) => {
   const p = req.params.provider;
@@ -1003,6 +1072,7 @@ app.get('/auth/status', (req, res) => {
   for (const p of Object.keys(providers)) {
     const t = tokens[p];
     result.providers[p] = {
+      enabled: oauthEnabled(p),          // is "Sign in with …" available on this server?
       connected: !!t?.access_token,
       profile: t?.profile ? {
         name: t.profile.name || [t.profile.given_name, t.profile.family_name].filter(Boolean).join(' ') || null,
@@ -1014,10 +1084,86 @@ app.get('/auth/status', (req, res) => {
   res.json(result);
 });
 
+/* Tiny capability probe so the frontend can hide/disable OAuth buttons cleanly. */
+app.get('/auth/config', (req, res) => {
+  res.json({
+    oauth: {
+      linkedin: { enabled: oauthEnabled('linkedin') },
+      indeed: { enabled: oauthEnabled('indeed') }
+    }
+  });
+});
+
 app.post('/auth/:provider/logout', (req, res) => {
   const p = req.params.provider;
   if (req.session.tokens) delete req.session.tokens[p];
   res.json({ ok: true });
+});
+
+/* ============================================================
+   STUDENT-FIRST CAREER PROFILE  (no developer accounts needed)
+   ------------------------------------------------------------
+   Data is stored against the current session (the logged-in user).
+   No LinkedIn/Indeed OAuth or developer app is required to use these.
+   ============================================================ */
+function getProfile(req) {
+  req.session.profile = req.session.profile || { linkedin: null, preferences: null };
+  return req.session.profile;
+}
+
+/* --- LinkedIn profile URL (paste, no OAuth) --- */
+app.get('/profile/linkedin', (req, res) => {
+  res.json({ linkedin: getProfile(req).linkedin });
+});
+app.post('/profile/linkedin', (req, res) => {
+  const v = validateLinkedInUrl(req.body && req.body.url);
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  const profile = getProfile(req);
+  profile.linkedin = { url: v.url, addedAt: new Date().toISOString() };
+  res.json({ ok: true, linkedin: profile.linkedin, status: 'LinkedIn Profile Added' });
+});
+app.delete('/profile/linkedin', (req, res) => {
+  getProfile(req).linkedin = null;
+  res.json({ ok: true });
+});
+
+/* --- Manual job preferences (used for search / matching) --- */
+app.get('/profile/preferences', (req, res) => {
+  res.json({ preferences: getProfile(req).preferences });
+});
+app.post('/profile/preferences', (req, res) => {
+  const { errors, prefs } = sanitizePreferences(req.body || {});
+  if (errors.length) return res.status(400).json({ error: errors.join(' '), errors });
+  getProfile(req).preferences = prefs;
+  res.json({ ok: true, preferences: prefs });
+});
+
+/* --- One call to hydrate the dashboard "Career Profile" card --- */
+app.get('/profile/career', (req, res) => {
+  const profile = getProfile(req);
+  res.json({
+    linkedin: profile.linkedin || null,
+    preferences: profile.preferences || null,
+    oauth: {
+      linkedin: { enabled: oauthEnabled('linkedin'), connected: !!req.session.tokens?.linkedin?.access_token },
+      indeed: { enabled: oauthEnabled('indeed'), connected: !!req.session.tokens?.indeed?.access_token }
+    }
+  });
+});
+app.put('/profile/career', (req, res) => {
+  const profile = getProfile(req);
+  const body = req.body || {};
+  if (body.linkedinUrl != null && body.linkedinUrl !== '') {
+    const v = validateLinkedInUrl(body.linkedinUrl);
+    if (!v.ok) return res.status(400).json({ error: v.error });
+    profile.linkedin = { url: v.url, addedAt: new Date().toISOString() };
+  }
+  if (body.preferences) {
+    const { errors, prefs } = sanitizePreferences(body.preferences);
+    if (errors.length) return res.status(400).json({ error: errors.join(' '), errors });
+    profile.preferences = prefs;
+  }
+  res.json({ ok: true, linkedin: profile.linkedin || null, preferences: profile.preferences || null });
 });
 
 app.post('/apply/:provider/submit', (req, res) => {
