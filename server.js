@@ -2007,8 +2007,171 @@ app.post('/opportunities/convert-to-resume', (req, res) => {
   catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
+/* ============================================================
+   LINKEDIN CAREER BOOSTER
+   All generation is AI-backed via the existing /ai/messages proxy.
+   No LinkedIn scraping — only user-supplied profile URL + resume text.
+   ============================================================ */
+
+/* Helper: forward a prompt to Anthropic via the AI proxy (server-to-server) */
+async function claudeBooster(req, res, systemPrompt, userPrompt) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.status(400).json({ error: 'ANTHROPIC_API_KEY not set on server.' });
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+    const data = await r.json().catch(() => ({ error: { message: 'Bad upstream response' } }));
+    if (data.error) return res.status(r.status).json({ error: data.error.message || 'AI error' });
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    res.json({ ok: true, result: text });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'AI proxy failed' });
+  }
+}
+
+/* 1. Profile Improvement Assistant */
+app.post('/linkedin/profile-analysis', async (req, res) => {
+  const { resumeText = '', targetRole = '', skills = [], linkedinUrl = '', college = '', experience = '' } = req.body || {};
+  if (!resumeText && !linkedinUrl) return res.status(400).json({ error: 'Provide resume text or LinkedIn URL.' });
+  const system = 'You are a LinkedIn profile expert helping college students and freshers in India. Output ONLY valid minified JSON. No prose, no markdown, no code fences.';
+  const prompt = `Analyze this student profile and generate LinkedIn optimization suggestions.
+Target role: ${targetRole}
+Skills: ${skills.join(', ') || 'not specified'}
+College: ${college || 'not specified'}
+Experience: ${experience || 'fresher/student'}
+LinkedIn URL: ${linkedinUrl || 'not provided'}
+RESUME TEXT: """${resumeText.slice(0, 7000)}"""
+
+Return JSON: {
+  profileScore: 0-100,
+  scoreBreakdown: { headline: 0-20, about: 0-20, skills: 0-20, experience: 0-20, completeness: 0-20 },
+  headline: "suggested LinkedIn headline (max 220 chars, punchy, role-focused)",
+  about: "suggested About section (3-4 paragraphs, 1st person, student-friendly, confident but not fake)",
+  topSkills: ["skill1", ...up to 10],
+  featuredSuggestions: ["what to put in Featured section"],
+  projectDescriptions: [{ title: "project name", description: "LinkedIn-ready 2-3 line description with impact" }],
+  experienceBullets: [{ role: "role/internship title", bullets: ["action-oriented bullet"] }],
+  missingItems: ["profile photo", "education dates", ...],
+  quickWins: ["3-5 immediate actions to improve profile today"],
+  actionChecklist: [{ item: "action", priority: "High|Medium|Low", done: false }]
+}`;
+  await claudeBooster(req, res, system, prompt);
+});
+
+/* 2. Post Generator */
+app.post('/linkedin/generate-post', async (req, res) => {
+  const { postType = '', targetRole = '', details = '', tone = 'confident', length = 'medium', skills = [], college = '', name = '' } = req.body || {};
+  if (!postType) return res.status(400).json({ error: 'Post type is required.' });
+  const system = 'You are a LinkedIn content writer for Indian college students and freshers. Write authentic, student-friendly posts. Output ONLY valid minified JSON. No markdown, no code fences.';
+  const prompt = `Write a LinkedIn post for a student/fresher.
+Post type: ${postType}
+Student name: ${name || 'the student'}
+Target role: ${targetRole || 'software/tech'}
+Relevant skills: ${skills.join(', ') || 'not specified'}
+College: ${college || 'not specified'}
+Additional details: ${details || 'none'}
+Tone: ${tone}
+Length: ${length} (short=3-4 lines, medium=6-8 lines, detailed=10-14 lines)
+
+Rules:
+- Sound like a real student, not a corporate robot
+- No cringe, no fake humility, no begging for likes
+- Add 3-5 relevant hashtags at end
+- Keep it genuine and human
+
+Return JSON: {
+  post: "the full post text with line breaks as \\n",
+  hashtags: ["hashtag1", ...],
+  postWithHashtags: "post + hashtags combined"
+}`;
+  await claudeBooster(req, res, system, prompt);
+});
+
+/* 3. Recruiter Outreach Assistant */
+app.post('/linkedin/outreach-message', async (req, res) => {
+  const { personName = '', company = '', personRole = '', messageType = '', targetRole = '', userSkills = [], sharedContext = '', jobLink = '', college = '', resumeText = '' } = req.body || {};
+  if (!messageType || !targetRole) return res.status(400).json({ error: 'Message type and target role are required.' });
+  const system = 'You are a career coach helping Indian college students write LinkedIn outreach messages. Output ONLY valid minified JSON. No markdown, no code fences.';
+  const prompt = `Generate LinkedIn outreach messages for a student.
+Message type: ${messageType}
+Recipient name: ${personName || '[Name]'}
+Recipient company: ${company || '[Company]'}
+Recipient role: ${personRole || 'recruiter/professional'}
+Student target role: ${targetRole}
+Student skills: ${userSkills.join(', ') || 'not specified'}
+Student college: ${college || 'not specified'}
+Shared context: ${sharedContext || 'none'}
+Job link: ${jobLink || 'none'}
+Resume snippet: """${resumeText.slice(0, 1500)}"""
+
+Rules:
+- Connection notes: max 300 chars
+- Messages: max 200 words
+- Sound natural and human
+- No desperation, no spam language
+- Mention one specific relevant thing about the recipient/company
+- For connection notes: ultra-brief but warm
+
+Return JSON: {
+  connectionNote: "max 300 char connection request note",
+  shortVersion: "40-60 word message",
+  politeVersion: "70-100 word polite message",
+  confidentVersion: "70-100 word confident/direct message",
+  followUpTemplate: "30-50 word follow-up after no reply in 7 days"
+}`;
+  await claudeBooster(req, res, system, prompt);
+});
+
+/* 4. Smart Connection Recommendations */
+app.post('/linkedin/connection-recommendations', async (req, res) => {
+  const { targetRole = '', skills = [], college = '', location = '', companies = [], college_tier = '' } = req.body || {};
+  if (!targetRole) return res.status(400).json({ error: 'Target role is required.' });
+  const system = 'You are a LinkedIn networking strategist for Indian college students. Output ONLY valid minified JSON. No markdown, no code fences.';
+  const prompt = `Generate smart LinkedIn connection/follow recommendations for a student.
+Target role: ${targetRole}
+Skills: ${skills.join(', ') || 'not specified'}
+College: ${college || 'not specified'}
+Location: ${location || 'India'}
+Target companies: ${companies.join(', ') || 'open to any'}
+
+Generate 8 recommendation categories. For each, build real LinkedIn search URLs using:
+https://www.linkedin.com/search/results/people/?keywords=QUERY&origin=GLOBAL_SEARCH_HEADER
+
+Return JSON array of 8 objects: [
+  {
+    category: "category name",
+    icon: "single emoji",
+    priority: "High|Medium|Low",
+    why: "1-2 line reason why connecting helps",
+    searchQueries: ["query1", "query2", "query3"],
+    linkedinSearchUrls: ["full URL with encoded query"],
+    connectionNote: "suggested connection note template",
+    followStrategy: "what to do after connecting/following"
+  }
+]
+
+Categories to cover:
+1. Recruiters hiring for ${targetRole}
+2. Employees at target companies (${companies.slice(0,3).join(', ') || 'top tech companies'})
+3. ${college ? college + ' alumni in ' + targetRole.split(' ')[0] + ' field' : 'Alumni from same tier college'}
+4. Engineering managers / team leads
+5. HR / Talent Acquisition professionals
+6. Tech content creators posting about ${targetRole.split(' ')[0]} / ${(skills[0] || 'tech')}
+7. Open source contributors / community leaders in relevant tech
+8. Startup founders in relevant domain`;
+  await claudeBooster(req, res, system, prompt);
+});
+
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities).*/, (req, res) => {
+app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities|linkedin).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 

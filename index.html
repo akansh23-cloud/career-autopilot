@@ -272,6 +272,10 @@ tr:hover td{background:var(--bg2)}
     <p class="lead" style="margin-bottom:22px">Edit every section inline, rewrite bullets with AI, tailor to a job description, and watch the live A4 preview update. Export to PDF, DOCX or ATS plain text.</p>
     <div id="editorBody"></div>
   </section>
+
+  <section class="view" data-view="linkedin">
+    <div id="linkedinBoosterRoot"></div>
+  </section>
 </main>
 
 <div id="toast"></div>
@@ -454,6 +458,7 @@ const VIEWS=[
   {id:'jobs',label:'Jobs',count:()=>S.jobs.length},
   {id:'tracker',label:'Tracker',count:()=>S.applications.length},
   {id:'growth',label:'Growth'},
+  {id:'linkedin',label:'🔗 LinkedIn'},
   {id:'settings',label:'Settings'}
 ];
 let current='dash';
@@ -465,7 +470,7 @@ function renderTabs(){
 }
 function go(id){current=id;renderTabs();
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('show',v.dataset.view===id));
-  ({dash:renderDash,resume:renderResume,editor:(window.renderEditor||function(){}),jobs:renderJobs,tracker:renderTracker,growth:renderGrowth,settings:renderSettings}[id]||function(){})();
+  ({dash:renderDash,resume:renderResume,editor:(window.renderEditor||function(){}),jobs:renderJobs,tracker:renderTracker,growth:renderGrowth,settings:renderSettings,linkedin:renderLinkedInBooster}[id]||function(){})();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g)go(g.dataset.go);});
@@ -5678,6 +5683,655 @@ RESUME:"""${S.resumeText.slice(0,9000)}"""`;
   }
 })();
 
+
+/* ============================================================
+   LINKEDIN CAREER BOOSTER MODULE
+   ============================================================ */
+
+/* --- LI state --- */
+if(!S.li)S.li={profileTab:'profile',postType:'',generatedPost:null,outreach:null,connections:null,
+  profileResult:null,postResult:null,outreachResult:null,connResult:null,
+  boosterScore:{profileDone:false,postDone:false,outreachDone:false,connDone:false}};
+
+function saveLi(){S.li=LI;save();}
+let LI=S.li;
+
+/* --- Helpers --- */
+function liApiBase(){return (typeof caOAuthBase==='function')?caOAuthBase():'';}
+
+async function liPost(endpoint, body){
+  const base=liApiBase();
+  const url=base?base+endpoint:endpoint;
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},credentials:base?'include':'same-origin',body:JSON.stringify(body)});
+  const data=await res.json().catch(()=>({error:'Bad response'}));
+  if(!res.ok||data.error)throw new Error(data.error||'Request failed');
+  return data;
+}
+
+async function liParseResult(raw){
+  try{const s=String(raw||'').replace(/```json/gi,'').replace(/```/g,'').trim();return parseJSON(s);}
+  catch(e){return {_raw:raw};}
+}
+
+function liCopy(text,btn){
+  navigator.clipboard.writeText(text).then(()=>{
+    const old=btn.textContent;btn.textContent='Copied!';btn.style.color='var(--lime)';
+    setTimeout(()=>{btn.textContent=old;btn.style.color='';},1800);
+  }).catch(()=>toast('Copy failed — select text manually',true));
+}
+
+function liScore(){
+  const s=LI.boosterScore;
+  const items=[s.profileDone,s.postDone,s.outreachDone,s.connDone,!!S.resumeText,!!(S.prefs&&S.prefs.titles&&S.prefs.titles.length)];
+  return Math.round((items.filter(Boolean).length/items.length)*100);
+}
+
+/* --- Main Render --- */
+function renderLinkedInBooster(){
+  const root=$('#linkedinBoosterRoot');
+  if(!root)return;
+  LI=S.li;
+  const isLinkedInConnected=S.oauth&&S.oauth.providers&&S.oauth.providers.linkedin&&S.oauth.providers.linkedin.connected;
+  const liUrl=(S.oauth&&S.oauth.providers&&S.oauth.providers.linkedin&&S.oauth.providers.linkedin.profile&&S.oauth.providers.linkedin.profile.profileUrl)||
+    (S.linkedin&&S.linkedin.url)||'';
+  const score=liScore();
+  root.innerHTML=`
+<div class="wrap" style="padding-top:28px;padding-bottom:60px">
+  <div class="section-title" style="margin-bottom:4px"><span class="eyebrow">LinkedIn</span></div>
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:22px">
+    <div>
+      <h2 style="font-size:30px;margin-bottom:6px">LinkedIn Career Booster</h2>
+      <p class="lead">Stand out on LinkedIn. Optimize your profile, post for visibility, reach out to recruiters, and find the right people to connect with.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      ${isLinkedInConnected
+        ?'<span class="chip lime" style="font-size:13px;padding:7px 14px">✓ LinkedIn Connected</span>'
+        :liUrl
+          ?`<span class="chip" style="font-size:12px">Profile: ${esc(liUrl.replace('https://www.linkedin.com/in/','').replace(/\/$/,''))}</span>`
+          :'<span class="chip" style="font-size:12px;color:var(--amber)">LinkedIn not connected</span>'
+      }
+    </div>
+  </div>
+
+  <!-- Career Score Card -->
+  <div class="card" style="margin-bottom:22px;background:linear-gradient(135deg,rgba(200,250,60,.06),rgba(127,212,255,.04))">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px">
+      <div>
+        <div class="eyebrow" style="margin-bottom:6px">Your LinkedIn Booster Score</div>
+        <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+          <div>
+            <div style="font-family:'Fraunces';font-size:48px;font-weight:700;line-height:1;color:${score>=70?'var(--lime)':score>=40?'var(--amber)':'var(--rose)'}">${score}<small style="font-size:16px;color:var(--muted)">%</small></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">LinkedIn Presence Score</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            ${[
+              ['Profile Optimized',LI.boosterScore.profileDone],
+              ['Posts Generated',LI.boosterScore.postDone],
+              ['Outreach Messages',LI.boosterScore.outreachDone],
+              ['People Search Done',LI.boosterScore.connDone],
+              ['Resume Uploaded',!!S.resumeText],
+              ['Job Preferences Set',!!(S.prefs&&S.prefs.titles&&S.prefs.titles.length)]
+            ].map(([label,done])=>`<div style="display:flex;align-items:center;gap:7px;font-size:12.5px">
+              <span style="color:${done?'var(--lime)':'var(--faint)'};font-size:14px">${done?'✓':'○'}</span>
+              <span style="color:${done?'var(--ink)':'var(--muted)'}">${label}</span>
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div style="flex:none">
+        <div class="bar" style="width:200px;height:12px;margin-bottom:8px"><i style="width:${score}%"></i></div>
+        <div class="hint">Complete all 6 items to maximize visibility</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inner Tabs -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px" id="liTabs">
+    ${[
+      ['profile','🎯 Profile Assistant'],
+      ['post','📢 Post Generator'],
+      ['outreach','✉️ Outreach Assistant'],
+      ['connect','🤝 People to Connect']
+    ].map(([id,label])=>`<div class="btn ${LI.profileTab===id?'primary':''}" style="font-size:13px" data-litab="${id}">${label}</div>`).join('')}
+  </div>
+
+  <div id="liTabContent"></div>
+</div>`;
+
+  document.querySelectorAll('[data-litab]').forEach(el=>{
+    el.onclick=()=>{LI.profileTab=el.dataset.litab;saveLi();renderLinkedInBooster();};
+  });
+  renderLiTab(LI.profileTab);
+}
+
+function renderLiTab(tab){
+  const c=$('#liTabContent');if(!c)return;
+  if(tab==='profile')renderLiProfile(c);
+  else if(tab==='post')renderLiPost(c);
+  else if(tab==='outreach')renderLiOutreach(c);
+  else if(tab==='connect')renderLiConnect(c);
+}
+
+/* -------- TAB 1: Profile Assistant -------- */
+function renderLiProfile(c){
+  const prefs=S.prefs||{};const jp=S.jobPrefs||{};
+  const skills=(jp.skills||prefs.skills||[]).join(', ');
+  const targetRole=S.targetRole||'Software Engineer';
+  const liUrl=(S.oauth&&S.oauth.providers&&S.oauth.providers.linkedin&&S.oauth.providers.linkedin.profile&&S.oauth.providers.linkedin.profile.profileUrl)||
+    (S.linkedin&&S.linkedin.url)||'';
+  c.innerHTML=`
+<div class="kgrid" style="align-items:start">
+  <div class="card">
+    <div class="eyebrow" style="margin-bottom:10px">Generate Profile Suggestions</div>
+    <div style="display:grid;gap:12px">
+      <div>
+        <label class="fl">Target Role</label>
+        <input id="liProRole" value="${esc(targetRole)}" placeholder="e.g. DevOps Engineer Intern">
+      </div>
+      <div>
+        <label class="fl">Your Skills (comma-separated)</label>
+        <input id="liProSkills" value="${esc(skills)}" placeholder="e.g. Python, AWS, Docker, React">
+      </div>
+      <div>
+        <label class="fl">College / University</label>
+        <input id="liProCollege" value="${esc(S._liProCollege||'')}" placeholder="e.g. VIT Vellore, BITS Pilani">
+      </div>
+      <div>
+        <label class="fl">Experience Level</label>
+        <select id="liProExp">
+          <option value="fresher/student" ${(!S._liProExp||S._liProExp==='fresher/student')?'selected':''}>Fresher / Final year student</option>
+          <option value="1 year" ${S._liProExp==='1 year'?'selected':''}>1 year experience</option>
+          <option value="2 years" ${S._liProExp==='2 years'?'selected':''}>2 years experience</option>
+          <option value="intern" ${S._liProExp==='intern'?'selected':''}>Currently interning</option>
+        </select>
+      </div>
+      <div>
+        <label class="fl">LinkedIn Profile URL (optional)</label>
+        <input id="liProUrl" value="${esc(liUrl)}" placeholder="https://linkedin.com/in/yourname">
+      </div>
+      <button class="btn primary" id="liProBtn" style="width:100%">
+        <span>✨ Analyze & Generate</span>
+      </button>
+    </div>
+  </div>
+  <div id="liProResult">
+    ${LI.profileResult?renderLiProfileResult(LI.profileResult):`
+      <div class="empty" style="padding:40px 20px">
+        <div style="font-size:32px;margin-bottom:10px">🎯</div>
+        <h3>Profile Suggestions Will Appear Here</h3>
+        <p class="hint">Fill in your details and click Analyze to get AI-powered LinkedIn profile suggestions.</p>
+      </div>`}
+  </div>
+</div>`;
+
+  $('#liProCollege').oninput=e=>{S._liProCollege=e.target.value;save();};
+  $('#liProExp').onchange=e=>{S._liProExp=e.target.value;save();};
+  $('#liProBtn').onclick=async()=>{
+    const btn=$('#liProBtn');
+    btn.disabled=true;btn.innerHTML='<span class="spin"></span> Analyzing...';
+    try{
+      const data=await liPost('/linkedin/profile-analysis',{
+        resumeText:S.resumeText||'',
+        targetRole:$('#liProRole').value.trim()||S.targetRole,
+        skills:$('#liProSkills').value.split(',').map(s=>s.trim()).filter(Boolean),
+        college:$('#liProCollege').value.trim(),
+        experience:$('#liProExp').value,
+        linkedinUrl:$('#liProUrl').value.trim()
+      });
+      const r=await liParseResult(data.result);
+      LI.profileResult=r;LI.boosterScore.profileDone=true;saveLi();
+      const res=$('#liProResult');if(res)res.innerHTML=renderLiProfileResult(r);
+      toast('Profile suggestions ready!');
+    }catch(e){toast(e.message||'Something went wrong',true);}
+    finally{btn.disabled=false;btn.innerHTML='<span>✨ Analyze & Generate</span>';}
+  };
+}
+
+function renderLiProfileResult(r){
+  if(r._raw) return `<div class="card"><div class="eyebrow" style="margin-bottom:8px">Raw Output</div><div class="doc">${esc(r._raw)}</div></div>`;
+  const score=r.profileScore||0;
+  const bd=r.scoreBreakdown||{};
+  return `
+<div style="display:grid;gap:14px">
+  <!-- Score -->
+  <div class="card" style="background:linear-gradient(135deg,rgba(200,250,60,.07),transparent)">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div class="eyebrow" style="margin-bottom:6px">Profile Score</div>
+        <div style="font-family:'Fraunces';font-size:52px;font-weight:700;line-height:1;color:${score>=70?'var(--lime)':score>=50?'var(--amber)':'var(--rose)'}">${score}<small style="font-size:16px;color:var(--muted)">/100</small></div>
+      </div>
+      <div style="display:grid;gap:8px;min-width:200px">
+        ${Object.entries(bd).map(([k,v])=>`<div style="font-size:12.5px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="text-transform:capitalize">${k}</span><span style="color:var(--lime)">${v}/20</span></div>
+          <div class="bar"><i style="width:${(v/20)*100}%"></i></div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>
+  <!-- Headline -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="eyebrow">✏️ Suggested Headline</div>
+      <button class="btn sm ghost" data-licopy="${esc(r.headline||'')}">Copy</button>
+    </div>
+    <div style="font-size:15px;font-weight:600;color:var(--ink);line-height:1.4;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--line)">${esc(r.headline||'—')}</div>
+    <div class="hint" style="margin-top:6px">Paste this in your LinkedIn profile → Edit intro → Headline</div>
+  </div>
+  <!-- About -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="eyebrow">📝 Suggested About Section</div>
+      <button class="btn sm ghost" data-licopy="${esc(r.about||'')}">Copy</button>
+    </div>
+    <div class="doc" style="max-height:240px;white-space:pre-wrap">${esc(r.about||'—')}</div>
+  </div>
+  <!-- Skills -->
+  ${r.topSkills&&r.topSkills.length?`<div class="card">
+    <div class="eyebrow" style="margin-bottom:10px">🔧 Skills to Add to Your Profile</div>
+    <div class="chips">${r.topSkills.map(s=>`<span class="chip lime">${esc(s)}</span>`).join('')}</div>
+    <div class="hint" style="margin-top:8px">Go to your LinkedIn profile → Add profile section → Skills → Add these</div>
+  </div>`:''}
+  <!-- Projects -->
+  ${r.projectDescriptions&&r.projectDescriptions.length?`<div class="card">
+    <div class="eyebrow" style="margin-bottom:10px">🚀 Project Descriptions for LinkedIn</div>
+    ${r.projectDescriptions.map(p=>`<div style="margin-bottom:12px;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-weight:700;font-size:14px">${esc(p.title||'Project')}</div>
+        <button class="btn sm ghost" data-licopy="${esc(p.description||'')}">Copy</button>
+      </div>
+      <div style="font-size:13.5px;color:var(--muted)">${esc(p.description||'')}</div>
+    </div>`).join('')}
+  </div>`:''}
+  <!-- Experience Bullets -->
+  ${r.experienceBullets&&r.experienceBullets.length?`<div class="card">
+    <div class="eyebrow" style="margin-bottom:10px">💼 Experience / Internship Bullets</div>
+    ${r.experienceBullets.map(e=>`<div style="margin-bottom:12px">
+      <div style="font-weight:700;font-size:13.5px;margin-bottom:6px;color:var(--lime-dim)">${esc(e.role||'Role')}</div>
+      <ul style="margin:0;padding-left:18px">${(e.bullets||[]).map(b=>`<li style="font-size:13px;color:var(--muted);margin:4px 0">${esc(b)}</li>`).join('')}</ul>
+    </div>`).join('')}
+  </div>`:''}
+  <!-- Featured Section -->
+  ${r.featuredSuggestions&&r.featuredSuggestions.length?`<div class="card">
+    <div class="eyebrow" style="margin-bottom:10px">⭐ Featured Section Ideas</div>
+    <ul style="margin:0;padding-left:18px">${r.featuredSuggestions.map(s=>`<li style="font-size:13.5px;margin:5px 0;color:var(--muted)">${esc(s)}</li>`).join('')}</ul>
+  </div>`:''}
+  <!-- Action Checklist -->
+  ${r.actionChecklist&&r.actionChecklist.length?`<div class="card">
+    <div class="eyebrow" style="margin-bottom:12px">✅ Profile Action Checklist</div>
+    <div style="display:grid;gap:8px">
+      ${r.actionChecklist.map((item,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border-radius:10px;border:1px solid var(--line)">
+        <span style="font-size:18px;flex:none">${item.done?'✅':'⬜'}</span>
+        <div style="flex:1"><div style="font-size:13.5px">${esc(item.item||item)}</div></div>
+        <span class="chip ${item.priority==='High'?'rose':item.priority==='Medium'?'amber':''}" style="font-size:11px;flex:none">${esc(item.priority||'')}</span>
+      </div>`).join('')}
+    </div>
+  </div>`:''}
+  <!-- Missing Items -->
+  ${r.missingItems&&r.missingItems.length?`<div class="card" style="border-color:rgba(255,181,71,.3)">
+    <div class="eyebrow" style="margin-bottom:10px;color:var(--amber)">⚠️ Missing from Your Profile</div>
+    <div class="chips">${r.missingItems.map(s=>`<span class="chip amber">${esc(s)}</span>`).join('')}</div>
+  </div>`:''}
+  <!-- Quick Wins -->
+  ${r.quickWins&&r.quickWins.length?`<div class="flag lime">
+    <span style="font-size:18px">⚡</span>
+    <div><div style="font-weight:700;margin-bottom:6px">Quick Wins — Do These Today</div><ul style="margin:0;padding-left:18px">${r.quickWins.map(w=>`<li style="font-size:13px;margin:3px 0">${esc(w)}</li>`).join('')}</ul></div>
+  </div>`:''}
+</div>`;
+}
+
+/* -------- TAB 2: Post Generator -------- */
+function renderLiPost(c){
+  const postTypes=[
+    {val:'looking-for-internship',label:'🔍 Looking for Internship'},
+    {val:'looking-for-job',label:'🔍 Looking for Full-time Job'},
+    {val:'project-showcase',label:'🚀 Project Showcase'},
+    {val:'certification-completion',label:'🏆 Certification Completed'},
+    {val:'hackathon-participation',label:'⚡ Hackathon Participation'},
+    {val:'learning-journey',label:'📚 Learning Journey'},
+    {val:'placement-prep',label:'💪 Placement Preparation'},
+    {val:'achievement',label:'🎉 Achievement / Win'},
+    {val:'open-to-work',label:'🟢 Open to Work'},
+  ];
+  const sel=LI.postType||'looking-for-internship';
+  c.innerHTML=`
+<div class="kgrid" style="align-items:start">
+  <div style="display:grid;gap:14px">
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:10px">Post Settings</div>
+      <div style="display:grid;gap:10px">
+        <div>
+          <label class="fl">Post Category</label>
+          <select id="liPostType">
+            ${postTypes.map(t=>`<option value="${t.val}" ${t.val===sel?'selected':''}>${t.label}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="fl">Additional Details (optional)</label>
+          <textarea id="liPostDetails" rows="3" placeholder="e.g. built a React + Node.js app for inventory management, 2nd place in hackathon...">${esc(S._liPostDetails||'')}</textarea>
+        </div>
+        <div class="kgrid" style="gap:10px">
+          <div>
+            <label class="fl">Tone</label>
+            <select id="liPostTone">
+              <option value="confident">Confident</option>
+              <option value="simple">Simple &amp; Casual</option>
+              <option value="storytelling">Storytelling</option>
+              <option value="formal">Formal</option>
+            </select>
+          </div>
+          <div>
+            <label class="fl">Length</label>
+            <select id="liPostLen">
+              <option value="short">Short (3-4 lines)</option>
+              <option value="medium" selected>Medium (6-8 lines)</option>
+              <option value="detailed">Detailed (10-14 lines)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn primary" id="liPostBtn" style="width:100%">
+          <span>✨ Generate Post</span>
+        </button>
+      </div>
+    </div>
+    <div class="card tight" style="background:rgba(127,212,255,.04);border-color:rgba(127,212,255,.2)">
+      <div style="font-size:12.5px;color:var(--sky)">ℹ️ Since LinkedIn posting permission isn't enabled, you can only Copy the post and paste it manually on LinkedIn.</div>
+    </div>
+  </div>
+  <div id="liPostResult">
+    ${LI.postResult?renderLiPostResult(LI.postResult):`
+      <div class="empty" style="padding:40px 20px">
+        <div style="font-size:32px;margin-bottom:10px">📢</div>
+        <h3>Your Post Will Appear Here</h3>
+        <p class="hint">Choose a post type and click Generate.</p>
+      </div>`}
+  </div>
+</div>`;
+
+  $('#liPostDetails').oninput=e=>{S._liPostDetails=e.target.value;save();};
+  $('#liPostType').onchange=e=>{LI.postType=e.target.value;saveLi();};
+  $('#liPostBtn').onclick=async()=>{
+    const btn=$('#liPostBtn');
+    btn.disabled=true;btn.innerHTML='<span class="spin"></span> Generating...';
+    try{
+      const prefs=S.prefs||{};const jp=S.jobPrefs||{};
+      const data=await liPost('/linkedin/generate-post',{
+        postType:$('#liPostType').value,
+        targetRole:S.targetRole||'software engineer',
+        details:$('#liPostDetails').value.trim(),
+        tone:$('#liPostTone').value,
+        length:$('#liPostLen').value,
+        skills:(jp.skills||prefs.skills||[]),
+        college:S._liProCollege||'',
+        name:(S.analysis&&S.analysis.name)||''
+      });
+      const r=await liParseResult(data.result);
+      LI.postResult=r;LI.boosterScore.postDone=true;saveLi();
+      const res=$('#liPostResult');if(res)res.innerHTML=renderLiPostResult(r);
+      toast('Post generated!');
+    }catch(e){toast(e.message||'Something went wrong',true);}
+    finally{btn.disabled=false;btn.innerHTML='<span>✨ Generate Post</span>';}
+  };
+  bindLiCopy();
+}
+
+function renderLiPostResult(r){
+  const post=r.postWithHashtags||r.post||r._raw||'';
+  return `
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="eyebrow">Generated Post</div>
+    <button class="btn sm primary" data-licopy="${esc(post)}">📋 Copy Post</button>
+  </div>
+  <div style="white-space:pre-wrap;font-size:14px;line-height:1.65;padding:16px;background:var(--bg);border-radius:12px;border:1px solid var(--line);color:var(--ink)">${esc(post)}</div>
+  ${r.hashtags&&r.hashtags.length?`<div class="chips" style="margin-top:12px">${r.hashtags.map(h=>`<span class="chip lime">${esc(h.startsWith('#')?h:'#'+h)}</span>`).join('')}</div>`:''}
+  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+    <a href="https://www.linkedin.com/feed/" target="_blank" rel="noopener" class="btn sm primary">Open LinkedIn to Post</a>
+    <button class="btn sm ghost" data-licopy="${esc(post)}">Copy Again</button>
+  </div>
+  <div class="hint" style="margin-top:8px">Copy the post above → Open LinkedIn → Click "Start a post" → Paste</div>
+</div>`;
+}
+
+/* -------- TAB 3: Outreach Assistant -------- */
+function renderLiOutreach(c){
+  const msgTypes=[
+    {val:'connection-request',label:'🤝 Connection Request Note'},
+    {val:'referral-request',label:'🙏 Referral Request'},
+    {val:'follow-up-after-applying',label:'📩 Follow-up After Applying'},
+    {val:'asking-for-guidance',label:'💡 Asking for Guidance/Advice'},
+    {val:'asking-about-open-roles',label:'🔍 Asking About Open Roles'},
+    {val:'thank-you',label:'🙏 Thank-you Message'},
+    {val:'follow-up-no-reply',label:'⏰ Follow-up After No Reply'},
+  ];
+  c.innerHTML=`
+<div class="kgrid" style="align-items:start">
+  <div class="card">
+    <div class="eyebrow" style="margin-bottom:12px">Outreach Details</div>
+    <div style="display:grid;gap:10px">
+      <div>
+        <label class="fl">Message Type</label>
+        <select id="liMsgType">
+          ${msgTypes.map(t=>`<option value="${t.val}">${t.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="kgrid" style="gap:10px">
+        <div>
+          <label class="fl">Recipient Name</label>
+          <input id="liMsgName" placeholder="Rahul Sharma" value="${esc(S._liMsgName||'')}">
+        </div>
+        <div>
+          <label class="fl">Their Company</label>
+          <input id="liMsgCompany" placeholder="Google, Zomato..." value="${esc(S._liMsgCompany||'')}">
+        </div>
+      </div>
+      <div>
+        <label class="fl">Their Role</label>
+        <input id="liMsgRole" placeholder="Senior DevOps Engineer / Talent Acquisition" value="${esc(S._liMsgRole||'')}">
+      </div>
+      <div>
+        <label class="fl">Job Link (if any)</label>
+        <input id="liMsgJobLink" placeholder="https://linkedin.com/jobs/view/..." value="${esc(S._liMsgJobLink||'')}">
+      </div>
+      <div>
+        <label class="fl">Shared Context (optional)</label>
+        <input id="liMsgCtx" placeholder="Same college, met at hackathon, mutual connection..." value="${esc(S._liMsgCtx||'')}">
+      </div>
+      <button class="btn primary" id="liMsgBtn" style="width:100%">
+        <span>✨ Generate Messages</span>
+      </button>
+    </div>
+  </div>
+  <div id="liOutreachResult">
+    ${LI.outreachResult?renderLiOutreachResult(LI.outreachResult):`
+      <div class="empty" style="padding:40px 20px">
+        <div style="font-size:32px;margin-bottom:10px">✉️</div>
+        <h3>Outreach Messages Will Appear Here</h3>
+        <p class="hint">Fill in recipient details and click Generate.</p>
+      </div>`}
+  </div>
+</div>`;
+
+  ['liMsgName','liMsgCompany','liMsgRole','liMsgJobLink','liMsgCtx'].forEach(id=>{
+    const el=$(id?'#'+id:'');if(el)el.oninput=e=>{S['_'+id]=e.target.value;save();};
+  });
+
+  $('#liMsgBtn').onclick=async()=>{
+    const btn=$('#liMsgBtn');
+    btn.disabled=true;btn.innerHTML='<span class="spin"></span> Generating...';
+    try{
+      const prefs=S.prefs||{};const jp=S.jobPrefs||{};
+      const data=await liPost('/linkedin/outreach-message',{
+        personName:$('#liMsgName').value.trim(),
+        company:$('#liMsgCompany').value.trim(),
+        personRole:$('#liMsgRole').value.trim(),
+        messageType:$('#liMsgType').value,
+        targetRole:S.targetRole||'software engineer',
+        userSkills:(jp.skills||prefs.skills||[]),
+        sharedContext:$('#liMsgCtx').value.trim(),
+        jobLink:$('#liMsgJobLink').value.trim(),
+        college:S._liProCollege||'',
+        resumeText:S.resumeText||''
+      });
+      const r=await liParseResult(data.result);
+      LI.outreachResult=r;LI.boosterScore.outreachDone=true;saveLi();
+      const res=$('#liOutreachResult');if(res)res.innerHTML=renderLiOutreachResult(r);
+      toast('Messages generated!');
+    }catch(e){toast(e.message||'Something went wrong',true);}
+    finally{btn.disabled=false;btn.innerHTML='<span>✨ Generate Messages</span>';}
+  };
+  bindLiCopy();
+}
+
+function renderLiOutreachResult(r){
+  if(r._raw)return`<div class="card"><div class="doc">${esc(r._raw)}</div></div>`;
+  const msgs=[
+    {key:'connectionNote',label:'🤝 Connection Request Note',sub:'(max 300 chars — shown in request)',maxLen:300},
+    {key:'shortVersion',label:'⚡ Short Version',sub:'40-60 words — quick and punchy'},
+    {key:'politeVersion',label:'🙏 Polite Version',sub:'70-100 words — warm and professional'},
+    {key:'confidentVersion',label:'💪 Confident Version',sub:'70-100 words — direct and bold'},
+    {key:'followUpTemplate',label:'⏰ Follow-up Template',sub:'For after no reply in 7 days'},
+  ];
+  return`<div style="display:grid;gap:12px">
+    ${msgs.filter(m=>r[m.key]).map(m=>`
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><div style="font-weight:700;font-size:14px">${m.label}</div><div class="hint">${m.sub}</div></div>
+          <button class="btn sm ghost" data-licopy="${esc(r[m.key]||'')}">Copy</button>
+        </div>
+        <div style="white-space:pre-wrap;font-size:13.5px;line-height:1.6;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--line);color:var(--ink)">${esc(r[m.key]||'')}</div>
+        ${m.maxLen?`<div class="hint" style="margin-top:5px">${(r[m.key]||'').length}/${m.maxLen} chars</div>`:''}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+/* -------- TAB 4: People to Connect -------- */
+function renderLiConnect(c){
+  const prefs=S.prefs||{};const jp=S.jobPrefs||{};
+  c.innerHTML=`
+<div style="display:grid;gap:14px">
+  <div class="card">
+    <div class="eyebrow" style="margin-bottom:12px">Find People to Connect With</div>
+    <div class="kgrid" style="gap:10px;align-items:end">
+      <div>
+        <label class="fl">Target Role</label>
+        <input id="liConRole" value="${esc(S.targetRole||'')}" placeholder="DevOps Engineer, SDE Intern...">
+      </div>
+      <div>
+        <label class="fl">Your Location</label>
+        <input id="liConLoc" value="${esc((prefs.locations&&prefs.locations[0])||'India')}" placeholder="Pune, Bangalore, India">
+      </div>
+      <div>
+        <label class="fl">Target Companies (comma-separated)</label>
+        <input id="liConComp" value="${esc(S._liConComp||'')}" placeholder="Google, Atlassian, Barclays">
+      </div>
+      <div>
+        <label class="fl">College / University</label>
+        <input id="liConCollege" value="${esc(S._liProCollege||S._liConCollege||'')}" placeholder="VIT, BITS, IIT, IIIT...">
+      </div>
+    </div>
+    <button class="btn primary" style="margin-top:14px;width:100%" id="liConBtn">
+      <span>🔍 Generate Connection Strategy</span>
+    </button>
+  </div>
+  <div id="liConnResult">
+    ${LI.connResult?renderLiConnResult(LI.connResult):`
+      <div class="empty" style="padding:40px 20px">
+        <div style="font-size:32px;margin-bottom:10px">🤝</div>
+        <h3>Connection Recommendations Will Appear Here</h3>
+        <p class="hint">Enter your target role and companies to get smart networking recommendations.</p>
+      </div>`}
+  </div>
+</div>`;
+
+  $('#liConCollege').oninput=e=>{S._liConCollege=e.target.value;S._liProCollege=e.target.value;save();};
+  $('#liConComp').oninput=e=>{S._liConComp=e.target.value;save();};
+  $('#liConBtn').onclick=async()=>{
+    const btn=$('#liConBtn');
+    btn.disabled=true;btn.innerHTML='<span class="spin"></span> Generating...';
+    try{
+      const data=await liPost('/linkedin/connection-recommendations',{
+        targetRole:$('#liConRole').value.trim()||S.targetRole,
+        skills:(jp.skills||prefs.skills||[]),
+        college:$('#liConCollege').value.trim(),
+        location:$('#liConLoc').value.trim(),
+        companies:$('#liConComp').value.split(',').map(s=>s.trim()).filter(Boolean)
+      });
+      let r=await liParseResult(data.result);
+      if(!Array.isArray(r)&&r._raw){r=r._raw;}
+      LI.connResult=r;LI.boosterScore.connDone=true;saveLi();
+      const res=$('#liConnResult');if(res)res.innerHTML=renderLiConnResult(r);
+      toast('Recommendations ready!');
+    }catch(e){toast(e.message||'Something went wrong',true);}
+    finally{btn.disabled=false;btn.innerHTML='<span>🔍 Generate Connection Strategy</span>';}
+  };
+  bindLiCopy();
+}
+
+function renderLiConnResult(r){
+  if(typeof r==='string')return`<div class="card"><div class="doc">${esc(r)}</div></div>`;
+  if(!Array.isArray(r))return`<div class="card"><div class="doc">${esc(JSON.stringify(r,null,2))}</div></div>`;
+  const pColors={High:'var(--lime)',Medium:'var(--amber)',Low:'var(--muted)'};
+  return`<div style="display:grid;gap:12px">
+    <div style="font-size:13.5px;color:var(--muted);padding:0 2px">
+      ⚠️ Do not mass-connect or spam. Connect selectively, personalize every note, and follow people before connecting. Quality > quantity.
+    </div>
+    ${r.map(cat=>`
+      <div class="card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:24px">${cat.icon||'👤'}</span>
+            <div>
+              <div style="font-weight:700;font-size:15px">${esc(cat.category||'Category')}</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${esc(cat.why||'')}</div>
+            </div>
+          </div>
+          <span class="chip" style="font-size:11px;color:${pColors[cat.priority]||'var(--muted)'};border-color:${pColors[cat.priority]||'var(--line)'};flex:none">${cat.priority||'Medium'} Priority</span>
+        </div>
+
+        <!-- Search Queries -->
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">🔍 Search on LinkedIn</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${(cat.searchQueries||[]).map((q,i)=>{
+              const url=(cat.linkedinSearchUrls||[])[i]||`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(q)}&origin=GLOBAL_SEARCH_HEADER`;
+              return`<a href="${esc(url)}" target="_blank" rel="noopener" class="chip" style="font-size:12px;text-decoration:none;color:var(--sky);border-color:rgba(127,212,255,.3);background:rgba(127,212,255,.06)">${esc(q)} ↗</a>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- Connection Note -->
+        ${cat.connectionNote?`<div style="margin-bottom:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">✉️ Connection Note Template</div>
+          <div style="position:relative">
+            <div style="white-space:pre-wrap;font-size:13px;padding:10px 40px 10px 12px;background:var(--bg);border-radius:9px;border:1px solid var(--line);color:var(--muted)">${esc(cat.connectionNote)}</div>
+            <button class="btn sm ghost" style="position:absolute;top:6px;right:6px" data-licopy="${esc(cat.connectionNote)}">Copy</button>
+          </div>
+        </div>`:''}
+
+        <!-- Follow Strategy -->
+        ${cat.followStrategy?`<div class="hint" style="color:var(--sky)">💡 <strong>Strategy:</strong> ${esc(cat.followStrategy)}</div>`:''}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+/* ---- Global copy binding ---- */
+function bindLiCopy(){
+  document.querySelectorAll('[data-licopy]').forEach(btn=>{
+    if(!btn._libound){
+      btn._libound=true;
+      btn.onclick=()=>liCopy(btn.dataset.licopy,btn);
+    }
+  });
+}
+
+/* Re-bind on DOM mutations in liTabContent */
+const liObs=new MutationObserver(()=>bindLiCopy());
+document.addEventListener('DOMContentLoaded',()=>{
+  const tc=$('#liTabContent');if(tc)liObs.observe(tc,{childList:true,subtree:true});
+});
+
 renderTabs();go('dash');maybeOnboard();
 
 
@@ -5936,6 +6590,12 @@ textarea.ed-field{resize:vertical;min-height:54px;line-height:1.5}
 .opp-plan h4{font-size:16px;margin:0 0 8px}
 .opp-plan ul{margin:0 0 12px;padding-left:18px}
 .opp-plan li{font-size:12.5px;margin:4px 0;color:var(--muted)}
+.li-tag{font-family:"JetBrains Mono",monospace;font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(200,250,60,.1);border:1px solid rgba(200,250,60,.3);color:var(--lime)}
+.li-section{padding:16px;background:var(--bg);border-radius:12px;border:1px solid var(--line);margin-bottom:12px}
+.li-msg-card{border:1px solid var(--line2);border-radius:12px;padding:14px;background:linear-gradient(180deg,var(--panel),var(--bg2))}
+.li-query{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid rgba(127,212,255,.3);background:rgba(127,212,255,.06);color:var(--sky);text-decoration:none;cursor:pointer}
+.li-query:hover{background:rgba(127,212,255,.12)}
+@media(max-width:760px){.li-two-col{grid-template-columns:1fr!important}}
 </style>
 </body>
 </html>
