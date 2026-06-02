@@ -11,14 +11,26 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+app.set('trust proxy', 1); // honor X-Forwarded-Proto (Vercel/Render/etc.) so Secure cookies work
+
+/* Cross-site cookies (SameSite=None; Secure) are needed ONLY when the frontend is
+   served from a DIFFERENT origin than this backend, over HTTPS. For the normal setup
+   (this server serves index.html → same origin) 'lax' is correct and works on plain http.
+   Set COOKIE_CROSS_SITE=1 (HTTPS only) if you host the UI on a separate domain. */
+const CROSS_SITE = process.env.COOKIE_CROSS_SITE === '1' || String(process.env.COOKIE_SAMESITE).toLowerCase() === 'none';
+const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || (CROSS_SITE ? 'none' : 'lax')).toLowerCase();
+const COOKIE_SECURE = process.env.COOKIE_SECURE === '1' || CROSS_SITE || process.env.NODE_ENV === 'production';
+
 app.use(express.json({ limit: '12mb' }));
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN || true, credentials: true }));
+/* Reflect the caller's origin and allow credentials so the OAuth status fetch works
+   whether the app is opened same-origin or from a configured frontend origin. */
+app.use(cors({ origin: true, credentials: true }));
 app.use(session({
   name: 'career_autopilot.sid',
   secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }
+  cookie: { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE }
 }));
 
 /* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls). */
@@ -952,6 +964,60 @@ function requireProvider(req, res, next) {
 }
 function randomState() { return crypto.randomBytes(24).toString('hex'); }
 
+/* ---- Stateless signed cookie for OAuth connection status ----
+   express-session's default store is in-memory and does NOT survive serverless
+   (e.g. Vercel) cold starts or multiple instances, so a token written in the
+   callback can be invisible to a later /auth/status request — which shows up as
+   "completed sign-in but still Not connected". To make status reliable everywhere
+   we ALSO record a small, HMAC-signed, httpOnly cookie carrying only the connection
+   status + display name/email (NEVER the access token). */
+const COOKIE_SECRET = process.env.SESSION_SECRET || 'career-autopilot-dev-secret';
+function signValue(obj) {
+  const data = Buffer.from(JSON.stringify(obj)).toString('base64url');
+  const sig = crypto.createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
+  return `${data}.${sig}`;
+}
+function verifyValue(value) {
+  if (typeof value !== 'string' || !value.includes('.')) return null;
+  const [data, sig] = value.split('.');
+  const expected = crypto.createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const obj = JSON.parse(Buffer.from(data, 'base64url').toString());
+    if (obj.exp && Date.now() > obj.exp) return null;
+    return obj;
+  } catch { return null; }
+}
+function readRawCookie(req, name) {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(/;\s*/)) {
+    if (part.startsWith(name + '=')) return decodeURIComponent(part.slice(name.length + 1));
+  }
+  return '';
+}
+function oauthStatusCookieName(p) { return `ca_oauth_${p}`; }
+function setOAuthStatusCookie(res, p, payload) {
+  res.cookie(oauthStatusCookieName(p), signValue(payload), {
+    httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE,
+    maxAge: 1000 * 60 * 60 * 24 * 30
+  });
+}
+function readOAuthStatusCookie(req, p) { return verifyValue(readRawCookie(req, oauthStatusCookieName(p))); }
+
+/* Safely add query params to a returnTo URL, even one that already has a query string
+   (fixes the malformed "?oauth_return=linkedin?oauth_return=linkedin&connected=1"). */
+function buildReturn(returnTo, params) {
+  try {
+    const u = new URL(returnTo);
+    Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, v));
+    return u.toString();
+  } catch {
+    const sep = returnTo.includes('?') ? '&' : '?';
+    return returnTo + sep + new URLSearchParams(params).toString();
+  }
+}
+
 /* Lightweight, dependency-free validators reused by the profile routes. */
 function validateLinkedInUrl(raw) {
   let url = String(raw || '').trim();
@@ -1018,7 +1084,7 @@ app.get('/auth/:provider/start', requireProvider, (req, res) => {
   url.searchParams.set('redirect_uri', cfg.redirectUri);
   url.searchParams.set('scope', cfg.scope);
   url.searchParams.set('state', state);
-  res.redirect(url.toString());
+  req.session.save(() => res.redirect(url.toString()));
 });
 
 app.get('/auth/:provider/callback', requireProvider, async (req, res) => {
@@ -1027,8 +1093,8 @@ app.get('/auth/:provider/callback', requireProvider, async (req, res) => {
   const saved = req.session.oauth?.[p];
   const returnTo = saved?.returnTo || process.env.FRONTEND_ORIGIN || '/';
 
-  if (!req.query.code) return res.redirect(`${returnTo}?oauth_return=${p}&error=missing_code`);
-  if (!saved || saved.state !== req.query.state) return res.redirect(`${returnTo}?oauth_return=${p}&error=bad_state`);
+  if (!req.query.code) return res.redirect(buildReturn(returnTo, { oauth_return: p, error: 'missing_code' }));
+  if (!saved || saved.state !== req.query.state) return res.redirect(buildReturn(returnTo, { oauth_return: p, error: 'bad_state' }));
 
   try {
     const body = new URLSearchParams({
@@ -1045,6 +1111,7 @@ app.get('/auth/:provider/callback', requireProvider, async (req, res) => {
     });
     const token = await tokenRes.json();
     if (!tokenRes.ok) throw new Error(token.error_description || token.error || 'Token exchange failed');
+    if (!token.access_token) throw new Error('No access token returned by provider');
 
     let profile = null;
     if (cfg.meUrl && token.access_token) {
@@ -1060,9 +1127,12 @@ app.get('/auth/:provider/callback', requireProvider, async (req, res) => {
       scope: token.scope || cfg.scope,
       profile
     };
-    res.redirect(`${returnTo}?oauth_return=${p}&connected=1`);
+    // Stateless fallback so "connected" survives serverless / multi-instance hosting.
+    const name = profile ? (profile.name || [profile.given_name, profile.family_name].filter(Boolean).join(' ') || null) : null;
+    setOAuthStatusCookie(res, p, { connected: true, name, email: (profile && profile.email) || null, exp: Date.now() + 1000 * 60 * 60 * 24 * 30 });
+    req.session.save(() => res.redirect(buildReturn(returnTo, { oauth_return: p, connected: '1' })));
   } catch (err) {
-    res.redirect(`${returnTo}?oauth_return=${p}&error=${encodeURIComponent(err.message)}`);
+    res.redirect(buildReturn(returnTo, { oauth_return: p, error: err.message || 'oauth_failed' }));
   }
 });
 
@@ -1071,13 +1141,14 @@ app.get('/auth/status', (req, res) => {
   const result = { providers: {} };
   for (const p of Object.keys(providers)) {
     const t = tokens[p];
+    const ck = readOAuthStatusCookie(req, p);          // serverless-safe fallback
+    const connected = !!t?.access_token || !!ck?.connected;
+    const name = (t?.profile && (t.profile.name || [t.profile.given_name, t.profile.family_name].filter(Boolean).join(' '))) || ck?.name || null;
+    const email = (t?.profile && t.profile.email) || ck?.email || null;
     result.providers[p] = {
       enabled: oauthEnabled(p),          // is "Sign in with …" available on this server?
-      connected: !!t?.access_token,
-      profile: t?.profile ? {
-        name: t.profile.name || [t.profile.given_name, t.profile.family_name].filter(Boolean).join(' ') || null,
-        email: t.profile.email || null
-      } : null,
+      connected,
+      profile: connected ? { name: name || null, email: email || null } : null,
       scopes: t?.scope ? String(t.scope).split(/[ ,]+/).filter(Boolean) : []
     };
   }
@@ -1097,6 +1168,7 @@ app.get('/auth/config', (req, res) => {
 app.post('/auth/:provider/logout', (req, res) => {
   const p = req.params.provider;
   if (req.session.tokens) delete req.session.tokens[p];
+  res.clearCookie(oauthStatusCookieName(p), { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
   res.json({ ok: true });
 });
 

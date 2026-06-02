@@ -1957,7 +1957,7 @@ window.caStartOAuth=function(provider){
   const base=caOAuthBase();
   if(!base){toast('Add backend URL in Settings first',true);go('settings');return;}
   if(!caOAuthEnabled(provider)){toast(`Sign in with ${caOAuthProviderLabel(provider)} is not enabled. You can still add your LinkedIn profile URL.`);return;}
-  const ret=encodeURIComponent(location.origin+location.pathname+'?oauth_return='+provider);
+  const ret=encodeURIComponent(location.origin+location.pathname);
   window.location.href=`${base}/auth/${encodeURIComponent(provider)}/start?returnTo=${ret}`;
 };
 window.caDisconnectOAuth=async function(provider){
@@ -2003,13 +2003,24 @@ window.caSyncCareerProfile=async function(){
 };
 function caHandleOAuthReturn(){
   const q=new URLSearchParams(location.search);
-  if(q.get('oauth_return')||q.get('oauth')){
-    caRefreshOAuthStatus(false).finally(()=>{
-      const clean=location.origin+location.pathname+location.hash;
-      history.replaceState({},'',clean);
-      toast('OAuth return processed');
-    });
+  const ret=q.get('oauth_return')||q.get('oauth');
+  if(!ret)return;
+  const provider=String(ret).split('?')[0]; // tolerate older malformed return values
+  const err=q.get('error');
+  const finish=()=>{const clean=location.origin+location.pathname+location.hash;history.replaceState({},'',clean);if(current==='settings'&&typeof renderSettings==='function')renderSettings();};
+  if(err){
+    const map={
+      bad_state:'Sign-in session was lost (cookies blocked or the server restarted). Make sure you return to the SAME address that served the app, and allow cookies.',
+      missing_code:'Sign-in was cancelled before completing.'
+    };
+    toast(map[err]||(caOAuthProviderLabel(provider)+' sign-in failed: '+decodeURIComponent(err)),true);
+    finish();return;
   }
+  caRefreshOAuthStatus(false).finally(()=>{
+    const ok=caOAuthConnected(provider);
+    toast(ok?(caOAuthProviderLabel(provider)+' connected'):(caOAuthProviderLabel(provider)+' returned, but status is still not connected. If you are on a separate frontend domain, set COOKIE_CROSS_SITE=1 on the server.'),!ok);
+    finish();
+  });
 }
 const WORK_MODES=['Any','Remote','Hybrid','On-site'];
 const EXPERIENCE_LEVELS=['Any','Student / Intern','Fresher (0-1 yr)','Junior (1-3 yr)','Mid (3-6 yr)','Senior (6+ yr)'];
