@@ -1133,7 +1133,7 @@ genDocs=async function(job,tailored){
 const _oldGo=go;
 go=function(id,skipHistory){ensureEnhancedState();current=id;renderTabs();
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('show',v.dataset.view===id));
-  ({dash:renderDash,resume:renderResume,editor:(window.renderEditor||function(){}),jobs:renderJobs,tracker:renderTracker,growth:renderGrowth,settings:renderSettings}[id]||function(){})();
+  ({dash:renderDash,resume:renderResume,editor:(window.renderEditor||function(){}),jobs:renderJobs,tracker:renderTracker,growth:renderGrowth,settings:renderSettings,linkedin:function(){try{renderLinkedInBooster();}catch(e){console.error('LinkedIn render error:',e);}}}[id]||function(){})();
   if(!skipHistory && history && history.pushState){try{history.pushState({view:id},'',`#${id}`);}catch(e){}}
   window.scrollTo({top:0,behavior:'smooth'});
 };
@@ -5729,8 +5729,12 @@ function liScore(){
 /* --- Main Render --- */
 function renderLinkedInBooster(){
   const root=$('#linkedinBoosterRoot');
-  if(!root)return;
+  if(!root){console.error('LinkedIn: #linkedinBoosterRoot not found');return;}
+  // Re-init LI state defensively each call
+  if(!S.li||typeof S.li!=='object')S.li={profileTab:'profile',postType:'',generatedPost:null,outreach:null,connections:null,profileResult:null,postResult:null,outreachResult:null,connResult:null,boosterScore:{profileDone:false,postDone:false,outreachDone:false,connDone:false}};
+  if(!S.li.boosterScore)S.li.boosterScore={profileDone:false,postDone:false,outreachDone:false,connDone:false};
   LI=S.li;
+  try{
   const isLinkedInConnected=S.oauth&&S.oauth.providers&&S.oauth.providers.linkedin&&S.oauth.providers.linkedin.connected;
   const liUrl=(S.oauth&&S.oauth.providers&&S.oauth.providers.linkedin&&S.oauth.providers.linkedin.profile&&S.oauth.providers.linkedin.profile.profileUrl)||
     (S.linkedin&&S.linkedin.url)||'';
@@ -5802,14 +5806,26 @@ function renderLinkedInBooster(){
     el.onclick=()=>{LI.profileTab=el.dataset.litab;saveLi();renderLinkedInBooster();};
   });
   renderLiTab(LI.profileTab);
+  }catch(e){
+    console.error('LinkedIn render error:',e);
+    root.innerHTML=`<div class="wrap" style="padding-top:28px"><div class="card" style="border-color:var(--rose);background:rgba(255,122,107,.06)"><div style="font-weight:700;color:var(--rose);margin-bottom:8px">⚠️ LinkedIn page failed to render</div><div class="hint">${esc(e&&e.message?e.message:String(e))}</div><button class="btn sm" style="margin-top:12px" onclick="renderLinkedInBooster()">↺ Retry</button></div></div>`;
+  }
 }
 
 function renderLiTab(tab){
-  const c=$('#liTabContent');if(!c)return;
-  if(tab==='profile')renderLiProfile(c);
-  else if(tab==='post')renderLiPost(c);
-  else if(tab==='outreach')renderLiOutreach(c);
-  else if(tab==='connect')renderLiConnect(c);
+  const c=$('#liTabContent');
+  if(!c){console.error('LinkedIn: #liTabContent missing');return;}
+  try{
+    if(tab==='profile')renderLiProfile(c);
+    else if(tab==='post')renderLiPost(c);
+    else if(tab==='outreach')renderLiOutreach(c);
+    else if(tab==='connect')renderLiConnect(c);
+    else renderLiProfile(c);
+    bindLiCopy();
+  }catch(e){
+    console.error('LinkedIn tab render error:',e);
+    c.innerHTML=`<div class="card" style="border-color:var(--rose)"><div style="color:var(--rose);font-weight:700">Tab failed to load</div><div class="hint">${esc(e.message||String(e))}</div><button class="btn sm" style="margin-top:10px" onclick="renderLiTab('${tab}')">↺ Retry</button></div>`;
+  }
 }
 
 /* -------- TAB 1: Profile Assistant -------- */
