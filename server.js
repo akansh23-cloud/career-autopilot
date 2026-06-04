@@ -3,6 +3,7 @@ import cors from 'cors';
 import session from 'express-session';
 import crypto from 'crypto';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
@@ -33,13 +34,33 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE }
 }));
 
-/* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls). */
-app.use(express.static(__dirname));
+/* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls).
+   Prefer the built React/Vite app in dist/. Fall back to the legacy single-file UI if dist
+   has not been built yet (e.g. `npm run build` not run). Same-origin keeps OAuth + the
+   session cookie working with zero CORS config. */
+const DIST_DIR = path.join(__dirname, 'dist');
+const HAS_DIST = fs.existsSync(path.join(DIST_DIR, 'index.html'));
+const UI_DIR = HAS_DIST ? DIST_DIR : __dirname;
+const UI_INDEX = HAS_DIST
+  ? path.join(DIST_DIR, 'index.html')
+  : path.join(__dirname, 'legacy_index.html');
+
+app.use(express.static(UI_DIR));
 
 /* Explicit root route for platforms like Vercel where static index serving can be skipped. */
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(UI_INDEX);
 });
+
+/* ------------------------------------------------------------------
+   USER AUTH GATE
+   The main tool features (AI, job search, contacts, arena, profile,
+   apply) are protected — only signed-in users may call them. The
+   landing page, static assets and the /auth/* + /health endpoints stay
+   public. requireAuth/currentUser are declared lower down (hoisted).
+   ------------------------------------------------------------------ */
+const PROTECTED_PREFIXES = ['/ai', '/jobs', '/contacts', '/opportunities', '/profile', '/apply'];
+app.use(PROTECTED_PREFIXES, requireAuth);
 
 const JOB_FETCH_TIMEOUT  = Number(process.env.JOB_FETCH_TIMEOUT  || 12000);
 const JOB_VERIFY_TIMEOUT = Number(process.env.JOB_VERIFY_TIMEOUT || 9000);
@@ -626,12 +647,41 @@ function validRoleMatch(job, role) {
 }
 function validLocationMatch(job, loc) {
   const q = normText(loc);
-  if (!q) return true;
-  if (/remote/i.test(job.mode || '') || /remote/i.test(job.location || '')) return true;   // remote satisfies any location
-  const hay = normText(`${job.location} ${job.summary}`);
-  if (/^(in|ind|india)$/.test(q)) return /\bindia\b|\bin\b/.test(hay);
+  if (!q) return true;                       // no location filter → everything passes
+
+  const hay = normText(`${job.location} ${job.summary} ${job.mode}`);
+
+  // Country / region aliases so "usa" matches "united states", "uk" matches "england", etc.
+  const ALIASES = {
+    india: ['india', 'bharat', 'bengaluru', 'bangalore', 'mumbai', 'delhi', 'hyderabad', 'pune', 'chennai', 'noida', 'gurgaon', 'gurugram', 'kolkata', 'ahmedabad'],
+    usa: ['united states', 'usa', 'u s', 'us only', 'us based', 'america', 'american', 'new york', 'san francisco', 'texas', 'california'],
+    us: ['united states', 'usa', 'u s', 'us only', 'us based', 'america', 'american'],
+    'united states': ['united states', 'usa', 'u s', 'america', 'american'],
+    uk: ['united kingdom', 'uk', 'england', 'britain', 'london', 'scotland', 'wales'],
+    'united kingdom': ['united kingdom', 'uk', 'england', 'britain', 'london'],
+    canada: ['canada', 'canadian', 'toronto', 'vancouver', 'ontario'],
+    germany: ['germany', 'deutschland', 'berlin', 'munich'],
+    australia: ['australia', 'sydney', 'melbourne', 'brisbane'],
+    singapore: ['singapore'],
+    europe: ['europe', 'european', 'eu', 'emea'],
+  };
+
   const first = q.split(' ')[0];
-  return hay.includes(first);
+  const terms = new Set([q, first]);
+  (ALIASES[q] || ALIASES[first] || []).forEach(t => terms.add(normText(t)));
+
+  // Explicit country / city / region match anywhere in the listing.
+  for (const t of terms) { if (t && hay.includes(t)) return true; }
+
+  // Truly global / location-agnostic listings are valid for any country search.
+  // This covers explicit "worldwide/anywhere" AND bare "Remote" with no specific geography.
+  // A job tied to a DIFFERENT specific region (e.g. "Remote – US only", "Europe") will NOT
+  // reach here, so it is correctly excluded from a mismatched country search.
+  const locNorm = normText(job.location);
+  if (!locNorm || locNorm === 'remote' || locNorm === 'remote remote') return true;
+  if (/\bworldwide\b|\banywhere\b|\bglobal\b|\bany location\b|\blocation independent\b|\bremote any\b/.test(hay)) return true;
+
+  return false;
 }
 function validModeMatch(job, mode) {
   if (!mode || mode === 'Any') return true;
@@ -1071,6 +1121,155 @@ function sanitizePreferences(body = {}) {
   return { errors, prefs };
 }
 
+/* ============================================================
+   GOOGLE OAUTH — USER SIGN-IN  (real end-to-end authentication)
+   ------------------------------------------------------------
+   Separate from the LinkedIn/Indeed job-board *connectors* above.
+   This establishes the logged-in identity that gates the whole app.
+   All secrets come from env vars — nothing is ever hardcoded.
+   ============================================================ */
+const googleProvider = {
+  authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenUrl: 'https://oauth2.googleapis.com/token',
+  meUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+  clientId: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback',
+  scope: process.env.GOOGLE_SCOPE || 'openid email profile'
+};
+function googleEnabled() {
+  const c = googleProvider;
+  return !!(c.clientId && c.clientSecret
+    && !/^paste-/i.test(String(c.clientId))
+    && !/^paste-/i.test(String(c.clientSecret)));
+}
+/* Dev login lets you exercise the protected app + sign-in/out flow locally
+   without Google credentials. It is auto-OFF in production and whenever real
+   Google OAuth is configured; force it on with ALLOW_DEV_LOGIN=1. */
+function allowDevLogin() {
+  if (process.env.ALLOW_DEV_LOGIN === '1') return true;
+  if (process.env.ALLOW_DEV_LOGIN === '0') return false;
+  return !googleEnabled() && process.env.NODE_ENV !== 'production' && !process.env.VERCEL;
+}
+
+/* Serverless-safe login: a small HMAC-signed httpOnly cookie carries only the
+   user's display identity (never tokens), so /auth/me works even when the
+   in-memory session store is wiped between serverless invocations. */
+function setUserCookie(res, user) {
+  res.cookie('ca_user', signValue({
+    uid: user.id, name: user.name, email: user.email,
+    picture: user.picture, provider: user.provider,
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 30
+  }), { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE, maxAge: 1000 * 60 * 60 * 24 * 30 });
+}
+function clearUserCookie(res) {
+  res.clearCookie('ca_user', { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE });
+}
+function currentUser(req) {
+  if (req.session && req.session.user) return req.session.user;
+  const ck = verifyValue(readRawCookie(req, 'ca_user'));
+  if (ck && ck.uid) {
+    const u = { id: ck.uid, name: ck.name || null, email: ck.email || null, picture: ck.picture || null, provider: ck.provider || 'google' };
+    if (req.session) req.session.user = u;   // hydrate session from cookie
+    return u;
+  }
+  return null;
+}
+function requireAuth(req, res, next) {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ error: 'auth_required', message: 'Please sign in to continue.' });
+  req.user = u;
+  next();
+}
+
+app.get('/auth/google/start', (req, res) => {
+  if (!googleEnabled()) return res.redirect(buildReturn(req.query.returnTo || '/', { login: 'unavailable' }));
+  const state = randomState();
+  req.session.googleAuth = { state, returnTo: req.query.returnTo || process.env.FRONTEND_ORIGIN || '/' };
+  const url = new URL(googleProvider.authUrl);
+  url.searchParams.set('client_id', googleProvider.clientId);
+  url.searchParams.set('redirect_uri', googleProvider.redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', googleProvider.scope);
+  url.searchParams.set('state', state);
+  url.searchParams.set('access_type', 'offline');
+  url.searchParams.set('include_granted_scopes', 'true');
+  url.searchParams.set('prompt', 'select_account');
+  req.session.save(() => res.redirect(url.toString()));
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  const saved = req.session.googleAuth || {};
+  const returnTo = saved.returnTo || '/';
+  try {
+    if (!googleEnabled()) return res.redirect(buildReturn(returnTo, { login: 'unavailable' }));
+    if (req.query.error) return res.redirect(buildReturn(returnTo, { login: 'error' }));
+    if (!req.query.code) return res.redirect(buildReturn(returnTo, { login: 'error' }));
+    if (!saved.state || saved.state !== req.query.state) return res.redirect(buildReturn(returnTo, { login: 'error' }));
+
+    const tokenRes = await fetch(googleProvider.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: req.query.code,
+        redirect_uri: googleProvider.redirectUri,
+        client_id: googleProvider.clientId,
+        client_secret: googleProvider.clientSecret
+      }).toString()
+    });
+    const token = await tokenRes.json();
+    if (!tokenRes.ok || !token.access_token) throw new Error('token_exchange_failed');
+
+    const meRes = await fetch(googleProvider.meUrl, { headers: { Authorization: `Bearer ${token.access_token}`, Accept: 'application/json' } });
+    const profile = meRes.ok ? await meRes.json() : {};
+    const user = {
+      id: profile.sub || profile.id || ('g_' + crypto.randomBytes(6).toString('hex')),
+      name: profile.name || [profile.given_name, profile.family_name].filter(Boolean).join(' ') || 'Google user',
+      email: profile.email || null,
+      picture: profile.picture || null,
+      provider: 'google'
+    };
+    req.session.user = user;
+    setUserCookie(res, user);
+    delete req.session.googleAuth;
+    req.session.save(() => res.redirect(buildReturn(returnTo, { login: 'success' })));
+  } catch (err) {
+    res.redirect(buildReturn(returnTo, { login: 'error' }));
+  }
+});
+
+/* Optional local/demo sign-in (guarded). */
+app.post('/auth/dev-login', (req, res) => {
+  if (!allowDevLogin()) return res.status(403).json({ error: 'dev_login_disabled', message: 'Demo sign-in is disabled. Configure Google OAuth.' });
+  const name = String((req.body && req.body.name) || 'Demo User').trim().slice(0, 60) || 'Demo User';
+  const email = String((req.body && req.body.email) || 'demo@careerautopilot.local').trim().slice(0, 120);
+  const user = { id: 'dev_' + crypto.createHash('sha1').update(email).digest('hex').slice(0, 12), name, email, picture: null, provider: 'dev' };
+  req.session.user = user;
+  setUserCookie(res, user);
+  req.session.save(() => res.json({ ok: true, user }));
+});
+
+/* Who am I + which sign-in methods this server offers. */
+app.get('/auth/me', (req, res) => {
+  const u = currentUser(req);
+  res.json({
+    authenticated: !!u,
+    user: u || null,
+    providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } }
+  });
+});
+
+/* Sign out of the user session (separate from connector /auth/:provider/logout). */
+app.post('/auth/logout', (req, res) => {
+  clearUserCookie(res);
+  if (req.session) {
+    req.session.user = null;
+    if (typeof req.session.destroy === 'function') return req.session.destroy(() => res.json({ ok: true }));
+  }
+  res.json({ ok: true });
+});
+
 app.get('/auth/:provider/start', requireProvider, (req, res) => {
   const p = req.params.provider;
   const cfg = providers[p];
@@ -1161,6 +1360,10 @@ app.get('/auth/config', (req, res) => {
     oauth: {
       linkedin: { enabled: oauthEnabled('linkedin') },
       indeed: { enabled: oauthEnabled('indeed') }
+    },
+    auth: {
+      google: { enabled: googleEnabled() },
+      dev: { enabled: allowDevLogin() }
     }
   });
 });
@@ -2007,172 +2210,9 @@ app.post('/opportunities/convert-to-resume', (req, res) => {
   catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
-/* ============================================================
-   LINKEDIN CAREER BOOSTER
-   All generation is AI-backed via the existing /ai/messages proxy.
-   No LinkedIn scraping — only user-supplied profile URL + resume text.
-   ============================================================ */
-
-/* Helper: forward a prompt to Anthropic via the AI proxy (server-to-server) */
-async function claudeBooster(req, res, systemPrompt, userPrompt) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.status(400).json({ error: 'ANTHROPIC_API_KEY not set on server.' });
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
-    const data = await r.json().catch(() => ({ error: { message: 'Bad upstream response' } }));
-    if (data.error) return res.status(r.status).json({ error: data.error.message || 'AI error' });
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-    res.json({ ok: true, result: text });
-  } catch (err) {
-    res.status(502).json({ error: err.message || 'AI proxy failed' });
-  }
-}
-
-/* 1. Profile Improvement Assistant */
-app.post('/linkedin/profile-analysis', async (req, res) => {
-  const { resumeText = '', targetRole = '', skills = [], linkedinUrl = '', college = '', experience = '' } = req.body || {};
-  if (!resumeText && !linkedinUrl) return res.status(400).json({ error: 'Provide resume text or LinkedIn URL.' });
-  const system = 'You are a LinkedIn profile expert helping college students and freshers in India. Output ONLY valid minified JSON. No prose, no markdown, no code fences.';
-  const prompt = `Analyze this student profile and generate LinkedIn optimization suggestions.
-Target role: ${targetRole}
-Skills: ${skills.join(', ') || 'not specified'}
-College: ${college || 'not specified'}
-Experience: ${experience || 'fresher/student'}
-LinkedIn URL: ${linkedinUrl || 'not provided'}
-RESUME TEXT: """${resumeText.slice(0, 7000)}"""
-
-Return JSON: {
-  profileScore: 0-100,
-  scoreBreakdown: { headline: 0-20, about: 0-20, skills: 0-20, experience: 0-20, completeness: 0-20 },
-  headline: "suggested LinkedIn headline (max 220 chars, punchy, role-focused)",
-  about: "suggested About section (3-4 paragraphs, 1st person, student-friendly, confident but not fake)",
-  topSkills: ["skill1", ...up to 10],
-  featuredSuggestions: ["what to put in Featured section"],
-  projectDescriptions: [{ title: "project name", description: "LinkedIn-ready 2-3 line description with impact" }],
-  experienceBullets: [{ role: "role/internship title", bullets: ["action-oriented bullet"] }],
-  missingItems: ["profile photo", "education dates", ...],
-  quickWins: ["3-5 immediate actions to improve profile today"],
-  actionChecklist: [{ item: "action", priority: "High|Medium|Low", done: false }]
-}`;
-  await claudeBooster(req, res, system, prompt);
-});
-
-/* 2. Post Generator */
-app.post('/linkedin/generate-post', async (req, res) => {
-  const { postType = '', targetRole = '', details = '', tone = 'confident', length = 'medium', skills = [], college = '', name = '' } = req.body || {};
-  if (!postType) return res.status(400).json({ error: 'Post type is required.' });
-  const system = 'You are a LinkedIn content writer for Indian college students and freshers. Write authentic, student-friendly posts. Output ONLY valid minified JSON. No markdown, no code fences.';
-  const prompt = `Write a LinkedIn post for a student/fresher.
-Post type: ${postType}
-Student name: ${name || 'the student'}
-Target role: ${targetRole || 'software/tech'}
-Relevant skills: ${skills.join(', ') || 'not specified'}
-College: ${college || 'not specified'}
-Additional details: ${details || 'none'}
-Tone: ${tone}
-Length: ${length} (short=3-4 lines, medium=6-8 lines, detailed=10-14 lines)
-
-Rules:
-- Sound like a real student, not a corporate robot
-- No cringe, no fake humility, no begging for likes
-- Add 3-5 relevant hashtags at end
-- Keep it genuine and human
-
-Return JSON: {
-  post: "the full post text with line breaks as \\n",
-  hashtags: ["hashtag1", ...],
-  postWithHashtags: "post + hashtags combined"
-}`;
-  await claudeBooster(req, res, system, prompt);
-});
-
-/* 3. Recruiter Outreach Assistant */
-app.post('/linkedin/outreach-message', async (req, res) => {
-  const { personName = '', company = '', personRole = '', messageType = '', targetRole = '', userSkills = [], sharedContext = '', jobLink = '', college = '', resumeText = '' } = req.body || {};
-  if (!messageType || !targetRole) return res.status(400).json({ error: 'Message type and target role are required.' });
-  const system = 'You are a career coach helping Indian college students write LinkedIn outreach messages. Output ONLY valid minified JSON. No markdown, no code fences.';
-  const prompt = `Generate LinkedIn outreach messages for a student.
-Message type: ${messageType}
-Recipient name: ${personName || '[Name]'}
-Recipient company: ${company || '[Company]'}
-Recipient role: ${personRole || 'recruiter/professional'}
-Student target role: ${targetRole}
-Student skills: ${userSkills.join(', ') || 'not specified'}
-Student college: ${college || 'not specified'}
-Shared context: ${sharedContext || 'none'}
-Job link: ${jobLink || 'none'}
-Resume snippet: """${resumeText.slice(0, 1500)}"""
-
-Rules:
-- Connection notes: max 300 chars
-- Messages: max 200 words
-- Sound natural and human
-- No desperation, no spam language
-- Mention one specific relevant thing about the recipient/company
-- For connection notes: ultra-brief but warm
-
-Return JSON: {
-  connectionNote: "max 300 char connection request note",
-  shortVersion: "40-60 word message",
-  politeVersion: "70-100 word polite message",
-  confidentVersion: "70-100 word confident/direct message",
-  followUpTemplate: "30-50 word follow-up after no reply in 7 days"
-}`;
-  await claudeBooster(req, res, system, prompt);
-});
-
-/* 4. Smart Connection Recommendations */
-app.post('/linkedin/connection-recommendations', async (req, res) => {
-  const { targetRole = '', skills = [], college = '', location = '', companies = [], college_tier = '' } = req.body || {};
-  if (!targetRole) return res.status(400).json({ error: 'Target role is required.' });
-  const system = 'You are a LinkedIn networking strategist for Indian college students. Output ONLY valid minified JSON. No markdown, no code fences.';
-  const prompt = `Generate smart LinkedIn connection/follow recommendations for a student.
-Target role: ${targetRole}
-Skills: ${skills.join(', ') || 'not specified'}
-College: ${college || 'not specified'}
-Location: ${location || 'India'}
-Target companies: ${companies.join(', ') || 'open to any'}
-
-Generate 8 recommendation categories. For each, build real LinkedIn search URLs using:
-https://www.linkedin.com/search/results/people/?keywords=QUERY&origin=GLOBAL_SEARCH_HEADER
-
-Return JSON array of 8 objects: [
-  {
-    category: "category name",
-    icon: "single emoji",
-    priority: "High|Medium|Low",
-    why: "1-2 line reason why connecting helps",
-    searchQueries: ["query1", "query2", "query3"],
-    linkedinSearchUrls: ["full URL with encoded query"],
-    connectionNote: "suggested connection note template",
-    followStrategy: "what to do after connecting/following"
-  }
-]
-
-Categories to cover:
-1. Recruiters hiring for ${targetRole}
-2. Employees at target companies (${companies.slice(0,3).join(', ') || 'top tech companies'})
-3. ${college ? college + ' alumni in ' + targetRole.split(' ')[0] + ' field' : 'Alumni from same tier college'}
-4. Engineering managers / team leads
-5. HR / Talent Acquisition professionals
-6. Tech content creators posting about ${targetRole.split(' ')[0]} / ${(skills[0] || 'tech')}
-7. Open source contributors / community leaders in relevant tech
-8. Startup founders in relevant domain`;
-  await claudeBooster(req, res, system, prompt);
-});
-
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities|linkedin).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities).*/, (req, res) => {
+  res.sendFile(UI_INDEX);
 });
 
 const port = process.env.PORT || 3000;
@@ -2184,6 +2224,7 @@ if (!process.env.VERCEL) {
     console.log(`  • Frontend served from this origin`);
     console.log(`  • Job sources: ${SOURCES.map(s => s.name).join(', ')} (structured, verified — no AI-generated jobs)`);
     console.log(`  • AI proxy: ${process.env.ANTHROPIC_API_KEY ? 'enabled' : 'OFF (set ANTHROPIC_API_KEY)'} — used for resume/tailoring/interview only`);
+    console.log(`  • Google sign-in: ${googleEnabled() ? 'enabled' : 'OFF (set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET)'}${allowDevLogin() ? '  |  demo sign-in: ON' : ''}`);
   });
 }
 

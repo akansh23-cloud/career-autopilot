@@ -89,20 +89,36 @@ career-autopilot/
 └── README.md
 ```
 
-## Quick start (recommended — everything from one origin)
+## Quick start
+
+This app is now a **React + Vite + Tailwind + Framer Motion** frontend served by the existing **Node/Express** backend from a single origin (so Google OAuth + the session cookie work with zero CORS config).
+
+### Development (hot reload)
 
 ```bash
 npm install
 cp .env.example .env
-# edit .env — set ANTHROPIC_API_KEY to enable the AI resume features (job search needs no key)
-npm run dev          # or: npm start
+# edit .env — set GOOGLE_CLIENT_ID/SECRET for Google sign-in, ANTHROPIC_API_KEY for AI features
+npm run dev
 ```
 
-Open **http://localhost:3000** in your browser.
+`npm run dev` runs both processes together (via `concurrently`):
+- **API** — Express on `http://localhost:3000`
+- **Web** — Vite dev server on `http://localhost:5173` (proxies `/auth`, `/ai`, `/jobs`, `/contacts`, `/opportunities`, `/profile`, `/apply`, `/health` → the API)
 
-Because the page is served by the backend, the in-app **Backend URL** auto-fills to the current origin, so verified job search, the AI proxy, and OAuth all work with no extra config.
+Open **http://localhost:5173** while developing.
 
-> Opening `index.html` directly as a `file://` page is supported for a quick look, but the Jobs tab will show the **“Backend required”** warning, because a static page cannot verify job URLs (browser CORS). Run the Node server for verified search.
+### Production / preview
+
+```bash
+npm install
+npm run build      # Vite builds the React app into dist/
+npm start          # Express serves dist/ + the API on http://localhost:3000
+```
+
+Open **http://localhost:3000**. The backend automatically serves the built `dist/` app; if `dist/` is missing it falls back to the bundled `legacy_index.html`, so the server never hard-fails.
+
+> No Google keys? A **demo sign-in** is available in dev (`ALLOW_DEV_LOGIN=1`, on by default when Google is off and not in production).
 
 ## What needs which env var
 
