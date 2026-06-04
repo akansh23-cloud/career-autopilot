@@ -2498,8 +2498,122 @@ app.post('/opportunities/convert-to-resume', (req, res) => {
   catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
+/* ============================================================
+   CAREER PROJECT STUDIO  —  AI generation endpoints
+   Each tries the Anthropic model (if ANTHROPIC_API_KEY is set) and
+   falls back to deterministic generation so the UI always works.
+   Keys are never exposed to the client.
+   ============================================================ */
+async function anthropicJSON(prompt, max_tokens = 1500) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!r.ok) return null;
+    const data = await r.json().catch(() => null);
+    const text = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    return text || null;
+  } catch { return null; }
+}
+function parseJSONLoose(text) {
+  if (!text) return null;
+  const m = text.match(/[\[{][\s\S]*[\]}]/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch { return null; }
+}
+function psTechStack(type) {
+  const map = {
+    Frontend: ['React', 'Vite', 'TypeScript', 'Tailwind CSS', 'Vitest'],
+    Backend: ['Node.js', 'Express', 'PostgreSQL', 'Prisma', 'JWT', 'Jest'],
+    'Full Stack': ['React', 'TypeScript', 'Node.js', 'Express', 'PostgreSQL', 'Docker'],
+    DevOps: ['Docker', 'Kubernetes', 'Terraform', 'GitHub Actions', 'Helm', 'Prometheus'],
+    Data: ['Python', 'Airflow', 'Spark', 'dbt', 'PostgreSQL'],
+    'AI/ML': ['Python', 'PyTorch', 'FastAPI', 'MLflow', 'Docker'],
+    Cloud: ['AWS Lambda', 'API Gateway', 'DynamoDB', 'Terraform', 'CloudWatch'],
+    Cybersecurity: ['Python', 'OWASP ZAP', 'Docker', 'Nmap', 'GitHub Actions'],
+  };
+  return map[type] || map['Full Stack'];
+}
+function psFallbackProject(input = {}) {
+  const role = input.targetRole || 'Software Engineer';
+  const type = input.type || 'Full Stack';
+  const skills = Array.from(new Set([...(input.sourceMissingSkills || []), ...psTechStack(type)])).slice(0, 12);
+  const title = `Production-grade ${type} project for ${role}`;
+  return {
+    title, targetRole: role, type, difficulty: input.difficulty || 'Intermediate', duration: input.duration || '1 week',
+    skillsCovered: skills, sourceMissingSkills: input.sourceMissingSkills || [],
+    problemStatement: `Demonstrate ${skills.slice(0, 3).join(', ')} with a deployable, recruiter-visible project.`,
+    useCase: `A practical ${type} project producing real proof-of-work: a deployment, README and measurable results.`,
+    techStack: psTechStack(type),
+    architecture: `Cleanly separated ${type} architecture with tests, CI/CD and a public deployment.`,
+    steps: [
+      { phase: 'Setup & design', tasks: ['Define scope', 'Set up repo + CI', 'Design architecture'] },
+      { phase: 'Core build', tasks: [`Implement core ${type} features`, `Apply ${skills.slice(0, 3).join(', ')}`] },
+      { phase: 'Ship & prove', tasks: ['Deploy publicly', 'Write README + screenshots', 'Capture metrics'] },
+    ],
+  };
+}
+function psBullets(p = {}) {
+  const s = (p.skillsCovered || []).slice(0, 4);
+  return [
+    `Built ${p.title || 'a portfolio project'} using ${s.slice(0, 3).join(', ') || 'a modern stack'}.`,
+    `Implemented ${s[0] || 'core features'} with tests and CI/CD, deployed to a public URL.`,
+    `Documented architecture and results in a README to provide recruiter-visible proof-of-work.`,
+  ];
+}
+function psInterview(p = {}) {
+  const out = [
+    { q: 'Walk me through the architecture of this project.', a: 'Describe components, data flow and one key trade-off.' },
+    { q: 'Why this tech stack?', a: 'Tie each choice to a requirement and name one rejected alternative.' },
+    { q: 'Hardest problem and how you solved it?', a: 'Symptom -> diagnosis -> fix -> verification.' },
+  ];
+  (p.skillsCovered || []).slice(0, 3).forEach((s) => out.push({ q: `How did you use ${s}?`, a: `Explain ${s}'s concrete role and how you'd scale it.` }));
+  return out;
+}
+
+app.post('/api/projects/generate-roadmap', requireAuth, async (req, res) => {
+  const input = req.body || {};
+  const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 1800));
+  if (ai && ai.title) return res.json({ ok: true, project: ai, generatedBy: 'ai' });
+  res.json({ ok: true, project: psFallbackProject(input), generatedBy: 'template' });
+});
+app.post('/api/projects/generate-readme', requireAuth, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `Write a professional GitHub README.md (markdown only, no commentary) for this project: ${JSON.stringify(p).slice(0, 4000)}. Include title, overview, skills, tech stack, architecture, getting started, structure, deployment, testing, demo links.`;
+  const ai = await anthropicJSON(prompt, 1600);
+  if (ai && ai.length > 80) return res.json({ ok: true, readme: ai, generatedBy: 'ai' });
+  const skills = (p.skillsCovered || []).map((s) => `- ${s}`).join('\n');
+  res.json({ ok: true, generatedBy: 'template', readme: `# ${p.title || 'Project'}\n\n> ${p.problemStatement || ''}\n\n## Overview\n${p.useCase || ''}\n\n## Skills\n${skills}\n\n## Tech stack\n${(p.techStack || []).map((s) => `- ${s}`).join('\n')}\n\n## Architecture\n${p.architecture || ''}\n\n## License\nMIT` });
+});
+app.post('/api/projects/generate-resume-bullets', requireAuth, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `Return ONLY a JSON array of 4 concise, quantified-where-possible resume bullet strings for this project: ${JSON.stringify(p).slice(0, 3000)}.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 700));
+  if (Array.isArray(ai) && ai.length) return res.json({ ok: true, bullets: ai.map(String), generatedBy: 'ai' });
+  res.json({ ok: true, bullets: psBullets(p), generatedBy: 'template' });
+});
+app.post('/api/projects/generate-linkedin-post', requireAuth, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `Write a short, engaging first-person LinkedIn post (plain text, with a few emojis and 3 hashtags) announcing this portfolio project: ${JSON.stringify(p).slice(0, 3000)}.`;
+  const ai = await anthropicJSON(prompt, 600);
+  if (ai && ai.length > 40) return res.json({ ok: true, post: ai, generatedBy: 'ai' });
+  res.json({ ok: true, generatedBy: 'template', post: `Just shipped: ${p.title || 'a new project'}\n\n${p.useCase || ''}\n\nStack: ${(p.techStack || []).slice(0, 6).join(', ')}\n\n#portfolio #buildinpublic #${(p.targetRole || 'tech').replace(/[^a-zA-Z]/g, '')}` });
+});
+app.post('/api/projects/generate-interview-prep', requireAuth, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `Return ONLY a JSON array of 6 objects {"q":"question","a":"model answer"} for an interview about this project: ${JSON.stringify(p).slice(0, 3000)}.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 1400));
+  if (Array.isArray(ai) && ai.length) return res.json({ ok: true, questions: ai, generatedBy: 'ai' });
+  res.json({ ok: true, questions: psInterview(p), generatedBy: 'template' });
+});
+
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities|support|dashboard).*/, (req, res) => {
+app.get(/^\/(?!jobs|auth|apply|ai|api|health|contacts|opportunities|support|dashboard).*/, (req, res) => {
   res.sendFile(UI_INDEX);
 });
 

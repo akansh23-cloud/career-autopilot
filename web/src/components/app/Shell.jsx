@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
+  Rocket, Globe2, Users, UserSearch,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -16,6 +17,10 @@ export const NAV = [
   { id: 'tracker', label: 'Tracker', icon: KanbanSquare },
   { id: 'contacts', label: 'Outreach', icon: Send },
   { id: 'opportunities', label: 'Opportunity Arena', icon: Trophy },
+  { id: 'projectstudio', label: 'Career Project Studio', icon: Rocket },
+  { id: 'sandbox', label: 'Project Sandbox', icon: Globe2 },
+  { id: 'partners', label: 'Find Project Partner', icon: Users },
+  { id: 'recruiter', label: 'Recruiter Console', icon: UserSearch },
   { id: 'growth', label: 'Growth', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];

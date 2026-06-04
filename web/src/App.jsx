@@ -17,6 +17,10 @@ import Outreach from './views/Outreach.jsx';
 import Arena from './views/Arena.jsx';
 import Growth from './views/Growth.jsx';
 import Settings from './views/Settings.jsx';
+import ProjectStudio from './views/ProjectStudio.jsx';
+import Sandbox from './views/Sandbox.jsx';
+import PartnerMatch from './views/PartnerMatch.jsx';
+import RecruiterConsole from './views/RecruiterConsole.jsx';
 
 const VIEWS = {
   dash: Dashboard,
@@ -26,6 +30,10 @@ const VIEWS = {
   tracker: Tracker,
   contacts: Outreach,
   opportunities: Arena,
+  projectstudio: ProjectStudio,
+  sandbox: Sandbox,
+  partners: PartnerMatch,
+  recruiter: RecruiterConsole,
   growth: Growth,
   settings: Settings,
 };
