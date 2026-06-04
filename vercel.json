@@ -1,20 +1,12 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
   "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "dist/**",
-          "legacy_index.html"
-        ]
-      }
-    }
+    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
+    { "src": "server.js", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/assets/(.*)", "dest": "/assets/$1" },
-    { "src": "/(.*)", "dest": "server.js" }
+    { "src": "/(auth|ai|jobs|contacts|opportunities|profile|apply|health|support)(/.*)?", "dest": "/server.js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

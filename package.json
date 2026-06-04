@@ -12,7 +12,8 @@
     "dev:web": "vite",
     "build": "vite build",
     "start": "node server.js",
-    "preview": "npm run build && node server.js"
+    "preview": "npm run build && node server.js",
+    "vercel-build": "vite build"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -20,6 +21,7 @@
     "express": "^4.19.2",
     "express-session": "^1.18.0",
     "mammoth": "^1.8.0",
+    "mongoose": "^8.9.5",
     "pdfjs-dist": "^4.7.76"
   },
   "devDependencies": {

@@ -6,6 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import * as db from './db.js';
+import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
 
 dotenv.config();
 
@@ -1223,13 +1225,17 @@ app.get('/auth/google/callback', async (req, res) => {
 
     const meRes = await fetch(googleProvider.meUrl, { headers: { Authorization: `Bearer ${token.access_token}`, Accept: 'application/json' } });
     const profile = meRes.ok ? await meRes.json() : {};
-    const user = {
-      id: profile.sub || profile.id || ('g_' + crypto.randomBytes(6).toString('hex')),
+    const googleId = profile.sub || profile.id || null;
+    let user = {
+      id: googleId || ('g_' + crypto.randomBytes(6).toString('hex')),
       name: profile.name || [profile.given_name, profile.family_name].filter(Boolean).join(' ') || 'Google user',
       email: profile.email || null,
       picture: profile.picture || null,
       provider: 'google'
     };
+    // Persist / refresh the user record (no-op if MONGODB_URI is not set).
+    const stored = await db.upsertUser({ googleId, email: user.email, name: user.name, avatar: user.picture, provider: 'google' });
+    if (stored) user = { ...user, ...stored, id: stored.id, picture: stored.picture || user.picture };
     req.session.user = user;
     setUserCookie(res, user);
     delete req.session.googleAuth;
@@ -1240,19 +1246,28 @@ app.get('/auth/google/callback', async (req, res) => {
 });
 
 /* Optional local/demo sign-in (guarded). */
-app.post('/auth/dev-login', (req, res) => {
+app.post('/auth/dev-login', async (req, res) => {
   if (!allowDevLogin()) return res.status(403).json({ error: 'dev_login_disabled', message: 'Demo sign-in is disabled. Configure Google OAuth.' });
   const name = String((req.body && req.body.name) || 'Demo User').trim().slice(0, 60) || 'Demo User';
   const email = String((req.body && req.body.email) || 'demo@careerautopilot.local').trim().slice(0, 120);
-  const user = { id: 'dev_' + crypto.createHash('sha1').update(email).digest('hex').slice(0, 12), name, email, picture: null, provider: 'dev' };
+  let user = { id: 'dev_' + crypto.createHash('sha1').update(email).digest('hex').slice(0, 12), name, email, picture: null, provider: 'dev' };
+  const stored = await db.upsertUser({ googleId: user.id, email, name, avatar: null, provider: 'dev' });
+  if (stored) user = { ...user, ...stored, id: stored.id };
   req.session.user = user;
   setUserCookie(res, user);
   req.session.save(() => res.json({ ok: true, user }));
 });
 
 /* Who am I + which sign-in methods this server offers. */
-app.get('/auth/me', (req, res) => {
-  const u = currentUser(req);
+app.get('/auth/me', async (req, res) => {
+  let u = currentUser(req);
+  // Enrich with persisted fields (role, createdAt, lastLoginAt, loginCount) when the DB is on.
+  if (u && db.dbEnabled()) {
+    try {
+      const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
+      if (fresh) u = { ...u, ...fresh, picture: fresh.picture || u.picture };
+    } catch { /* never block /auth/me on a DB issue */ }
+  }
   res.json({
     authenticated: !!u,
     user: u || null,
@@ -1783,6 +1798,132 @@ app.post('/ai/messages', async (req, res) => {
 });
 
 /* ============================================================
+   SUPPORT SYSTEM  (FAQ knowledge base, grounded chatbot, tickets)
+   - /support/faqs   : public — FAQ list + quick-action chips
+   - /support/chat   : public — answers from the FAQ KB first; only calls the
+                       AI model (grounded on the same KB) when nothing matches,
+                       and never invents platform behaviour or leaks secrets.
+   - /support/tickets: public POST (create) ; protected GET /my (list mine)
+   ============================================================ */
+app.get('/support/faqs', (req, res) => {
+  res.json({
+    quickActions: QUICK_ACTIONS,
+    faqs: FAQS.map(({ id, category, q, a }) => ({ id, category, q, a })),
+    categories: [...new Set(FAQS.map((f) => f.category))],
+  });
+});
+
+app.post('/support/chat', async (req, res) => {
+  try {
+    const message = String((req.body && req.body.message) || '').trim().slice(0, 1000);
+    if (!message) return res.status(400).json({ error: 'empty_message' });
+
+    const { best, score, related } = matchFaq(message);
+
+    // Strong, confident FAQ hit → answer directly from the knowledge base.
+    if (best && score >= 2) {
+      return res.json({
+        source: 'faq',
+        reply: best.a,
+        faq: { id: best.id, q: best.q, category: best.category },
+        related: related.map((r) => ({ id: r.id, q: r.q })),
+        suggestTicket: false,
+      });
+    }
+
+    // No confident match → try the AI model, GROUNDED strictly on the KB.
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (key) {
+      const kb = FAQS.map((f) => `Q: ${f.q}\nA: ${f.a}`).join('\n\n');
+      const system =
+        'You are the in-app support assistant for "Career Autopilot", a job-search & resume SaaS. ' +
+        'Answer ONLY using the KNOWLEDGE BASE below. Be concise, friendly and give concrete steps. ' +
+        'Never invent features, never reveal API keys, environment variables, stack traces or internal config. ' +
+        'If the question is not covered by the knowledge base, reply with exactly the token NO_ANSWER and nothing else.\n\n' +
+        `KNOWLEDGE BASE:\n${kb}`;
+      try {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 400,
+            system,
+            messages: [{ role: 'user', content: message }],
+          }),
+        });
+        const data = await r.json().catch(() => ({}));
+        const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+        if (text && !/NO_ANSWER/i.test(text)) {
+          return res.json({
+            source: 'ai',
+            reply: text,
+            related: (related.length ? related : best ? [best] : []).map((r) => ({ id: r.id, q: r.q })),
+            suggestTicket: false,
+          });
+        }
+      } catch { /* fall through to ticket suggestion */ }
+    }
+
+    // Soft FAQ hint if we had a weak match; otherwise suggest a ticket.
+    return res.json({
+      source: best ? 'faq-weak' : 'fallback',
+      reply: best
+        ? `I think this might help:\n\n${best.a}\n\nIf that doesn't solve it, you can create a support ticket and our team will follow up.`
+        : "I couldn't find that in our help center. Create a support ticket and our team will get back to you with the details.",
+      faq: best ? { id: best.id, q: best.q, category: best.category } : null,
+      related: related.map((r) => ({ id: r.id, q: r.q })),
+      suggestTicket: true,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'support_chat_failed' });
+  }
+});
+
+app.post('/support/tickets', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const me = currentUser(req);
+    const name = String(b.name || me?.name || '').trim().slice(0, 120);
+    const email = String(b.email || me?.email || '').trim().slice(0, 160);
+    const subject = String(b.subject || '').trim().slice(0, 200);
+    const message = String(b.message || '').trim().slice(0, 5000);
+    const category = String(b.category || 'general').trim().slice(0, 40);
+    const priority = ['low', 'normal', 'high', 'urgent'].includes(b.priority) ? b.priority : 'normal';
+
+    if (!email || !subject || !message) {
+      return res.status(400).json({ ok: false, error: 'missing_fields', message: 'Email, subject and message are required.' });
+    }
+
+    const userId = me && db.dbEnabled() ? (await db.getUser({ id: me.id, email: me.email }))?.id || null : null;
+    const result = await db.createTicket({ userId, name, email, category, subject, message, priority });
+
+    // If the DB is off we still acknowledge so the UX never dead-ends.
+    if (!result.stored) {
+      return res.json({
+        ok: true, stored: false,
+        message: 'Ticket received. (Database not configured — connect MONGODB_URI to persist tickets.)',
+        ticket: { subject, category, priority, status: 'open' },
+      });
+    }
+    res.json({ ok: true, stored: true, message: 'Support ticket created.', ticket: result.ticket });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'ticket_create_failed' });
+  }
+});
+
+app.get('/support/tickets/my', requireAuth, async (req, res) => {
+  try {
+    const me = req.user;
+    const dbUser = db.dbEnabled() ? await db.getUser({ id: me.id, email: me.email }) : null;
+    const tickets = await db.ticketsByUser({ userId: dbUser?.id, email: me.email });
+    res.json({ ok: true, dbEnabled: db.dbEnabled(), tickets });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'tickets_fetch_failed', tickets: [] });
+  }
+});
+
+/* ============================================================
    OPPORTUNITY ARENA  (hackathons, hiring challenges & competitions)
    COMPLIANCE: public APIs (Codeforces, Devpost public JSON), public
    pages, SerpAPI public Google links (only when SERPAPI_KEY is set) and
@@ -2211,7 +2352,7 @@ app.post('/opportunities/convert-to-resume', (req, res) => {
 });
 
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities).*/, (req, res) => {
+app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities|support).*/, (req, res) => {
   res.sendFile(UI_INDEX);
 });
 
@@ -2219,9 +2360,16 @@ const port = process.env.PORT || 3000;
 
 /* Local run uses app.listen. Vercel imports the Express app as a serverless handler. */
 if (!process.env.VERCEL) {
+  if (db.dbEnabled()) {
+    db.connectDB()
+      .then(() => console.log('  • MongoDB: connected'))
+      .catch((e) => console.log(`  • MongoDB: connection FAILED (${e.message}) — running session-only`));
+  }
   app.listen(port, () => {
     console.log(`Career Autopilot running on http://localhost:${port}`);
     console.log(`  • Frontend served from this origin`);
+    console.log(`  • Database: ${db.dbEnabled() ? 'MongoDB (MONGODB_URI set)' : 'OFF (session/cookie only — set MONGODB_URI to persist users & tickets)'}`);
+    console.log(`  • Support: FAQ + chatbot + tickets enabled`);
     console.log(`  • Job sources: ${SOURCES.map(s => s.name).join(', ')} (structured, verified — no AI-generated jobs)`);
     console.log(`  • AI proxy: ${process.env.ANTHROPIC_API_KEY ? 'enabled' : 'OFF (set ANTHROPIC_API_KEY)'} — used for resume/tailoring/interview only`);
     console.log(`  • Google sign-in: ${googleEnabled() ? 'enabled' : 'OFF (set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET)'}${allowDevLogin() ? '  |  demo sign-in: ON' : ''}`);

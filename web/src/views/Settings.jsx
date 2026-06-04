@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Save, Check, Linkedin, Plug, LogOut, User, Briefcase, AlertTriangle } from 'lucide-react';
+import { Save, Check, Linkedin, Plug, LogOut, User, Briefcase, AlertTriangle, ShieldCheck, Trash2, Calendar, Clock, BadgeCheck } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Field, Badge, Avatar, Spinner } from '../components/ui/kit.jsx';
 import { Profile, Auth } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useSupport } from '../support/SupportProvider.jsx';
 
 const MODES = ['Any', 'Remote', 'On-site', 'Hybrid'];
+const fmtDate = (d) => { if (!d) return '—'; try { return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return '—'; } };
 
 export default function Settings() {
   const { user, logout } = useAuth();
+  const support = useSupport();
   const [prefs, setPrefs] = useState({ titles: '', locations: '', workMode: 'Any', salaryMin: '', salaryMax: '', salaryCurrency: 'INR' });
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [conn, setConn] = useState(null);
@@ -95,10 +98,54 @@ export default function Settings() {
               <Avatar src={user?.picture} name={user?.name} size={48} />
               <div className="min-w-0">
                 <p className="truncate font-medium text-white">{user?.name}</p>
-                <p className="truncate text-xs text-slate-500">{user?.email || user?.provider}</p>
+                <p className="truncate text-xs text-slate-500">{user?.email || '—'}</p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2 border-t border-white/8 pt-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-slate-400"><BadgeCheck size={14} /> Provider</span>
+                <Badge tone="violet" className="capitalize">{user?.provider || '—'}</Badge>
+              </div>
+              {user?.role && (
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-slate-400"><User size={14} /> Role</span>
+                  <span className="capitalize text-slate-200">{user.role}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-slate-400"><Calendar size={14} /> Joined</span>
+                <span className="text-slate-200">{fmtDate(user?.createdAt)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-slate-400"><Clock size={14} /> Last login</span>
+                <span className="text-slate-200">{fmtDate(user?.lastLoginAt)}</span>
               </div>
             </div>
             <Button variant="danger" className="mt-4 w-full" onClick={logout}><LogOut size={15} /> Sign out</Button>
+          </SectionCard>
+
+          <SectionCard title="Data & Privacy">
+            <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-400">
+              <ShieldCheck size={15} className="mt-0.5 shrink-0 text-aurora-mint" />
+              We store only safe profile fields (name, email, avatar, provider). We never store your Google password or access tokens. Resume text is used only to generate your analysis.
+            </p>
+            <button
+              onClick={() => support?.openTicket({
+                category: 'privacy',
+                subject: 'Data deletion request',
+                message: `Please delete the account and stored data associated with ${user?.email || '(my email)'}.`,
+                priority: 'high',
+              })}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2.5 text-sm font-medium text-amber-glow transition hover:bg-amber-glow/20"
+            >
+              <Trash2 size={15} /> Request data deletion
+            </button>
+            <button
+              onClick={() => support?.openSupport({ tab: 'help' })}
+              className="mt-2 w-full text-center text-xs text-aurora-cyan hover:underline"
+            >
+              Visit Help Center
+            </button>
           </SectionCard>
 
           <SectionCard title="Connectors">

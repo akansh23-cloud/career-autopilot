@@ -62,3 +62,10 @@ export const Profile = {
 export const AI = {
   message: (payload) => api.post('/ai/messages', payload),
 };
+
+export const Support = {
+  faqs: () => api.get('/support/faqs'),
+  chat: (message) => api.post('/support/chat', { message }),
+  createTicket: (payload) => api.post('/support/tickets', payload),
+  myTickets: () => api.get('/support/tickets/my'),
+};
