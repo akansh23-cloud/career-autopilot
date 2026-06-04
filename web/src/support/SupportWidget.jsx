@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LifeBuoy, X, Send, Search, MessageSquare, BookOpen, Ticket as TicketIcon,
@@ -215,13 +215,14 @@ function HelpTab({ faqs, categories, onTicket }) {
 }
 
 /* ---------- TICKET TAB ---------- */
-function TicketTab({ draft, clearDraft, authed }) {
+function TicketTab({ draft, clearDraft, authed, onClose }) {
   const [form, setForm] = useState({
     name: '', email: '', category: 'general', subject: '', message: '', priority: 'normal',
     ...(draft || {}),
   });
   const [state, setState] = useState({ status: 'idle', result: null, err: '' });
   const [mine, setMine] = useState({ loaded: false, tickets: [] });
+  const submittingRef = useRef(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // prefill email/name from session
@@ -240,17 +241,32 @@ function TicketTab({ draft, clearDraft, authed }) {
   useEffect(() => { if (authed) loadMine(); }, [authed]);
 
   const submit = async () => {
+    // Guard against double-submit / submitting while a request is already running.
+    if (submittingRef.current) return;
     if (!form.email.trim() || !form.subject.trim() || !form.message.trim()) {
       setState({ status: 'idle', result: null, err: 'Email, subject and message are required.' });
       return;
     }
+    submittingRef.current = true;
     setState({ status: 'loading', result: null, err: '' });
+    let ok = false;
+    let payload = null;
+    let message = '';
     try {
-      const r = await Support.createTicket(form);
-      setState({ status: 'done', result: r, err: '' });
-      if (authed) loadMine();
+      payload = await Support.createTicket(form);
+      ok = true;
     } catch (e) {
-      setState({ status: 'error', result: null, err: e.message || 'Could not create ticket.' });
+      message = e?.message || 'Could not create ticket. Please try again.';
+    } finally {
+      // Defensive cleanup: the loading flag is ALWAYS cleared, even if the
+      // request throws unexpectedly — the submit button can never get stuck.
+      submittingRef.current = false;
+      if (ok) {
+        setState({ status: 'done', result: payload, err: '' });
+        if (authed) loadMine();
+      } else {
+        setState({ status: 'error', result: null, err: message });
+      }
     }
   };
 
@@ -269,8 +285,12 @@ function TicketTab({ draft, clearDraft, authed }) {
             Database not configured — connect MONGODB_URI to persist tickets.
           </p>
         )}
-        <button onClick={() => setState({ status: 'idle', result: null, err: '' })}
-          className="mt-2 rounded-xl border border-white/12 px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Create another</button>
+        <div className="mt-2 flex items-center gap-2">
+          <button onClick={() => setState({ status: 'idle', result: null, err: '' })}
+            className="rounded-xl border border-white/12 px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Create another</button>
+          <button onClick={() => { setState({ status: 'idle', result: null, err: '' }); onClose?.(); }}
+            className="rounded-xl bg-aurora-cta px-4 py-2 text-sm font-medium text-white shadow-glow hover:brightness-110">Done</button>
+        </div>
       </div>
     );
   }
@@ -352,6 +372,9 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
   const [kb, setKb] = useState({ faqs: [], quickActions: [], categories: [], loaded: false, err: false });
   const [authed, setAuthed] = useState(false);
 
+  // Single, safe close path used by the backdrop, the X button and Escape.
+  const closeSupport = useCallback(() => setOpen(false), [setOpen]);
+
   useEffect(() => {
     if (open && !kb.loaded) {
       Support.faqs()
@@ -359,7 +382,29 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
         .catch(() => setKb((k) => ({ ...k, loaded: true, err: true })));
       Auth.me().then((d) => setAuthed(!!d.user)).catch(() => setAuthed(false));
     }
-  }, [open]);
+  }, [open, kb.loaded]);
+
+  // Body scroll-lock + Escape-to-close. The cleanup runs on close AND on unmount,
+  // so the lock can NEVER be left behind (this is what previously froze the page).
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') closeSupport(); };
+    document.addEventListener('keydown', onKey);
+
+    const { body } = document;
+    const prevOverflow = body.style.overflow;
+    const prevPaddingRight = body.style.paddingRight;
+    // Compensate for the scrollbar width so the page doesn't shift when locked.
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPaddingRight;
+    };
+  }, [open, closeSupport]);
 
   return (
     <>
@@ -367,92 +412,99 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
       <AnimatePresence>
         {!open && (
           <motion.button
+            key="support-orb"
             initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
             whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.94 }}
             onClick={() => setOpen(true)}
             aria-label="Open support"
             className="group fixed bottom-5 right-5 z-[60] grid h-14 w-14 place-items-center rounded-full bg-aurora-cta shadow-glow"
           >
-            <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-aurora-violet/40 [animation-duration:2.5s]" />
+            <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-full bg-aurora-violet/40 [animation-duration:2.5s]" />
             <LifeBuoy size={24} className="text-white transition group-hover:rotate-45" />
           </motion.button>
         )}
       </AnimatePresence>
 
-      {/* Drawer */}
+      {/* Drawer — backdrop + panel are KEYED direct children of AnimatePresence
+          (NOT wrapped in a fragment) so framer-motion always tracks their exit
+          and removes the full-screen backdrop from the DOM on close. */}
       <AnimatePresence>
-        {open && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setOpen(false)}
-              className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 40, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 40, scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-              className="fixed z-[61] flex flex-col overflow-hidden border border-white/12 bg-ink-900/85 backdrop-blur-2xl
-                         inset-x-0 bottom-0 h-[88vh] rounded-t-3xl
-                         sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[640px] sm:max-h-[85vh] sm:w-[420px] sm:rounded-3xl
-                         shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)]"
-            >
-              {/* header */}
-              <div className="relative shrink-0 overflow-hidden border-b border-white/10 px-4 pb-3 pt-4">
-                <div className="absolute -right-10 -top-12 h-32 w-32 rounded-full bg-aurora-violet/20 blur-3xl" />
-                <div className="relative flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-cta shadow-glow">
-                      <Sparkles size={17} className="text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-white">Support</h3>
-                      <p className="flex items-center gap-1 text-[11px] text-aurora-mint">
-                        <span className="h-1.5 w-1.5 rounded-full bg-aurora-mint" /> Usually replies in minutes
-                      </p>
-                    </div>
+        {open && [
+          <motion.div
+            key="support-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={closeSupport}
+            aria-hidden="true"
+            className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
+          />,
+          <motion.div
+            key="support-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Support"
+            initial={{ opacity: 0, y: 40, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+            className="fixed z-[61] flex flex-col overflow-hidden border border-white/12 bg-ink-900/85 backdrop-blur-2xl
+                       inset-x-0 bottom-0 h-[88vh] rounded-t-3xl
+                       sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[640px] sm:max-h-[85vh] sm:w-[420px] sm:rounded-3xl
+                       shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)]"
+          >
+            {/* header */}
+            <div className="relative shrink-0 overflow-hidden border-b border-white/10 px-4 pb-3 pt-4">
+              <div className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full bg-aurora-violet/20 blur-3xl" />
+              <div className="relative flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-cta shadow-glow">
+                    <Sparkles size={17} className="text-white" />
                   </div>
-                  <button onClick={() => setOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white">
-                    <X size={18} />
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Support</h3>
+                    <p className="flex items-center gap-1 text-[11px] text-aurora-mint">
+                      <span className="h-1.5 w-1.5 rounded-full bg-aurora-mint" /> Usually replies in minutes
+                    </p>
+                  </div>
+                </div>
+                <button onClick={closeSupport} aria-label="Close support" className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+              {/* tabs */}
+              <div className="relative mt-3 flex gap-1 rounded-xl bg-white/[0.04] p-1">
+                {TABS.map((t) => (
+                  <button key={t.id} onClick={() => setTab(t.id)}
+                    className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition ${
+                      tab === t.id ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}>
+                    {tab === t.id && <motion.span layoutId="supTab" className="absolute inset-0 -z-0 rounded-lg bg-aurora-violet/20 ring-1 ring-aurora-violet/30" />}
+                    <t.icon size={13} className="relative z-10" />
+                    <span className="relative z-10">{t.label}</span>
                   </button>
-                </div>
-                {/* tabs */}
-                <div className="relative mt-3 flex gap-1 rounded-xl bg-white/[0.04] p-1">
-                  {TABS.map((t) => (
-                    <button key={t.id} onClick={() => setTab(t.id)}
-                      className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition ${
-                        tab === t.id ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-                      }`}>
-                      {tab === t.id && <motion.span layoutId="supTab" className="absolute inset-0 -z-0 rounded-lg bg-aurora-violet/20 ring-1 ring-aurora-violet/30" />}
-                      <t.icon size={13} className="relative z-10" />
-                      <span className="relative z-10">{t.label}</span>
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
+            </div>
 
-              {/* body */}
-              <div className="min-h-0 flex-1">
-                {!kb.loaded ? (
-                  <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-aurora-cyan" /></div>
-                ) : kb.err ? (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-                    <AlertTriangle className="text-amber-glow" />
-                    <p className="text-sm text-slate-400">Couldn’t load help content. You can still create a ticket.</p>
-                    <button onClick={() => setTab('ticket')} className="text-xs text-aurora-cyan hover:underline">Open ticket form →</button>
-                  </div>
-                ) : tab === 'chat' ? (
-                  <ChatTab quickActions={kb.quickActions} onTicket={() => setTab('ticket')} />
-                ) : tab === 'help' ? (
-                  <HelpTab faqs={kb.faqs} categories={kb.categories} onTicket={() => setTab('ticket')} />
-                ) : (
-                  <TicketTab draft={draft} clearDraft={clearDraft} authed={authed} />
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
+            {/* body */}
+            <div className="min-h-0 flex-1">
+              {!kb.loaded ? (
+                <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-aurora-cyan" /></div>
+              ) : kb.err ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <AlertTriangle className="text-amber-glow" />
+                  <p className="text-sm text-slate-400">Couldn’t load help content. You can still create a ticket.</p>
+                  <button onClick={() => setTab('ticket')} className="text-xs text-aurora-cyan hover:underline">Open ticket form →</button>
+                </div>
+              ) : tab === 'chat' ? (
+                <ChatTab quickActions={kb.quickActions} onTicket={() => setTab('ticket')} />
+              ) : tab === 'help' ? (
+                <HelpTab faqs={kb.faqs} categories={kb.categories} onTicket={() => setTab('ticket')} />
+              ) : (
+                <TicketTab draft={draft} clearDraft={clearDraft} authed={authed} onClose={closeSupport} />
+              )}
+            </div>
+          </motion.div>,
+        ]}
       </AnimatePresence>
     </>
   );

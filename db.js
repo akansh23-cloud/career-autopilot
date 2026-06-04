@@ -59,10 +59,58 @@ const ticketSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/* ---- per-user career data (all keyed by userId, never shared across users) ----
+   These collections start EMPTY for a new user. The dashboard summary aggregates
+   from them, so a fresh account naturally returns zeros and empty arrays — no
+   demo/sample data is ever seeded into a real user's records. */
+const resumeSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    fileName: { type: String, trim: true },
+    score: { type: Number, default: null }, // ATS score 0–100
+    delta: { type: Number, default: null },
+  },
+  { timestamps: true }
+);
+
+const applicationSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    company: { type: String, trim: true },
+    role: { type: String, trim: true },
+    stage: { type: String, default: 'saved', enum: ['saved', 'applied', 'interview', 'offer', 'rejected'], index: true },
+    recruiterReplied: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+const outreachSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    to: { type: String, trim: true },
+    channel: { type: String, default: 'email', trim: true },
+  },
+  { timestamps: true }
+);
+
+const activitySchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    text: { type: String, trim: true },
+    tone: { type: String, default: 'cyan', trim: true },
+  },
+  { timestamps: true }
+);
+
 /* avoid OverwriteModelError on hot-reload / warm starts */
 export const User = mongoose.models.User || mongoose.model('User', userSchema);
 export const SupportTicket =
   mongoose.models.SupportTicket || mongoose.model('SupportTicket', ticketSchema);
+export const Resume = mongoose.models.Resume || mongoose.model('Resume', resumeSchema);
+export const Application =
+  mongoose.models.Application || mongoose.model('Application', applicationSchema);
+export const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
+export const Activity = mongoose.models.Activity || mongoose.model('Activity', activitySchema);
 
 /* ---- public shape (only safe fields ever leave the server) ---- */
 export function publicUser(doc) {
@@ -158,6 +206,81 @@ export async function ticketsByUser({ userId, email }) {
   } catch (err) {
     console.error('[db] ticketsByUser failed:', err.message);
     return [];
+  }
+}
+
+/* The canonical "new user" dashboard shape: every metric zeroed, every list empty.
+   Used as the baseline and returned verbatim when the DB is off or the user has
+   no records yet. Guarantees a fresh account never sees fabricated stats. */
+export function emptyDashboardSummary() {
+  return {
+    resumeScore: null,
+    resumeDelta: null,
+    liveApplications: 0,
+    recruiterReplies: 0,
+    outreachSent: 0,
+    funnel: { saved: 0, applied: 0, interview: 0, offer: 0 },
+    weekly: { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [0, 0, 0, 0, 0, 0, 0] },
+    activity: [],   // [{ text, when, tone }]
+    matches: [],    // populated only after the user runs a real job search
+  };
+}
+
+/* Build a user-specific dashboard summary purely from that user's own records.
+   No cross-user reads, no global/sample data. New user with no records → zeros. */
+export async function dashboardSummary({ userId }) {
+  const summary = emptyDashboardSummary();
+  if (!URI || !userId || !mongoose.isValidObjectId(userId)) return summary;
+  try {
+    await connectDB();
+    const uid = new mongoose.Types.ObjectId(userId);
+
+    const [latestResume, apps, recruiterReplies, outreachSent, recentActivity] = await Promise.all([
+      Resume.findOne({ userId: uid }).sort({ createdAt: -1 }).lean(),
+      Application.find({ userId: uid }).select('stage createdAt').lean(),
+      Application.countDocuments({ userId: uid, recruiterReplied: true }),
+      Outreach.countDocuments({ userId: uid }),
+      Activity.find({ userId: uid }).sort({ createdAt: -1 }).limit(8).lean(),
+    ]);
+
+    if (latestResume && typeof latestResume.score === 'number') {
+      summary.resumeScore = latestResume.score;
+      summary.resumeDelta = typeof latestResume.delta === 'number' ? latestResume.delta : null;
+    }
+
+    for (const a of apps) {
+      if (summary.funnel[a.stage] != null) summary.funnel[a.stage] += 1;
+    }
+    // "Live" = anything actively in the pipeline (excludes saved + rejected).
+    summary.liveApplications = summary.funnel.applied + summary.funnel.interview + summary.funnel.offer;
+    summary.recruiterReplies = recruiterReplies || 0;
+    summary.outreachSent = outreachSent || 0;
+
+    // Weekly application activity (Mon→Sun of the current week, user's records only).
+    const now = new Date();
+    const day = (now.getDay() + 6) % 7; // 0 = Monday
+    const monday = new Date(now); monday.setHours(0, 0, 0, 0); monday.setDate(now.getDate() - day);
+    for (const a of apps) {
+      const created = a.createdAt ? new Date(a.createdAt) : null;
+      if (!created || created < monday) continue;
+      const idx = Math.floor((created - monday) / 86400000);
+      if (idx >= 0 && idx < 7) summary.weekly.values[idx] += 1;
+    }
+
+    const rel = (d) => {
+      const diff = Date.now() - new Date(d).getTime();
+      const h = Math.floor(diff / 3600000);
+      if (h < 1) return 'Just now';
+      if (h < 24) return `${h}h ago`;
+      const days = Math.floor(h / 24);
+      return days === 1 ? 'Yesterday' : `${days}d ago`;
+    };
+    summary.activity = recentActivity.map((a) => ({ text: a.text, when: rel(a.createdAt), tone: a.tone || 'cyan' }));
+
+    return summary;
+  } catch (err) {
+    console.error('[db] dashboardSummary failed:', err.message);
+    return summary; // degrade to the empty (zeroed) shape — never fabricate
   }
 }
 

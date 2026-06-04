@@ -77,21 +77,20 @@ export default function Shell({ active, onPick, title, children }) {
         <SidebarInner active={active} onPick={pick} />
       </aside>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — keyed children so AnimatePresence always removes the backdrop on close */}
       <AnimatePresence>
-        {drawer && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setDrawer(false)} />
-            <motion.aside
-              initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-white/8 bg-ink-900 lg:hidden"
-            >
-              <button onClick={() => setDrawer(false)} className="absolute right-3 top-4 rounded-lg p-2 text-slate-400 hover:bg-white/6"><X size={18} /></button>
-              <SidebarInner active={active} onPick={pick} />
-            </motion.aside>
-          </>
-        )}
+        {drawer && [
+          <motion.div key="nav-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setDrawer(false)} />,
+          <motion.aside
+            key="nav-panel"
+            initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            className="fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-white/8 bg-ink-900 lg:hidden"
+          >
+            <button onClick={() => setDrawer(false)} className="absolute right-3 top-4 rounded-lg p-2 text-slate-400 hover:bg-white/6"><X size={18} /></button>
+            <SidebarInner active={active} onPick={pick} />
+          </motion.aside>,
+        ]}
       </AnimatePresence>
 
       {/* Main column — offset by sidebar, uses the page scroll (single scrollbar) */}

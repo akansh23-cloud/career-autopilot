@@ -61,7 +61,7 @@ app.get('/', (req, res) => {
    landing page, static assets and the /auth/* + /health endpoints stay
    public. requireAuth/currentUser are declared lower down (hoisted).
    ------------------------------------------------------------------ */
-const PROTECTED_PREFIXES = ['/ai', '/jobs', '/contacts', '/opportunities', '/profile', '/apply'];
+const PROTECTED_PREFIXES = ['/ai', '/jobs', '/contacts', '/opportunities', '/profile', '/apply', '/dashboard'];
 app.use(PROTECTED_PREFIXES, requireAuth);
 
 const JOB_FETCH_TIMEOUT  = Number(process.env.JOB_FETCH_TIMEOUT  || 12000);
@@ -1924,6 +1924,54 @@ app.get('/support/tickets/my', requireAuth, async (req, res) => {
 });
 
 /* ============================================================
+   DASHBOARD SUMMARY  (per-authenticated-user, never shared)
+   - Real users (Google OAuth): stats are aggregated from THEIR OWN MongoDB
+     records. A brand-new user has no records, so every value is zero / empty.
+   - Demo users (dev-login): get clearly-flagged sample data (demo: true) so the
+     UI can showcase a populated dashboard without ever faking real-user stats.
+   ============================================================ */
+function demoDashboardSummary() {
+  return {
+    resumeScore: 92,
+    resumeDelta: 6,
+    liveApplications: 12,
+    recruiterReplies: 6,
+    outreachSent: 24,
+    funnel: { saved: 34, applied: 12, interview: 4, offer: 1 },
+    weekly: { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [8, 14, 10, 18, 12, 22, 16] },
+    activity: [
+      { text: 'Tailored resume for Senior DevOps role', when: '2h ago', tone: 'cyan' },
+      { text: '18 new verified matches found', when: '5h ago', tone: 'violet' },
+      { text: 'Outreach sent to 3 recruiters', when: 'Yesterday', tone: 'mint' },
+      { text: 'Resume score improved to 92', when: 'Yesterday', tone: 'amber' },
+    ],
+    matches: [],
+  };
+}
+
+app.get('/dashboard/summary', requireAuth, async (req, res) => {
+  try {
+    const me = req.user;
+    const isDemo = me.provider === 'dev';
+
+    // Demo accounts get sample data, explicitly marked so the UI can label it.
+    if (isDemo) {
+      return res.json({ ok: true, demo: true, dbEnabled: db.dbEnabled(), summary: demoDashboardSummary() });
+    }
+
+    // Real users: aggregate strictly from their own persisted records.
+    const dbUser = db.dbEnabled() ? await db.getUser({ id: me.id, email: me.email }) : null;
+    const summary = dbUser
+      ? await db.dashboardSummary({ userId: dbUser.id })
+      : db.emptyDashboardSummary(); // DB off → honest zeros, never fake data
+
+    res.json({ ok: true, demo: false, dbEnabled: db.dbEnabled(), summary });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'dashboard_summary_failed', summary: db.emptyDashboardSummary() });
+  }
+});
+
+/* ============================================================
    OPPORTUNITY ARENA  (hackathons, hiring challenges & competitions)
    COMPLIANCE: public APIs (Codeforces, Devpost public JSON), public
    pages, SerpAPI public Google links (only when SERPAPI_KEY is set) and
@@ -2352,7 +2400,7 @@ app.post('/opportunities/convert-to-resume', (req, res) => {
 });
 
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
-app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities|support).*/, (req, res) => {
+app.get(/^\/(?!jobs|auth|apply|ai|health|contacts|opportunities|support|dashboard).*/, (req, res) => {
   res.sendFile(UI_INDEX);
 });
 

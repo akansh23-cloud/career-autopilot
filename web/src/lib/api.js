@@ -69,3 +69,7 @@ export const Support = {
   createTicket: (payload) => api.post('/support/tickets', payload),
   myTickets: () => api.get('/support/tickets/my'),
 };
+
+export const Dashboard = {
+  summary: () => api.get('/dashboard/summary'),
+};

@@ -12,12 +12,14 @@ export function PageIntro({ title, sub, action }) {
   );
 }
 
-export function StatCard({ icon: Icon, label, value, delta, tone = 'violet', i = 0 }) {
+export function StatCard({ icon: Icon, label, value, delta, hint, onClick, tone = 'violet', i = 0 }) {
   const c = { violet: 'text-aurora-violet', cyan: 'text-aurora-cyan', mint: 'text-aurora-mint', amber: 'text-amber-glow' }[tone];
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06, duration: 0.5 }}
-      className="gradient-border lift p-5 hover:shadow-glow"
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      className={`gradient-border lift p-5 hover:shadow-glow ${onClick ? 'cursor-pointer' : ''}`}
     >
       <div className="flex items-center justify-between">
         <span className="text-[13px] text-muted">{label}</span>
@@ -27,6 +29,7 @@ export function StatCard({ icon: Icon, label, value, delta, tone = 'violet', i =
         <span className="font-display text-3xl font-semibold text-white">{value}</span>
         {delta && <span className="mb-1 text-xs font-medium text-aurora-mint">{delta}</span>}
       </div>
+      {hint && <p className="mt-1.5 text-[11px] leading-snug text-slate-500">{hint}</p>}
     </motion.div>
   );
 }
