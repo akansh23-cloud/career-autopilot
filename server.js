@@ -1682,6 +1682,91 @@ function dedupePeople(list) {
   return out;
 }
 
+/* ------------------------------------------------------------------
+   Fallback contact intelligence — used to guarantee useful results
+   even when no paid provider key is configured. Returns:
+   • role-targeted LinkedIn people-search links (recruiters, HR,
+     hiring managers, engineering leads), and
+   • probable company emails (clearly labelled) when a domain is known.
+   No scraping; LinkedIn links are public search URLs only.
+   ------------------------------------------------------------------ */
+function linkedinSearchUrl(company, keywords) {
+  const kw = [keywords, company].filter(Boolean).join(' ');
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(kw)}`;
+}
+function isTechnicalRole(title = '') {
+  return /(engineer|developer|sde|swe|devops|sre|data|software|cloud|platform|architect|programmer|ml|ai|backend|frontend|full.?stack)/i.test(title);
+}
+function probableEmails(domain, role) {
+  if (!domain) return [];
+  const d = cleanDomain(domain);
+  const patterns = [
+    { local: 'careers', label: 'Careers inbox' },
+    { local: 'jobs', label: 'Jobs inbox' },
+    { local: 'recruiting', label: 'Recruiting inbox' },
+    { local: 'hr', label: 'HR inbox' },
+    { local: 'talent', label: 'Talent inbox' },
+  ];
+  return patterns.map((p, i) => ({
+    name: `${p.label} · ${role || 'Hiring'}`,
+    title: 'Company application inbox',
+    company: '', email: `${p.local}@${d}`,
+    linkedinUrl: '', source: 'Probable pattern',
+    confidence: 30 - i * 2, verified: false, probable: true, emailProbable: true,
+    reason: `Common ${p.label.toLowerCase()} address for ${d}. Verify before sending.`,
+    contactType: 'application inbox',
+  }));
+}
+function fallbackContacts(ctx, referral) {
+  const company = ctx.company || 'the company';
+  const role = ctx.role || ctx.title || '';
+  const out = [];
+  const targets = referral
+    ? [
+        { kw: `${role}`, type: 'current employee', why: 'Works in a relevant role — a strong referral path.' },
+        { kw: `${role} ${isTechnicalRole(role) ? 'engineer' : 'team'}`, type: 'team member', why: 'On the likely hiring team for this role.' },
+        { kw: 'engineering manager', type: 'engineering manager', why: 'Often owns referral and hiring decisions.', tech: true },
+      ]
+    : [
+        { kw: 'recruiter', type: 'recruiter', why: 'Recruiters route applications and book first calls.' },
+        { kw: 'talent acquisition', type: 'talent acquisition', why: 'Owns sourcing for open roles.' },
+        { kw: 'technical recruiter', type: 'technical recruiter', why: 'Handles engineering pipelines.', tech: true },
+        { kw: 'human resources', type: 'HR', why: 'HR can redirect you to the right hiring contact.' },
+        { kw: `${role} hiring manager`, type: 'hiring manager', why: 'The decision-maker for this specific role.' },
+        { kw: 'engineering manager', type: 'engineering manager', why: 'Likely hiring manager for technical roles.', tech: true },
+      ];
+  for (const t of targets) {
+    if (t.tech && !isTechnicalRole(role)) continue;
+    out.push({
+      name: `${company} — ${t.kw.replace(role, role || '').trim() || t.type}`.slice(0, 70),
+      title: t.type.replace(/\b\w/g, (c) => c.toUpperCase()),
+      company,
+      email: '', linkedinUrl: linkedinSearchUrl(company, t.kw),
+      source: 'LinkedIn search (fallback)', confidence: 22, verified: false,
+      linkedinOnly: true, reason: t.why, contactType: t.type,
+      relationshipSignal: referral ? 'same company' : undefined,
+    });
+  }
+  out.push(...probableEmails(ctx.domain, role));
+  return out;
+}
+/* Ensure every contact has a LinkedIn link and an email-status label. */
+function enrichContacts(list, ctx) {
+  return list.map((c) => {
+    const out = { ...c };
+    if (!out.linkedinUrl && !out.email) {
+      out.linkedinUrl = linkedinSearchUrl(out.company || ctx.company, out.name || out.title || ctx.title);
+      out.linkedinOnly = true;
+    }
+    if (!out.linkedinUrl && out.name && !/inbox/i.test(out.title || '')) {
+      out.linkedinUrl = linkedinSearchUrl(out.company || ctx.company, out.name);
+    }
+    if (!out.email && !out.linkedinOnly && !/inbox/i.test(out.title || '')) out.linkedinOnly = true;
+    if (typeof out.confidence !== 'number') out.confidence = out.verified ? 70 : out.probable ? 30 : 45;
+    return out;
+  });
+}
+
 
 app.get('/contacts/diagnostics', async (req, res) => {
   const company = String(req.query.company || '').trim();
@@ -1728,12 +1813,20 @@ app.post('/contacts/find', async (req, res) => {
       serpPublic(ctx, diagnostics, false)
     ]);
     for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) contacts = contacts.concat(b.value);
-    contacts = dedupePeople(contacts).map(c => ({ ...c, relatedJobId: ctx.jobId || null }));
+    const providerCount = contacts.length;
+    // Always guarantee useful results with compliant fallbacks (search links + probable inboxes)
+    contacts = contacts.concat(fallbackContacts(ctx, false));
+    contacts = enrichContacts(dedupePeople(contacts), ctx).map(c => ({ ...c, relatedJobId: ctx.jobId || null }));
+    // sort: real verified first, then by confidence
+    contacts.sort((a, b) => (b.verified - a.verified) || (Number(b.confidence) - Number(a.confidence)));
     res.json({
       ok: true, contacts, diagnostics,
       providersConfigured: providersConfigured(),
-      lookupCount: contacts.length,
-      note: 'Compliant provider lookups + public search links only. No scraping. Guessed/unverified items are labelled.'
+      lookupCount: contacts.length, providerCount,
+      usedFallback: providerCount === 0,
+      note: providerCount === 0
+        ? 'No contact provider keys configured — showing role-targeted LinkedIn search links and probable company inboxes (labelled). Add Hunter/Apollo/PDL keys for verified emails.'
+        : 'Compliant provider lookups + public search links. Guessed/unverified items are labelled.'
     });
   } catch (e) {
     res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, providersConfigured: providersConfigured() });
@@ -1755,17 +1848,23 @@ app.post('/contacts/referrals', async (req, res) => {
       serpPublic(ctx, diagnostics, true)
     ]);
     for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) contacts = contacts.concat(b.value);
-    contacts = dedupePeople(contacts).map(c => ({
+    const providerCount = contacts.length;
+    contacts = contacts.concat(fallbackContacts(ctx, true));
+    contacts = enrichContacts(dedupePeople(contacts), ctx).map(c => ({
       ...c, relatedJobId: ctx.jobId || null,
-      contactType: c.contactType === 'public profile result' ? 'public profile result' : (/(recruit|talent)/i.test(c.title || '') ? 'recruiter' : 'current employee'),
-      relationshipSignal: c.relationshipSignal || (c.company && ctx.company && c.company.toLowerCase().includes(String(ctx.company).toLowerCase()) ? 'same company' : 'weak public match'),
+      contactType: c.contactType === 'public profile result' ? 'public profile result' : (/(recruit|talent)/i.test(c.title || '') ? 'recruiter' : (c.contactType || 'current employee')),
+      relationshipSignal: c.relationshipSignal || (c.company && ctx.company && String(c.company).toLowerCase().includes(String(ctx.company).toLowerCase()) ? 'same company' : 'weak public match'),
       referralFitReason: c.reason || 'Possible referral path at the target company.'
     }));
+    contacts.sort((a, b) => (b.verified - a.verified) || (Number(b.confidence) - Number(a.confidence)));
     res.json({
       ok: true, contacts, diagnostics,
       providersConfigured: providersConfigured(),
-      lookupCount: contacts.length,
-      note: 'Imported contacts are matched client-side first. These are compliant API + public search results. No scraping.'
+      lookupCount: contacts.length, providerCount,
+      usedFallback: providerCount === 0,
+      note: providerCount === 0
+        ? 'No provider keys configured — showing referral search paths (LinkedIn) for likely teammates and managers. Add PDL/Apollo keys for named employees.'
+        : 'Compliant API + public search results. No scraping.'
     });
   } catch (e) {
     res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, providersConfigured: providersConfigured() });

@@ -1,296 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Wand2, Copy, Check, PenLine, AlertTriangle, Download, FileText, Briefcase, Star, Plus, Printer } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Wand2, Copy, Check, PenLine, AlertTriangle, Download, FileText, Briefcase,
+  Star, Plus, Upload, ImagePlus, Loader2, X, FileType2, Eye, Sparkles,
+} from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Field } from '../components/ui/kit.jsx';
 import { AI } from '../lib/api.js';
-import { getSelectedJob, getStoredResume } from '../lib/resumeStore.js';
+import {
+  getSelectedJob, getStoredResume, getSelectedTemplate, saveSelectedTemplate,
+  getCustomTemplateSpec, saveCustomTemplateSpec,
+} from '../lib/resumeStore.js';
+import {
+  parseResume, TEMPLATES, getTemplate, recommendTemplateId, exportResumePDF,
+  exportResumeDOCX, buildCustomTemplate, setCustomTemplate,
+} from '../lib/resumeTemplates.js';
+import { TemplateGallery, TemplatePreviewModal, ResumePaper } from '../components/ResumeTemplates.jsx';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 /* ------------------------------------------------------------------ */
-/* Mini SVG layout previews — explicit width/height for reliable render */
-/* ------------------------------------------------------------------ */
-function TemplatePreview({ id }) {
-  const base = { viewBox: '0 0 64 82', width: '100%', height: '100%', xmlns: 'http://www.w3.org/2000/svg' };
-
-  if (id === 'jake-tech') return (
-    <svg {...base}>
-      <rect x="5" y="5" width="36" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="26" height="2.5" rx="1" fill="#94a3b8" opacity="0.7"/>
-      <rect x="5" y="17" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.4"/>
-      <line x1="5" y1="21" x2="59" y2="21" stroke="#334155" strokeWidth="0.7"/>
-      <rect x="5" y="24" width="22" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="29" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="33" width="38" height="1.5" rx="1" fill="#64748b" opacity="0.55"/>
-      <rect x="5" y="37" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="42" width="20" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="47" width="14" height="4" rx="2" fill="#0e7490" opacity="0.85"/>
-      <rect x="22" y="47" width="14" height="4" rx="2" fill="#0e7490" opacity="0.85"/>
-      <rect x="39" y="47" width="14" height="4" rx="2" fill="#0e7490" opacity="0.75"/>
-      <rect x="5" y="54" width="14" height="4" rx="2" fill="#0891b2" opacity="0.7"/>
-      <rect x="22" y="54" width="14" height="4" rx="2" fill="#0891b2" opacity="0.7"/>
-      <rect x="5" y="62" width="24" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="67" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="71" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="75" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-    </svg>
-  );
-
-  if (id === 'modern-dark') return (
-    <svg {...base}>
-      <rect x="0" y="0" width="64" height="24" fill="#1e1b4b" opacity="0.95"/>
-      <rect x="5" y="5" width="32" height="4" rx="1" fill="#f1f5f9" opacity="0.95"/>
-      <rect x="5" y="12" width="22" height="2.5" rx="1" fill="#a78bfa" opacity="0.9"/>
-      <rect x="44" y="6" width="14" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <rect x="44" y="10" width="11" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="44" y="14" width="12" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="29" width="22" height="2.5" rx="1" fill="#a78bfa" opacity="0.9"/>
-      <rect x="5" y="34" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="38" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="42" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="48" width="22" height="2.5" rx="1" fill="#a78bfa" opacity="0.9"/>
-      <rect x="5" y="54" width="48" height="3" rx="1" fill="#2e1065" opacity="0.7"/>
-      <rect x="5" y="54" width="36" height="3" rx="1" fill="#7c3aed" opacity="0.75"/>
-      <rect x="5" y="60" width="48" height="3" rx="1" fill="#2e1065" opacity="0.7"/>
-      <rect x="5" y="60" width="28" height="3" rx="1" fill="#7c3aed" opacity="0.7"/>
-      <rect x="5" y="66" width="48" height="3" rx="1" fill="#2e1065" opacity="0.7"/>
-      <rect x="5" y="66" width="42" height="3" rx="1" fill="#7c3aed" opacity="0.75"/>
-      <rect x="5" y="73" width="40" height="1.5" rx="1" fill="#94a3b8" opacity="0.45"/>
-      <rect x="5" y="77" width="34" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
-    </svg>
-  );
-
-  if (id === 'ats-minimal') return (
-    <svg {...base}>
-      <rect x="5" y="5" width="36" height="4.5" rx="1" fill="#f1f5f9" opacity="0.9"/>
-      <rect x="5" y="12" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <line x1="5" y1="16" x2="59" y2="16" stroke="#e2e8f0" strokeWidth="0.5" opacity="0.45"/>
-      <rect x="5" y="19" width="24" height="2" rx="1" fill="#e2e8f0" opacity="0.8"/>
-      <line x1="5" y1="23" x2="59" y2="23" stroke="#64748b" strokeWidth="0.35" opacity="0.35"/>
-      <rect x="5" y="26" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="30" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="34" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="39" width="22" height="2" rx="1" fill="#e2e8f0" opacity="0.8"/>
-      <line x1="5" y1="43" x2="59" y2="43" stroke="#64748b" strokeWidth="0.35" opacity="0.35"/>
-      <rect x="5" y="46" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="50" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="54" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="58" width="32" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="63" width="20" height="2" rx="1" fill="#e2e8f0" opacity="0.8"/>
-      <line x1="5" y1="67" x2="59" y2="67" stroke="#64748b" strokeWidth="0.35" opacity="0.35"/>
-      <rect x="5" y="70" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.5"/>
-      <rect x="5" y="74" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="78" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
-    </svg>
-  );
-
-  if (id === 'executive') return (
-    <svg {...base}>
-      <rect x="5" y="4" width="42" height="5.5" rx="1" fill="#f1f5f9" opacity="0.95"/>
-      <rect x="5" y="13" width="28" height="3" rx="1" fill="#fbbf24" opacity="0.9"/>
-      <rect x="5" y="19" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.6"/>
-      <rect x="22" y="19" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.6"/>
-      <rect x="39" y="19" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.6"/>
-      <rect x="5" y="23" width="54" height="1.5" rx="1" fill="#d97706" opacity="0.85"/>
-      <rect x="5" y="28" width="22" height="2.5" rx="1" fill="#fcd34d" opacity="0.85"/>
-      <rect x="5" y="33" width="50" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="37" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.55"/>
-      <rect x="5" y="43" width="18" height="2.5" rx="1" fill="#fcd34d" opacity="0.85"/>
-      <rect x="5" y="48" width="26" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="52" width="22" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="56" width="24" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="38" y="43" width="18" height="2.5" rx="1" fill="#fcd34d" opacity="0.85"/>
-      <rect x="38" y="48" width="18" height="1.5" rx="1" fill="#94a3b8" opacity="0.5"/>
-      <rect x="38" y="52" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="63" width="22" height="2.5" rx="1" fill="#fcd34d" opacity="0.8"/>
-      <rect x="5" y="69" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.5"/>
-      <rect x="5" y="73" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="77" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
-    </svg>
-  );
-
-  if (id === 'cloud-pro') return (
-    <svg {...base}>
-      <rect x="5" y="5" width="34" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="24" height="2.5" rx="1" fill="#94a3b8" opacity="0.65"/>
-      <line x1="5" y1="17" x2="59" y2="17" stroke="#334155" strokeWidth="0.7"/>
-      <rect x="5" y="20" width="30" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="25" width="12" height="4" rx="2" fill="#0e7490" opacity="0.9"/>
-      <rect x="20" y="25" width="12" height="4" rx="2" fill="#0891b2" opacity="0.85"/>
-      <rect x="35" y="25" width="12" height="4" rx="2" fill="#0e7490" opacity="0.9"/>
-      <rect x="50" y="25" width="9" height="4" rx="2" fill="#0891b2" opacity="0.8"/>
-      <rect x="5" y="32" width="12" height="4" rx="2" fill="#0891b2" opacity="0.75"/>
-      <rect x="20" y="32" width="12" height="4" rx="2" fill="#0e7490" opacity="0.85"/>
-      <rect x="35" y="32" width="16" height="4" rx="2" fill="#0891b2" opacity="0.75"/>
-      <rect x="5" y="41" width="22" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="46" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="50" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="54" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="59" width="20" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="64" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="68" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="72" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="77" width="32" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
-    </svg>
-  );
-
-  if (id === 'fresher') return (
-    <svg {...base}>
-      <rect x="5" y="5" width="32" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <line x1="5" y1="16" x2="59" y2="16" stroke="#334155" strokeWidth="0.7"/>
-      <rect x="5" y="19" width="22" height="2.5" rx="1" fill="#c084fc" opacity="0.9"/>
-      <rect x="5" y="24" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="28" width="34" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="33" width="20" height="2.5" rx="1" fill="#c084fc" opacity="0.9"/>
-      <rect x="5" y="38" width="54" height="13" rx="2" fill="#3b0764" opacity="0.3"/>
-      <rect x="5" y="38" width="54" height="13" rx="2" fill="none" stroke="#7c3aed" strokeWidth="0.5" opacity="0.55"/>
-      <rect x="8" y="41" width="28" height="2" rx="1" fill="#e2e8f0" opacity="0.75"/>
-      <rect x="8" y="45" width="44" height="1.3" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="8" y="48" width="36" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="54" width="54" height="13" rx="2" fill="#3b0764" opacity="0.2"/>
-      <rect x="5" y="54" width="54" height="13" rx="2" fill="none" stroke="#7c3aed" strokeWidth="0.5" opacity="0.4"/>
-      <rect x="8" y="57" width="24" height="2" rx="1" fill="#e2e8f0" opacity="0.65"/>
-      <rect x="8" y="61" width="42" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="8" y="64" width="34" height="1.3" rx="1" fill="#64748b" opacity="0.4"/>
-      <rect x="5" y="70" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.65"/>
-      <rect x="20" y="70" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.65"/>
-      <rect x="35" y="70" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.55"/>
-      <rect x="5" y="76" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.5"/>
-      <rect x="20" y="76" width="14" height="3.5" rx="2" fill="#7c3aed" opacity="0.5"/>
-    </svg>
-  );
-
-  if (id === 'product-analyst') return (
-    <svg {...base}>
-      <rect x="5" y="5" width="34" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="24" height="3" rx="1" fill="#34d399" opacity="0.85"/>
-      <line x1="5" y1="17" x2="59" y2="17" stroke="#334155" strokeWidth="0.7"/>
-      <rect x="5" y="20" width="22" height="2.5" rx="1" fill="#6ee7b7" opacity="0.9"/>
-      <rect x="5" y="25" width="15" height="10" rx="2" fill="#064e3b" opacity="0.45"/>
-      <rect x="5" y="25" width="15" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.5" opacity="0.65"/>
-      <rect x="7" y="28" width="9" height="3" rx="1" fill="#34d399" opacity="0.8"/>
-      <rect x="25" y="25" width="15" height="10" rx="2" fill="#064e3b" opacity="0.45"/>
-      <rect x="25" y="25" width="15" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.5" opacity="0.65"/>
-      <rect x="27" y="28" width="9" height="3" rx="1" fill="#34d399" opacity="0.8"/>
-      <rect x="45" y="25" width="14" height="10" rx="2" fill="#064e3b" opacity="0.45"/>
-      <rect x="45" y="25" width="14" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.5" opacity="0.65"/>
-      <rect x="47" y="28" width="9" height="3" rx="1" fill="#34d399" opacity="0.8"/>
-      <rect x="5" y="40" width="24" height="2.5" rx="1" fill="#6ee7b7" opacity="0.9"/>
-      <rect x="5" y="45" width="50" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="49" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="53" width="46" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="59" width="18" height="2.5" rx="1" fill="#6ee7b7" opacity="0.9"/>
-      <rect x="5" y="64" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.8"/>
-      <rect x="20" y="64" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.8"/>
-      <rect x="35" y="64" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.75"/>
-      <rect x="5" y="71" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.7"/>
-      <rect x="20" y="71" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.7"/>
-      <rect x="5" y="77" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.45"/>
-    </svg>
-  );
-
-  if (id === 'two-page') return (
-    <svg {...base}>
-      <rect x="4" y="3" width="56" height="35" rx="2" fill="none" stroke="#475569" strokeWidth="0.6" opacity="0.65"/>
-      <rect x="8" y="7" width="32" height="3.5" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="8" y="13" width="22" height="2" rx="1" fill="#fbbf24" opacity="0.8"/>
-      <rect x="8" y="17" width="44" height="0.9" rx="1" fill="#d97706" opacity="0.65"/>
-      <rect x="8" y="21" width="18" height="2" rx="1" fill="#fcd34d" opacity="0.8"/>
-      <rect x="8" y="25" width="44" height="1.3" rx="1" fill="#94a3b8" opacity="0.55"/>
-      <rect x="8" y="29" width="36" height="1.3" rx="1" fill="#64748b" opacity="0.5"/>
-      <rect x="8" y="33" width="40" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="28" y="37" width="8" height="1" rx="1" fill="#475569" opacity="0.4"/>
-      <rect x="4" y="43" width="56" height="35" rx="2" fill="none" stroke="#334155" strokeWidth="0.6" opacity="0.45"/>
-      <rect x="8" y="47" width="16" height="2" rx="1" fill="#fcd34d" opacity="0.7"/>
-      <rect x="8" y="51" width="44" height="1.3" rx="1" fill="#94a3b8" opacity="0.5"/>
-      <rect x="8" y="55" width="38" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
-      <rect x="8" y="59" width="40" height="1.3" rx="1" fill="#64748b" opacity="0.4"/>
-      <rect x="8" y="64" width="16" height="2" rx="1" fill="#fcd34d" opacity="0.65"/>
-      <rect x="8" y="68" width="44" height="1.3" rx="1" fill="#94a3b8" opacity="0.45"/>
-      <rect x="8" y="72" width="36" height="1.3" rx="1" fill="#64748b" opacity="0.4"/>
-      <rect x="28" y="77" width="8" height="1" rx="1" fill="#475569" opacity="0.3"/>
-    </svg>
-  );
-
-  return null;
-}
-
-/* ------------------------------------------------------------------ */
-/* Role → best template mapping                                         */
-/* ------------------------------------------------------------------ */
-function getRecommendedTemplate(role) {
-  if (!role) return null;
-  const r = role.toLowerCase();
-  if (/cloud engineer/i.test(r)) return 'Cloud Engineer Pro';
-  if (/intern|fresher|student|entry.level|junior/i.test(r)) return 'Fresher Project Focus';
-  if (/devops|sre|site.reliability|platform.engineer/i.test(r)) return 'Jake Tech Compact';
-  if (/data.analyst|business.analyst|product.analyst/i.test(r)) return 'Product Analyst Clean';
-  if (/data.scien|machine.learning|ml.engineer/i.test(r)) return 'Jake Tech Compact';
-  if (/product.manager|program.manager|project.manager/i.test(r)) return 'Executive Clean';
-  if (/director|head of|principal|vp |senior.*manager/i.test(r)) return 'Two Page Detailed';
-  if (/consultant|operations.manager|management/i.test(r)) return 'Executive Clean';
-  if (/frontend|full.stack|mobile|react|ui.engineer/i.test(r)) return 'Modern Dark Header';
-  if (/software|backend|engineer|sde|swe|developer/i.test(r)) return 'Jake Tech Compact';
-  if (/analyst|operations|marketing|sales|finance|hr/i.test(r)) return 'ATS Minimal One Page';
-  return null;
-}
-
-/* ------------------------------------------------------------------ */
-/* Template definitions                                                 */
-/* ------------------------------------------------------------------ */
-const TEMPLATES = [
-  { id: 'jake-tech',        name: 'Jake Tech Compact',    fit: 'DevOps · SRE · SDE · Platform',    ats: 'High',       tone: 'cyan',   desc: 'Single-column Overleaf-style. Dense skill chips, ATS-optimized.' },
-  { id: 'modern-dark',      name: 'Modern Dark Header',   fit: 'Startups · Frontend · Full Stack',  ats: 'High',       tone: 'violet', desc: 'Premium dark header with role title and skill progress bars.' },
-  { id: 'ats-minimal',      name: 'ATS Minimal One Page', fit: 'Portal submissions · Any role',     ats: 'Very high',  tone: 'mint',   desc: 'No graphics, dense text — highest recruiter-portal pass rate.' },
-  { id: 'executive',        name: 'Executive Clean',      fit: 'Senior · Leadership · Management',  ats: 'High',       tone: 'amber',  desc: 'Bold impact profile, gold divider, two-area layout.' },
-  { id: 'cloud-pro',        name: 'Cloud Engineer Pro',   fit: 'AWS · Azure · GCP · Infra',         ats: 'High',       tone: 'cyan',   desc: 'Cloud & CI/CD chip grid upfront, then experience sections.' },
-  { id: 'fresher',          name: 'Fresher Project Focus',fit: 'Students · Interns · 0–2 yrs',      ats: 'High',       tone: 'violet', desc: 'Projects and hackathons front-and-center, education near top.' },
-  { id: 'product-analyst',  name: 'Product Analyst Clean',fit: 'Data Analyst · PM · BI roles',      ats: 'High',       tone: 'mint',   desc: 'KPI metric boxes, tools grid, business-impact bullets.' },
-  { id: 'two-page',         name: 'Two Page Detailed',    fit: 'Deep experience · 10+ yrs',         ats: 'Medium-high', tone: 'amber', desc: 'Keeps full context intact — no splitting, no cutting.' },
-];
-
-const LENGTHS = ['Auto', 'Single page', 'Multi page'];
-const OUT_KEY = 'careerAutopilot.editor.lastTailor.v1';
-
-function safeRead() {
-  try { return JSON.parse(localStorage.getItem(OUT_KEY) || '{}'); } catch { return {}; }
-}
-function safeWrite(v) {
-  try { localStorage.setItem(OUT_KEY, JSON.stringify(v)); } catch {}
-}
-function downloadText(name, text) {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function printAsPDF(text) {
-  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10.5pt;line-height:1.5;color:#111;padding:.7in}
-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit}
-@page{margin:.55in;size:A4}
-@media print{body{padding:0}}
-</style></head><body><pre>${esc}</pre></body></html>`;
-  const frame = document.createElement('iframe');
-  frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;';
-  document.body.appendChild(frame);
-  frame.contentDocument.open();
-  frame.contentDocument.write(html);
-  frame.contentDocument.close();
-  frame.contentWindow.focus();
-  setTimeout(() => {
-    frame.contentWindow.print();
-    setTimeout(() => { try { document.body.removeChild(frame); } catch {} }, 2500);
-  }, 300);
-}
-
-/* ------------------------------------------------------------------ */
-/* Structured section editor                                            */
+/* Section editor (unchanged behaviour, kept intact)                   */
 /* ------------------------------------------------------------------ */
 const PRESET_SECTIONS = ['Certifications', 'Languages', 'Awards', 'Publications', 'Volunteer Work', 'Interests', 'References', 'Patents'];
 
@@ -312,7 +43,6 @@ function SectionAdder({ resume, onChange }) {
   const [bullet, setBullet] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [custom, setCustom] = useState('');
-
   const sections = useMemo(() => detectSections(resume), [resume]);
 
   const appendBullet = (sectionName, text) => {
@@ -320,110 +50,239 @@ function SectionAdder({ resume, onChange }) {
     const entry = `• ${text.trim()}`;
     const lines = resume.split('\n');
     const idx = lines.findIndex((l) => l.trim() === sectionName);
-    if (idx < 0) {
-      onChange(resume.trimEnd() + `\n${entry}`);
-    } else {
+    if (idx < 0) { onChange(resume.trimEnd() + `\n${entry}`); }
+    else {
       let insertAt = lines.length;
       for (let i = idx + 1; i < lines.length; i++) {
         const t = lines[i].trim();
-        if (t.length >= 3 && t.length <= 40 && /^[A-Z][A-Z\s&/\-]{1,38}[A-Z]$/.test(t) && t !== sectionName) {
-          insertAt = i;
-          break;
-        }
+        if (t.length >= 3 && t.length <= 40 && /^[A-Z][A-Z\s&/\-]{1,38}[A-Z]$/.test(t) && t !== sectionName) { insertAt = i; break; }
       }
       lines.splice(insertAt, 0, entry);
       onChange(lines.join('\n'));
     }
-    setBullet('');
-    setActive(null);
+    setBullet(''); setActive(null);
   };
-
   const addSection = (name) => {
     if (!name.trim()) return;
     onChange(resume.trimEnd() + `\n\n${name.trim().toUpperCase()}\n• `);
-    setShowNew(false);
-    setCustom('');
+    setShowNew(false); setCustom('');
   };
-
   if (!resume || resume.trim().length < 30) return null;
 
   return (
     <div className="mt-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">
       <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Edit sections</p>
-
       {sections.length > 0 && (
         <div className="mb-2.5 flex flex-wrap gap-1.5">
           {sections.map((s) => (
-            <button
-              key={s}
-              onClick={() => { setActive(active === s ? null : s); setBullet(''); setShowNew(false); }}
-              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] transition ${active === s ? 'border-aurora-violet/50 bg-aurora-violet/12 text-white' : 'border-white/10 text-slate-400 hover:border-white/22 hover:text-white'}`}
-            >
+            <button key={s} onClick={() => { setActive(active === s ? null : s); setBullet(''); setShowNew(false); }}
+              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] transition ${active === s ? 'border-aurora-violet/50 bg-aurora-violet/12 text-white' : 'border-white/10 text-slate-400 hover:border-white/22 hover:text-white'}`}>
               <Plus size={9} /> {s[0] + s.slice(1).toLowerCase()}
             </button>
           ))}
         </div>
       )}
-
       {active && (
         <div className="mb-2.5 flex gap-2">
-          <input
-            autoFocus
-            value={bullet}
-            onChange={(e) => setBullet(e.target.value)}
+          <input autoFocus value={bullet} onChange={(e) => setBullet(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') appendBullet(active, bullet); if (e.key === 'Escape') setActive(null); }}
             placeholder={`Add bullet to ${active[0] + active.slice(1).toLowerCase()}…`}
-            className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
-          />
-          <button onClick={() => appendBullet(active, bullet)} disabled={!bullet.trim()}
-            className="h-8 rounded-lg bg-aurora-violet/20 px-3 text-[11px] font-medium text-white hover:bg-aurora-violet/30 disabled:opacity-40">
-            Add
-          </button>
-          <button onClick={() => setActive(null)}
-            className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">
-            ✕
-          </button>
+            className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+          <button onClick={() => appendBullet(active, bullet)} disabled={!bullet.trim()} className="h-8 rounded-lg bg-aurora-violet/20 px-3 text-[11px] font-medium text-white hover:bg-aurora-violet/30 disabled:opacity-40">Add</button>
+          <button onClick={() => setActive(null)} className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">✕</button>
         </div>
       )}
-
       {showNew ? (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-1.5">
-            {PRESET_SECTIONS
-              .filter((s) => !sections.includes(s.toUpperCase()))
-              .map((s) => (
-                <button key={s} onClick={() => addSection(s)}
-                  className="rounded-lg border border-dashed border-aurora-cyan/30 px-2.5 py-1 text-[11px] text-aurora-cyan transition hover:bg-aurora-cyan/10">
-                  + {s}
-                </button>
-              ))}
+            {PRESET_SECTIONS.filter((s) => !sections.includes(s.toUpperCase())).map((s) => (
+              <button key={s} onClick={() => addSection(s)} className="rounded-lg border border-dashed border-aurora-cyan/30 px-2.5 py-1 text-[11px] text-aurora-cyan transition hover:bg-aurora-cyan/10">+ {s}</button>
+            ))}
           </div>
           <div className="flex gap-2">
-            <input
-              autoFocus
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
+            <input autoFocus value={custom} onChange={(e) => setCustom(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addSection(custom); if (e.key === 'Escape') setShowNew(false); }}
               placeholder="Custom section name…"
-              className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
-            />
-            <button onClick={() => addSection(custom)} disabled={!custom.trim()}
-              className="h-8 rounded-lg bg-aurora-cyan/15 px-3 text-[11px] text-aurora-cyan hover:bg-aurora-cyan/25 disabled:opacity-40">Add</button>
-            <button onClick={() => { setShowNew(false); setCustom(''); }}
-              className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">Cancel</button>
+              className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+            <button onClick={() => addSection(custom)} disabled={!custom.trim()} className="h-8 rounded-lg bg-aurora-cyan/15 px-3 text-[11px] text-aurora-cyan hover:bg-aurora-cyan/25 disabled:opacity-40">Add</button>
+            <button onClick={() => { setShowNew(false); setCustom(''); }} className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">Cancel</button>
           </div>
         </div>
       ) : (
-        <button
-          onClick={() => { setShowNew(true); setActive(null); }}
-          className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/12 px-3 py-1.5 text-[11px] text-slate-500 transition hover:border-aurora-cyan/40 hover:text-aurora-cyan"
-        >
+        <button onClick={() => { setShowNew(true); setActive(null); }} className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/12 px-3 py-1.5 text-[11px] text-slate-500 transition hover:border-aurora-cyan/40 hover:text-aurora-cyan">
           <Plus size={11} /> Add new section
         </button>
       )}
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Custom-template upload (PNG/JPG/JPEG/WEBP + PDF) with AI + fallback  */
+/* ------------------------------------------------------------------ */
+async function fileToImage(file) {
+  const name = (file.name || '').toLowerCase();
+  if (file.type.startsWith('image/') && !name.endsWith('.pdf')) {
+    const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+    return { dataUrl, mime: file.type };
+  }
+  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    return { dataUrl: canvas.toDataURL('image/png'), mime: 'image/png' };
+  }
+  throw new Error('Unsupported file. Upload PNG, JPG, JPEG, WEBP or PDF.');
+}
+
+function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCustom, selected }) {
+  const [preview, setPreview] = useState(customSpec?.imageDataUrl || null);
+  const [mime, setMime] = useState('image/png');
+  const [status, setStatus] = useState(customSpec ? 'done' : 'idle'); // idle|reading|analyzing|done|error|fallback
+  const [err, setErr] = useState('');
+  const inputRef = useRef(null);
+
+  const onPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setErr(''); setStatus('reading');
+    try {
+      const { dataUrl, mime: m } = await fileToImage(file);
+      setPreview(dataUrl); setMime(m);
+      await analyze(dataUrl, m, file.name);
+    } catch (ex) { setErr(ex.message || 'Could not read that file.'); setStatus('error'); }
+  };
+
+  const analyze = async (dataUrl, m, name) => {
+    setStatus('analyzing'); setErr('');
+    const base64 = String(dataUrl).split(',')[1];
+    const prompt = `You are a resume layout analyst. Look at this resume TEMPLATE image and describe its visual structure.
+Return ONLY JSON, no prose: {"columns":1 or 2,"headerStyle":"plain" or "dark" or "banner","headerAlign":"left" or "center","accent":"#RRGGBB","fontKind":"sans" or "serif","pages":"single" or "multi","sectionOrder":["summary","experience","skills","education","projects"],"note":"one short sentence"}`;
+    try {
+      const d = await AI.message({
+        model: 'claude-sonnet-4-20250514', max_tokens: 600,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: m, data: base64 } },
+          { type: 'text', text: prompt },
+        ] }],
+      });
+      const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      const m2 = text.match(/\{[\s\S]*\}/);
+      const spec = m2 ? JSON.parse(m2[0]) : null;
+      if (!spec) throw new Error('no-json');
+      finishBuild({
+        name: name ? `From: ${name}`.slice(0, 40) : 'Custom template',
+        columns: Number(spec.columns) === 2 ? 2 : 1,
+        headerStyle: spec.headerStyle === 'dark' || spec.headerStyle === 'banner' ? 'dark' : 'plain',
+        headerAlign: spec.headerAlign === 'center' ? 'center' : 'left',
+        accent: /^#?[0-9a-f]{6}$/i.test(String(spec.accent).replace('#', '')) ? (spec.accent.startsWith('#') ? spec.accent : '#' + spec.accent) : '#334155',
+        font: spec.fontKind === 'serif' ? 'Georgia, "Times New Roman", serif' : '"Helvetica Neue", Arial, sans-serif',
+        pages: spec.pages === 'multi' ? 'multi' : 'single',
+        note: spec.note || 'Template-inspired layout from your upload.',
+        imageDataUrl: dataUrl,
+      });
+    } catch {
+      // graceful fallback — AI vision unavailable; let the user pick a style
+      setStatus('fallback');
+    }
+  };
+
+  const finishBuild = (spec) => {
+    const tpl = buildCustomTemplate(spec);
+    setCustomTemplate(tpl);
+    saveCustomTemplateSpec(spec);
+    setStatus('done');
+    onBuilt(spec, tpl);
+  };
+
+  const buildFromChoice = (choice) => {
+    finishBuild({
+      name: 'Custom (style-matched)',
+      columns: choice.columns, headerStyle: choice.headerStyle, headerAlign: 'left',
+      accent: choice.accent,
+      font: choice.font === 'serif' ? 'Georgia, "Times New Roman", serif' : '"Helvetica Neue", Arial, sans-serif',
+      pages: 'single', note: 'Template-inspired layout (style selected manually).',
+      imageDataUrl: preview,
+    });
+  };
+
+  const clear = () => { setPreview(null); setStatus('idle'); setErr(''); onClear(); };
+
+  return (
+    <div className={`flex flex-col overflow-hidden rounded-2xl border transition ${selected ? 'border-aurora-violet/60 ring-1 ring-aurora-violet/30 bg-aurora-violet/5' : 'border-dashed border-white/15 bg-white/[0.02]'}`}>
+      <div className="flex h-[176px] items-center justify-center border-b border-white/8 bg-[#0d1018] p-2">
+        {preview ? (
+          <img src={preview} alt="uploaded template" className="max-h-full max-w-full rounded object-contain" />
+        ) : (
+          <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 text-center">
+            <Upload size={20} className="text-slate-500" />
+            <span className="text-xs font-medium text-slate-300">Upload your own template</span>
+            <span className="px-3 text-[10px] leading-snug text-slate-600">PNG · JPG · JPEG · WEBP · PDF — we read the layout and rebuild your resume in it</span>
+            <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.pdf" className="hidden" onChange={onPick} />
+          </label>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[13px] font-semibold text-white">Custom template</p>
+          <Badge tone="violet" className="text-[9px]">From upload</Badge>
+        </div>
+
+        {status === 'reading' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-cyan"><Loader2 size={12} className="animate-spin" /> Reading file…</p>}
+        {status === 'analyzing' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-cyan"><Loader2 size={12} className="animate-spin" /> Analysing layout with AI…</p>}
+        {status === 'error' && <p className="flex items-center gap-1.5 text-[11px] text-amber-glow"><AlertTriangle size={12} /> {err}</p>}
+        {status === 'done' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint"><Check size={12} /> Template ready — your resume was matched to this layout.</p>}
+
+        {status === 'fallback' && (
+          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+            <p className="text-[10.5px] text-slate-400">AI analysis wasn't available, so pick a style to build a template-inspired layout:</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button onClick={() => buildFromChoice({ columns: 1, headerStyle: 'plain', accent: '#0e7490', font: 'sans' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Single · accent</button>
+              <button onClick={() => buildFromChoice({ columns: 2, headerStyle: 'plain', accent: '#0f172a', font: 'sans' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Two column</button>
+              <button onClick={() => buildFromChoice({ columns: 1, headerStyle: 'dark', accent: '#b45309', font: 'serif' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Dark header</button>
+              <button onClick={() => buildFromChoice({ columns: 1, headerStyle: 'plain', accent: '#6d28d9', font: 'sans' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Modern accent</button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-auto flex gap-2 pt-1">
+          {status === 'done' ? (
+            <>
+              <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-aurora-violet/25 text-white ring-1 ring-aurora-violet/40' : 'btn-primary text-white hover:brightness-110'}`}>
+                {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this'}
+              </button>
+              <button onClick={clear} className="rounded-lg border border-white/12 px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-red-400">Remove</button>
+            </>
+          ) : preview ? (
+            <button onClick={clear} className="flex-1 rounded-lg border border-white/12 py-1.5 text-[11px] text-slate-400 hover:text-red-400">Remove upload</button>
+          ) : (
+            <button onClick={() => inputRef.current?.click()} className="flex-1 rounded-lg border border-white/12 bg-white/[0.04] py-1.5 text-[11px] font-medium text-slate-200 hover:bg-white/10">Choose file</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Persistence for the AI tailor output                                */
+/* ------------------------------------------------------------------ */
+const OUT_KEY = 'careerAutopilot.editor.lastTailor.v1';
+function safeRead() { try { return JSON.parse(localStorage.getItem(OUT_KEY) || '{}'); } catch { return {}; } }
+function safeWrite(v) { try { localStorage.setItem(OUT_KEY, JSON.stringify(v)); } catch {} }
+function downloadText(name, text) {
+  const blob = new Blob([text || ''], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 800);
+}
+const LENGTHS = ['Auto', 'Single page', 'Multi page'];
+const lenToMode = (l) => (l === 'Single page' ? 'single' : l === 'Multi page' ? 'multi' : 'auto');
 
 /* ------------------------------------------------------------------ */
 /* Main view                                                            */
@@ -434,24 +293,35 @@ export default function Editor() {
   const last = safeRead();
 
   const activeRole = storedResume.targetRole || storedResume.analysis?.recommendedRole || '';
-  const recommendedName = getRecommendedTemplate(activeRole);
+  const recommendedId = recommendTemplateId(activeRole);
 
   const [resume, setResume] = useState(last.out || last.resume || storedResume.text || '');
   const [jd, setJd] = useState(selectedJob
     ? [selectedJob.title, selectedJob.company, selectedJob.location, selectedJob.summary, (selectedJob.requiredSkills || []).join(', ')].filter(Boolean).join('\n')
     : last.jd || '');
-  const [tpl, setTpl] = useState(last.tpl || recommendedName || TEMPLATES[0].name);
   const [len, setLen] = useState(last.len || 'Auto');
   const [out, setOut] = useState(last.out || '');
   const [status, setStatus] = useState('idle');
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // template selection (persisted)
+  const [tplId, setTplId] = useState(() => getTemplate(getSelectedTemplate() || last.tpl || recommendedId).id);
+  const [previewId, setPreviewId] = useState(null);
+  const [customSpec, setCustomSpec] = useState(getCustomTemplateSpec());
+  const [busy, setBusy] = useState('');
+
+  // rebuild a saved custom template on mount so it survives refresh
+  useEffect(() => {
+    const spec = getCustomTemplateSpec();
+    if (spec) setCustomTemplate(buildCustomTemplate(spec));
+  }, []);
+
   useEffect(() => {
     const sync = () => {
       const r = getStoredResume();
       const j = getSelectedJob();
-      if (r.text) setResume(r.text);
+      if (r.text && !out) setResume(r.text);
       if (j) setJd([j.title, j.company, j.location, j.summary, (j.requiredSkills || []).join(', ')].filter(Boolean).join('\n'));
     };
     window.addEventListener('career-resume-updated', sync);
@@ -460,31 +330,51 @@ export default function Editor() {
       window.removeEventListener('career-resume-updated', sync);
       window.removeEventListener('career-selected-job-updated', sync);
     };
-  }, []);
+  }, [out]);
 
-  const selectedTemplate = useMemo(() => TEMPLATES.find((t) => t.name === tpl) || TEMPLATES[0], [tpl]);
+  const activeText = out || resume;
+  const data = useMemo(() => parseResume(activeText), [activeText]);
+  const selectedTpl = getTemplate(tplId);
+
+  const pickTemplate = (id) => { setTplId(id); saveSelectedTemplate(id); };
 
   const tailor = async () => {
     if (resume.trim().length < 40 || jd.trim().length < 20) { setErr('Add both your resume and the job description.'); return; }
     setStatus('loading'); setErr(''); setOut('');
     const prompt = `Rewrite and tailor the resume below to the job description. Keep it truthful — never invent experience, companies, dates, certifications, metrics or tools.
-Use template style: ${tpl}. Length preference: ${len}. If Single page, compress bullets and remove weaker content. If Multi page, keep sections complete and do not split section content.
-Optimise for ATS, lead with quantified impact, mirror the JD language, and output clean plain-text resume only.
+Length preference: ${len}. If Single page, compress bullets and remove weaker content. If Multi page, keep sections complete and do not split section content.
+Optimise for ATS, lead with quantified impact, mirror the JD language, and output a clean plain-text resume only (no markdown).
+Keep clear ALL-CAPS section headings (e.g. SUMMARY, EXPERIENCE, SKILLS, EDUCATION, PROJECTS) and use "•" for bullets.
 JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000)}"""`;
     try {
       const d = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 2600, messages: [{ role: 'user', content: prompt }] });
       const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const next = text.trim();
       setOut(next); setStatus('done');
-      safeWrite({ resume, jd, tpl, len, out: next, updatedAt: new Date().toISOString() });
+      safeWrite({ resume, jd, tpl: tplId, len, out: next, updatedAt: new Date().toISOString() });
     } catch (e) { setErr(e.message || 'Tailoring failed.'); setStatus('error'); }
   };
 
-  const copy = () => { navigator.clipboard?.writeText(out); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const copy = () => { navigator.clipboard?.writeText(activeText); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const safeName = (data?.name || 'resume').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'resume';
+
+  const doPDF = async () => {
+    if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
+    setBusy('pdf'); setErr('');
+    try { await exportResumePDF(data, tplId, { mode: lenToMode(len), fileName: `${safeName}-${selectedTpl.id}.pdf` }); }
+    catch (e) { setErr('PDF export failed: ' + (e.message || e)); }
+    finally { setBusy(''); }
+  };
+  const doDOCX = () => {
+    if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
+    setBusy('docx');
+    try { exportResumeDOCX(data, tplId, { fileName: `${safeName}-${selectedTpl.id}.doc` }); }
+    finally { setBusy(''); }
+  };
 
   return (
     <>
-      <PageIntro title="Resume editor" sub="Pick a template matched to your role, paste the job description, and let AI tailor your resume." />
+      <PageIntro title="Resume editor" sub="Edit your resume, pick a template, preview it as a real A4 page, then export a clean PDF or DOCX." />
 
       {selectedJob && (
         <div className="mb-4 rounded-2xl border border-aurora-cyan/20 bg-aurora-cyan/10 px-4 py-3 text-sm text-slate-200">
@@ -495,154 +385,118 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
+        {/* ── Left: edit ── */}
         <div className="space-y-4">
-          {/* ── Resume input ── */}
           <SectionCard
-            title={last.out ? 'Editable tailored resume' : 'Base resume'}
+            title={out ? 'Editable tailored resume' : 'Base resume'}
             action={storedResume.fileName && <Badge tone="mint"><FileText size={11} /> {storedResume.fileName}</Badge>}
           >
-            {last.out && (
+            {out && (
               <div className="mb-3 rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-xs text-slate-200">
-                Job-specific resume from Jobs screen. Edit here, then export.
+                Job-specific resume loaded. Edit here — the preview and downloads update live.
               </div>
             )}
             <textarea
-              value={resume}
-              onChange={(e) => { setResume(e.target.value); if (last.out) setOut(e.target.value); }}
-              placeholder="Paste your current resume…"
-              className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+              value={activeText}
+              onChange={(e) => { if (out) setOut(e.target.value); else setResume(e.target.value); }}
+              placeholder="Paste your current resume… keep ALL-CAPS section headings and • bullets for the cleanest template output."
+              className="h-52 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
             />
-            <SectionAdder resume={resume} onChange={(v) => { setResume(v); if (last.out) setOut(v); }} />
+            <SectionAdder resume={activeText} onChange={(v) => { if (out) setOut(v); else setResume(v); }} />
           </SectionCard>
 
-          {/* ── JD input ── */}
           <SectionCard title="Target job description">
-            <textarea
-              value={jd} onChange={(e) => setJd(e.target.value)}
+            <textarea value={jd} onChange={(e) => setJd(e.target.value)}
               placeholder="Paste the job description or choose Tailor from a job card…"
-              className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
-            />
+              className="h-40 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
           </SectionCard>
 
-          {/* ── Length ── */}
           <SectionCard title="Resume length">
             <div className="flex flex-wrap items-center gap-2">
               {LENGTHS.map((l) => (
-                <button key={l} onClick={() => setLen(l)}
-                  className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'text-slate-400 hover:bg-white/5'}`}>
-                  {l}
-                </button>
+                <button key={l} onClick={() => setLen(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'text-slate-400 hover:bg-white/5'}`}>{l}</button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-slate-500">Single page compresses weak content. Multi page keeps sections intact.</p>
-          </SectionCard>
-
-          {/* ── Template gallery ── */}
-          <SectionCard
-            title="Resume template"
-            action={
-              recommendedName && activeRole
-                ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#52E6C2" /> Best for {activeRole}</span>
-                : null
-            }
-          >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {TEMPLATES.map((t) => {
-                const isSelected = tpl === t.name;
-                const isRec = recommendedName === t.name;
-                return (
-                  <button
-                    key={t.name}
-                    onClick={() => setTpl(t.name)}
-                    className={`flex items-stretch gap-3 rounded-xl border p-3 text-left transition ${
-                      isSelected
-                        ? 'border-aurora-violet/50 bg-aurora-violet/10 ring-1 ring-aurora-violet/20'
-                        : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    {/* Preview thumbnail */}
-                    <div
-                      className="shrink-0 overflow-hidden rounded-lg border border-white/10"
-                      style={{ width: 64, height: 82, background: '#070912' }}
-                    >
-                      <TemplatePreview id={t.id} />
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex min-w-0 flex-1 flex-col justify-between gap-1">
-                      <div>
-                        <div className="flex items-start justify-between gap-1">
-                          <p className="text-[13px] font-semibold leading-tight text-white">{t.name}</p>
-                          {isRec && (
-                            <span className="mt-0.5 flex shrink-0 items-center gap-0.5 rounded-full bg-aurora-mint/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-aurora-mint ring-1 ring-aurora-mint/25">
-                              <Star size={8} fill="#52E6C2" /> Pick
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{t.fit}</p>
-                        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{t.desc}</p>
-                      </div>
-                      <Badge tone={t.tone} className="self-start text-[9px]">ATS: {t.ats}</Badge>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
+            <p className="mt-2 text-xs text-slate-500">Single page fits everything cleanly on one A4. Multi page keeps sections intact across pages.</p>
             {err && <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
-            <Button className="mt-4 w-full" onClick={tailor} disabled={status === 'loading'}>
+            <Button className="mt-3 w-full" onClick={tailor} disabled={status === 'loading'}>
               <Wand2 size={16} /> {status === 'loading' ? 'Tailoring…' : 'Tailor with AI'}
             </Button>
           </SectionCard>
         </div>
 
-        {/* ── Output panel ── */}
-        <SectionCard
-          title="Tailored result"
-          action={
-            out && (
-              <div className="flex gap-2">
-                <Button size="sm" variant="soft" onClick={copy}>
-                  {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
-                </Button>
-                <Button size="sm" variant="soft" onClick={() => printAsPDF(out)}>
-                  <Printer size={14} /> PDF
-                </Button>
-                <Button size="sm" onClick={() => downloadText('tailored-resume.txt', out)}>
-                  <Download size={14} /> TXT
-                </Button>
-              </div>
-            )
-          }
-        >
-          {!out && status !== 'loading' && (
-            <div className="grid place-items-center rounded-xl border border-dashed border-white/10 py-20 text-center">
-              <PenLine size={26} className="mb-3 text-aurora-cyan" />
-              <p className="text-sm text-slate-300">Your tailored resume will appear here</p>
-              <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">
-                Using <span className="text-slate-300">{selectedTemplate.name}</span>. {selectedTemplate.desc}
-              </p>
-              <p className="mt-2 text-xs text-slate-500">
-                Template: <Badge tone={selectedTemplate.tone}>{selectedTemplate.name}</Badge>
-              </p>
-            </div>
-          )}
-          {status === 'loading' && (
-            <div className="space-y-2.5 py-2">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="h-3 animate-pulse rounded bg-white/5" style={{ width: `${55 + (i % 5) * 9}%` }} />
-              ))}
-            </div>
-          )}
-          {out && (
-            <textarea
-              value={out}
-              onChange={(e) => setOut(e.target.value)}
-              className="min-h-[720px] w-full resize-y rounded-xl border border-white/8 bg-ink-950/60 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200 outline-none focus:border-aurora-violet/50"
+        {/* ── Right: templates + live preview + export ── */}
+        <div className="space-y-4">
+          <SectionCard
+            title="Resume template"
+            action={recommendedId && activeRole && tplId !== 'custom'
+              ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#52E6C2" /> Best for {activeRole}</span>
+              : tplId === 'custom' ? <span className="flex items-center gap-1 text-[11px] text-aurora-violet"><ImagePlus size={10} /> Custom active</span> : null}
+          >
+            <TemplateGallery
+              data={data}
+              selectedId={tplId}
+              recommendedId={recommendedId}
+              onSelect={pickTemplate}
+              onPreview={(id) => setPreviewId(id)}
+              customCard={
+                <CustomTemplatePanel
+                  data={data}
+                  customSpec={customSpec}
+                  selected={tplId === 'custom'}
+                  onBuilt={(spec) => { setCustomSpec(spec); pickTemplate('custom'); }}
+                  onClear={() => { setCustomSpec(null); saveCustomTemplateSpec(null); if (tplId === 'custom') pickTemplate(recommendedId); }}
+                  onSelectCustom={() => pickTemplate('custom')}
+                />
+              }
             />
-          )}
-        </SectionCard>
+          </SectionCard>
+
+          <SectionCard
+            title="Live preview"
+            action={
+              <div className="flex gap-2">
+                <Button size="sm" variant="soft" onClick={() => setPreviewId(tplId)}><Eye size={13} /> Expand</Button>
+                <Button size="sm" variant="soft" onClick={copy}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy'}</Button>
+              </div>
+            }
+          >
+            {activeText.trim().length < 30 ? (
+              <div className="grid place-items-center rounded-xl border border-dashed border-white/10 py-16 text-center">
+                <PenLine size={24} className="mb-3 text-aurora-cyan" />
+                <p className="text-sm text-slate-300">Add resume content to see the live A4 preview</p>
+                <p className="mt-1 text-xs text-slate-500">Using template: <span className="text-slate-300">{selectedTpl.name}</span></p>
+              </div>
+            ) : (
+              <div className="flex justify-center rounded-xl border border-white/10 bg-[#e9edf5] p-3">
+                <ResumePaper key={tplId + len} data={data} templateId={tplId} mode={lenToMode(len)} scale={0.52} className="rounded shadow-lift" />
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+              <Button onClick={doPDF} disabled={busy === 'pdf'}>
+                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : 'Download PDF'}
+              </Button>
+              <Button variant="soft" onClick={doDOCX} disabled={busy === 'docx'}>
+                <FileType2 size={15} /> DOCX
+              </Button>
+              <Button variant="soft" onClick={() => downloadText(`${safeName}.txt`, activeText)}>
+                <Download size={15} /> TXT
+              </Button>
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              PDF is generated directly (no browser headers/footers) at A4 with smart page breaks. Downloads use the selected template: <span className="text-slate-300">{selectedTpl.name}</span>.
+            </p>
+          </SectionCard>
+        </div>
       </div>
+
+      <TemplatePreviewModal
+        open={!!previewId}
+        onClose={() => setPreviewId(null)}
+        data={data}
+        templateId={previewId || tplId}
+        onUse={(id) => pickTemplate(id)}
+      />
     </>
   );
 }

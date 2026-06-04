@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import { openPricing } from '../PricingModal.jsx';
 
 export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
@@ -58,7 +59,7 @@ function SidebarInner({ active, onPick }) {
         <div className="gradient-border p-4">
           <p className="text-[13px] font-medium text-white">Pro workspace</p>
           <p className="mt-1 text-xs text-muted">Unlock unlimited tailoring & outreach.</p>
-          <button className="btn-primary mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white">Upgrade</button>
+          <button onClick={() => openPricing('pro')} className="btn-primary mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white">Upgrade</button>
         </div>
       </div>
     </>
@@ -99,6 +100,12 @@ export default function Shell({ active, onPick, title, children }) {
           <button onClick={() => setDrawer(true)} className="rounded-lg p-2 text-slate-300 hover:bg-white/6 lg:hidden"><Menu size={20} /></button>
           <h1 className="font-display text-lg font-semibold text-white">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => openPricing('pro')}
+              className="hidden items-center gap-1.5 rounded-xl border border-aurora-violet/30 bg-aurora-violet/10 px-3 py-2 text-xs font-semibold text-[#C2BBFF] transition hover:bg-aurora-violet/20 sm:flex"
+            >
+              <Zap size={14} /> Upgrade
+            </button>
             <div className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 md:flex">
               <Search size={15} /> <span className="text-slate-500">Search…</span>
             </div>

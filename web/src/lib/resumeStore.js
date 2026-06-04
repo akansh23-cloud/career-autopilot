@@ -4,6 +4,8 @@ const KEY = 'careerAutopilot.resume.v1';
 const JOB_KEY = 'careerAutopilot.pendingJobSearch.v1';
 const JOB_RESULTS_KEY = 'careerAutopilot.jobResults.v1';
 const SELECTED_JOB_KEY = 'careerAutopilot.selectedJob.v1';
+const TEMPLATE_KEY = 'careerAutopilot.selectedTemplate.v1';
+const CUSTOM_TPL_KEY = 'careerAutopilot.customTemplate.v1';
 
 const fallback = {
   text: '',
@@ -105,4 +107,21 @@ export function saveSelectedJob(job) {
 
 export function getSelectedJob() {
   return (safeRead(SELECTED_JOB_KEY) || {}).job || null;
+}
+
+export function getSelectedTemplate() {
+  return (safeRead(TEMPLATE_KEY) || {}).id || '';
+}
+export function saveSelectedTemplate(id) {
+  safeWrite(TEMPLATE_KEY, { id, updatedAt: new Date().toISOString() });
+  return id;
+}
+
+export function getCustomTemplateSpec() {
+  return safeRead(CUSTOM_TPL_KEY) || null;
+}
+export function saveCustomTemplateSpec(spec) {
+  if (!spec) { safeRemove(CUSTOM_TPL_KEY); return null; }
+  safeWrite(CUSTOM_TPL_KEY, spec);
+  return spec;
 }

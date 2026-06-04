@@ -87,7 +87,7 @@ function TailorModal({ open, job, go, onClose }) {
   const [kit, setKit] = useState(null);
   const [err, setErr] = useState('');
   const [tab, setTab] = useState('resume');
-  const [template, setTemplate] = useState('Jake Tech Compact');
+  const [template, setTemplate] = useState('Jake ATS Compact');
   const [length, setLength] = useState('Auto');
   const resume = getStoredResume();
 
@@ -145,7 +145,7 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Resume length</p><div className="flex gap-2">{['Auto','Single page','Multi page'].map((x) => <button key={x} onClick={() => setLength(x)} className={`rounded-xl px-3 py-2 text-xs font-semibold ${length === x ? 'bg-aurora-mint text-ink-950' : 'bg-white/[0.06] text-slate-200'}`}>{x}</button>)}</div></div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Template</p><select value={template} onChange={(e) => setTemplate(e.target.value)} className="h-10 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100"><option>Jake Tech Compact</option><option>Technical Detailed</option><option>ATS Detailed</option><option>Modern Professional</option><option>Project Heavy Detailed</option></select></div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Template</p><select value={template} onChange={(e) => setTemplate(e.target.value)} className="h-10 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100"><option>Jake ATS Compact</option><option>Modern Professional</option><option>Dark Header Executive</option><option>Minimal ATS</option><option>Two Column Technical</option><option>Cloud/DevOps Engineer</option><option>Fresher Project Focus</option><option>Multi Page Detailed</option></select></div>
       </div>
       <Button onClick={generate}><Wand2 size={16} /> Generate tailored package</Button>
     </div>}
@@ -172,6 +172,40 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
   </Modal>;
 }
 function PenIcon(){ return <FileText size={13}/>; }
+
+function ContactCard({ c, onDraft }) {
+  const conf = Number(c.confidence) || 0;
+  const confTone = conf >= 65 ? 'mint' : conf >= 40 ? 'cyan' : 'amber';
+  const linkedinHref = c.linkedinUrl || c.linkedin || c.url || '';
+  const isSearch = /\/search\//.test(linkedinHref);
+  return (
+    <Card className="flex flex-col gap-2.5 p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-white">{(c.name || c.title || 'P').trim()[0] || 'P'}</span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-white">{c.name || 'Public profile'}</p>
+          <p className="truncate text-xs text-slate-400">{c.title || c.position || c.contactType || 'Contact'}{c.company ? ` · ${c.company}` : ''}</p>
+        </div>
+        <Badge tone={confTone} className="shrink-0">{conf}%</Badge>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {c.email
+          ? <Badge tone={c.emailProbable || c.probable ? 'amber' : 'cyan'}><Mail size={11}/> {c.emailProbable || c.probable ? 'Probable email' : 'Email'}</Badge>
+          : <Badge tone="violet"><Linkedin size={11}/> LinkedIn only</Badge>}
+        {c.verified && <Badge tone="mint"><Check size={11}/> verified</Badge>}
+        {c.source && <Badge>{c.source}</Badge>}
+        {c.relationshipSignal && <Badge tone="violet">{c.relationshipSignal}</Badge>}
+      </div>
+      {c.email && <p className="truncate rounded-lg bg-ink-950/60 px-2.5 py-1.5 font-mono text-xs text-slate-300">{c.email}</p>}
+      {c.reason && <p className="text-[11px] leading-snug text-slate-500">{c.reason}</p>}
+      <div className="mt-auto flex flex-wrap gap-2 pt-1">
+        {linkedinHref && <a href={linkedinHref} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Linkedin size={13}/> {isSearch ? 'Search LinkedIn' : 'Open'} <ExternalLink size={12}/></Button></a>}
+        {c.email && <a href={`mailto:${c.email}`}><Button size="sm" variant="soft"><Mail size={13}/> Email</Button></a>}
+        <Button size="sm" onClick={() => onDraft(c)}><Sparkles size={13}/> Draft</Button>
+      </div>
+    </Card>
+  );
+}
 
 function JobCard({ j, saved, onSave, onAction }) {
   const miss = j._missing?.length ? j._missing.slice(0, 6).join(', ') : 'No major gaps';
@@ -271,17 +305,22 @@ export default function JobsView({ go }) {
   useEffect(() => { const onResumeUpdate = () => { const r = getStoredResume(); setResumeHint(Boolean(r.text)); if (!role && (r.targetRole || getResumeSearchRole())) setRole(r.targetRole || getResumeSearchRole()); }; window.addEventListener('career-resume-updated', onResumeUpdate); return () => window.removeEventListener('career-resume-updated', onResumeUpdate); }, [role]);
   const toggleSave = (j) => { const k = keyForJob(j); const next = { ...saved, [k]: !saved[k] }; setSaved(next); saveStoredJobResults({ ...getStoredJobResults(), saved: next }); };
 
-  const openPeople = async (type, j) => {
+  const openPeople = async (type, j, opts = {}) => {
     const title = type === 'referrals' ? 'Referral paths' : type === 'linkedin' ? 'Public LinkedIn profiles' : 'Hiring contacts';
     setPeople({ open: true, title, status: 'loading', contacts: [], err: '', note: '', job: j, draft: '', copied: false });
     const domain = j.companyDomain || j.domain || domainFromUrl(j.url);
-    const payload = { company: j.company, domain, title: type === 'referrals' ? role || j.title : 'Recruiter OR Talent Acquisition OR Hiring Manager', jobId: j.id || j.url };
-    try { const d = type === 'referrals' ? await Contacts.referrals(payload) : await Contacts.find(payload); setPeople((p) => ({ ...p, status: 'done', contacts: d.contacts || [], note: d.note || '', err: d.ok === false ? d.error : '' })); }
+    const payload = { company: j.company, domain, role: j.title, title: type === 'referrals' ? role || j.title : 'Recruiter OR Talent Acquisition OR Hiring Manager', jobId: j.id || j.url };
+    try {
+      const d = type === 'referrals' ? await Contacts.referrals(payload) : await Contacts.find(payload);
+      const contacts = d.contacts || [];
+      setPeople((p) => ({ ...p, status: 'done', contacts, note: d.note || '', err: d.ok === false ? d.error : '' }));
+      if (opts.autoDraft && contacts.length) makeDraft(contacts[0]);
+    }
     catch (err) { setPeople((p) => ({ ...p, status: 'error', err: err.message || 'Lookup failed.' })); }
   };
   const makeDraft = async (c) => { setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
-  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
+  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
 
   return <>
     <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />
@@ -294,6 +333,6 @@ export default function JobsView({ go }) {
     {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} fresh jobs</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
     <TailorModal open={!!tailorJob} job={tailorJob} go={go} onClose={()=>setTailorJob(null)} />
     <Modal open={mini.open} onClose={()=>setMini((m)=>({...m,open:false}))} title={mini.title} width="max-w-2xl"><pre className="whitespace-pre-wrap rounded-xl border border-white/10 bg-ink-950/70 p-4 text-sm leading-relaxed text-slate-200">{mini.body}</pre><div className="mt-4 flex gap-2"><Button onClick={()=>setTailorJob(enrichJob(mini.job, getStoredResume()))}><Sparkles size={14}/> Tailor package</Button>{mini.job?.url && <a href={mini.job.url} target="_blank" rel="noreferrer"><Button variant="soft"><ExternalLink size={14}/> Open posting</Button></a>}</div></Modal>
-    <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-28 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Add Hunter/PDL/SerpAPI keys for richer contact and referral results.'} />}{people.status === 'done' && people.contacts.length > 0 && <div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><Card key={i} className="flex flex-col gap-2 p-4"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-white">{(c.name || 'P')[0]}</span><div className="min-w-0"><p className="truncate font-medium text-white">{c.name || 'Public profile'}</p><p className="truncate text-xs text-slate-500">{c.title || c.position || c.contactType || 'Contact'} {c.company ? `• ${c.company}` : ''}</p></div></div><div className="flex flex-wrap gap-1.5">{c.email && <Badge tone="cyan"><Mail size={11}/> email</Badge>}{(c.linkedin || c.url) && <Badge tone="violet"><Linkedin size={11}/> profile</Badge>}{c.source && <Badge>{c.source}</Badge>}</div>{c.email && <p className="truncate font-mono text-xs text-slate-400">{c.email}</p>}<div className="mt-auto flex gap-2">{(c.linkedin || c.url) && <a href={c.linkedin || c.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft">Open <ExternalLink size={13}/></Button></a>}<Button size="sm" onClick={()=>makeDraft(c)}><Sparkles size={13}/> Draft</Button></div></Card>)}</div>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
+    <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-36 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Try again or add Hunter/PDL/Apollo keys for verified contacts.'} />}{people.status === 'done' && people.contacts.length > 0 && <>{people.note && <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-snug text-slate-400">{people.note}</p>}<div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><ContactCard key={i} c={c} onDraft={makeDraft} />)}</div></>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
   </>;
 }

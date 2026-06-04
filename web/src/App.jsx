@@ -6,6 +6,7 @@ import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
 import Shell, { NAV } from './components/app/Shell.jsx';
 import { Spinner } from './components/ui/kit.jsx';
+import PricingModal from './components/PricingModal.jsx';
 
 import Dashboard from './views/Dashboard.jsx';
 import Resume from './views/Resume.jsx';
@@ -76,6 +77,7 @@ export default function App() {
           <ViewCmp go={setActive} />
         </motion.div>
       </AnimatePresence>
+      <PricingModal />
     </Shell>
   );
 }
