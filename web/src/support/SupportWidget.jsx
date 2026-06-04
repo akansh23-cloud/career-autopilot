@@ -8,6 +8,18 @@ import { Support, Auth } from '../lib/api.js';
 
 const CATEGORIES = ['general', 'account', 'resume', 'jobs', 'billing', 'bug', 'feature', 'privacy'];
 
+/* Hard reset of every page-level style/class the support UI could ever set.
+   Safe to call any number of times, from any close path. This guarantees no
+   body scroll-lock or pointer-events blocker is ever left behind. */
+function cleanupSupportUI() {
+  if (typeof document === 'undefined') return;
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+  document.body.style.pointerEvents = '';
+  document.documentElement.style.overflow = '';
+  document.body.classList.remove('modal-open', 'support-open', 'overflow-hidden');
+}
+
 /* ---------- small bits ---------- */
 function Bubble({ from, children }) {
   const me = from === 'user';
@@ -372,8 +384,12 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
   const [kb, setKb] = useState({ faqs: [], quickActions: [], categories: [], loaded: false, err: false });
   const [authed, setAuthed] = useState(false);
 
-  // Single, safe close path used by the backdrop, the X button and Escape.
-  const closeSupport = useCallback(() => setOpen(false), [setOpen]);
+  // Single, safe close path used by the backdrop, the X button, the Escape key
+  // and the ticket success screen. Always hard-cleans page styles immediately.
+  const closeSupport = useCallback(() => {
+    setOpen(false);
+    cleanupSupportUI();
+  }, [setOpen]);
 
   useEffect(() => {
     if (open && !kb.loaded) {
@@ -384,67 +400,67 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
     }
   }, [open, kb.loaded]);
 
-  // Body scroll-lock + Escape-to-close. The cleanup runs on close AND on unmount,
-  // so the lock can NEVER be left behind (this is what previously froze the page).
+  // Final safety net: if the whole widget ever unmounts (route/auth change)
+  // while open, force-clean any page styles it may have set.
+  useEffect(() => cleanupSupportUI, []);
+
+  // Lock body scroll + bind Escape ONLY while open. The effect cleanup runs on
+  // close AND on unmount, and the closed branch also cleans — so the scroll-lock
+  // and any blocking styles can never survive the chatbot closing.
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      cleanupSupportUI();
+      return undefined;
+    }
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = 'hidden';
+    if (scrollbar > 0) document.body.style.paddingRight = `${scrollbar}px`;
+
     const onKey = (e) => { if (e.key === 'Escape') closeSupport(); };
     document.addEventListener('keydown', onKey);
 
-    const { body } = document;
-    const prevOverflow = body.style.overflow;
-    const prevPaddingRight = body.style.paddingRight;
-    // Compensate for the scrollbar width so the page doesn't shift when locked.
-    const scrollbar = window.innerWidth - document.documentElement.clientWidth;
-    body.style.overflow = 'hidden';
-    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
-
     return () => {
       document.removeEventListener('keydown', onKey);
-      body.style.overflow = prevOverflow;
-      body.style.paddingRight = prevPaddingRight;
+      cleanupSupportUI();
     };
   }, [open, closeSupport]);
 
   return (
     <>
-      {/* Floating orb */}
-      <AnimatePresence>
-        {!open && (
-          <motion.button
-            key="support-orb"
-            initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
-            whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.94 }}
-            onClick={() => setOpen(true)}
-            aria-label="Open support"
-            className="group fixed bottom-5 right-5 z-[60] grid h-14 w-14 place-items-center rounded-full bg-aurora-cta shadow-glow"
-          >
-            <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-full bg-aurora-violet/40 [animation-duration:2.5s]" />
-            <LifeBuoy size={24} className="text-white transition group-hover:rotate-45" />
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {/* Floating orb — plain conditional render. Fully unmounted while the
+          drawer is open; no lingering node. */}
+      {!open && (
+        <motion.button
+          initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+          whileHover={{ scale: 1.07 }} whileTap={{ scale: 0.94 }}
+          onClick={() => setOpen(true)}
+          aria-label="Open support"
+          className="group fixed bottom-5 right-5 z-[60] grid h-14 w-14 place-items-center rounded-full bg-aurora-cta shadow-glow"
+        >
+          <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-full bg-aurora-violet/40 [animation-duration:2.5s]" />
+          <LifeBuoy size={24} className="text-white transition group-hover:rotate-45" />
+        </motion.button>
+      )}
 
-      {/* Drawer — backdrop + panel are KEYED direct children of AnimatePresence
-          (NOT wrapped in a fragment) so framer-motion always tracks their exit
-          and removes the full-screen backdrop from the DOM on close. */}
-      <AnimatePresence>
-        {open && [
+      {/* Drawer + backdrop — CONDITIONALLY RENDERED (no AnimatePresence, no exit
+          animation). When `open` is false React unmounts both instantly, so the
+          full-screen backdrop is physically gone and can never block clicks.
+          This is the root-cause fix: nothing relies on an exit-animation
+          completion callback to remove the click-blocking layer. */}
+      {open && (
+        <>
           <motion.div
-            key="support-backdrop"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             onClick={closeSupport}
             aria-hidden="true"
             className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
-          />,
+          />
           <motion.div
-            key="support-drawer"
             role="dialog"
             aria-modal="true"
             aria-label="Support"
             initial={{ opacity: 0, y: 40, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 320, damping: 30 }}
             className="fixed z-[61] flex flex-col overflow-hidden border border-white/12 bg-ink-900/85 backdrop-blur-2xl
                        inset-x-0 bottom-0 h-[88vh] rounded-t-3xl
@@ -503,9 +519,9 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
                 <TicketTab draft={draft} clearDraft={clearDraft} authed={authed} onClose={closeSupport} />
               )}
             </div>
-          </motion.div>,
-        ]}
-      </AnimatePresence>
+          </motion.div>
+        </>
+      )}
     </>
   );
 }
