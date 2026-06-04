@@ -2,10 +2,19 @@
   "version": 2,
   "buildCommand": "npm run build",
   "builds": [
-    { "src": "server.js", "use": "@vercel/node" }
+    {
+      "src": "server.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "dist/**",
+          "legacy_index.html"
+        ]
+      }
+    }
   ],
   "routes": [
-    { "src": "/assets/(.*)", "dest": "/dist/assets/$1" },
+    { "src": "/assets/(.*)", "dest": "/assets/$1" },
     { "src": "/(.*)", "dest": "server.js" }
   ]
 }
