@@ -6,6 +6,18 @@ import { Opportunities } from '../lib/api.js';
 
 const FILTERS = ['All', 'Hackathon', 'Hiring challenge', 'Coding contest'];
 
+function opportunityUrl(o) {
+  const u = o.registrationUrl || o.url || o.sourceUrl || '';
+  if (!u) return '';
+  const q = encodeURIComponent(o.title || o.platform || 'competition');
+  if (/^https?:\/\/[^/]+\/?$/i.test(u)) return `https://www.google.com/search?q=${q}+${encodeURIComponent(o.platform || 'competition')}`;
+  if (/unstop\.com\/competitions\/?$/i.test(u)) return `${u}?search=${q}`;
+  if (/hackerearth\.com\/challenges\/?$/i.test(u)) return `https://www.hackerearth.com/challenges/?search=${q}`;
+  if (/kaggle\.com\/competitions\/?$/i.test(u)) return `${u}?search=${q}`;
+  if (/topcoder\.com\/challenges\/?$/i.test(u)) return `${u}?search=${q}`;
+  return u;
+}
+
 export default function Arena() {
   const [kw, setKw] = useState('');
   const [filter, setFilter] = useState('All');
@@ -64,8 +76,8 @@ export default function Arena() {
               {o.skills?.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">{o.skills.slice(0, 4).map((s) => <span key={s} className="rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">{s}</span>)}</div>
               )}
-              <a href={o.registrationUrl || o.sourceUrl} target="_blank" rel="noreferrer" className="mt-auto">
-                <Button size="sm" variant="soft" className="w-full">Register <ExternalLink size={14} /></Button>
+              <a href={opportunityUrl(o)} target="_blank" rel="noreferrer" className="mt-auto">
+                <Button size="sm" variant="soft" className="w-full">Open registration <ExternalLink size={14} /></Button>
               </a>
             </Card>
           ))}

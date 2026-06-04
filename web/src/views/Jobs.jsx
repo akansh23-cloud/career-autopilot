@@ -12,6 +12,21 @@ const EDITOR_KEY = 'careerAutopilot.editor.lastTailor.v1';
 const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
 const ROLE_OPTIONS = Object.values(ROLE_GROUPS).flat();
 
+const TRACKER_KEY = 'careerAutopilot.trackerBoard.v1';
+function addJobToTracker(j) {
+  try {
+    const empty = { saved: [], applied: [], interview: [], offer: [] };
+    const board = JSON.parse(localStorage.getItem(TRACKER_KEY) || JSON.stringify(empty));
+    const id = keyForJob(j);
+    const exists = Object.values(board).flat().some((x) => String(x.id) === String(id));
+    if (!exists) {
+      board.saved = [{ id, role: j.title || 'Role', company: j.company || '', url: j.url || '', source: j.source || '', addedAt: new Date().toISOString() }, ...(board.saved || [])];
+      localStorage.setItem(TRACKER_KEY, JSON.stringify(board));
+      window.dispatchEvent(new Event('career-tracker-updated'));
+    }
+  } catch {}
+}
+
 function safeRead(key, fallback = {}) { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } }
 function safeWrite(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 function keyForJob(j) { return String(j.id || j.url || `${j.company}-${j.title}`); }
@@ -159,20 +174,57 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
 function PenIcon(){ return <FileText size={13}/>; }
 
 function JobCard({ j, saved, onSave, onAction }) {
-  return <Card hover className="p-0 overflow-hidden">
-    <div className="p-5 md:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2"><h3 className="font-display text-xl font-semibold text-white md:text-2xl">{j.title}</h3><Badge tone="mint">✓ Verified Open</Badge>{j.postedDate && <Badge tone="mint">• {j.postedDate}</Badge>}{j.source && <Badge>{j.source}</Badge>}</div>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Building2 size={14}/> {j.company}</p>
-          <div className="mt-3 flex flex-wrap gap-2">{j.location && <Badge><MapPin size={11}/>{j.location}</Badge>}{j.mode && <Badge>{j.mode}</Badge>}{j.salary && <Badge tone="amber">{j.salary}</Badge>}</div>
+  const miss = j._missing?.length ? j._missing.slice(0, 6).join(', ') : 'No major gaps';
+  return <Card hover className="overflow-hidden p-4 md:p-5">
+    <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="min-w-0 truncate font-display text-lg font-semibold text-white md:text-xl">{j.title}</h3>
+          <Badge tone="mint">✓ Open</Badge>
+          {j.postedDate && <Badge tone="cyan">{j.postedDate}</Badge>}
+          {j.source && <Badge>{j.source}</Badge>}
         </div>
-        <div className="flex gap-2 lg:flex-col"><div className="min-w-[86px] rounded-2xl border border-aurora-mint/30 bg-ink-950/80 px-4 py-3 text-center"><div className="font-display text-3xl text-amber-glow">{j._match}</div><div className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Match</div></div><div className="min-w-[86px] rounded-2xl border border-rose-400/30 bg-ink-950/80 px-4 py-3 text-center"><div className="font-display text-2xl text-white">{j._backup}</div><div className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Backup</div></div></div>
+        <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Building2 size={14}/> {j.company || 'Company not listed'}</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {j.location && <Badge><MapPin size={11}/>{j.location}</Badge>}
+          {j.mode && <Badge>{j.mode}</Badge>}
+          {j.salary && <Badge tone="amber">{j.salary}</Badge>}
+        </div>
       </div>
-      {j.summary && <p className="mt-5 line-clamp-3 text-sm leading-relaxed text-slate-400">{j.summary}</p>}
-      <div className="mt-4 grid gap-3 md:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-ink-950/60 p-4"><h4 className="font-semibold text-white">Why it fits</h4><div className="mt-3 flex flex-wrap gap-2">{j._why.map((x) => <Badge key={x} tone="mint">✓ {x}</Badge>)}</div></div><div className="rounded-2xl border border-white/10 bg-ink-950/60 p-4"><h4 className="font-semibold text-white">Missing for this job</h4><p className="mt-3 text-sm text-slate-400">{j._missing.length ? j._missing.join(', ') : 'No major gaps detected.'}</p></div></div>
-      <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={() => onAction('tailor', j)}><Sparkles size={14}/> Tailor & Apply</Button><Button size="sm" variant="soft" onClick={() => onAction('checklist', j)}><ClipboardCheck size={14}/> Checklist</Button><Button size="sm" variant="soft" onClick={() => onAction('interview', j)}><Hammer size={14}/> Interview prep</Button>{j.url && <a href={j.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><ExternalLink size={14}/> View posting</Button></a>}<button onClick={() => onSave(j)} className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-medium ${saved ? 'border-amber-glow/40 bg-amber-glow/10 text-amber-glow' : 'border-white/10 bg-white/[0.04] text-slate-300'}`}><Bookmark size={14} fill={saved ? 'currentColor' : 'none'}/> {saved ? 'Saved' : 'Save'}</button></div>
-      <div className="mt-4 border-t border-white/10 pt-3"><div className="mb-2 flex flex-wrap gap-2"><Badge>🔎 recruiters: 0</Badge><Badge>🤝 referrals: 0</Badge><Badge>✉ Not contacted</Badge><Badge>🎯 Not asked</Badge></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="soft" onClick={() => onAction('contacts', j)}><Mail size={14}/> Find hiring contact</Button><Button size="sm" variant="soft" onClick={() => onAction('referrals', j)}><Users size={14}/> Find referral</Button><Button size="sm" variant="soft" onClick={() => onAction('outreach', j)}><Send size={14}/> Generate outreach</Button><Button size="sm" variant="soft" onClick={() => onAction('track', j)}><ListChecks size={14}/> Track / view</Button></div></div>
+      <div className="flex gap-2 xl:flex-col">
+        <div className="min-w-[76px] rounded-xl border border-aurora-mint/30 bg-ink-950/80 px-3 py-2 text-center"><div className="font-display text-2xl text-amber-glow">{j._match}</div><div className="font-mono text-[9px] uppercase tracking-widest text-slate-500">Match</div></div>
+        <div className="min-w-[76px] rounded-xl border border-rose-400/25 bg-ink-950/80 px-3 py-2 text-center"><div className="font-display text-xl text-white">{j._backup}</div><div className="font-mono text-[9px] uppercase tracking-widest text-slate-500">Backup</div></div>
+      </div>
+    </div>
+
+    {j.summary && <p className="mt-3 line-clamp-2 text-[13px] leading-relaxed text-slate-400">{j.summary}</p>}
+
+    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+      <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Why it fits</div>
+        <div className="flex flex-wrap gap-1.5">{(j._why || []).slice(0, 4).map((x) => <Badge key={x} tone="mint">✓ {x}</Badge>)}</div>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Missing</div>
+        <p className="line-clamp-2 text-[13px] text-slate-400">{miss}</p>
+      </div>
+    </div>
+
+    <div className="mt-3 flex flex-wrap gap-2">
+      <Button size="sm" onClick={() => onAction('tailor', j)}><Sparkles size={14}/> Tailor & Apply</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('checklist', j)}><ClipboardCheck size={14}/> Checklist</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('interview', j)}><Hammer size={14}/> Prep</Button>
+      {j.url && <a href={j.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><ExternalLink size={14}/> Posting</Button></a>}
+      <button onClick={() => onSave(j)} className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-medium ${saved ? 'border-amber-glow/40 bg-amber-glow/10 text-amber-glow' : 'border-white/10 bg-white/[0.04] text-slate-300'}`}><Bookmark size={14} fill={saved ? 'currentColor' : 'none'}/> {saved ? 'Saved' : 'Save'}</button>
+    </div>
+
+    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+      <Badge>🔎 recruiters: 0</Badge><Badge>🤝 referrals: 0</Badge><Badge>✉ Not contacted</Badge>
+      <Button size="sm" variant="soft" onClick={() => onAction('contacts', j)}><Users size={14}/> Hiring contact</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('referrals', j)}><Users size={14}/> Referral</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('linkedin', j)}><Linkedin size={14}/> LinkedIn</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('outreach', j)}><Send size={14}/> Outreach</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('track', j)}><ListChecks size={14}/> Track</Button>
     </div>
   </Card>;
 }
@@ -229,13 +281,13 @@ export default function JobsView({ go }) {
   };
   const makeDraft = async (c) => { setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
-  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
+  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
 
   return <>
     <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />
     {resumeHint && <div className="mb-4 rounded-2xl border border-aurora-mint/20 bg-aurora-mint/10 px-4 py-3 text-sm text-slate-200">Resume and analysis are saved. Job results stay here when you move to another section. <span className="ml-1 font-medium text-white">Current role: {role || 'select a role'}</span></div>}
     <form onSubmit={run} className="gradient-border mb-6 p-4"><div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={role} onChange={(e)=>setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer" className="pl-10"/></div><div className="relative md:w-56"><select value={ROLE_OPTIONS.includes(role) ? role : ''} onChange={(e)=>e.target.value && setRole(e.target.value)} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-ink-950 pl-3.5 pr-9 text-sm text-slate-100 outline-none"><option value="">Pick a role…</option>{Object.entries(ROLE_GROUPS).map(([grp, roles]) => <optgroup key={grp} label={grp}>{roles.map((r)=><option key={r} value={r}>{r}</option>)}</optgroup>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/></div><div className="relative md:w-52"><MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={loc} onChange={(e)=>setLoc(e.target.value)} placeholder="Country / city" className="pl-10"/></div><Button type="submit" disabled={state.status === 'loading' || !role.trim()}><Search size={16}/> Search</Button></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs text-slate-500"><Filter size={13}/> Filters:</span>{MODES.map((m)=><button key={m} onClick={()=>setMode(m)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${mode===m?'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30':'text-slate-400 hover:bg-white/5'}`}>{m}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/>{FRESH.map(([l,v])=><button key={v} onClick={()=>setFresh(v)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${fresh===v?'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30':'text-slate-400 hover:bg-white/5'}`}>{l}</button>)}</div></form>
-    {state.status === 'loading' && <div className="space-y-4">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-80 w-full rounded-2xl"/>)}</div>}
+    {state.status === 'loading' && <div className="space-y-4">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-56 w-full rounded-2xl"/>)}</div>}
     {state.status === 'error' && <EmptyState icon={Briefcase} title="Search failed" hint={state.err} action={<Button size="sm" onClick={run}>Retry</Button>} />}
     {state.status === 'idle' && <EmptyState icon={Search} title="Search for your next role" hint="Analyze your resume first for best matching, or manually search a role here." />}
     {state.status === 'done' && state.jobs.length === 0 && <EmptyState icon={Briefcase} title="No jobs found" hint="Try a broader role, clear the location, or widen the time window." />}

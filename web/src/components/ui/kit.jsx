@@ -139,33 +139,43 @@ export function MenuItem({ icon: Icon, children, danger, ...p }) {
 export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose?.();
-    if (open) document.addEventListener('keydown', k);
-    return () => document.removeEventListener('keydown', k);
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', k);
+    return () => {
+      document.body.style.overflow = previous;
+      document.removeEventListener('keydown', k);
+    };
   }, [open, onClose]);
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[100] grid place-items-center p-4"
+          className="fixed inset-0 z-[100] grid place-items-center overflow-hidden p-3 sm:p-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         >
-          <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={onClose} />
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 280, damping: 26 }}
-            className={cx('relative w-full panel p-6 shadow-lift', width)}
+            className={cx('relative flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden panel p-0 shadow-lift sm:max-h-[calc(100dvh-2rem)]', width)}
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
           >
             {title && (
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white">{title}</h3>
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-ink-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
+                <h3 className="pr-4 text-lg font-semibold text-white">{title}</h3>
                 <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/8 hover:text-white">
                   <X size={18} />
                 </button>
               </div>
             )}
-            {children}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       )}
