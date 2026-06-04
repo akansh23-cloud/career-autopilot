@@ -67,15 +67,32 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                {c.email && <Badge tone="cyan"><Mail size={11} /> {c.verified ? 'verified' : 'email'}</Badge>}
-                {c.linkedin && (
-                  <a href={c.linkedin} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                    <Badge tone="violet"><Linkedin size={11} /> LinkedIn</Badge>
+                {c.email && (
+                  <a href={`mailto:${c.email}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                    <Badge tone="cyan"><Mail size={11} /> {c.verified ? 'Verified' : 'Email'}</Badge>
                   </a>
                 )}
+                {(() => {
+                  const liUrl = c.linkedin || (c.name
+                    ? `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${c.name} ${company || c.company || ''}`.trim())}`
+                    : null);
+                  return liUrl ? (
+                    <a href={liUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                      <Badge tone="violet"><Linkedin size={11} /> {c.linkedin ? 'LinkedIn' : 'Find on LinkedIn'}</Badge>
+                    </a>
+                  ) : null;
+                })()}
                 {c.source && <Badge>{c.source}</Badge>}
               </div>
-              {c.email && <p className="truncate font-mono text-xs text-slate-400">{c.email}</p>}
+              {c.email && (
+                <a
+                  href={`mailto:${c.email}`}
+                  className="truncate font-mono text-xs text-aurora-cyan hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {c.email}
+                </a>
+              )}
               <Button size="sm" variant="soft" className="mt-auto" onClick={() => openDraft(c)}><Sparkles size={14} /> Draft outreach</Button>
             </Card>
           ))}

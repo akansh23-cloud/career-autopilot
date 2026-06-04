@@ -1,211 +1,213 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Wand2, Copy, Check, PenLine, AlertTriangle, Download, FileText, Briefcase, Star } from 'lucide-react';
+import { Wand2, Copy, Check, PenLine, AlertTriangle, Download, FileText, Briefcase, Star, Plus, Printer } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Field } from '../components/ui/kit.jsx';
 import { AI } from '../lib/api.js';
 import { getSelectedJob, getStoredResume } from '../lib/resumeStore.js';
 
 /* ------------------------------------------------------------------ */
-/* Mini SVG layout previews for each template                           */
+/* Mini SVG layout previews — explicit width/height for reliable render */
 /* ------------------------------------------------------------------ */
 function TemplatePreview({ id }) {
+  const base = { viewBox: '0 0 64 82', width: '100%', height: '100%', xmlns: 'http://www.w3.org/2000/svg' };
+
   if (id === 'jake-tech') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
+    <svg {...base}>
       <rect x="5" y="5" width="36" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="26" height="2.5" rx="0.8" fill="#94a3b8" opacity="0.7"/>
-      <rect x="5" y="17" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.4"/>
-      <line x1="5" y1="21" x2="59" y2="21" stroke="#334155" strokeWidth="0.6"/>
-      <rect x="5" y="24" width="22" height="2.5" rx="0.8" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="29" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="33" width="38" height="1.5" rx="0.5" fill="#64748b" opacity="0.55"/>
-      <rect x="5" y="37" width="44" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="42" width="20" height="2.5" rx="0.8" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="47" width="14" height="4" rx="1.5" fill="#0e7490" opacity="0.85"/>
-      <rect x="22" y="47" width="14" height="4" rx="1.5" fill="#0e7490" opacity="0.85"/>
-      <rect x="39" y="47" width="14" height="4" rx="1.5" fill="#0e7490" opacity="0.75"/>
-      <rect x="5" y="54" width="14" height="4" rx="1.5" fill="#0891b2" opacity="0.7"/>
-      <rect x="22" y="54" width="14" height="4" rx="1.5" fill="#0891b2" opacity="0.7"/>
-      <rect x="5" y="62" width="24" height="2.5" rx="0.8" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="67" width="44" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="71" width="36" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="75" width="40" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="12" width="26" height="2.5" rx="1" fill="#94a3b8" opacity="0.7"/>
+      <rect x="5" y="17" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.4"/>
+      <line x1="5" y1="21" x2="59" y2="21" stroke="#334155" strokeWidth="0.7"/>
+      <rect x="5" y="24" width="22" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
+      <rect x="5" y="29" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <rect x="5" y="33" width="38" height="1.5" rx="1" fill="#64748b" opacity="0.55"/>
+      <rect x="5" y="37" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="42" width="20" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
+      <rect x="5" y="47" width="14" height="4" rx="2" fill="#0e7490" opacity="0.85"/>
+      <rect x="22" y="47" width="14" height="4" rx="2" fill="#0e7490" opacity="0.85"/>
+      <rect x="39" y="47" width="14" height="4" rx="2" fill="#0e7490" opacity="0.75"/>
+      <rect x="5" y="54" width="14" height="4" rx="2" fill="#0891b2" opacity="0.7"/>
+      <rect x="22" y="54" width="14" height="4" rx="2" fill="#0891b2" opacity="0.7"/>
+      <rect x="5" y="62" width="24" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
+      <rect x="5" y="67" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="71" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="75" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
     </svg>
   );
 
   if (id === 'modern-dark') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
-      <rect x="0" y="0" width="64" height="24" fill="#1e1b4b" opacity="0.9"/>
+    <svg {...base}>
+      <rect x="0" y="0" width="64" height="24" fill="#1e1b4b" opacity="0.95"/>
       <rect x="5" y="5" width="32" height="4" rx="1" fill="#f1f5f9" opacity="0.95"/>
-      <rect x="5" y="12" width="22" height="2.5" rx="0.8" fill="#a78bfa" opacity="0.9"/>
-      <rect x="44" y="6" width="14" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <rect x="44" y="10" width="11" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="44" y="14" width="12" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="29" width="22" height="2.5" rx="0.8" fill="#a78bfa" opacity="0.9"/>
-      <rect x="5" y="34" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="38" width="40" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="42" width="44" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="48" width="22" height="2.5" rx="0.8" fill="#a78bfa" opacity="0.9"/>
-      <rect x="5" y="54" width="48" height="3" rx="1" fill="#2e1065" opacity="0.6"/>
-      <rect x="5" y="54" width="36" height="3" rx="1" fill="#7c3aed" opacity="0.7"/>
-      <rect x="5" y="60" width="48" height="3" rx="1" fill="#2e1065" opacity="0.6"/>
-      <rect x="5" y="60" width="28" height="3" rx="1" fill="#7c3aed" opacity="0.65"/>
-      <rect x="5" y="66" width="48" height="3" rx="1" fill="#2e1065" opacity="0.6"/>
-      <rect x="5" y="66" width="42" height="3" rx="1" fill="#7c3aed" opacity="0.7"/>
-      <rect x="5" y="73" width="40" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.45"/>
-      <rect x="5" y="77" width="34" height="1.5" rx="0.5" fill="#64748b" opacity="0.4"/>
+      <rect x="5" y="12" width="22" height="2.5" rx="1" fill="#a78bfa" opacity="0.9"/>
+      <rect x="44" y="6" width="14" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <rect x="44" y="10" width="11" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="44" y="14" width="12" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="29" width="22" height="2.5" rx="1" fill="#a78bfa" opacity="0.9"/>
+      <rect x="5" y="34" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <rect x="5" y="38" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="42" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="48" width="22" height="2.5" rx="1" fill="#a78bfa" opacity="0.9"/>
+      <rect x="5" y="54" width="48" height="3" rx="1" fill="#2e1065" opacity="0.7"/>
+      <rect x="5" y="54" width="36" height="3" rx="1" fill="#7c3aed" opacity="0.75"/>
+      <rect x="5" y="60" width="48" height="3" rx="1" fill="#2e1065" opacity="0.7"/>
+      <rect x="5" y="60" width="28" height="3" rx="1" fill="#7c3aed" opacity="0.7"/>
+      <rect x="5" y="66" width="48" height="3" rx="1" fill="#2e1065" opacity="0.7"/>
+      <rect x="5" y="66" width="42" height="3" rx="1" fill="#7c3aed" opacity="0.75"/>
+      <rect x="5" y="73" width="40" height="1.5" rx="1" fill="#94a3b8" opacity="0.45"/>
+      <rect x="5" y="77" width="34" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
     </svg>
   );
 
   if (id === 'ats-minimal') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
+    <svg {...base}>
       <rect x="5" y="5" width="36" height="4.5" rx="1" fill="#f1f5f9" opacity="0.9"/>
-      <rect x="5" y="12" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <line x1="5" y1="16" x2="59" y2="16" stroke="#e2e8f0" strokeWidth="0.4" opacity="0.4"/>
-      <rect x="5" y="19" width="24" height="2" rx="0.6" fill="#e2e8f0" opacity="0.8"/>
-      <line x1="5" y1="23" x2="59" y2="23" stroke="#64748b" strokeWidth="0.3" opacity="0.3"/>
-      <rect x="5" y="26" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="30" width="40" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="34" width="44" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="39" width="22" height="2" rx="0.6" fill="#e2e8f0" opacity="0.8"/>
-      <line x1="5" y1="43" x2="59" y2="43" stroke="#64748b" strokeWidth="0.3" opacity="0.3"/>
-      <rect x="5" y="46" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="50" width="36" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="54" width="42" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="58" width="32" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="63" width="20" height="2" rx="0.6" fill="#e2e8f0" opacity="0.8"/>
-      <line x1="5" y1="67" x2="59" y2="67" stroke="#64748b" strokeWidth="0.3" opacity="0.3"/>
-      <rect x="5" y="70" width="44" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.5"/>
-      <rect x="5" y="74" width="36" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="78" width="40" height="1.5" rx="0.5" fill="#64748b" opacity="0.4"/>
+      <rect x="5" y="12" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <line x1="5" y1="16" x2="59" y2="16" stroke="#e2e8f0" strokeWidth="0.5" opacity="0.45"/>
+      <rect x="5" y="19" width="24" height="2" rx="1" fill="#e2e8f0" opacity="0.8"/>
+      <line x1="5" y1="23" x2="59" y2="23" stroke="#64748b" strokeWidth="0.35" opacity="0.35"/>
+      <rect x="5" y="26" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="30" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="34" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="39" width="22" height="2" rx="1" fill="#e2e8f0" opacity="0.8"/>
+      <line x1="5" y1="43" x2="59" y2="43" stroke="#64748b" strokeWidth="0.35" opacity="0.35"/>
+      <rect x="5" y="46" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="50" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="54" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="58" width="32" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="63" width="20" height="2" rx="1" fill="#e2e8f0" opacity="0.8"/>
+      <line x1="5" y1="67" x2="59" y2="67" stroke="#64748b" strokeWidth="0.35" opacity="0.35"/>
+      <rect x="5" y="70" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.5"/>
+      <rect x="5" y="74" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="78" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
     </svg>
   );
 
   if (id === 'executive') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
-      <rect x="5" y="5" width="42" height="5.5" rx="1" fill="#f1f5f9" opacity="0.95"/>
-      <rect x="5" y="14" width="28" height="3" rx="0.8" fill="#fbbf24" opacity="0.9"/>
-      <rect x="5" y="19" width="14" height="1.5" rx="0.5" fill="#64748b" opacity="0.6"/>
-      <rect x="22" y="19" width="14" height="1.5" rx="0.5" fill="#64748b" opacity="0.6"/>
-      <rect x="39" y="19" width="14" height="1.5" rx="0.5" fill="#64748b" opacity="0.6"/>
-      <rect x="5" y="23" width="54" height="1.5" rx="0.5" fill="#d97706" opacity="0.8"/>
-      <rect x="5" y="28" width="22" height="2.5" rx="0.8" fill="#fcd34d" opacity="0.85"/>
-      <rect x="5" y="33" width="50" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="37" width="42" height="1.5" rx="0.5" fill="#64748b" opacity="0.55"/>
-      <rect x="5" y="43" width="18" height="2.5" rx="0.8" fill="#fcd34d" opacity="0.85"/>
-      <rect x="5" y="48" width="26" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="52" width="22" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="56" width="24" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="38" y="43" width="18" height="2.5" rx="0.8" fill="#fcd34d" opacity="0.85"/>
-      <rect x="38" y="48" width="18" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.5"/>
-      <rect x="38" y="52" width="14" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="63" width="22" height="2.5" rx="0.8" fill="#fcd34d" opacity="0.8"/>
-      <rect x="5" y="69" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.5"/>
-      <rect x="5" y="73" width="40" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="77" width="44" height="1.5" rx="0.5" fill="#64748b" opacity="0.4"/>
+    <svg {...base}>
+      <rect x="5" y="4" width="42" height="5.5" rx="1" fill="#f1f5f9" opacity="0.95"/>
+      <rect x="5" y="13" width="28" height="3" rx="1" fill="#fbbf24" opacity="0.9"/>
+      <rect x="5" y="19" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.6"/>
+      <rect x="22" y="19" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.6"/>
+      <rect x="39" y="19" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.6"/>
+      <rect x="5" y="23" width="54" height="1.5" rx="1" fill="#d97706" opacity="0.85"/>
+      <rect x="5" y="28" width="22" height="2.5" rx="1" fill="#fcd34d" opacity="0.85"/>
+      <rect x="5" y="33" width="50" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <rect x="5" y="37" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.55"/>
+      <rect x="5" y="43" width="18" height="2.5" rx="1" fill="#fcd34d" opacity="0.85"/>
+      <rect x="5" y="48" width="26" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="52" width="22" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="56" width="24" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="38" y="43" width="18" height="2.5" rx="1" fill="#fcd34d" opacity="0.85"/>
+      <rect x="38" y="48" width="18" height="1.5" rx="1" fill="#94a3b8" opacity="0.5"/>
+      <rect x="38" y="52" width="14" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="63" width="22" height="2.5" rx="1" fill="#fcd34d" opacity="0.8"/>
+      <rect x="5" y="69" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.5"/>
+      <rect x="5" y="73" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="77" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
     </svg>
   );
 
   if (id === 'cloud-pro') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
+    <svg {...base}>
       <rect x="5" y="5" width="34" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="24" height="2.5" rx="0.8" fill="#94a3b8" opacity="0.65"/>
-      <line x1="5" y1="17" x2="59" y2="17" stroke="#334155" strokeWidth="0.6"/>
-      <rect x="5" y="20" width="30" height="2.5" rx="0.8" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="25" width="12" height="4" rx="1.5" fill="#0e7490" opacity="0.9"/>
-      <rect x="20" y="25" width="12" height="4" rx="1.5" fill="#0891b2" opacity="0.85"/>
-      <rect x="35" y="25" width="12" height="4" rx="1.5" fill="#0e7490" opacity="0.9"/>
-      <rect x="50" y="25" width="9" height="4" rx="1.5" fill="#0891b2" opacity="0.8"/>
-      <rect x="5" y="32" width="12" height="4" rx="1.5" fill="#0891b2" opacity="0.75"/>
-      <rect x="20" y="32" width="12" height="4" rx="1.5" fill="#0e7490" opacity="0.85"/>
-      <rect x="35" y="32" width="16" height="4" rx="1.5" fill="#0891b2" opacity="0.75"/>
-      <rect x="5" y="41" width="22" height="2.5" rx="0.8" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="46" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="50" width="40" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="54" width="44" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="59" width="20" height="2.5" rx="0.8" fill="#22d3ee" opacity="0.9"/>
-      <rect x="5" y="64" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="68" width="36" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="72" width="42" height="1.5" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="5" y="77" width="32" height="1.5" rx="0.5" fill="#64748b" opacity="0.4"/>
+      <rect x="5" y="12" width="24" height="2.5" rx="1" fill="#94a3b8" opacity="0.65"/>
+      <line x1="5" y1="17" x2="59" y2="17" stroke="#334155" strokeWidth="0.7"/>
+      <rect x="5" y="20" width="30" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
+      <rect x="5" y="25" width="12" height="4" rx="2" fill="#0e7490" opacity="0.9"/>
+      <rect x="20" y="25" width="12" height="4" rx="2" fill="#0891b2" opacity="0.85"/>
+      <rect x="35" y="25" width="12" height="4" rx="2" fill="#0e7490" opacity="0.9"/>
+      <rect x="50" y="25" width="9" height="4" rx="2" fill="#0891b2" opacity="0.8"/>
+      <rect x="5" y="32" width="12" height="4" rx="2" fill="#0891b2" opacity="0.75"/>
+      <rect x="20" y="32" width="12" height="4" rx="2" fill="#0e7490" opacity="0.85"/>
+      <rect x="35" y="32" width="16" height="4" rx="2" fill="#0891b2" opacity="0.75"/>
+      <rect x="5" y="41" width="22" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
+      <rect x="5" y="46" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <rect x="5" y="50" width="40" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="54" width="44" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="59" width="20" height="2.5" rx="1" fill="#22d3ee" opacity="0.9"/>
+      <rect x="5" y="64" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="68" width="36" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="72" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="77" width="32" height="1.5" rx="1" fill="#64748b" opacity="0.4"/>
     </svg>
   );
 
   if (id === 'fresher') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
+    <svg {...base}>
       <rect x="5" y="5" width="32" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="48" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <line x1="5" y1="16" x2="59" y2="16" stroke="#334155" strokeWidth="0.6"/>
-      <rect x="5" y="19" width="22" height="2.5" rx="0.8" fill="#c084fc" opacity="0.9"/>
-      <rect x="5" y="24" width="44" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="5" y="28" width="34" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="33" width="20" height="2.5" rx="0.8" fill="#c084fc" opacity="0.9"/>
-      <rect x="5" y="38" width="54" height="13" rx="2" fill="#3b0764" opacity="0.25"/>
-      <rect x="5" y="38" width="54" height="13" rx="2" fill="none" stroke="#7c3aed" strokeWidth="0.4" opacity="0.5"/>
-      <rect x="8" y="41" width="28" height="2" rx="0.6" fill="#e2e8f0" opacity="0.7"/>
-      <rect x="8" y="45" width="44" height="1.3" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="8" y="48" width="36" height="1.3" rx="0.5" fill="#64748b" opacity="0.45"/>
+      <rect x="5" y="12" width="48" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <line x1="5" y1="16" x2="59" y2="16" stroke="#334155" strokeWidth="0.7"/>
+      <rect x="5" y="19" width="22" height="2.5" rx="1" fill="#c084fc" opacity="0.9"/>
+      <rect x="5" y="24" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="5" y="28" width="34" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="33" width="20" height="2.5" rx="1" fill="#c084fc" opacity="0.9"/>
+      <rect x="5" y="38" width="54" height="13" rx="2" fill="#3b0764" opacity="0.3"/>
+      <rect x="5" y="38" width="54" height="13" rx="2" fill="none" stroke="#7c3aed" strokeWidth="0.5" opacity="0.55"/>
+      <rect x="8" y="41" width="28" height="2" rx="1" fill="#e2e8f0" opacity="0.75"/>
+      <rect x="8" y="45" width="44" height="1.3" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="8" y="48" width="36" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
       <rect x="5" y="54" width="54" height="13" rx="2" fill="#3b0764" opacity="0.2"/>
-      <rect x="5" y="54" width="54" height="13" rx="2" fill="none" stroke="#7c3aed" strokeWidth="0.4" opacity="0.4"/>
-      <rect x="8" y="57" width="24" height="2" rx="0.6" fill="#e2e8f0" opacity="0.65"/>
-      <rect x="8" y="61" width="42" height="1.3" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="8" y="64" width="34" height="1.3" rx="0.5" fill="#64748b" opacity="0.4"/>
-      <rect x="5" y="70" width="12" height="3.5" rx="1.5" fill="#7c3aed" opacity="0.65"/>
-      <rect x="20" y="70" width="12" height="3.5" rx="1.5" fill="#7c3aed" opacity="0.65"/>
-      <rect x="35" y="70" width="12" height="3.5" rx="1.5" fill="#7c3aed" opacity="0.55"/>
-      <rect x="5" y="76" width="12" height="3.5" rx="1.5" fill="#7c3aed" opacity="0.5"/>
-      <rect x="20" y="76" width="14" height="3.5" rx="1.5" fill="#7c3aed" opacity="0.5"/>
+      <rect x="5" y="54" width="54" height="13" rx="2" fill="none" stroke="#7c3aed" strokeWidth="0.5" opacity="0.4"/>
+      <rect x="8" y="57" width="24" height="2" rx="1" fill="#e2e8f0" opacity="0.65"/>
+      <rect x="8" y="61" width="42" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="8" y="64" width="34" height="1.3" rx="1" fill="#64748b" opacity="0.4"/>
+      <rect x="5" y="70" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.65"/>
+      <rect x="20" y="70" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.65"/>
+      <rect x="35" y="70" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.55"/>
+      <rect x="5" y="76" width="12" height="3.5" rx="2" fill="#7c3aed" opacity="0.5"/>
+      <rect x="20" y="76" width="14" height="3.5" rx="2" fill="#7c3aed" opacity="0.5"/>
     </svg>
   );
 
   if (id === 'product-analyst') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
+    <svg {...base}>
       <rect x="5" y="5" width="34" height="4" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="5" y="12" width="24" height="3" rx="0.8" fill="#34d399" opacity="0.85"/>
-      <line x1="5" y1="17" x2="59" y2="17" stroke="#334155" strokeWidth="0.6"/>
-      <rect x="5" y="20" width="22" height="2.5" rx="0.8" fill="#6ee7b7" opacity="0.9"/>
-      <rect x="5" y="25" width="15" height="10" rx="2" fill="#064e3b" opacity="0.4"/>
-      <rect x="5" y="25" width="15" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.4" opacity="0.6"/>
-      <rect x="7" y="28" width="9" height="3" rx="0.8" fill="#34d399" opacity="0.75"/>
-      <rect x="25" y="25" width="15" height="10" rx="2" fill="#064e3b" opacity="0.4"/>
-      <rect x="25" y="25" width="15" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.4" opacity="0.6"/>
-      <rect x="27" y="28" width="9" height="3" rx="0.8" fill="#34d399" opacity="0.75"/>
-      <rect x="45" y="25" width="14" height="10" rx="2" fill="#064e3b" opacity="0.4"/>
-      <rect x="45" y="25" width="14" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.4" opacity="0.6"/>
-      <rect x="47" y="28" width="9" height="3" rx="0.8" fill="#34d399" opacity="0.75"/>
-      <rect x="5" y="40" width="24" height="2.5" rx="0.8" fill="#6ee7b7" opacity="0.9"/>
-      <rect x="5" y="45" width="50" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.6"/>
-      <rect x="5" y="49" width="42" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="53" width="46" height="1.5" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="5" y="59" width="18" height="2.5" rx="0.8" fill="#6ee7b7" opacity="0.9"/>
-      <rect x="5" y="64" width="12" height="3.5" rx="1.5" fill="#065f46" opacity="0.8"/>
-      <rect x="20" y="64" width="12" height="3.5" rx="1.5" fill="#065f46" opacity="0.8"/>
-      <rect x="35" y="64" width="12" height="3.5" rx="1.5" fill="#065f46" opacity="0.75"/>
-      <rect x="5" y="71" width="12" height="3.5" rx="1.5" fill="#065f46" opacity="0.7"/>
-      <rect x="20" y="71" width="12" height="3.5" rx="1.5" fill="#065f46" opacity="0.7"/>
-      <rect x="5" y="77" width="44" height="1.5" rx="0.5" fill="#94a3b8" opacity="0.45"/>
+      <rect x="5" y="12" width="24" height="3" rx="1" fill="#34d399" opacity="0.85"/>
+      <line x1="5" y1="17" x2="59" y2="17" stroke="#334155" strokeWidth="0.7"/>
+      <rect x="5" y="20" width="22" height="2.5" rx="1" fill="#6ee7b7" opacity="0.9"/>
+      <rect x="5" y="25" width="15" height="10" rx="2" fill="#064e3b" opacity="0.45"/>
+      <rect x="5" y="25" width="15" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.5" opacity="0.65"/>
+      <rect x="7" y="28" width="9" height="3" rx="1" fill="#34d399" opacity="0.8"/>
+      <rect x="25" y="25" width="15" height="10" rx="2" fill="#064e3b" opacity="0.45"/>
+      <rect x="25" y="25" width="15" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.5" opacity="0.65"/>
+      <rect x="27" y="28" width="9" height="3" rx="1" fill="#34d399" opacity="0.8"/>
+      <rect x="45" y="25" width="14" height="10" rx="2" fill="#064e3b" opacity="0.45"/>
+      <rect x="45" y="25" width="14" height="10" rx="2" fill="none" stroke="#34d399" strokeWidth="0.5" opacity="0.65"/>
+      <rect x="47" y="28" width="9" height="3" rx="1" fill="#34d399" opacity="0.8"/>
+      <rect x="5" y="40" width="24" height="2.5" rx="1" fill="#6ee7b7" opacity="0.9"/>
+      <rect x="5" y="45" width="50" height="1.5" rx="1" fill="#94a3b8" opacity="0.6"/>
+      <rect x="5" y="49" width="42" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="53" width="46" height="1.5" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="5" y="59" width="18" height="2.5" rx="1" fill="#6ee7b7" opacity="0.9"/>
+      <rect x="5" y="64" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.8"/>
+      <rect x="20" y="64" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.8"/>
+      <rect x="35" y="64" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.75"/>
+      <rect x="5" y="71" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.7"/>
+      <rect x="20" y="71" width="12" height="3.5" rx="2" fill="#065f46" opacity="0.7"/>
+      <rect x="5" y="77" width="44" height="1.5" rx="1" fill="#94a3b8" opacity="0.45"/>
     </svg>
   );
 
   if (id === 'two-page') return (
-    <svg viewBox="0 0 64 82" className="w-full h-full">
-      <rect x="4" y="3" width="56" height="36" rx="1.5" fill="none" stroke="#475569" strokeWidth="0.5" opacity="0.6"/>
+    <svg {...base}>
+      <rect x="4" y="3" width="56" height="35" rx="2" fill="none" stroke="#475569" strokeWidth="0.6" opacity="0.65"/>
       <rect x="8" y="7" width="32" height="3.5" rx="1" fill="#e2e8f0" opacity="0.9"/>
-      <rect x="8" y="13" width="22" height="2" rx="0.6" fill="#fbbf24" opacity="0.8"/>
-      <rect x="8" y="17" width="44" height="0.8" rx="0.3" fill="#d97706" opacity="0.6"/>
-      <rect x="8" y="21" width="18" height="2" rx="0.6" fill="#fcd34d" opacity="0.8"/>
-      <rect x="8" y="25" width="44" height="1.3" rx="0.5" fill="#94a3b8" opacity="0.55"/>
-      <rect x="8" y="29" width="36" height="1.3" rx="0.5" fill="#64748b" opacity="0.5"/>
-      <rect x="8" y="33" width="40" height="1.3" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="28" y="37.5" width="8" height="1" rx="0.3" fill="#475569" opacity="0.4"/>
-      <rect x="4" y="43" width="56" height="36" rx="1.5" fill="none" stroke="#334155" strokeWidth="0.5" opacity="0.4"/>
-      <rect x="8" y="47" width="16" height="2" rx="0.6" fill="#fcd34d" opacity="0.7"/>
-      <rect x="8" y="51" width="44" height="1.3" rx="0.5" fill="#94a3b8" opacity="0.5"/>
-      <rect x="8" y="55" width="38" height="1.3" rx="0.5" fill="#64748b" opacity="0.45"/>
-      <rect x="8" y="59" width="40" height="1.3" rx="0.5" fill="#64748b" opacity="0.4"/>
-      <rect x="8" y="64" width="16" height="2" rx="0.6" fill="#fcd34d" opacity="0.65"/>
-      <rect x="8" y="68" width="44" height="1.3" rx="0.5" fill="#94a3b8" opacity="0.45"/>
-      <rect x="8" y="72" width="36" height="1.3" rx="0.5" fill="#64748b" opacity="0.4"/>
-      <rect x="28" y="77.5" width="8" height="1" rx="0.3" fill="#475569" opacity="0.3"/>
+      <rect x="8" y="13" width="22" height="2" rx="1" fill="#fbbf24" opacity="0.8"/>
+      <rect x="8" y="17" width="44" height="0.9" rx="1" fill="#d97706" opacity="0.65"/>
+      <rect x="8" y="21" width="18" height="2" rx="1" fill="#fcd34d" opacity="0.8"/>
+      <rect x="8" y="25" width="44" height="1.3" rx="1" fill="#94a3b8" opacity="0.55"/>
+      <rect x="8" y="29" width="36" height="1.3" rx="1" fill="#64748b" opacity="0.5"/>
+      <rect x="8" y="33" width="40" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="28" y="37" width="8" height="1" rx="1" fill="#475569" opacity="0.4"/>
+      <rect x="4" y="43" width="56" height="35" rx="2" fill="none" stroke="#334155" strokeWidth="0.6" opacity="0.45"/>
+      <rect x="8" y="47" width="16" height="2" rx="1" fill="#fcd34d" opacity="0.7"/>
+      <rect x="8" y="51" width="44" height="1.3" rx="1" fill="#94a3b8" opacity="0.5"/>
+      <rect x="8" y="55" width="38" height="1.3" rx="1" fill="#64748b" opacity="0.45"/>
+      <rect x="8" y="59" width="40" height="1.3" rx="1" fill="#64748b" opacity="0.4"/>
+      <rect x="8" y="64" width="16" height="2" rx="1" fill="#fcd34d" opacity="0.65"/>
+      <rect x="8" y="68" width="44" height="1.3" rx="1" fill="#94a3b8" opacity="0.45"/>
+      <rect x="8" y="72" width="36" height="1.3" rx="1" fill="#64748b" opacity="0.4"/>
+      <rect x="28" y="77" width="8" height="1" rx="1" fill="#475569" opacity="0.3"/>
     </svg>
   );
 
@@ -213,7 +215,7 @@ function TemplatePreview({ id }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Role → recommended template mapping                                  */
+/* Role → best template mapping                                         */
 /* ------------------------------------------------------------------ */
 function getRecommendedTemplate(role) {
   if (!role) return null;
@@ -236,14 +238,14 @@ function getRecommendedTemplate(role) {
 /* Template definitions                                                 */
 /* ------------------------------------------------------------------ */
 const TEMPLATES = [
-  { id: 'jake-tech',       name: 'Jake Tech Compact',    fit: 'DevOps · SRE · SDE · Platform',      ats: 'High',      tone: 'cyan',   desc: 'Single-column Overleaf-style. ATS-optimized, dense skills chips.' },
-  { id: 'modern-dark',     name: 'Modern Dark Header',   fit: 'Startups · Frontend · Full Stack',    ats: 'High',      tone: 'violet', desc: 'Premium dark header with skill progress bars.' },
-  { id: 'ats-minimal',     name: 'ATS Minimal One Page', fit: 'Portal submissions · Any role',       ats: 'Very high', tone: 'mint',   desc: 'No graphics, dense text — best recruiter-portal pass rate.' },
-  { id: 'executive',       name: 'Executive Clean',      fit: 'Senior · Leadership · Management',    ats: 'High',      tone: 'amber',  desc: 'Bold impact profile, gold divider, two-area layout.' },
-  { id: 'cloud-pro',       name: 'Cloud Engineer Pro',   fit: 'AWS · Azure · GCP · Infra',           ats: 'High',      tone: 'cyan',   desc: 'Cloud & CI/CD chip grid upfront, then experience.' },
-  { id: 'fresher',         name: 'Fresher Project Focus',fit: 'Students · Interns · 0–2 yrs exp',    ats: 'High',      tone: 'violet', desc: 'Projects and hackathons front-and-center, education near top.' },
-  { id: 'product-analyst', name: 'Product Analyst Clean',fit: 'Data Analyst · PM · BI roles',        ats: 'High',      tone: 'mint',   desc: 'KPI metric boxes, tools grid, business-impact bullets.' },
-  { id: 'two-page',        name: 'Two Page Detailed',    fit: 'Deep experience · 10+ yrs',           ats: 'Medium-high',tone: 'amber', desc: 'Keeps full context intact — no splitting, no cutting.' },
+  { id: 'jake-tech',        name: 'Jake Tech Compact',    fit: 'DevOps · SRE · SDE · Platform',    ats: 'High',       tone: 'cyan',   desc: 'Single-column Overleaf-style. Dense skill chips, ATS-optimized.' },
+  { id: 'modern-dark',      name: 'Modern Dark Header',   fit: 'Startups · Frontend · Full Stack',  ats: 'High',       tone: 'violet', desc: 'Premium dark header with role title and skill progress bars.' },
+  { id: 'ats-minimal',      name: 'ATS Minimal One Page', fit: 'Portal submissions · Any role',     ats: 'Very high',  tone: 'mint',   desc: 'No graphics, dense text — highest recruiter-portal pass rate.' },
+  { id: 'executive',        name: 'Executive Clean',      fit: 'Senior · Leadership · Management',  ats: 'High',       tone: 'amber',  desc: 'Bold impact profile, gold divider, two-area layout.' },
+  { id: 'cloud-pro',        name: 'Cloud Engineer Pro',   fit: 'AWS · Azure · GCP · Infra',         ats: 'High',       tone: 'cyan',   desc: 'Cloud & CI/CD chip grid upfront, then experience sections.' },
+  { id: 'fresher',          name: 'Fresher Project Focus',fit: 'Students · Interns · 0–2 yrs',      ats: 'High',       tone: 'violet', desc: 'Projects and hackathons front-and-center, education near top.' },
+  { id: 'product-analyst',  name: 'Product Analyst Clean',fit: 'Data Analyst · PM · BI roles',      ats: 'High',       tone: 'mint',   desc: 'KPI metric boxes, tools grid, business-impact bullets.' },
+  { id: 'two-page',         name: 'Two Page Detailed',    fit: 'Deep experience · 10+ yrs',         ats: 'Medium-high', tone: 'amber', desc: 'Keeps full context intact — no splitting, no cutting.' },
 ];
 
 const LENGTHS = ['Auto', 'Single page', 'Multi page'];
@@ -264,6 +266,168 @@ function downloadText(name, text) {
   URL.revokeObjectURL(url);
 }
 
+function printAsPDF(text) {
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:10.5pt;line-height:1.5;color:#111;padding:.7in}
+pre{white-space:pre-wrap;word-break:break-word;font-family:inherit}
+@page{margin:.55in;size:A4}
+@media print{body{padding:0}}
+</style></head><body><pre>${esc}</pre></body></html>`;
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;';
+  document.body.appendChild(frame);
+  frame.contentDocument.open();
+  frame.contentDocument.write(html);
+  frame.contentDocument.close();
+  frame.contentWindow.focus();
+  setTimeout(() => {
+    frame.contentWindow.print();
+    setTimeout(() => { try { document.body.removeChild(frame); } catch {} }, 2500);
+  }, 300);
+}
+
+/* ------------------------------------------------------------------ */
+/* Structured section editor                                            */
+/* ------------------------------------------------------------------ */
+const PRESET_SECTIONS = ['Certifications', 'Languages', 'Awards', 'Publications', 'Volunteer Work', 'Interests', 'References', 'Patents'];
+
+function detectSections(text) {
+  if (!text || text.trim().length < 30) return [];
+  const seen = new Set();
+  return text.split('\n').filter((line) => {
+    const t = line.trim();
+    if (t.length < 3 || t.length > 40) return false;
+    if (!/^[A-Z][A-Z\s&/\-]{1,38}[A-Z]$/.test(t)) return false;
+    if (seen.has(t)) return false;
+    seen.add(t);
+    return true;
+  });
+}
+
+function SectionAdder({ resume, onChange }) {
+  const [active, setActive] = useState(null);
+  const [bullet, setBullet] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [custom, setCustom] = useState('');
+
+  const sections = useMemo(() => detectSections(resume), [resume]);
+
+  const appendBullet = (sectionName, text) => {
+    if (!text.trim()) return;
+    const entry = `• ${text.trim()}`;
+    const lines = resume.split('\n');
+    const idx = lines.findIndex((l) => l.trim() === sectionName);
+    if (idx < 0) {
+      onChange(resume.trimEnd() + `\n${entry}`);
+    } else {
+      let insertAt = lines.length;
+      for (let i = idx + 1; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (t.length >= 3 && t.length <= 40 && /^[A-Z][A-Z\s&/\-]{1,38}[A-Z]$/.test(t) && t !== sectionName) {
+          insertAt = i;
+          break;
+        }
+      }
+      lines.splice(insertAt, 0, entry);
+      onChange(lines.join('\n'));
+    }
+    setBullet('');
+    setActive(null);
+  };
+
+  const addSection = (name) => {
+    if (!name.trim()) return;
+    onChange(resume.trimEnd() + `\n\n${name.trim().toUpperCase()}\n• `);
+    setShowNew(false);
+    setCustom('');
+  };
+
+  if (!resume || resume.trim().length < 30) return null;
+
+  return (
+    <div className="mt-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">
+      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Edit sections</p>
+
+      {sections.length > 0 && (
+        <div className="mb-2.5 flex flex-wrap gap-1.5">
+          {sections.map((s) => (
+            <button
+              key={s}
+              onClick={() => { setActive(active === s ? null : s); setBullet(''); setShowNew(false); }}
+              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] transition ${active === s ? 'border-aurora-violet/50 bg-aurora-violet/12 text-white' : 'border-white/10 text-slate-400 hover:border-white/22 hover:text-white'}`}
+            >
+              <Plus size={9} /> {s[0] + s.slice(1).toLowerCase()}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {active && (
+        <div className="mb-2.5 flex gap-2">
+          <input
+            autoFocus
+            value={bullet}
+            onChange={(e) => setBullet(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') appendBullet(active, bullet); if (e.key === 'Escape') setActive(null); }}
+            placeholder={`Add bullet to ${active[0] + active.slice(1).toLowerCase()}…`}
+            className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+          />
+          <button onClick={() => appendBullet(active, bullet)} disabled={!bullet.trim()}
+            className="h-8 rounded-lg bg-aurora-violet/20 px-3 text-[11px] font-medium text-white hover:bg-aurora-violet/30 disabled:opacity-40">
+            Add
+          </button>
+          <button onClick={() => setActive(null)}
+            className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {showNew ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {PRESET_SECTIONS
+              .filter((s) => !sections.includes(s.toUpperCase()))
+              .map((s) => (
+                <button key={s} onClick={() => addSection(s)}
+                  className="rounded-lg border border-dashed border-aurora-cyan/30 px-2.5 py-1 text-[11px] text-aurora-cyan transition hover:bg-aurora-cyan/10">
+                  + {s}
+                </button>
+              ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addSection(custom); if (e.key === 'Escape') setShowNew(false); }}
+              placeholder="Custom section name…"
+              className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+            />
+            <button onClick={() => addSection(custom)} disabled={!custom.trim()}
+              className="h-8 rounded-lg bg-aurora-cyan/15 px-3 text-[11px] text-aurora-cyan hover:bg-aurora-cyan/25 disabled:opacity-40">Add</button>
+            <button onClick={() => { setShowNew(false); setCustom(''); }}
+              className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => { setShowNew(true); setActive(null); }}
+          className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/12 px-3 py-1.5 text-[11px] text-slate-500 transition hover:border-aurora-cyan/40 hover:text-aurora-cyan"
+        >
+          <Plus size={11} /> Add new section
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Main view                                                            */
+/* ------------------------------------------------------------------ */
 export default function Editor() {
   const storedResume = getStoredResume();
   const selectedJob = getSelectedJob();
@@ -273,8 +437,10 @@ export default function Editor() {
   const recommendedName = getRecommendedTemplate(activeRole);
 
   const [resume, setResume] = useState(last.out || last.resume || storedResume.text || '');
-  const [jd, setJd] = useState(selectedJob ? [selectedJob.title, selectedJob.company, selectedJob.location, selectedJob.summary, (selectedJob.requiredSkills || []).join(', ')].filter(Boolean).join('\n') : last.jd || '');
-  const [tpl, setTpl] = useState(last.tpl || (recommendedName || TEMPLATES[0].name));
+  const [jd, setJd] = useState(selectedJob
+    ? [selectedJob.title, selectedJob.company, selectedJob.location, selectedJob.summary, (selectedJob.requiredSkills || []).join(', ')].filter(Boolean).join('\n')
+    : last.jd || '');
+  const [tpl, setTpl] = useState(last.tpl || recommendedName || TEMPLATES[0].name);
   const [len, setLen] = useState(last.len || 'Auto');
   const [out, setOut] = useState(last.out || '');
   const [status, setStatus] = useState('idle');
@@ -322,42 +488,62 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
 
       {selectedJob && (
         <div className="mb-4 rounded-2xl border border-aurora-cyan/20 bg-aurora-cyan/10 px-4 py-3 text-sm text-slate-200">
-          <Briefcase size={15} className="mr-1.5 inline text-aurora-cyan" /> Editing package for <span className="font-medium text-white">{selectedJob.title}</span> at <span className="font-medium text-white">{selectedJob.company}</span>.
+          <Briefcase size={15} className="mr-1.5 inline text-aurora-cyan" />
+          Editing package for <span className="font-medium text-white">{selectedJob.title}</span> at <span className="font-medium text-white">{selectedJob.company}</span>.
           {last.out && <span className="ml-1 text-slate-300">Tailored resume loaded from Jobs.</span>}
         </div>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
         <div className="space-y-4">
-          <SectionCard title={last.out ? 'Editable tailored resume' : 'Base resume'} action={storedResume.fileName && <Badge tone="mint"><FileText size={11} /> {storedResume.fileName}</Badge>}>
-            {last.out && <div className="mb-3 rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-xs text-slate-200">This is the job-specific resume generated from the Jobs screen. Edit it here, then export.</div>}
-            <textarea value={resume} onChange={(e) => { setResume(e.target.value); if (last.out) setOut(e.target.value); }} placeholder="Paste your current resume…"
-              className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+          {/* ── Resume input ── */}
+          <SectionCard
+            title={last.out ? 'Editable tailored resume' : 'Base resume'}
+            action={storedResume.fileName && <Badge tone="mint"><FileText size={11} /> {storedResume.fileName}</Badge>}
+          >
+            {last.out && (
+              <div className="mb-3 rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-xs text-slate-200">
+                Job-specific resume from Jobs screen. Edit here, then export.
+              </div>
+            )}
+            <textarea
+              value={resume}
+              onChange={(e) => { setResume(e.target.value); if (last.out) setOut(e.target.value); }}
+              placeholder="Paste your current resume…"
+              className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+            />
+            <SectionAdder resume={resume} onChange={(v) => { setResume(v); if (last.out) setOut(v); }} />
           </SectionCard>
 
+          {/* ── JD input ── */}
           <SectionCard title="Target job description">
-            <textarea value={jd} onChange={(e) => setJd(e.target.value)} placeholder="Paste the job description or choose Tailor from a job card…"
-              className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+            <textarea
+              value={jd} onChange={(e) => setJd(e.target.value)}
+              placeholder="Paste the job description or choose Tailor from a job card…"
+              className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+            />
           </SectionCard>
 
+          {/* ── Length ── */}
           <SectionCard title="Resume length">
             <div className="flex flex-wrap items-center gap-2">
               {LENGTHS.map((l) => (
-                <button key={l} onClick={() => setLen(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'text-slate-400 hover:bg-white/5'}`}>{l}</button>
+                <button key={l} onClick={() => setLen(l)}
+                  className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'text-slate-400 hover:bg-white/5'}`}>
+                  {l}
+                </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-slate-500">Single page compresses weak content. Multi page keeps sections intact instead of splitting content awkwardly.</p>
+            <p className="mt-2 text-xs text-slate-500">Single page compresses weak content. Multi page keeps sections intact.</p>
           </SectionCard>
 
           {/* ── Template gallery ── */}
           <SectionCard
             title="Resume template"
             action={
-              recommendedName && activeRole ? (
-                <span className="flex items-center gap-1.5 text-[11px] text-aurora-mint">
-                  <Star size={11} className="fill-aurora-mint" /> Smart pick for <span className="font-semibold">{activeRole}</span>
-                </span>
-              ) : null
+              recommendedName && activeRole
+                ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#52E6C2" /> Best for {activeRole}</span>
+                : null
             }
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -370,32 +556,33 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
                     onClick={() => setTpl(t.name)}
                     className={`flex items-stretch gap-3 rounded-xl border p-3 text-left transition ${
                       isSelected
-                        ? 'border-aurora-violet/50 bg-aurora-violet/12 ring-1 ring-aurora-violet/20'
-                        : 'border-white/10 bg-white/[0.025] hover:border-white/22 hover:bg-white/[0.04]'
+                        ? 'border-aurora-violet/50 bg-aurora-violet/10 ring-1 ring-aurora-violet/20'
+                        : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
                     }`}
                   >
-                    {/* Mini preview thumbnail */}
-                    <div className="h-[82px] w-[64px] shrink-0 overflow-hidden rounded-lg bg-slate-950/70 ring-1 ring-white/6">
+                    {/* Preview thumbnail */}
+                    <div
+                      className="shrink-0 overflow-hidden rounded-lg border border-white/10"
+                      style={{ width: 64, height: 82, background: '#070912' }}
+                    >
                       <TemplatePreview id={t.id} />
                     </div>
 
-                    {/* Template info */}
-                    <div className="flex min-w-0 flex-1 flex-col justify-between">
+                    {/* Info */}
+                    <div className="flex min-w-0 flex-1 flex-col justify-between gap-1">
                       <div>
-                        <div className="flex items-start justify-between gap-1.5">
+                        <div className="flex items-start justify-between gap-1">
                           <p className="text-[13px] font-semibold leading-tight text-white">{t.name}</p>
                           {isRec && (
-                            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-aurora-mint/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-aurora-mint ring-1 ring-aurora-mint/25">
-                              <Star size={8} className="fill-aurora-mint" /> Pick
+                            <span className="mt-0.5 flex shrink-0 items-center gap-0.5 rounded-full bg-aurora-mint/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-aurora-mint ring-1 ring-aurora-mint/25">
+                              <Star size={8} fill="#52E6C2" /> Pick
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">{t.fit}</p>
+                        <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{t.fit}</p>
                         <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{t.desc}</p>
                       </div>
-                      <div className="mt-2">
-                        <Badge tone={t.tone} className="text-[9px]">ATS: {t.ats}</Badge>
-                      </div>
+                      <Badge tone={t.tone} className="self-start text-[9px]">ATS: {t.ats}</Badge>
                     </div>
                   </button>
                 );
@@ -409,21 +596,51 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
           </SectionCard>
         </div>
 
-        <SectionCard title="Tailored result" action={out && <div className="flex gap-2"><Button size="sm" variant="soft" onClick={copy}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}</Button><Button size="sm" onClick={() => downloadText('tailored-resume.txt', out)}><Download size={14} /> TXT</Button></div>}>
+        {/* ── Output panel ── */}
+        <SectionCard
+          title="Tailored result"
+          action={
+            out && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="soft" onClick={copy}>
+                  {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
+                </Button>
+                <Button size="sm" variant="soft" onClick={() => printAsPDF(out)}>
+                  <Printer size={14} /> PDF
+                </Button>
+                <Button size="sm" onClick={() => downloadText('tailored-resume.txt', out)}>
+                  <Download size={14} /> TXT
+                </Button>
+              </div>
+            )
+          }
+        >
           {!out && status !== 'loading' && (
             <div className="grid place-items-center rounded-xl border border-dashed border-white/10 py-20 text-center">
               <PenLine size={26} className="mb-3 text-aurora-cyan" />
               <p className="text-sm text-slate-300">Your tailored resume will appear here</p>
-              <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">Using <span className="text-slate-300">{selectedTemplate.name}</span>. {selectedTemplate.desc}</p>
-              <p className="mt-2 text-xs text-slate-500">Template: <Badge tone={selectedTemplate.tone}>{selectedTemplate.name}</Badge></p>
+              <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">
+                Using <span className="text-slate-300">{selectedTemplate.name}</span>. {selectedTemplate.desc}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Template: <Badge tone={selectedTemplate.tone}>{selectedTemplate.name}</Badge>
+              </p>
             </div>
           )}
           {status === 'loading' && (
             <div className="space-y-2.5 py-2">
-              {Array.from({ length: 10 }).map((_, i) => <div key={i} className="h-3 animate-pulse rounded bg-white/5" style={{ width: `${55 + (i % 5) * 9}%` }} />)}
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="h-3 animate-pulse rounded bg-white/5" style={{ width: `${55 + (i % 5) * 9}%` }} />
+              ))}
             </div>
           )}
-          {out && <textarea value={out} onChange={(e) => setOut(e.target.value)} className="min-h-[720px] w-full resize-y rounded-xl border border-white/8 bg-ink-950/60 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200 outline-none focus:border-aurora-violet/50" />}
+          {out && (
+            <textarea
+              value={out}
+              onChange={(e) => setOut(e.target.value)}
+              className="min-h-[720px] w-full resize-y rounded-xl border border-white/8 bg-ink-950/60 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200 outline-none focus:border-aurora-violet/50"
+            />
+          )}
         </SectionCard>
       </div>
     </>
