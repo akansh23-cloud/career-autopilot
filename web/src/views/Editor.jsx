@@ -40,7 +40,7 @@ export default function Editor() {
   const storedResume = getStoredResume();
   const selectedJob = getSelectedJob();
   const last = safeRead();
-  const [resume, setResume] = useState(storedResume.text || last.resume || '');
+  const [resume, setResume] = useState(last.out || last.resume || storedResume.text || '');
   const [jd, setJd] = useState(selectedJob ? [selectedJob.title, selectedJob.company, selectedJob.location, selectedJob.summary, (selectedJob.requiredSkills || []).join(', ')].filter(Boolean).join('\n') : last.jd || '');
   const [tpl, setTpl] = useState(last.tpl || TEMPLATES[0].name);
   const [len, setLen] = useState(last.len || 'Auto');
@@ -85,18 +85,20 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
 
   return (
     <>
-      <PageIntro title="Resume editor" sub="Tailor your saved resume to any selected job with premium ATS-friendly templates." />
+      <PageIntro title="Resume editor" sub="Edit the tailored resume inline, adjust the selected template, and export the final version." />
 
       {selectedJob && (
         <div className="mb-4 rounded-2xl border border-aurora-cyan/20 bg-aurora-cyan/10 px-4 py-3 text-sm text-slate-200">
-          <Briefcase size={15} className="mr-1.5 inline text-aurora-cyan" /> Tailoring for <span className="font-medium text-white">{selectedJob.title}</span> at <span className="font-medium text-white">{selectedJob.company}</span>.
+          <Briefcase size={15} className="mr-1.5 inline text-aurora-cyan" /> Editing package for <span className="font-medium text-white">{selectedJob.title}</span> at <span className="font-medium text-white">{selectedJob.company}</span>.
+          {last.out && <span className="ml-1 text-slate-300">Tailored resume loaded from Jobs.</span>}
         </div>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
         <div className="space-y-4">
-          <SectionCard title="Base resume" action={storedResume.fileName && <Badge tone="mint"><FileText size={11} /> {storedResume.fileName}</Badge>}>
-            <textarea value={resume} onChange={(e) => setResume(e.target.value)} placeholder="Paste your current resume…"
+          <SectionCard title={last.out ? "Editable tailored resume" : "Base resume"} action={storedResume.fileName && <Badge tone="mint"><FileText size={11} /> {storedResume.fileName}</Badge>}>
+            {last.out && <div className="mb-3 rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-xs text-slate-200">This is the job-specific resume generated from the Jobs screen. Edit it here, then export PDF/DOCX/ATS text.</div>}
+            <textarea value={resume} onChange={(e) => { setResume(e.target.value); if (last.out) setOut(e.target.value); }} placeholder="Paste your current resume…"
               className="h-44 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
           </SectionCard>
           <SectionCard title="Target job description">
@@ -147,7 +149,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               {Array.from({ length: 10 }).map((_, i) => <div key={i} className="h-3 animate-pulse rounded bg-white/5" style={{ width: `${55 + (i % 5) * 9}%` }} />)}
             </div>
           )}
-          {out && <pre className="max-h-[720px] overflow-auto whitespace-pre-wrap rounded-xl border border-white/8 bg-ink-950/60 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200">{out}</pre>}
+          {out && <textarea value={out} onChange={(e) => setOut(e.target.value)} className="min-h-[720px] w-full resize-y rounded-xl border border-white/8 bg-ink-950/60 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200 outline-none focus:border-aurora-violet/50" />}
         </SectionCard>
       </div>
     </>
