@@ -68,7 +68,11 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
               </div>
               <div className="flex flex-wrap gap-2">
                 {c.email && <Badge tone="cyan"><Mail size={11} /> {c.verified ? 'verified' : 'email'}</Badge>}
-                {c.linkedin && <Badge tone="violet"><Linkedin size={11} /> LinkedIn</Badge>}
+                {c.linkedin && (
+                  <a href={c.linkedin} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                    <Badge tone="violet"><Linkedin size={11} /> LinkedIn</Badge>
+                  </a>
+                )}
                 {c.source && <Badge>{c.source}</Badge>}
               </div>
               {c.email && <p className="truncate font-mono text-xs text-slate-400">{c.email}</p>}
