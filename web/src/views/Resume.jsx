@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
-import { FileText, Sparkles, AlertTriangle, CheckCircle2, Gauge, Upload, Loader2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Briefcase, ChevronDown, FileText, Sparkles, AlertTriangle, CheckCircle2, Gauge, Upload, Loader2, X } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Skeleton, EmptyState, Field } from '../components/ui/kit.jsx';
 import { AI } from '../lib/api.js';
 import { extractResumeText, ACCEPT } from '../lib/resume.js';
+import { ROLE_GROUPS } from '../lib/roles.js';
+import { clearStoredResume, getStoredResume, queueResumeJobSearch, saveStoredResume } from '../lib/resumeStore.js';
 
 function extractJSON(text) {
   if (!text) return null;
@@ -29,16 +31,47 @@ function Ring({ value }) {
   );
 }
 
-export default function Resume() {
-  const [resume, setResume] = useState('');
-  const [role, setRole] = useState('');
+export default function Resume({ go }) {
+  const stored = getStoredResume();
+  const [resume, setResume] = useState(stored.text || '');
+  const [role, setRole] = useState(stored.targetRole || '');
   const [status, setStatus] = useState('idle');
   const [result, setResult] = useState(null);
   const [err, setErr] = useState('');
-  const [fileName, setFileName] = useState('');
+  const [fileName, setFileName] = useState(stored.fileName || '');
   const [parsing, setParsing] = useState(false);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    const onResumeUpdate = (e) => {
+      const next = e.detail || getStoredResume();
+      setResume(next.text || '');
+      setRole(next.targetRole || '');
+      setFileName(next.fileName || '');
+    };
+    window.addEventListener('career-resume-updated', onResumeUpdate);
+    return () => window.removeEventListener('career-resume-updated', onResumeUpdate);
+  }, []);
+
+  const updateRole = (value) => {
+    setRole(value);
+    saveStoredResume({ targetRole: value });
+  };
+
+  const updateResumeText = (value, nextFileName = fileName) => {
+    setResume(value);
+    setFileName(nextFileName);
+    saveStoredResume({ text: value, fileName: nextFileName, targetRole: role });
+  };
+
+  const findMatchingJobs = () => {
+    if (resume.trim().length < 40) { setErr('Upload or paste your resume first.'); return; }
+    const payload = queueResumeJobSearch(role);
+    if (!payload.role) { setErr('Select a target role first so matching jobs can be searched.'); return; }
+    saveStoredResume({ text: resume, fileName, targetRole: payload.role });
+    go?.('jobs');
+  };
 
   const ingestFile = async (file) => {
     if (!file) return;
@@ -46,7 +79,7 @@ export default function Resume() {
     try {
       const txt = await extractResumeText(file);
       if (!txt || txt.length < 20) throw new Error('Could not read text from that file. Try a text-based PDF or DOCX.');
-      setResume(txt); setFileName(file.name);
+      updateResumeText(txt, file.name);
     } catch (e) {
       setErr(e.message || 'Failed to read file.');
     } finally {
@@ -56,7 +89,7 @@ export default function Resume() {
 
   const onPick = (e) => { const f = e.target.files?.[0]; ingestFile(f); e.target.value = ''; };
   const onDrop = (e) => { e.preventDefault(); setDrag(false); ingestFile(e.dataTransfer.files?.[0]); };
-  const clearFile = () => { setFileName(''); setResume(''); };
+  const clearFile = () => { setFileName(''); setResume(''); clearStoredResume(); };
 
   const analyze = async () => {
     if (resume.trim().length < 40) { setErr('Paste a bit more of your resume to analyze.'); return; }
@@ -84,8 +117,21 @@ Resume:
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <SectionCard title="Your resume">
           <Field label="Target role (optional)">
-            <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Senior DevOps Engineer"
-              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-100 outline-none focus:border-aurora-violet/50" />
+            <div className="relative">
+              <select
+                value={role}
+                onChange={(e) => updateRole(e.target.value)}
+                className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50"
+              >
+                <option value="">Select a target role…</option>
+                {Object.entries(ROLE_GROUPS).map(([grp, roles]) => (
+                  <optgroup key={grp} label={grp}>
+                    {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            </div>
           </Field>
 
           {/* Upload dropzone */}
@@ -116,16 +162,21 @@ Resume:
           </div>
 
           <textarea
-            value={resume} onChange={(e) => { setResume(e.target.value); if (fileName) setFileName(''); }}
+            value={resume} onChange={(e) => updateResumeText(e.target.value, '')}
             placeholder="…or paste your resume text here"
             className="mt-3 h-56 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-relaxed text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
           />
           {err && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-xs text-slate-500">{resume.length} chars</span>
-            <Button onClick={analyze} disabled={status === 'loading'}>
-              <Sparkles size={16} /> {status === 'loading' ? 'Analyzing…' : 'Analyze resume'}
-            </Button>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-xs text-slate-500">{resume.length} chars{fileName ? ` • saved: ${fileName}` : resume ? ' • saved locally' : ''}</span>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="soft" onClick={findMatchingJobs} disabled={parsing || resume.trim().length < 40}>
+                <Briefcase size={16} /> Find matching jobs
+              </Button>
+              <Button onClick={analyze} disabled={status === 'loading'}>
+                <Sparkles size={16} /> {status === 'loading' ? 'Analyzing…' : 'Analyze resume'}
+              </Button>
+            </div>
           </div>
         </SectionCard>
 

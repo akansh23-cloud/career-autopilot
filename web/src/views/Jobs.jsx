@@ -1,17 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown } from 'lucide-react';
 import { PageIntro } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card } from '../components/ui/kit.jsx';
 import { Jobs } from '../lib/api.js';
-
-const ROLE_GROUPS = {
-  'Software & Data': ['Software Engineer', 'Frontend Engineer', 'Backend Engineer', 'Full Stack Developer', 'Mobile Developer', 'DevOps Engineer', 'Cloud Engineer', 'Site Reliability Engineer (SRE)', 'Data Analyst', 'Data Scientist', 'Machine Learning Engineer', 'QA / Test Engineer', 'Security Engineer'],
-  'Product & Design': ['Product Manager', 'Associate Product Manager', 'UX Designer', 'UI / Visual Designer', 'Product Designer', 'UX Researcher'],
-  'Business & Operations': ['Business Analyst', 'Operations Manager', 'Project Manager', 'Program Manager', 'Management Consultant'],
-  'Marketing & Sales': ['Digital Marketing Specialist', 'Content Writer / Marketer', 'SEO Specialist', 'Social Media Manager', 'Sales Executive', 'Business Development'],
-  'Finance & HR': ['Financial Analyst', 'Accountant', 'Investment Analyst', 'HR Executive / Recruiter', 'Customer Success Manager'],
-  'Internships / Entry-level': ['Software Engineering Intern', 'Data Analyst Intern', 'Marketing Intern', 'Design Intern', 'Finance Intern'],
-};
+import { ROLE_GROUPS } from '../lib/roles.js';
+import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume } from '../lib/resumeStore.js';
 
 const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d']];
 const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
@@ -53,29 +46,59 @@ function JobCard({ j, i, saved, onSave }) {
 }
 
 export default function JobsView() {
-  const [role, setRole] = useState('');
+  const storedResume = getStoredResume();
+  const initialRole = getResumeSearchRole();
+  const [role, setRole] = useState(initialRole || '');
   const [loc, setLoc] = useState('');
   const [mode, setMode] = useState('Any');
   const [fresh, setFresh] = useState('7d');
   const [state, setState] = useState({ status: 'idle', jobs: [], err: null });
   const [saved, setSaved] = useState({});
+  const [resumeHint, setResumeHint] = useState(Boolean(storedResume.text));
 
-  const run = async (e) => {
+  const run = async (e, override = {}) => {
     e?.preventDefault();
-    if (!role.trim()) return;
+    const searchRole = (override.role ?? role).trim();
+    if (!searchRole) return;
+    setRole(searchRole);
     setState({ status: 'loading', jobs: [], err: null });
     try {
-      const d = await Jobs.search({ role, location: loc, mode, freshness: fresh, verify: '0', limit: '18' });
+      const d = await Jobs.search({ role: searchRole, location: loc, mode, freshness: fresh, verify: '0', limit: '18' });
       setState({ status: 'done', jobs: d.jobs || [], err: null });
     } catch (err) {
       setState({ status: 'error', jobs: [], err: err.message });
     }
   };
+
+  useEffect(() => {
+    const queued = consumeQueuedResumeJobSearch();
+    if (queued?.role) {
+      setResumeHint(true);
+      run(null, { role: queued.role });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onResumeUpdate = () => {
+      const r = getStoredResume();
+      setResumeHint(Boolean(r.text));
+      if (!role && (r.targetRole || getResumeSearchRole())) setRole(r.targetRole || getResumeSearchRole());
+    };
+    window.addEventListener('career-resume-updated', onResumeUpdate);
+    return () => window.removeEventListener('career-resume-updated', onResumeUpdate);
+  }, [role]);
+
   const toggleSave = (j) => setSaved((s) => ({ ...s, [j.url || j.title]: !s[j.url || j.title] }));
 
   return (
     <>
       <PageIntro title="Find verified jobs" sub="Real listings from LinkedIn, Indeed, Naukri, Wellfound & more — never AI-fabricated." />
+      {resumeHint && (
+        <div className="mb-4 rounded-2xl border border-aurora-mint/20 bg-aurora-mint/10 px-4 py-3 text-sm text-slate-200">
+          Resume is saved. Job search will use your selected or inferred role: <span className="font-medium text-white">{role || 'select a role'}</span>.
+        </div>
+      )}
 
       <form onSubmit={run} className="gradient-border mb-6 p-4">
         <div className="flex flex-col gap-3 md:flex-row">
@@ -86,7 +109,7 @@ export default function JobsView() {
           {/* Role preset dropdown */}
           <div className="relative md:w-52">
             <select
-              value=""
+              value={ROLE_GROUPS && Object.values(ROLE_GROUPS).flat().includes(role) ? role : ''}
               onChange={(e) => e.target.value && setRole(e.target.value)}
               className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] pl-3.5 pr-9 text-sm text-slate-300 outline-none focus:border-aurora-violet/50"
             >
