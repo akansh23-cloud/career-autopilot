@@ -5,7 +5,7 @@ import { Button, Badge, Skeleton, EmptyState, Field } from '../components/ui/kit
 import { AI } from '../lib/api.js';
 import { extractResumeText, ACCEPT } from '../lib/resume.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
-import { clearStoredResume, getStoredResume, queueResumeJobSearch, saveStoredResume } from '../lib/resumeStore.js';
+import { clearStoredResume, getStoredResume, queueResumeJobSearch, saveResumeAnalysis, saveStoredResume } from '../lib/resumeStore.js';
 
 function extractJSON(text) {
   if (!text) return null;
@@ -36,7 +36,7 @@ export default function Resume({ go }) {
   const [resume, setResume] = useState(stored.text || '');
   const [role, setRole] = useState(stored.targetRole || '');
   const [status, setStatus] = useState('idle');
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(stored.analysis || null);
   const [err, setErr] = useState('');
   const [fileName, setFileName] = useState(stored.fileName || '');
   const [parsing, setParsing] = useState(false);
@@ -56,20 +56,25 @@ export default function Resume({ go }) {
 
   const updateRole = (value) => {
     setRole(value);
-    saveStoredResume({ targetRole: value });
+    saveStoredResume({ targetRole: value, analysis: null, analysedAt: '' });
+    setResult(null);
+    setStatus('idle');
   };
 
   const updateResumeText = (value, nextFileName = fileName) => {
     setResume(value);
     setFileName(nextFileName);
-    saveStoredResume({ text: value, fileName: nextFileName, targetRole: role });
+    saveStoredResume({ text: value, fileName: nextFileName, targetRole: role, analysis: null, analysedAt: '' });
+    setResult(null);
+    setStatus('idle');
   };
 
   const findMatchingJobs = () => {
     if (resume.trim().length < 40) { setErr('Upload or paste your resume first.'); return; }
-    const payload = queueResumeJobSearch(role);
+    if (!result) { setErr('Analyze the resume first. Matching jobs unlock after ATS analysis.'); return; }
+    const payload = queueResumeJobSearch(role || result.recommendedRole);
     if (!payload.role) { setErr('Select a target role first so matching jobs can be searched.'); return; }
-    saveStoredResume({ text: resume, fileName, targetRole: payload.role });
+    saveStoredResume({ text: resume, fileName, targetRole: payload.role, analysis: result });
     go?.('jobs');
   };
 
@@ -96,7 +101,7 @@ export default function Resume({ go }) {
     setStatus('loading'); setErr(''); setResult(null);
     const prompt = `You are an expert ATS resume reviewer. Analyze the resume for the target role "${role || 'general'}".
 Return ONLY valid JSON, no prose, no markdown fences, shape:
-{"score":<0-100 int>,"ats":<0-100>,"impact":<0-100>,"clarity":<0-100>,"summary":"<one sentence>","strengths":["..."],"improvements":["..."],"missingKeywords":["..."]}
+{"score":<0-100 int>,"ats":<0-100>,"impact":<0-100>,"clarity":<0-100>,"recommendedRole":"<best matching job title>","summary":"<one sentence>","strengths":["..."],"improvements":["..."],"missingKeywords":["..."]}
 Resume:
 """${resume.slice(0, 8000)}"""`;
     try {
@@ -104,7 +109,11 @@ Resume:
       const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const parsed = extractJSON(text);
       if (!parsed) throw new Error('Could not parse AI response.');
-      setResult(parsed); setStatus('done');
+      if (!role && parsed.recommendedRole) setRole(parsed.recommendedRole);
+      setResult(parsed);
+      saveResumeAnalysis(parsed);
+      if (parsed.recommendedRole && !role) saveStoredResume({ targetRole: parsed.recommendedRole });
+      setStatus('done');
     } catch (e) {
       setErr(e.message || 'Analysis failed.'); setStatus('error');
     }
@@ -170,11 +179,13 @@ Resume:
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-xs text-slate-500">{resume.length} chars{fileName ? ` • saved: ${fileName}` : resume ? ' • saved locally' : ''}</span>
             <div className="flex flex-wrap gap-2">
-              <Button variant="soft" onClick={findMatchingJobs} disabled={parsing || resume.trim().length < 40}>
-                <Briefcase size={16} /> Find matching jobs
-              </Button>
+              {result && (
+                <Button variant="soft" onClick={findMatchingJobs} disabled={parsing || resume.trim().length < 40}>
+                  <Briefcase size={16} /> Find matching jobs
+                </Button>
+              )}
               <Button onClick={analyze} disabled={status === 'loading'}>
-                <Sparkles size={16} /> {status === 'loading' ? 'Analyzing…' : 'Analyze resume'}
+                <Sparkles size={16} /> {status === 'loading' ? 'Analyzing…' : result ? 'Re-analyze resume' : 'Analyze resume'}
               </Button>
             </div>
           </div>
@@ -195,6 +206,8 @@ Resume:
                 <div className="flex flex-col items-center gap-3">
                   <Ring value={Number(result.score) || 0} />
                   <p className="text-center text-sm text-muted">{result.summary}</p>
+                  {result.recommendedRole && <Badge tone="violet">Recommended role: {result.recommendedRole}</Badge>}
+                  <Button className="mt-2" variant="soft" onClick={findMatchingJobs}><Briefcase size={16} /> Find matching jobs</Button>
                   <div className="grid w-full grid-cols-3 gap-2 border-t border-white/8 pt-3">
                     {[['ATS', result.ats], ['Impact', result.impact], ['Clarity', result.clarity]].map(([l, v]) => (
                       <div key={l} className="text-center">

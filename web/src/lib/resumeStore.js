@@ -2,11 +2,15 @@ import { inferRoleFromResume } from './roles.js';
 
 const KEY = 'careerAutopilot.resume.v1';
 const JOB_KEY = 'careerAutopilot.pendingJobSearch.v1';
+const JOB_RESULTS_KEY = 'careerAutopilot.jobResults.v1';
+const SELECTED_JOB_KEY = 'careerAutopilot.selectedJob.v1';
 
 const fallback = {
   text: '',
   fileName: '',
   targetRole: '',
+  analysis: null,
+  analysedAt: '',
   updatedAt: '',
 };
 
@@ -45,6 +49,10 @@ export function saveStoredResume(patch) {
   return next;
 }
 
+export function saveResumeAnalysis(analysis) {
+  return saveStoredResume({ analysis, analysedAt: new Date().toISOString() });
+}
+
 export function clearStoredResume() {
   safeRemove(KEY);
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-resume-updated', { detail: fallback }));
@@ -52,12 +60,17 @@ export function clearStoredResume() {
 
 export function getResumeSearchRole() {
   const r = getStoredResume();
-  return (r.targetRole || inferRoleFromResume(r.text || '') || '').trim();
+  return (r.targetRole || r.analysis?.recommendedRole || inferRoleFromResume(r.text || '') || '').trim();
+}
+
+export function hasResumeAnalysis() {
+  const r = getStoredResume();
+  return Boolean(r.text && r.analysis && r.analysedAt);
 }
 
 export function queueResumeJobSearch(role) {
   const r = getStoredResume();
-  const searchRole = (role || r.targetRole || inferRoleFromResume(r.text || '') || '').trim();
+  const searchRole = (role || r.targetRole || r.analysis?.recommendedRole || inferRoleFromResume(r.text || '') || '').trim();
   const payload = { role: searchRole, fromResume: true, queuedAt: new Date().toISOString() };
   safeWrite(JOB_KEY, payload);
   return payload;
@@ -67,4 +80,29 @@ export function consumeQueuedResumeJobSearch() {
   const payload = safeRead(JOB_KEY);
   safeRemove(JOB_KEY);
   return payload;
+}
+
+export function getStoredJobResults() {
+  return safeRead(JOB_RESULTS_KEY) || { status: 'idle', jobs: [], role: '', location: '', mode: 'Any', freshness: '7d', saved: {}, updatedAt: '' };
+}
+
+export function saveStoredJobResults(patch) {
+  const next = { ...getStoredJobResults(), ...patch, updatedAt: new Date().toISOString() };
+  safeWrite(JOB_RESULTS_KEY, next);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-jobs-updated', { detail: next }));
+  return next;
+}
+
+export function clearStoredJobResults() {
+  safeRemove(JOB_RESULTS_KEY);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-jobs-updated'));
+}
+
+export function saveSelectedJob(job) {
+  safeWrite(SELECTED_JOB_KEY, { job, selectedAt: new Date().toISOString() });
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-selected-job-updated', { detail: job }));
+}
+
+export function getSelectedJob() {
+  return (safeRead(SELECTED_JOB_KEY) || {}).job || null;
 }

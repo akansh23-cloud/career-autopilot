@@ -48,6 +48,7 @@ export const Opportunities = {
 
 export const Contacts = {
   find: (b) => api.post('/contacts/find', b),
+  referrals: (b) => api.post('/contacts/referrals', b),
   providers: () => api.get('/contacts/providers'),
 };
 

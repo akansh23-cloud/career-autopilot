@@ -1,15 +1,27 @@
 import { useEffect, useState } from 'react';
-import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown } from 'lucide-react';
+import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown, Users, Linkedin, FileText, Mail, Sparkles, Copy, Check, AlertTriangle } from 'lucide-react';
 import { PageIntro } from './common.jsx';
-import { Button, Input, Badge, Skeleton, EmptyState, Card } from '../components/ui/kit.jsx';
-import { Jobs } from '../lib/api.js';
+import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal } from '../components/ui/kit.jsx';
+import { Jobs, Contacts, AI } from '../lib/api.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
-import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume } from '../lib/resumeStore.js';
+import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume, getStoredJobResults, saveStoredJobResults, saveSelectedJob } from '../lib/resumeStore.js';
 
 const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d']];
 const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
 
-function JobCard({ j, i, saved, onSave }) {
+function domainFromUrl(url = '') {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, '');
+    const parts = h.split('.');
+    return parts.length > 2 ? parts.slice(-2).join('.') : h;
+  } catch { return ''; }
+}
+
+function jobDescription(j) {
+  return [j.title, j.company, j.location, j.summary, (j.requiredSkills || []).join(', ')].filter(Boolean).join('\n');
+}
+
+function JobCard({ j, saved, onSave, onAction }) {
   return (
     <Card hover className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -35,38 +47,55 @@ function JobCard({ j, i, saved, onSave }) {
           {j.requiredSkills.slice(0, 5).map((s) => <span key={s} className="rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">{s}</span>)}
         </div>
       )}
-      <div className="mt-auto flex items-center justify-between border-t border-white/8 pt-3">
+      <div className="grid grid-cols-2 gap-2 border-t border-white/8 pt-3">
+        <Button size="sm" variant="soft" onClick={() => onAction('tailor', j)}><FileText size={14} /> Tailor</Button>
+        <Button size="sm" variant="soft" onClick={() => onAction('contacts', j)}><Mail size={14} /> Contacts</Button>
+        <Button size="sm" variant="soft" onClick={() => onAction('referrals', j)}><Users size={14} /> Referrals</Button>
+        <Button size="sm" variant="soft" onClick={() => onAction('linkedin', j)}><Linkedin size={14} /> LinkedIn</Button>
+      </div>
+      <div className="flex items-center justify-between pt-1">
         {j.salary ? <span className="text-sm font-medium text-aurora-mint">{j.salary}</span> : <span className="text-xs text-slate-600">Salary undisclosed</span>}
         <a href={j.url} target="_blank" rel="noreferrer">
-          <Button size="sm" variant="soft">Apply <ExternalLink size={14} /></Button>
+          <Button size="sm">Apply <ExternalLink size={14} /></Button>
         </a>
       </div>
     </Card>
   );
 }
 
-export default function JobsView() {
+export default function JobsView({ go }) {
+  const stored = getStoredJobResults();
   const storedResume = getStoredResume();
-  const initialRole = getResumeSearchRole();
+  const initialRole = stored.role || getResumeSearchRole();
   const [role, setRole] = useState(initialRole || '');
-  const [loc, setLoc] = useState('');
-  const [mode, setMode] = useState('Any');
-  const [fresh, setFresh] = useState('7d');
-  const [state, setState] = useState({ status: 'idle', jobs: [], err: null });
-  const [saved, setSaved] = useState({});
+  const [loc, setLoc] = useState(stored.location || '');
+  const [mode, setMode] = useState(stored.mode || 'Any');
+  const [fresh, setFresh] = useState(stored.freshness || '7d');
+  const [state, setState] = useState({ status: stored.status || 'idle', jobs: stored.jobs || [], err: null });
+  const [saved, setSaved] = useState(stored.saved || {});
   const [resumeHint, setResumeHint] = useState(Boolean(storedResume.text));
+  const [people, setPeople] = useState({ open: false, title: '', status: 'idle', contacts: [], err: '', note: '', job: null, draft: '', copied: false });
+
+  const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, saved, ...patch });
 
   const run = async (e, override = {}) => {
     e?.preventDefault();
     const searchRole = (override.role ?? role).trim();
     if (!searchRole) return;
+    const nextLoc = override.location ?? loc;
+    const nextMode = override.mode ?? mode;
+    const nextFresh = override.freshness ?? fresh;
     setRole(searchRole);
     setState({ status: 'loading', jobs: [], err: null });
+    persist({ status: 'loading', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh });
     try {
-      const d = await Jobs.search({ role: searchRole, location: loc, mode, freshness: fresh, verify: '0', limit: '18' });
-      setState({ status: 'done', jobs: d.jobs || [], err: null });
+      const d = await Jobs.search({ role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, verify: '0', limit: '18' });
+      const jobs = d.jobs || [];
+      setState({ status: 'done', jobs, err: null });
+      saveStoredJobResults({ status: 'done', jobs, role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, saved });
     } catch (err) {
       setState({ status: 'error', jobs: [], err: err.message });
+      saveStoredJobResults({ status: 'error', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, saved, err: err.message });
     }
   };
 
@@ -89,14 +118,59 @@ export default function JobsView() {
     return () => window.removeEventListener('career-resume-updated', onResumeUpdate);
   }, [role]);
 
-  const toggleSave = (j) => setSaved((s) => ({ ...s, [j.url || j.title]: !s[j.url || j.title] }));
+  const toggleSave = (j) => {
+    const key = j.url || j.title;
+    const next = { ...saved, [key]: !saved[key] };
+    setSaved(next);
+    saveStoredJobResults({ ...getStoredJobResults(), saved: next });
+  };
+
+  const openPeople = async (type, j) => {
+    const title = type === 'referrals' ? 'Referral paths' : type === 'linkedin' ? 'Public LinkedIn profiles' : 'Hiring contacts';
+    setPeople({ open: true, title, status: 'loading', contacts: [], err: '', note: '', job: j, draft: '', copied: false });
+    const domain = j.companyDomain || j.domain || domainFromUrl(j.url);
+    const payload = { company: j.company, domain, title: type === 'referrals' ? role || j.title : 'Recruiter OR Talent Acquisition OR Hiring Manager', jobId: j.id || j.url };
+    try {
+      const d = type === 'referrals' ? await Contacts.referrals(payload) : await Contacts.find(payload);
+      const contacts = d.contacts || [];
+      setPeople((p) => ({ ...p, status: 'done', contacts, note: d.note || '', err: d.ok === false ? d.error : '' }));
+    } catch (err) {
+      setPeople((p) => ({ ...p, status: 'error', err: err.message || 'Lookup failed.' }));
+    }
+  };
+
+  const makeDraft = async (c) => {
+    setPeople((p) => ({ ...p, draft: 'Generating…', copied: false }));
+    const resume = getStoredResume();
+    const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`;
+    try {
+      const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] });
+      const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+      setPeople((p) => ({ ...p, draft: text }));
+    } catch (e) {
+      setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` }));
+    }
+  };
+
+  const copyDraft = () => {
+    navigator.clipboard?.writeText(people.draft || '');
+    setPeople((p) => ({ ...p, copied: true }));
+    setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500);
+  };
+
+  const action = (type, j) => {
+    saveSelectedJob(j);
+    if (type === 'tailor') { go?.('editor'); return; }
+    openPeople(type, j);
+  };
 
   return (
     <>
-      <PageIntro title="Find verified jobs" sub="Real listings from LinkedIn, Indeed, Naukri, Wellfound & more — never AI-fabricated." />
+      <PageIntro title="Find verified jobs" sub="Real listings from LinkedIn, Indeed, Naukri, Wellfound & more — with resume-aware actions after every result." />
       {resumeHint && (
         <div className="mb-4 rounded-2xl border border-aurora-mint/20 bg-aurora-mint/10 px-4 py-3 text-sm text-slate-200">
-          Resume is saved. Job search will use your selected or inferred role: <span className="font-medium text-white">{role || 'select a role'}</span>.
+          Resume is saved. Jobs and actions stay here even when you move to another section.
+          <span className="ml-1 font-medium text-white">Current role: {role || 'select a role'}</span>
         </div>
       )}
 
@@ -106,12 +180,11 @@ export default function JobsView() {
             <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer, Platform Engineer" className="pl-10" />
           </div>
-          {/* Role preset dropdown */}
-          <div className="relative md:w-52">
+          <div className="relative md:w-56">
             <select
-              value={ROLE_GROUPS && Object.values(ROLE_GROUPS).flat().includes(role) ? role : ''}
+              value={Object.values(ROLE_GROUPS).flat().includes(role) ? role : ''}
               onChange={(e) => e.target.value && setRole(e.target.value)}
-              className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] pl-3.5 pr-9 text-sm text-slate-300 outline-none focus:border-aurora-violet/50"
+              className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] pl-3.5 pr-9 text-sm text-slate-100 outline-none focus:border-aurora-violet/50"
             >
               <option value="">Pick a role…</option>
               {Object.entries(ROLE_GROUPS).map(([grp, roles]) => (
@@ -146,28 +219,68 @@ export default function JobsView() {
 
       {state.status === 'loading' && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-52 w-full rounded-2xl" />)}
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-64 w-full rounded-2xl" />)}
         </div>
       )}
       {state.status === 'error' && (
         <EmptyState icon={Briefcase} title="Search failed" hint={state.err} action={<Button size="sm" onClick={run}>Retry</Button>} />
       )}
       {state.status === 'idle' && (
-        <EmptyState icon={Search} title="Search for your next role" hint="Type a job title above and hit search to pull verified, fresh listings ranked by recency." />
+        <EmptyState icon={Search} title="Search for your next role" hint="Analyze your resume first for best matching, or manually search a role here." />
       )}
       {state.status === 'done' && state.jobs.length === 0 && (
         <EmptyState icon={Briefcase} title="No jobs found" hint="Try a broader role, clear the location, or widen the time window." />
       )}
       {state.status === 'done' && state.jobs.length > 0 && (
         <>
-          <p className="mb-4 text-sm text-muted">{state.jobs.length} verified roles</p>
+          <p className="mb-4 text-sm text-muted">{state.jobs.length} verified roles • results persist locally</p>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {state.jobs.map((j, i) => (
-              <JobCard key={(j.url || j.title) + i} j={j} i={i} saved={!!saved[j.url || j.title]} onSave={toggleSave} />
+              <JobCard key={(j.url || j.title) + i} j={j} saved={!!saved[j.url || j.title]} onSave={toggleSave} onAction={action} />
             ))}
           </div>
         </>
       )}
+
+      <Modal open={people.open} onClose={() => setPeople((p) => ({ ...p, open: false }))} title={people.title} width="max-w-3xl">
+        {people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div>}
+        {people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}
+        {people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Add Hunter/PDL/SerpAPI keys for richer contact and referral results.'} />}
+        {people.status === 'done' && people.contacts.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {people.contacts.map((c, i) => (
+              <Card key={i} className="flex flex-col gap-2 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-white">{(c.name || 'P')[0]}</span>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-white">{c.name || 'Public profile'}</p>
+                    <p className="truncate text-xs text-slate-500">{c.title || c.position || c.contactType || 'Contact'} {c.company ? `• ${c.company}` : ''}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {c.email && <Badge tone="cyan"><Mail size={11} /> email</Badge>}
+                  {(c.linkedin || c.url) && <Badge tone="violet"><Linkedin size={11} /> profile</Badge>}
+                  {c.source && <Badge>{c.source}</Badge>}
+                </div>
+                {c.email && <p className="truncate font-mono text-xs text-slate-400">{c.email}</p>}
+                <div className="mt-auto flex gap-2">
+                  {(c.linkedin || c.url) && <a href={c.linkedin || c.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft">Open <ExternalLink size={13} /></Button></a>}
+                  <Button size="sm" onClick={() => makeDraft(c)}><Sparkles size={13} /> Draft</Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+        {people.draft && (
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-medium text-white">Outreach draft</p>
+              <Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13} /> : <Copy size={13} />} {people.copied ? 'Copied' : 'Copy'}</Button>
+            </div>
+            <textarea value={people.draft} onChange={(e) => setPeople((p) => ({ ...p, draft: e.target.value }))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none" />
+          </div>
+        )}
+      </Modal>
     </>
   );
 }

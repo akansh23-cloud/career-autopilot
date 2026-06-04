@@ -110,3 +110,15 @@ h1, h2, h3, h4, .font-display { font-family: 'Clash Display', sans-serif; letter
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
 }
+
+/* Native select menus must remain readable in the dark theme. */
+select,
+select option,
+select optgroup {
+  background-color: #0B0F1C;
+  color: #E7EAF3;
+}
+select option:checked {
+  background-color: #312E81;
+  color: #FFFFFF;
+}
