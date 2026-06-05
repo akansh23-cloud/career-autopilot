@@ -3,7 +3,7 @@ import { Check, X, Sparkles, Crown, Zap, Rocket, Loader2, ShieldCheck, AlertTria
 import { Modal, Button, Badge } from './ui/kit.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT, getAllUsage, LIMITS, isUnlimited, METER_LABELS } from '../lib/plan.js';
-import { startCheckout, PaymentError } from '../lib/payments.js';
+import { startCheckout, createUpiPaymentLink, checkUpiPaymentLink, PaymentError } from '../lib/payments.js';
 
 /* Open the pricing modal from anywhere: openPricing(plan, reason) or window event. */
 export function openPricing(plan, reason) {
@@ -105,9 +105,12 @@ export default function PricingModal() {
   const [busyPlan, setBusyPlan] = useState('');
   const [phase, setPhase] = useState('');
   const [toast, setToast] = useState(null);
+  const [upiLink, setUpiLink] = useState(null);
+  const [upiBusyPlan, setUpiBusyPlan] = useState('');
+  const [upiChecking, setUpiChecking] = useState(false);
 
   useEffect(() => {
-    const onOpen = (e) => { setReason(e.detail?.reason || ''); setToast(null); setPlanState(getPlan()); setOpen(true); };
+    const onOpen = (e) => { setReason(e.detail?.reason || ''); setToast(null); setUpiLink(null); setPlanState(getPlan()); setOpen(true); };
     const onPlan = () => setPlanState(getPlan());
     window.addEventListener('career-open-pricing', onOpen);
     window.addEventListener(PLAN_EVENT, onPlan);
@@ -115,6 +118,45 @@ export default function PricingModal() {
   }, []);
 
   const phaseLabel = phase === 'creating' ? 'Creating order…' : phase === 'verifying' ? 'Verifying payment…' : 'Processing payment…';
+
+  const createUpiLink = async (p) => {
+    if (p.id === 'free' || p.id === plan.planId) return;
+    setUpiBusyPlan(p.id); setToast(null); setUpiLink(null);
+    try {
+      const link = await createUpiPaymentLink(p.id);
+      setUpiLink(link);
+      setToast({ type: 'success', msg: 'UPI payment link generated. Open it, complete payment, then click Check status.' });
+    } catch (e) {
+      setToast({ type: 'error', msg: (e && e.message) || 'Could not generate UPI payment link.' });
+    } finally { setUpiBusyPlan(''); }
+  };
+
+  const copyUpiLink = async () => {
+    if (!upiLink?.shortUrl) return;
+    try {
+      await navigator.clipboard.writeText(upiLink.shortUrl);
+      setToast({ type: 'success', msg: 'UPI payment link copied.' });
+    } catch {
+      setToast({ type: 'error', msg: 'Could not copy link. Open it directly instead.' });
+    }
+  };
+
+  const checkUpiStatus = async () => {
+    if (!upiLink?.paymentLinkId) return;
+    setUpiChecking(true); setToast(null);
+    try {
+      const next = await checkUpiPaymentLink(upiLink.paymentLinkId);
+      if (next) {
+        setPlanState(next);
+        setUpiLink(null);
+        setToast({ type: 'success', msg: `Payment successful — you’re now on ${PLAN_LABELS[next.planId]}. Features unlocked.` });
+      } else {
+        setToast({ type: 'error', msg: 'Payment is not marked paid yet. Complete the UPI payment, then check again.' });
+      }
+    } catch (e) {
+      setToast({ type: 'error', msg: (e && e.message) || 'Could not check payment status.' });
+    } finally { setUpiChecking(false); }
+  };
 
   const choose = async (p) => {
     if (p.id === 'free' || p.id === plan.planId) return;
@@ -176,7 +218,7 @@ export default function PricingModal() {
               <Button
                 className="mt-5 w-full"
                 variant={isCurrent ? 'soft' : p.id === 'free' ? 'soft' : 'primary'}
-                disabled={isCurrent || p.id === 'free' || isBusy || !!busyPlan}
+                disabled={isCurrent || p.id === 'free' || isBusy || !!busyPlan || !!upiBusyPlan}
                 onClick={() => choose(p)}
               >
                 {isBusy ? <><Loader2 size={15} className="animate-spin" /> {phaseLabel}</>
@@ -184,10 +226,39 @@ export default function PricingModal() {
                   : p.id === 'free' ? 'Free plan'
                   : <><Sparkles size={15} /> {p.id === 'pro' ? 'Upgrade to Pro' : 'Go Premium'}</>}
               </Button>
+              {p.id !== 'free' && !isCurrent && (
+                <Button
+                  className="mt-2 w-full"
+                  variant="soft"
+                  disabled={!!busyPlan || !!upiBusyPlan}
+                  onClick={() => createUpiLink(p)}
+                >
+                  {upiBusyPlan === p.id ? <><Loader2 size={15} className="animate-spin" /> Generating UPI link…</> : 'Pay via UPI link'}
+                </Button>
+              )}
             </div>
           );
         })}
       </div>
+
+      {upiLink && (
+        <div className="mt-5 rounded-2xl border border-aurora-cyan/25 bg-aurora-cyan/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-white">UPI payment link ready</div>
+              <p className="mt-1 text-xs text-slate-400">Open this Razorpay link, complete payment, then return here and check status. Your plan is upgraded only after Razorpay marks it paid.</p>
+            </div>
+            <Badge tone="cyan">{upiLink.planId === 'premium' ? 'Premium' : 'Pro'} · ₹{Math.round((upiLink.amount || 0) / 100)}</Badge>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => window.open(upiLink.shortUrl, '_blank', 'noopener,noreferrer')}>Open UPI link</Button>
+            <Button variant="soft" onClick={copyUpiLink}>Copy link</Button>
+            <Button variant="soft" disabled={upiChecking} onClick={checkUpiStatus}>
+              {upiChecking ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : 'Check payment status'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`mt-5 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm ${toast.type === 'success' ? 'border-aurora-mint/30 bg-aurora-mint/10 text-slate-100' : 'border-rose-400/30 bg-rose-500/10 text-rose-200'}`}>
@@ -198,7 +269,7 @@ export default function PricingModal() {
       <ManagePlan plan={plan} />
 
       <p className="mt-4 text-center text-[11px] text-slate-600">
-        Prices in INR. Secured by Razorpay. Your card details are never stored by Career Autopilot.
+        Prices in INR. Secured by Razorpay. You can use Checkout or UPI payment link. Your card details are never stored by Career Autopilot.
       </p>
     </Modal>
   );

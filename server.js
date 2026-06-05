@@ -2522,6 +2522,50 @@ async function rzpCreateOrder(amount, receipt) {
   return data;
 }
 
+async function rzpCreatePaymentLink({ planId, amount, user }) {
+  const auth = Buffer.from(`${RZP_ID()}:${RZP_SECRET()}`).toString('base64');
+  const baseUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+  const customer = {
+    name: user?.name || 'Career Autopilot User',
+    email: user?.email || undefined,
+    contact: user?.phone || undefined,
+  };
+  Object.keys(customer).forEach((k) => customer[k] === undefined && delete customer[k]);
+  const body = {
+    amount,
+    currency: 'INR',
+    accept_partial: false,
+    description: `Career Autopilot ${planId === 'premium' ? 'Premium' : 'Pro'} Plan`,
+    reference_id: `ca_upi_${planId}_${Date.now()}`,
+    customer,
+    notify: { sms: false, email: Boolean(customer.email) },
+    reminder_enable: false,
+    notes: { planId, email: user?.email || '', userId: user?.id || '' },
+  };
+  if (baseUrl) {
+    body.callback_url = `${baseUrl}/?payment_link=return&plan=${encodeURIComponent(planId)}`;
+    body.callback_method = 'get';
+  }
+  const r = await fetch('https://api.razorpay.com/v1/payment_links', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error?.description || 'razorpay_payment_link_failed');
+  return data;
+}
+
+async function rzpFetchPaymentLink(paymentLinkId) {
+  const auth = Buffer.from(`${RZP_ID()}:${RZP_SECRET()}`).toString('base64');
+  const r = await fetch(`https://api.razorpay.com/v1/payment_links/${encodeURIComponent(paymentLinkId)}`, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error?.description || 'razorpay_payment_link_fetch_failed');
+  return data;
+}
+
 app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   try {
     const planId = String(req.body?.planId || '').toLowerCase();
@@ -2554,6 +2598,60 @@ app.post('/api/payments/verify', requireAuth, (req, res) => {
     res.json({ ok: true, planId: rec.planId, status: rec.status, paymentId: rec.paymentId, orderId: rec.orderId, expiresAt: rec.expiresAt });
   } catch (e) {
     res.status(500).json({ ok: false, error: 'verify_failed', message: 'Verification error.' });
+  }
+});
+
+app.post('/api/payments/create-upi-link', requireAuth, async (req, res) => {
+  try {
+    const planId = String(req.body?.planId || '').toLowerCase();
+    if (!PLAN_AMOUNTS[planId]) return res.status(400).json({ ok: false, error: 'invalid_plan', message: 'Unknown plan.' });
+    if (!rzpConfigured()) return res.status(503).json({ ok: false, error: 'gateway_not_configured', message: 'Payment gateway is not configured. Add Razorpay environment variables.' });
+    const link = await rzpCreatePaymentLink({ planId, amount: PLAN_AMOUNTS[planId], user: req.user });
+    res.json({
+      ok: true,
+      paymentLinkId: link.id,
+      shortUrl: link.short_url,
+      amount: link.amount,
+      currency: link.currency || 'INR',
+      planId,
+      status: link.status,
+    });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'upi_link_failed', message: e.message || 'Could not create UPI payment link.' });
+  }
+});
+
+app.get('/api/payments/payment-link-status/:id', requireAuth, async (req, res) => {
+  try {
+    if (!rzpConfigured()) return res.status(503).json({ ok: false, error: 'gateway_not_configured' });
+    const link = await rzpFetchPaymentLink(req.params.id);
+    const paid = link.status === 'paid';
+    const amount = Number(link.amount || 0);
+    const planId = link.notes?.planId || (amount >= PLAN_AMOUNTS.premium ? 'premium' : 'pro');
+    let subscription = null;
+    if (paid && PLAN_AMOUNTS[planId]) {
+      const paymentId = Array.isArray(link.payments) && link.payments[0]?.payment_id ? link.payments[0].payment_id : null;
+      subscription = subs.saveSubscription(req.user, {
+        planId,
+        paymentId,
+        orderId: link.order_id || link.id,
+        amount,
+        status: 'active',
+        source: 'razorpay-upi-link',
+      });
+    }
+    res.json({
+      ok: true,
+      paid,
+      status: link.status,
+      planId,
+      paymentLinkId: link.id,
+      shortUrl: link.short_url,
+      payments: link.payments || [],
+      subscription,
+    });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'upi_link_status_failed', message: e.message || 'Could not check payment link status.' });
   }
 });
 

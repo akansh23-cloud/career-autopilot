@@ -1,5 +1,6 @@
-// Razorpay checkout client. The key SECRET never touches the frontend — we only
-// receive the public key_id from the backend and the order it created.
+// Razorpay payment client. The key SECRET never touches the frontend — Standard
+// Checkout receives only the public key_id from the backend, and UPI links are
+// generated/checked by backend endpoints.
 
 import { api } from './api.js';
 import { setPlan } from './plan.js';
@@ -74,4 +75,40 @@ export async function startCheckout(planId, { user, onState } = {}) {
     rzp.on('payment.failed', (r) => reject(new PaymentError(r?.error?.description || 'Payment failed.', 'payment_failed')));
     rzp.open();
   });
+}
+
+export async function createUpiPaymentLink(planId) {
+  try {
+    const r = await api.post('/api/payments/create-upi-link', { planId });
+    if (!r?.ok || !r.shortUrl || !r.paymentLinkId) throw new PaymentError(r?.message || 'Could not generate UPI payment link.', 'upi_link_failed');
+    return r;
+  } catch (e) {
+    if (e.status === 503 || e.data?.error === 'gateway_not_configured') {
+      throw new PaymentError('Payment gateway is not configured. Add Razorpay environment variables.', 'gateway_not_configured');
+    }
+    throw new PaymentError(e.message || 'Could not generate UPI payment link.', 'upi_link_failed');
+  }
+}
+
+export async function checkUpiPaymentLink(paymentLinkId) {
+  try {
+    const r = await api.get(`/api/payments/payment-link-status/${encodeURIComponent(paymentLinkId)}`);
+    if (!r?.ok) throw new PaymentError(r?.message || 'Could not check UPI payment status.', 'upi_link_status_failed');
+    if (r.paid && r.subscription) {
+      return setPlan({
+        planId: r.subscription.planId,
+        status: r.subscription.status || 'active',
+        source: r.subscription.source || 'razorpay-upi-link',
+        paymentId: r.subscription.paymentId,
+        orderId: r.subscription.orderId,
+        expiresAt: r.subscription.expiresAt,
+      });
+    }
+    return null;
+  } catch (e) {
+    if (e.status === 503 || e.data?.error === 'gateway_not_configured') {
+      throw new PaymentError('Payment gateway is not configured. Add Razorpay environment variables.', 'gateway_not_configured');
+    }
+    throw new PaymentError(e.message || 'Could not check UPI payment status.', 'upi_link_status_failed');
+  }
 }
