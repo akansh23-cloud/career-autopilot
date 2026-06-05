@@ -2,6 +2,70 @@ import { Award, Github, Globe, X, CheckCircle2, Circle, Lock } from 'lucide-reac
 import { Badge, Button, Modal } from '../ui/kit.jsx';
 import { badgeTone } from '../../lib/badges.js';
 import { levelFor, nextStepFor } from '../../lib/xp.js';
+import { statusTone } from '../../lib/projectStatus.js';
+import { layoutGraph } from '../../lib/architecture.js';
+
+export function StatusBadge({ status, size = 'sm' }) {
+  if (!status) return null;
+  return <Badge tone={statusTone(status)}>{status}</Badge>;
+}
+
+/* Dependency-free architecture renderer: parses the project's Mermaid string
+   and draws a clean dark-themed top-down SVG. No mermaid package required, so
+   the build never breaks. */
+export function ArchitectureDiagram({ mermaid, height = 320 }) {
+  if (!mermaid || !mermaid.trim()) {
+    return <p className="text-[12px] text-slate-500">No architecture diagram yet — generate one on the Architecture tab.</p>;
+  }
+  const { nodes, edges, layers, maxDepth } = layoutGraph(mermaid);
+  if (!nodes.length) return <p className="text-[12px] text-slate-500">Diagram is empty.</p>;
+
+  const W = 640;
+  const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
+  const rowH = Math.max(72, Math.min(110, (height - 24) / (maxDepth + 1)));
+  const pos = {};
+  layerKeys.forEach((d) => {
+    const row = layers[d];
+    const gap = W / (row.length + 1);
+    row.forEach((n, i) => { pos[n.id] = { x: gap * (i + 1), y: 36 + d * rowH }; });
+  });
+  const H = 48 + maxDepth * rowH + 36;
+  const boxW = 132, boxH = 40;
+  const shapeColor = (shape) => shape === 'cyl' ? 'var(--mint, #34d399)' : shape === 'circle' ? 'var(--amber, #f59e0b)' : 'var(--cyan, #38bdf8)';
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-white/10 bg-ink-950/60 p-2">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 420 }} role="img" aria-label="Architecture diagram">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="rgba(148,163,184,0.7)" />
+          </marker>
+        </defs>
+        {edges.map(([a, b], i) => {
+          const pa = pos[a], pb = pos[b];
+          if (!pa || !pb) return null;
+          const y1 = pa.y + boxH / 2, y2 = pb.y - boxH / 2;
+          return <path key={i} d={`M${pa.x},${y1} C${pa.x},${(y1 + y2) / 2} ${pb.x},${(y1 + y2) / 2} ${pb.x},${y2}`} fill="none" stroke="rgba(148,163,184,0.45)" strokeWidth="1.5" markerEnd="url(#arrow)" />;
+        })}
+        {nodes.map((n) => {
+          const p = pos[n.id];
+          if (!p) return null;
+          const c = shapeColor(n.shape);
+          const rx = n.shape === 'circle' ? boxH / 2 : 10;
+          return (
+            <g key={n.id} transform={`translate(${p.x - boxW / 2},${p.y - boxH / 2})`}>
+              <rect width={boxW} height={boxH} rx={rx} fill="rgba(255,255,255,0.04)" stroke={c} strokeWidth="1.4" />
+              <text x={boxW / 2} y={boxH / 2 + 4} textAnchor="middle" fontSize="12" fill="#e2e8f0" style={{ fontFamily: 'inherit' }}>
+                {n.label.length > 18 ? n.label.slice(0, 17) + '…' : n.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 
 export function ScoreRing({ score = 0, label = 'Proof', size = 48 }) {
   const tone = score >= 70 ? 'text-aurora-mint' : score >= 40 ? 'text-aurora-cyan' : 'text-amber-glow';

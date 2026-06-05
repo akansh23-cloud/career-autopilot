@@ -20,6 +20,9 @@ export const XP_ACTIONS = {
   publish: 50,
   highProofScore: 100, // proof score > 80
   interviewExplanation: 25,
+  githubVerified: 25, // GitHub analysis passed
+  liveVerified: 30,   // live link verified reachable
+  recruiterSummary: 15,
   recruiterInterest: 100, // per shortlist / contact-interest
 };
 
@@ -58,7 +61,10 @@ export function projectXP(p = {}) {
   if (checklist.length && milestonesDone === checklist.length) add('fullChecklist', XP_ACTIONS.fullChecklist, 'Full checklist complete');
 
   if (has(p.githubUrl)) add('githubRepo', XP_ACTIONS.githubRepo, 'GitHub repo added');
+  if (p.github && p.github.success) add('githubVerified', XP_ACTIONS.githubVerified, 'GitHub analysis passed');
   if (has(p.liveDemoUrl)) add('liveDemo', XP_ACTIONS.liveDemo, 'Live demo added');
+  if (p.liveVerification && p.liveVerification.reachable) add('liveVerified', XP_ACTIONS.liveVerified, 'Live demo verified');
+  if (has(p.recruiterSummary)) add('recruiterSummary', XP_ACTIONS.recruiterSummary, 'Recruiter summary generated');
   if (has(p.readme) && p.readme.trim().length > 40) add('readme', XP_ACTIONS.readme, 'README written');
   if (len(p.screenshots) || has(p.architecture)) add('architectureProof', XP_ACTIONS.architectureProof, 'Architecture / screenshot proof');
   if (milestonesDone >= Math.ceil(checklist.length * 0.6) && checklist.length) add('testProof', XP_ACTIONS.testProof, 'Testing / checklist proof');

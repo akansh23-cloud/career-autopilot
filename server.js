@@ -2722,6 +2722,239 @@ app.post('/api/projects/generate-interview-prep', requireAuth, async (req, res) 
 });
 
 /* ============================================================
+   PART 1 — GITHUB PUBLIC REPO ANALYSIS  (no OAuth required)
+   Parses any of: https://github.com/u/r , github.com/u/r , u/r
+   Uses GitHub's public REST API (optionally GITHUB_TOKEN for higher limits).
+   Never throws to the client: on rate-limit/failure returns a friendly
+   { success:false } so the UI can offer manual proof.
+   ============================================================ */
+function parseRepoRef(raw = '') {
+  let s = String(raw || '').trim();
+  if (!s) return null;
+  s = s.replace(/^git\+/, '').replace(/\.git$/, '').replace(/\/+$/, '');
+  s = s.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  s = s.replace(/^github\.com\//i, '');
+  const parts = s.split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+  const owner = parts[0];
+  const repo = parts[1];
+  if (!/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) return null;
+  return { owner, repo };
+}
+async function ghFetch(path, { json = true } = {}) {
+  const headers = { 'User-Agent': 'career-autopilot', Accept: 'application/vnd.github+json' };
+  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  const r = await fetch(`https://api.github.com${path}`, { headers });
+  if (r.status === 403 || r.status === 429) { const e = new Error('rate_limited'); e.code = 'rate_limited'; throw e; }
+  if (r.status === 404) { const e = new Error('not_found'); e.code = 'not_found'; throw e; }
+  if (!r.ok) { const e = new Error('github_error'); e.code = 'github_error'; throw e; }
+  return json ? r.json() : r.text();
+}
+function detectFilesFromRoot(entries = []) {
+  const names = entries.map((e) => ({ name: e.name, type: e.type }));
+  const lower = names.map((n) => n.name.toLowerCase());
+  const hasFile = (n) => lower.includes(n.toLowerCase());
+  const hasDir = (n) => names.some((x) => x.type === 'dir' && x.name.toLowerCase() === n.toLowerCase());
+  return {
+    'package.json': hasFile('package.json'),
+    'requirements.txt': hasFile('requirements.txt'),
+    'pom.xml': hasFile('pom.xml'),
+    'build.gradle': hasFile('build.gradle') || hasFile('build.gradle.kts'),
+    Dockerfile: hasFile('Dockerfile'),
+    'docker-compose.yml': hasFile('docker-compose.yml') || hasFile('docker-compose.yaml') || hasFile('compose.yaml'),
+    kubernetes: hasDir('k8s') || hasDir('kubernetes') || hasDir('manifests') || names.some((n) => /\.ya?ml$/i.test(n.name) && /(deploy|service|ingress|k8s)/i.test(n.name)),
+    terraform: hasDir('infra') || hasDir('terraform') || names.some((n) => /\.tf$/i.test(n.name)),
+    githubWorkflows: hasDir('.github'),
+    tests: hasDir('tests') || hasDir('test') || hasDir('__tests__') || hasDir('spec'),
+    src: hasDir('src') || hasDir('app') || hasDir('lib'),
+    docs: hasDir('docs') || hasDir('documentation'),
+    deployment: hasFile('vercel.json') || hasFile('netlify.toml') || hasFile('Procfile') || hasFile('render.yaml') || hasFile('railway.json') || hasFile('fly.toml') || hasFile('serverless.yml') || hasFile('serverless.yaml'),
+    envExample: hasFile('.env.example') || hasFile('.env.sample') || hasFile('.env.template'),
+    screenshots: hasDir('screenshots') || hasDir('assets') || hasDir('docs') || hasDir('.github'),
+    readme: names.some((n) => /^readme(\.md|\.rst|\.txt)?$/i.test(n.name)),
+    license: names.some((n) => /^licen[sc]e/i.test(n.name)),
+  };
+}
+
+app.post('/api/projects/analyze-github', requireAuth, async (req, res) => {
+  const { repoUrl, expectedSkills = [], expectedTechStack = [] } = req.body || {};
+  const ref = parseRepoRef(repoUrl);
+  if (!ref) return res.status(400).json({ ok: false, success: false, error: 'bad_url', message: 'Could not read that GitHub repo URL. Use https://github.com/user/repo, github.com/user/repo or user/repo.' });
+  try {
+    const meta = await ghFetch(`/repos/${ref.owner}/${ref.repo}`);
+    let languages = {};
+    try { languages = await ghFetch(`/repos/${ref.owner}/${ref.repo}/languages`); } catch {}
+    let rootEntries = [];
+    try { rootEntries = await ghFetch(`/repos/${ref.owner}/${ref.repo}/contents?ref=${encodeURIComponent(meta.default_branch || 'main')}`); } catch {}
+    let readmeText = '';
+    try {
+      const rd = await ghFetch(`/repos/${ref.owner}/${ref.repo}/readme`);
+      if (rd && rd.content) readmeText = Buffer.from(rd.content, rd.encoding || 'base64').toString('utf8');
+    } catch {}
+
+    const files = detectFilesFromRoot(Array.isArray(rootEntries) ? rootEntries : []);
+
+    // Peek at package.json to refine framework detection
+    let pkgDeps = '';
+    if (files['package.json']) {
+      try {
+        const pj = await ghFetch(`/repos/${ref.owner}/${ref.repo}/contents/package.json?ref=${encodeURIComponent(meta.default_branch || 'main')}`);
+        if (pj && pj.content) pkgDeps = Buffer.from(pj.content, pj.encoding || 'base64').toString('utf8').toLowerCase();
+      } catch {}
+    }
+
+    const langKeys = Object.keys(languages);
+    const detectedTechStack = [];
+    const addTech = (t) => { if (!detectedTechStack.includes(t)) detectedTechStack.push(t); };
+    langKeys.forEach(addTech);
+    if (/\breact\b/.test(pkgDeps)) addTech('React');
+    if (/next/.test(pkgDeps)) addTech('Next.js');
+    if (/express/.test(pkgDeps)) addTech('Express');
+    if (/(^|")node|nodejs/.test(pkgDeps) || files['package.json']) addTech('Node.js');
+    if (/typescript/.test(pkgDeps)) addTech('TypeScript');
+    if (/tailwind/.test(pkgDeps)) addTech('Tailwind CSS');
+    if (files['requirements.txt']) addTech('Python');
+    if (files['pom.xml'] || files['build.gradle']) addTech('Java');
+    if (files.Dockerfile || files['docker-compose.yml']) addTech('Docker');
+    if (files.kubernetes) addTech('Kubernetes');
+    if (files.terraform) addTech('Terraform');
+    if (files.githubWorkflows) addTech('CI/CD');
+
+    const readmeWords = readmeText.trim().split(/\s+/).filter(Boolean).length;
+    const readmeQuality = !files.readme && readmeWords === 0 ? 'missing'
+      : readmeWords > 300 ? 'good' : readmeWords > 60 ? 'basic' : 'thin';
+
+    const detectedSkills = Array.from(new Set([
+      ...detectedTechStack,
+      ...(files.tests ? ['Testing'] : []),
+      ...(files.githubWorkflows ? ['GitHub Actions'] : []),
+    ]));
+
+    const evidence = [];
+    if (files.readme) evidence.push('README present');
+    if (files.src) evidence.push('Source folder');
+    if (files.tests) evidence.push('Tests folder');
+    if (files.githubWorkflows) evidence.push('CI/CD workflows (.github)');
+    if (files.Dockerfile || files['docker-compose.yml']) evidence.push('Containerised (Docker)');
+    if (files.kubernetes) evidence.push('Kubernetes manifests');
+    if (files.terraform) evidence.push('Infrastructure-as-code (Terraform)');
+    if (files.deployment) evidence.push('Deployment config');
+    if (files.docs) evidence.push('Docs folder');
+    if (files.envExample) evidence.push('.env example');
+
+    const warnings = [];
+    if (!files.readme) warnings.push('No README detected.');
+    if (!files.tests) warnings.push('No tests folder detected.');
+    if (!files.githubWorkflows) warnings.push('No CI/CD workflow detected.');
+
+    const recommendations = [];
+    if (readmeQuality !== 'good') recommendations.push('Expand the README with setup, screenshots and results.');
+    if (!files.tests) recommendations.push('Add a tests/ folder with at least a few unit tests.');
+    if (!files.githubWorkflows) recommendations.push('Add a GitHub Actions workflow for build/test on push.');
+    if (!files.Dockerfile && !files.deployment) recommendations.push('Add a Dockerfile or deployment config to prove it ships.');
+
+    // githubScore /100
+    let githubScore = 0;
+    githubScore += files.readme ? (readmeQuality === 'good' ? 18 : readmeQuality === 'basic' ? 12 : 6) : 0;
+    githubScore += files.src ? 14 : 0;
+    githubScore += files.tests ? 14 : 0;
+    githubScore += files.githubWorkflows ? 14 : 0;
+    githubScore += (files.Dockerfile || files['docker-compose.yml']) ? 10 : 0;
+    githubScore += (files.kubernetes || files.terraform || files.deployment) ? 10 : 0;
+    githubScore += langKeys.length >= 2 ? 8 : langKeys.length === 1 ? 4 : 0;
+    githubScore += (meta.description ? 4 : 0);
+    githubScore += Math.min(8, Math.round((meta.stargazers_count || 0) / 5));
+    githubScore = Math.min(100, githubScore);
+
+    const structure = (Array.isArray(rootEntries) ? rootEntries : [])
+      .slice(0, 40)
+      .map((e) => `${e.type === 'dir' ? '📁' : '📄'} ${e.name}`);
+
+    res.json({
+      ok: true,
+      success: true,
+      repo: {
+        owner: ref.owner,
+        name: meta.name,
+        fullName: meta.full_name,
+        description: meta.description || '',
+        url: meta.html_url,
+        defaultBranch: meta.default_branch,
+        stars: meta.stargazers_count || 0,
+        forks: meta.forks_count || 0,
+        openIssues: meta.open_issues_count || 0,
+        license: meta.license ? meta.license.spdx_id : null,
+        pushedAt: meta.pushed_at,
+        createdAt: meta.created_at,
+        topics: meta.topics || [],
+      },
+      languages,
+      detectedTechStack,
+      detectedSkills,
+      readme: { exists: files.readme, quality: readmeQuality, words: readmeWords },
+      files,
+      structure,
+      evidence,
+      warnings,
+      recommendations,
+      githubScore,
+      lastSyncedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    if (err.code === 'not_found') {
+      return res.json({ ok: false, success: false, error: 'not_found', message: 'That repository could not be found or is private. Check the URL or add proof manually.' });
+    }
+    return res.json({ ok: false, success: false, error: err.code || 'github_error', message: 'GitHub analysis is temporarily unavailable. Add proof manually or try again later.' });
+  }
+});
+
+/* ============================================================
+   PART 2 — LIVE DEPLOYMENT LINK VERIFICATION
+   ============================================================ */
+app.post('/api/projects/verify-live-link', requireAuth, async (req, res) => {
+  let { liveUrl } = req.body || {};
+  liveUrl = String(liveUrl || '').trim();
+  if (liveUrl && !/^https?:\/\//i.test(liveUrl)) liveUrl = 'https://' + liveUrl;
+  let parsed;
+  try { parsed = new URL(liveUrl); } catch {
+    return res.status(400).json({ ok: false, success: false, reachable: false, error: 'bad_url', warnings: ['That does not look like a valid URL.'] });
+  }
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 9000);
+  const warnings = [];
+  try {
+    let r;
+    try {
+      r = await fetch(parsed.toString(), { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'career-autopilot-verifier' } });
+    } catch (e) {
+      clearTimeout(timer);
+      return res.json({ ok: true, success: true, reachable: false, statusCode: 0, finalUrl: parsed.toString(), responseTimeMs: Date.now() - started, checkedAt: new Date().toISOString(), warnings: ['Could not reach the URL (timeout, DNS or CORS/network restriction). Needs manual review.'] });
+    }
+    const responseTimeMs = Date.now() - started;
+    const statusCode = r.status;
+    const contentType = r.headers.get('content-type') || '';
+    const reachable = statusCode >= 200 && statusCode < 400;
+    let title = '';
+    let looksLikeApp = false;
+    if (/text\/html/i.test(contentType)) {
+      const body = await r.text().catch(() => '');
+      const m = body.match(/<title[^>]*>([^<]*)<\/title>/i);
+      if (m) title = m[1].trim().slice(0, 160);
+      looksLikeApp = body.length > 400 && /<(div|main|section|app|script|header)/i.test(body);
+      if (!looksLikeApp) warnings.push('Page loaded but looks empty — confirm the deployment is live.');
+    } else if (contentType) {
+      looksLikeApp = true;
+    }
+    clearTimeout(timer);
+    res.json({ ok: true, success: true, reachable, statusCode, finalUrl: r.url || parsed.toString(), responseTimeMs, title, contentType, looksLikeApp, checkedAt: new Date().toISOString(), warnings });
+  } catch (e) {
+    clearTimeout(timer);
+    res.json({ ok: true, success: true, reachable: false, statusCode: 0, finalUrl: parsed.toString(), responseTimeMs: Date.now() - started, checkedAt: new Date().toISOString(), warnings: ['Verification failed unexpectedly. Needs manual review.'] });
+  }
+});
+
+/* ============================================================
    CUSTOM TEMPLATE ANALYSIS  (vision)
    Accepts a base64 image (PDF first-page is rasterised client-side) and
    returns a structured layout spec. Falls back to the client analyzer

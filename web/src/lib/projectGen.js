@@ -5,6 +5,7 @@
 
 import { api } from './api.js';
 import { uid } from './projectStore.js';
+import { generateMermaid } from './architecture.js';
 
 export const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 export const DURATIONS = ['Weekend', '1 week', '2 weeks', '1 month'];
@@ -206,6 +207,223 @@ Open to feedback and to connecting with others building in this space.
 #${p.targetRole.replace(/[^a-zA-Z]/g, '')} #buildinpublic #portfolio`;
 }
 
+/* ---------------- Part 5/6 — industry-level detail builders ---------------- */
+const PERSONAS = {
+  Frontend: ['End user browsing the app', 'Returning power user', 'Admin/content editor'],
+  Backend: ['API consumer (frontend/mobile)', 'Authenticated end user', 'Service-to-service caller'],
+  'Full Stack': ['End user', 'Authenticated user managing their data', 'Admin managing the platform'],
+  DevOps: ['Platform/SRE engineer', 'Developer shipping a service', 'On-call responder'],
+  Data: ['Data analyst querying the warehouse', 'Pipeline operator', 'Downstream dashboard consumer'],
+  'AI/ML': ['End user requesting a prediction', 'ML engineer training models', 'Reviewer auditing results'],
+  Cloud: ['End user of the serverless app', 'Cloud engineer (IaC)', 'Billing/ops owner'],
+  Cybersecurity: ['Security analyst', 'App owner remediating findings', 'Auditor reviewing the report'],
+};
+const NFR = ['Performance (p95 latency budget)', 'Security (auth, input validation, secrets)', 'Reliability (error handling, retries)', 'Observability (logging/metrics)', 'Accessibility & responsive UX', 'Maintainability (tests, docs)'];
+
+function featuresFor(type, skills) {
+  const s = skills.slice(0, 4);
+  return {
+    mustHave: [
+      `Core ${type} workflow working end-to-end`,
+      'User-facing screens / endpoints for the primary task',
+      `Persistence of the main entity`,
+      'Basic input validation and error states',
+    ],
+    goodToHave: [
+      'Authentication and per-user data',
+      `Use of ${s[0] || 'the key skill'} in a real feature`,
+      'Search, filter or pagination',
+      'Empty / loading / error UI states',
+    ],
+    advanced: [
+      'Role-based access (admin vs user)',
+      'Rate limiting / caching',
+      `Integration with ${s[1] || 'an external API'}`,
+      'CI/CD with automated tests on each push',
+    ],
+    roles: ['Anonymous visitor', 'Authenticated user', 'Admin'],
+    nonFunctional: NFR,
+  };
+}
+function technicalArchitectureFor(type, preset, skills) {
+  const stack = preset.stack;
+  const pick = (re, def) => stack.find((x) => re.test(x)) || def;
+  return {
+    frontend: ['Frontend', 'Full Stack'].includes(type) || /react|vue|next|tailwind/i.test(stack.join(' ')) ? pick(/react|vue|next|svelte/i, 'React + Vite') + ' (component-driven, typed API layer)' : 'Minimal UI / CLI / demo page',
+    backend: ['Backend', 'Full Stack', 'AI/ML', 'Cloud'].includes(type) ? pick(/express|fastapi|spring|node|django/i, 'Node.js + Express') + ' (routes -> controllers -> services)' : 'N/A or thin function layer',
+    database: preset.db ? pick(/postgres|mongo|dynamo|sql|prisma/i, 'PostgreSQL') : 'None (stateless) or object storage',
+    apis: 'REST (JSON) with versioned routes and OpenAPI docs',
+    authentication: /jwt|auth|oauth/i.test(skills.join(' ') + stack.join(' ')) ? 'JWT access tokens + refresh, hashed passwords (bcrypt)' : 'Optional JWT auth',
+    storage: /s3|bucket|upload|file/i.test(stack.join(' ')) ? 'Object storage (S3-compatible) for uploads' : 'Database-backed; object storage if files are needed',
+    integrations: pick(/stripe|razorpay|kafka|redis|openai|anthropic/i, 'One external API or queue'),
+    deployment: preset.deployment[0] || 'Containerised deploy to a managed host',
+    monitoring: 'Structured logging + basic metrics (latency, error rate); alerts on SLOs',
+    cicd: 'GitHub Actions: lint -> test -> build -> deploy on main',
+  };
+}
+function dataModelFor(type, preset) {
+  if (!preset.db) {
+    return [{ name: 'config', fields: ['key (string, PK)', 'value (json)', 'updated_at (timestamp)'], sample: { key: 'feature.enabled', value: true, updated_at: '2025-01-01T00:00:00Z' } }];
+  }
+  return preset.db.map((line) => {
+    const name = line.split('(')[0].trim();
+    const fields = (line.match(/\(([^)]*)\)/)?.[1] || '').split(',').map((f) => f.trim()).filter(Boolean);
+    const sample = {};
+    fields.slice(0, 4).forEach((f, i) => { const key = f.split(/\s+/)[0]; sample[key] = key.includes('id') ? i + 1 : key.includes('email') ? 'user@example.com' : key.includes('created') ? '2025-01-01T00:00:00Z' : `sample_${key}`; });
+    return { name, fields, sample };
+  });
+}
+function apiDesignFor(type, skills) {
+  if (['Frontend'].includes(type)) {
+    return [{ method: 'GET', endpoint: '/api/items', purpose: 'List items for the current view', request: 'query: ?page=1&q=', response: '{ items: [], total: number }', auth: false, validation: 'page>=1; q optional string' }];
+  }
+  return [
+    { method: 'POST', endpoint: '/api/auth/register', purpose: 'Create a user account', request: '{ email, password, name }', response: '{ user, token }', auth: false, validation: 'valid email; password >= 8 chars; name required' },
+    { method: 'POST', endpoint: '/api/auth/login', purpose: 'Authenticate and issue a JWT', request: '{ email, password }', response: '{ user, token }', auth: false, validation: 'email + password required; rate-limited' },
+    { method: 'GET', endpoint: '/api/items', purpose: 'List the current user\u2019s items', request: 'query: ?page=&status=', response: '{ items: [], total }', auth: true, validation: 'valid JWT; page numeric' },
+    { method: 'POST', endpoint: '/api/items', purpose: 'Create an item', request: '{ title, body }', response: '{ item }', auth: true, validation: 'title 1-120 chars; body optional' },
+  ];
+}
+
+const MILESTONE_TITLES = ['Setup', 'UI layout', 'Backend setup', 'Database', 'Authentication', 'Core feature', 'Testing', 'Deployment', 'README + portfolio', 'Interview prep'];
+function milestonesFor(type, skills) {
+  const s = skills.slice(0, 4);
+  const M = (n, title, goal, tasks, expectedOutput, commonMistakes, verification) => ({ n, title, goal, tasks, expectedOutput, commonMistakes, verification });
+  return [
+    M(1, 'Setup', 'Get a clean, version-controlled project skeleton running.',
+      ['Install Node.js LTS (or Python) and Git', 'Create a new public GitHub repo and clone it', 'Initialise the project and commit a "hello world" run', 'Add a .gitignore and a README stub'],
+      'Repo on GitHub with a running starter and first commit.',
+      'Committing node_modules / secrets; skipping .gitignore.',
+      ['App starts locally', 'First commit pushed to GitHub']),
+    M(2, 'UI layout', 'Build the static screens before wiring real data.',
+      ['Sketch the screens (home, detail, form)', 'Build components with placeholder data', 'Add loading / empty / error states', 'Make it responsive'],
+      'Clickable UI shell with placeholder content.',
+      'Wiring APIs before the layout is stable; ignoring empty/error states.',
+      ['All primary screens render', 'Looks correct on mobile width']),
+    M(3, 'Backend setup', 'Stand up an API the frontend can call.',
+      ['Create the server (Express/FastAPI)', 'Add a /health route', `Add the first real route for the core entity`, 'Enable CORS for local dev'],
+      'API responds to /health and one real route.',
+      'No validation; returning stack traces to the client.',
+      ['/health returns 200', 'Core route returns JSON']),
+    M(4, 'Database', 'Persist data instead of using in-memory arrays.',
+      ['Provision a local DB (Docker is easiest)', 'Define the schema / models', 'Wire create + read for the core entity', 'Add seed data for testing'],
+      'Data survives a server restart.',
+      'Hard-coding credentials; no migrations.',
+      ['Create then read returns saved row', 'DB schema committed']),
+    M(5, 'Authentication', 'Protect user data with real auth.',
+      ['Add register + login routes', 'Hash passwords (bcrypt)', 'Issue and verify JWTs', 'Guard protected routes with middleware'],
+      'Only logged-in users can access their data.',
+      'Storing plaintext passwords; putting secrets in the repo.',
+      ['Login returns a token', 'Protected route rejects missing/invalid token']),
+    M(6, 'Core feature', `Deliver the headline ${type} capability end-to-end.`,
+      [`Implement the main ${type} workflow using ${s.slice(0, 2).join(', ') || 'the core stack'}`, 'Connect frontend to the real API', 'Handle the unhappy paths', 'Polish the primary user journey'],
+      'A user can complete the core task start-to-finish.',
+      'Scope creep; leaving TODOs in the critical path.',
+      ['End-to-end happy path works', 'Errors are shown gracefully']),
+    M(7, 'Testing', 'Prove it works and keep it working.',
+      ['Write unit tests for core logic', 'Add API/integration tests for key routes', 'Add one end-to-end UI test', 'Run the full suite locally'],
+      'A passing test suite you can run with one command.',
+      'Testing only the happy path; flaky tests with real network calls.',
+      ['Tests pass locally', 'A failing case actually fails the suite']),
+    M(8, 'Deployment', 'Ship it to a public URL.',
+      ['Add a Dockerfile and/or deploy config', 'Set environment variables in the host', 'Deploy frontend and backend', 'Smoke-test the live URL'],
+      'A public live demo anyone can open.',
+      'Secrets committed to the repo; forgetting to set env vars in prod.',
+      ['Live URL loads', 'Core feature works in production']),
+    M(9, 'README + portfolio', 'Make the work legible to a recruiter in 60 seconds.',
+      ['Write the README (problem, features, stack, setup)', 'Add screenshots / a short demo GIF', 'Document the architecture + API', 'Link the live demo and repo'],
+      'A README a stranger can follow to run and understand it.',
+      'No screenshots; "TODO" sections; no run instructions.',
+      ['README has setup + screenshots', 'Architecture is documented']),
+    M(10, 'Interview prep', 'Be able to defend every decision.',
+      ['Write a 60-second pitch', 'Prepare answers on architecture, trade-offs and scaling', 'Note the hardest bug and how you fixed it', 'Generate resume bullets + a recruiter summary'],
+      'You can explain the project end-to-end without notes.',
+      'Memorising answers instead of understanding; no metrics.',
+      ['60-second pitch ready', 'Can answer "why this stack?"']),
+  ];
+}
+function mentorTasksFor(type, skills) {
+  const s = skills.slice(0, 4);
+  const T = (title, why, filesToCreate, steps, expectedOutput, howToTest, commonMistakes) =>
+    ({ id: uid('gt'), title, why, filesToCreate, steps, expectedOutput, howToTest, commonMistakes, status: 'todo' });
+  return [
+    T('Initialise repo + tooling', 'A clean base prevents "works on my machine" issues later.',
+      ['.gitignore', 'README.md', 'package.json'],
+      ['Run the project init command', 'Add .gitignore for the language', 'Create a public GitHub repo and push'],
+      'Repo builds/runs locally and is on GitHub.',
+      'Clone fresh in a temp folder and run it.',
+      'Committing node_modules or secrets.'),
+    T('Build the API auth endpoint', 'Auth is the most-asked interview topic and gates user data.',
+      ['server/routes/auth.js', 'server/middleware/auth.js'],
+      ['Create POST /api/auth/register', 'Validate email/password', 'Hash password with bcrypt', 'Save user to the DB', 'Return a signed JWT'],
+      'Register + login return a token; protected routes need it.',
+      'Test with curl/Postman: register, then call a protected route with the token.',
+      'Returning the password hash; not validating input.'),
+    T(`Implement the core ${type} feature`, 'This is the headline of the project and your resume bullet.',
+      ['server/services/core.js', 'client/src/pages/Main.jsx'],
+      [`Wire the main ${type} workflow using ${s.slice(0, 2).join(', ') || 'the stack'}`, 'Connect UI to the API', 'Handle loading/error states'],
+      'A user completes the core task end-to-end.',
+      'Walk the happy path, then break the network and confirm the error UI.',
+      'Leaving the unhappy path unhandled.'),
+    T('Add tests + CI', 'Tests are proof; CI shows discipline recruiters look for.',
+      ['tests/core.test.js', '.github/workflows/ci.yml'],
+      ['Write unit tests for core logic', 'Add an API test for a key route', 'Add a GitHub Actions workflow to run them'],
+      'Green CI badge on the repo.',
+      'Push a branch and watch the workflow run.',
+      'Tests that hit real external services.'),
+    T('Deploy + verify', 'A live link is the single strongest portfolio signal.',
+      ['Dockerfile', 'vercel.json or render.yaml'],
+      ['Containerise or configure the host', 'Set env vars in prod', 'Deploy and open the live URL'],
+      'A public live demo of the project.',
+      'Open the URL in incognito and complete the core task.',
+      'Forgetting prod env vars; committing secrets.'),
+  ];
+}
+function testingPlanDetailed(type) {
+  return {
+    unit: ['Pure functions / services with edge inputs', 'Validation logic', 'Reducers / state transitions'],
+    api: ['Each route: success + 400 + 401 cases', 'Auth middleware accepts/rejects correctly', 'Pagination and filtering'],
+    ui: ['Renders primary screens', 'Loading / empty / error states', 'One full user journey (e2e)'],
+    manual: ['Sign up -> log in -> core task -> log out', 'Refresh persists data', 'Try invalid inputs everywhere', 'Mobile width check'],
+    edgeCases: ['Empty data set', 'Very long input / large list', 'Expired/invalid token', 'Network failure mid-request', 'Duplicate submit / double click'],
+  };
+}
+function deploymentPlanDetailed(type, preset) {
+  return {
+    frontend: ['Build static bundle', 'Deploy to Vercel/Netlify', 'Point it at the prod API URL'],
+    backend: preset.deployment,
+    database: ['Use a managed DB (Neon/Railway/Atlas)', 'Run migrations on deploy', 'Restrict network access'],
+    envVars: ['DATABASE_URL', 'JWT_SECRET', 'API_BASE_URL', '(any 3rd-party keys)'],
+    customDomain: 'Optional: map a custom domain + HTTPS.',
+    verification: ['Open the live URL', 'Complete the core task in prod', 'Check logs for errors', 'Run the in-app "Verify live demo" check'],
+  };
+}
+function buildIndustryDetails(p, type, preset, skills) {
+  return {
+    overview: {
+      whoShouldBuild: `Aspiring ${p.targetRole}s who need recruiter-visible proof of ${skills.slice(0, 3).join(', ') || 'core skills'}.`,
+      realWorldProblem: p.problemStatement,
+      expectedOutcome: 'A deployed app, a clear README, an architecture diagram, tests, and an interview-ready story.',
+    },
+    businessContext: {
+      problemStatement: p.problemStatement,
+      personas: PERSONAS[type] || PERSONAS['Full Stack'],
+      coreWorkflows: ['Onboard / sign in', `Perform the core ${type} task`, 'View / manage results', 'Admin oversight'],
+      realWorldRelevance: `Mirrors how real ${type} systems are built and operated in industry.`,
+      industryScenario: `A small team needs a ${type.toLowerCase()} solution shipped quickly with production hygiene.`,
+    },
+    features: featuresFor(type, skills),
+    technicalArchitecture: technicalArchitectureFor(type, preset, skills),
+    dataModel: dataModelFor(type, preset),
+    apiDesign: apiDesignFor(type, skills),
+    folderStructure: p.repoStructure,
+    milestones: milestonesFor(type, skills),
+    guideTasks: mentorTasksFor(type, skills),
+    testingPlan: testingPlanDetailed(type),
+    deploymentPlan: deploymentPlanDetailed(type, preset),
+  };
+}
+
 /* ---------------- Main deterministic builder ---------------- */
 export function buildProject(input = {}) {
   const role = input.targetRole || 'Software Engineer';
@@ -256,6 +474,9 @@ export function buildProject(input = {}) {
   p.interviewQuestions = interviewFor(type, skillsCovered);
   p.linkedinPost = linkedinFor(p);
   p.readme = readmeFor(p);
+  p.architectureDiagram = generateMermaid(p);
+  p.industry = buildIndustryDetails(p, type, preset, skillsCovered);
+  p.guideTasks = p.industry.guideTasks;
   return p;
 }
 
@@ -270,7 +491,13 @@ export async function generateRoadmap(input) {
   const local = buildProject(input);
   const r = await tryPost('/api/projects/generate-roadmap', input);
   if (r && r.ok && r.project) {
-    return { ...local, ...r.project, id: local.id, tasks: (r.project.steps ? tasksFromRoadmap(r.project.steps) : local.tasks), generatedBy: r.generatedBy || 'ai' };
+    const merged = { ...local, ...r.project, id: local.id, tasks: (r.project.steps ? tasksFromRoadmap(r.project.steps) : local.tasks), generatedBy: r.generatedBy || 'ai' };
+    // keep the rich, always-present industry detail + diagram consistent with merged fields
+    merged.architectureDiagram = local.architectureDiagram;
+    merged.industry = local.industry;
+    merged.guideTasks = local.guideTasks;
+    if (!merged.repoStructure) merged.repoStructure = local.repoStructure;
+    return merged;
   }
   return { ...local, generatedBy: 'template' };
 }

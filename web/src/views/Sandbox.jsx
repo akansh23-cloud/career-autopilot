@@ -1,23 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, Github, Globe, Target, Award, Eye, Mail, Copy, Users, Star, Filter, Search,
+  ShieldCheck, BadgeCheck, BookOpen,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.jsx';
-import { ScoreRing, BadgePill, BadgeModal } from '../components/proof/ProofViews.jsx';
+import { ScoreRing, BadgePill, BadgeModal, StatusBadge, ArchitectureDiagram } from '../components/proof/ProofViews.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import {
   getPublishedProjects, getProjects, saveProject, savePartnerRequest, uid, proofScoreBreakdown,
 } from '../lib/projectStore.js';
 import { deriveBadges } from '../lib/badges.js';
 import { rankProjects } from '../lib/roleFit.js';
+import { calculateProjectStatus } from '../lib/projectStatus.js';
 import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
 
 function recruiterSummary(p, userName) {
+  if (p.recruiterSummary && p.recruiterSummary.trim()) return p.recruiterSummary;
   const top = (p.skillsCovered || []).slice(0, 4).join(', ');
   const score = proofScoreBreakdown(p).score;
-  return `${userName} — ${p.targetRole} candidate with a ${p.type} project demonstrating ${top}. Proof score ${score}/100, including ${p.githubUrl ? 'public code' : 'code (pending)'} and ${p.liveDemoUrl ? 'a live demo' : 'demo (pending)'}.`;
+  return `${userName} — ${p.targetRole} candidate with a ${p.type} project demonstrating ${top}. Proof score ${score}/100, including ${p.github?.success ? 'verified GitHub' : p.githubUrl ? 'public code' : 'code (pending)'} and ${p.liveVerification?.reachable ? 'a verified live demo' : p.liveDemoUrl ? 'a live demo' : 'demo (pending)'}.`;
+}
+function VerifiedIcons({ p }) {
+  return (
+    <>
+      {p.github?.success && <Badge tone="violet" title={`GitHub verified ${p.github.githubScore}/100`}><BadgeCheck size={11} /> GitHub</Badge>}
+      {p.liveVerification?.reachable && <Badge tone="mint" title="Live demo verified"><BadgeCheck size={11} /> Live</Badge>}
+    </>
+  );
 }
 
 function ProjectModal({ p, open, onClose, userName, access, onContact, onShortlist, onClone, onCollab }) {
@@ -26,14 +37,17 @@ function ProjectModal({ p, open, onClose, userName, access, onContact, onShortli
   const badges = deriveBadges([p], access);
   const eng = engagementFor(p.id);
   const score = proofScoreBreakdown(p).score;
+  const st = calculateProjectStatus(p);
   return (
     <>
       <Modal open={open} onClose={onClose} width="max-w-2xl" title={p.title}>
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={st.status} />
             <Badge tone="violet"><Target size={11} /> {p.targetRole}</Badge>
             <Badge tone="mint"><Award size={11} /> Proof {score}/100</Badge>
             <Badge tone="cyan">{p.type}</Badge>
+            <VerifiedIcons p={p} />
             <Badge>{userName}</Badge>
           </div>
           <p className="text-sm leading-relaxed text-slate-300">{p.useCase}</p>
@@ -44,8 +58,11 @@ function ProjectModal({ p, open, onClose, userName, access, onContact, onShortli
             </div>
           )}
           <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Tech stack</div><div className="flex flex-wrap gap-1.5">{(p.techStack || []).map((s, i) => <Badge key={i} tone="violet">{s}</Badge>)}</div></div>
-          {p.architecture && (
-            <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3"><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Architecture</div><p className="text-[13px] text-slate-300">{p.architecture}</p></div>
+          {(p.architectureDiagram || p.architecture) && (
+            <div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Architecture</div>
+              {p.architectureDiagram ? <ArchitectureDiagram mermaid={p.architectureDiagram} height={240} /> : <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3"><p className="text-[13px] text-slate-300">{p.architecture}</p></div>}
+            </div>
           )}
           {(p.screenshots || []).length > 0 && (
             <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Screenshots</div><div className="flex flex-wrap gap-2">{p.screenshots.map((s, i) => <span key={i} className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] px-3 py-2 text-[11px] text-slate-400">{s.label || `Screenshot ${i + 1}`}</span>)}</div></div>
@@ -55,6 +72,7 @@ function ProjectModal({ p, open, onClose, userName, access, onContact, onShortli
             {p.githubUrl && <a href={p.githubUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Github size={14} /> Code</Button></a>}
             {p.liveDemoUrl && <a href={p.liveDemoUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Globe size={14} /> Live demo</Button></a>}
             <Button size="sm" variant="soft" onClick={() => onClone(p)}><Copy size={14} /> Clone roadmap</Button>
+            <Button size="sm" variant="soft" onClick={() => onClone(p)}><BookOpen size={14} /> View build guide</Button>
             <Button size="sm" variant="soft" onClick={() => onCollab(p)}><Users size={14} /> Request collaboration</Button>
             <Button size="sm" variant="soft" onClick={() => onShortlist(p)}><Star size={14} /> {eng.shortlisted ? 'Shortlisted' : 'Shortlist'}</Button>
             <Button size="sm" onClick={() => onContact(p)}><Mail size={14} /> Contact candidate</Button>
@@ -169,6 +187,7 @@ export default function Sandbox({ go }) {
                     </div>
                     <ScoreRing score={score} />
                   </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5"><StatusBadge status={calculateProjectStatus(p).status} /><VerifiedIcons p={p} /></div>
                   <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-slate-400">{p.useCase}</p>
                   <div className="mt-2.5 flex flex-wrap gap-1.5">{(p.skillsCovered || []).slice(0, 5).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div>
                   {badges.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{badges.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={() => setOpen(p)} />)}</div>}

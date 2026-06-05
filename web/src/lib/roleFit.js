@@ -5,6 +5,7 @@ import { proofScore } from './proofScore.js';
 import { deriveSkillXP, careerXP } from './xp.js';
 import { deriveBadges } from './badges.js';
 import { engagementFor } from './engagement.js';
+import { calculateProjectStatus, STATUS_RANK } from './projectStatus.js';
 
 const norm = (s) => String(s || '').trim().toLowerCase();
 const has = (s) => typeof s === 'string' && s.trim().length > 0;
@@ -33,11 +34,14 @@ export function buildCandidates(publishedProjects = [], access = null) {
     const hasDemo = g.projects.some((p) => has(p.liveDemoUrl));
     const hasInterview = g.projects.some((p) => (p.interviewQuestions || []).length);
     const targetRole = g.projects[0]?.targetRole || '';
+    const ranked = rankProjects(g.projects);
+    const bestStatus = ranked.length ? calculateProjectStatus(ranked[0]).status : 'Draft';
     return {
       id: norm(g.name),
       name: g.name,
       targetRole,
-      projects: g.projects.slice().sort((a, b) => proofScore(b) - proofScore(a)),
+      projects: ranked,
+      bestStatus,
       skillXP, badges, avgProof, career,
       recentDays: recent, engaged, hasGithub, hasDemo, hasInterview,
       topSkillNames: skillXP.slice(0, 6).map((s) => s.skillName),
@@ -99,14 +103,23 @@ export function rankCandidates(candidates = [], query = {}) {
     .sort((a, b) => b.fit.score - a.fit.score);
 }
 
-/* ---------------- Sandbox ranking (Part 6) ---------------- */
+/* ---------------- Sandbox ranking (Part 6/7) ----------------
+   Priority: 1) status (Recruiter Ready > Verified > ...), 2) proof score,
+   3) GitHub/live verified evidence, 4) skill badges, 5) recruiter signal,
+   6) recent activity. */
 export function rankProjects(projects = []) {
+  const badgeCount = (p) => deriveBadges([p]).filter((b) => b.rawLevel && b.rawLevel !== 'Practiced').length;
   return projects.slice().sort((a, b) => {
+    const ra = STATUS_RANK[calculateProjectStatus(a).status] || 0;
+    const rb = STATUS_RANK[calculateProjectStatus(b).status] || 0;
+    if (rb !== ra) return rb - ra;
     const sa = proofScore(a), sb = proofScore(b);
     if (sb !== sa) return sb - sa;
-    const la = (a.githubUrl ? 1 : 0) + (a.liveDemoUrl ? 1 : 0);
-    const lb = (b.githubUrl ? 1 : 0) + (b.liveDemoUrl ? 1 : 0);
+    const la = (a.github?.success ? 2 : a.githubUrl ? 1 : 0) + (a.liveVerification?.reachable ? 2 : a.liveDemoUrl ? 1 : 0);
+    const lb = (b.github?.success ? 2 : b.githubUrl ? 1 : 0) + (b.liveVerification?.reachable ? 2 : b.liveDemoUrl ? 1 : 0);
     if (lb !== la) return lb - la;
+    const ba = badgeCount(a), bb = badgeCount(b);
+    if (bb !== ba) return bb - ba;
     const ea = engagementFor(a.id), eb = engagementFor(b.id);
     const ena = (ea.shortlisted ? 1 : 0) + (ea.contacted ? 1 : 0);
     const enb = (eb.shortlisted ? 1 : 0) + (eb.contacted ? 1 : 0);

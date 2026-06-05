@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.jsx';
-import { ScoreRing, BadgePill, BadgeModal } from '../components/proof/ProofViews.jsx';
+import { ScoreRing, BadgePill, BadgeModal, StatusBadge } from '../components/proof/ProofViews.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getPublishedProjects, proofScoreBreakdown } from '../lib/projectStore.js';
 import { buildCandidates, rankCandidates } from '../lib/roleFit.js';
+import { calculateProjectStatus } from '../lib/projectStatus.js';
 import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
 import { ALL_ROLES } from '../lib/roles.js';
@@ -101,7 +102,7 @@ export default function RecruiterConsole() {
                         <p className="text-xs text-slate-400">{candidate.targetRole} · {candidate.career.level} · {candidate.career.total} XP</p>
                       </div>
                     </div>
-                    <ScoreRing score={fit.score} label="Role fit" />
+                    <div className="flex items-center gap-2"><StatusBadge status={candidate.bestStatus} /><ScoreRing score={fit.score} label="Role fit" /></div>
                   </div>
 
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -144,6 +145,7 @@ export default function RecruiterConsole() {
                     </div>
                     <Badge tone={score >= 70 ? 'mint' : score >= 40 ? 'cyan' : 'amber'}><Award size={11} /> {score}</Badge>
                   </div>
+                  <div className="mt-1.5"><StatusBadge status={calculateProjectStatus(p).status} /></div>
                   <div className="mt-2 flex flex-wrap gap-1.5">{(p.skillsCovered || []).slice(0, 5).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {p.githubUrl && <a href={p.githubUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Github size={13} /> Code</Button></a>}
