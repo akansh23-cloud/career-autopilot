@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
@@ -8,6 +8,17 @@ import {
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { openPricing } from '../PricingModal.jsx';
+import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
+
+function usePlanId() {
+  const [p, setP] = useState(getPlan());
+  useEffect(() => {
+    const f = () => setP(getPlan());
+    window.addEventListener(PLAN_EVENT, f);
+    return () => window.removeEventListener(PLAN_EVENT, f);
+  }, []);
+  return p;
+}
 
 export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
@@ -51,6 +62,8 @@ function NavList({ active, onPick }) {
 }
 
 function SidebarInner({ active, onPick }) {
+  const plan = usePlanId();
+  const paid = plan.planId !== 'free';
   return (
     <>
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -62,9 +75,19 @@ function SidebarInner({ active, onPick }) {
       <NavList active={active} onPick={onPick} />
       <div className="mt-auto p-4">
         <div className="gradient-border p-4">
-          <p className="text-[13px] font-medium text-white">Pro workspace</p>
-          <p className="mt-1 text-xs text-muted">Unlock unlimited tailoring & outreach.</p>
-          <button onClick={() => openPricing('pro')} className="btn-primary mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white">Upgrade</button>
+          {paid ? (
+            <>
+              <p className="text-[13px] font-medium text-white">{PLAN_LABELS[plan.planId]} plan active</p>
+              <p className="mt-1 text-xs text-muted">Manage your plan and usage.</p>
+              <button onClick={() => openPricing()} className="mt-3 w-full rounded-lg border border-white/12 bg-white/[0.04] py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Manage plan</button>
+            </>
+          ) : (
+            <>
+              <p className="text-[13px] font-medium text-white">Pro workspace</p>
+              <p className="mt-1 text-xs text-muted">Unlock unlimited tailoring & outreach.</p>
+              <button onClick={() => openPricing('pro')} className="btn-primary mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white">Upgrade</button>
+            </>
+          )}
         </div>
       </div>
     </>
@@ -73,6 +96,7 @@ function SidebarInner({ active, onPick }) {
 
 export default function Shell({ active, onPick, title, children }) {
   const { user, logout } = useAuth();
+  const plan = usePlanId();
   const [drawer, setDrawer] = useState(false);
   const pick = (id) => { onPick(id); setDrawer(false); };
 
@@ -105,12 +129,21 @@ export default function Shell({ active, onPick, title, children }) {
           <button onClick={() => setDrawer(true)} className="rounded-lg p-2 text-slate-300 hover:bg-white/6 lg:hidden"><Menu size={20} /></button>
           <h1 className="font-display text-lg font-semibold text-white">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => openPricing('pro')}
-              className="hidden items-center gap-1.5 rounded-xl border border-aurora-violet/30 bg-aurora-violet/10 px-3 py-2 text-xs font-semibold text-[#C2BBFF] transition hover:bg-aurora-violet/20 sm:flex"
-            >
-              <Zap size={14} /> Upgrade
-            </button>
+            {plan.planId === 'free' ? (
+              <button
+                onClick={() => openPricing('pro')}
+                className="hidden items-center gap-1.5 rounded-xl border border-aurora-violet/30 bg-aurora-violet/10 px-3 py-2 text-xs font-semibold text-[#C2BBFF] transition hover:bg-aurora-violet/20 sm:flex"
+              >
+                <Zap size={14} /> Upgrade
+              </button>
+            ) : (
+              <button
+                onClick={() => openPricing()}
+                className="hidden items-center gap-1.5 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-3 py-2 text-xs font-semibold text-[#A7F2DD] transition hover:bg-aurora-mint/20 sm:flex"
+              >
+                <Zap size={14} /> {PLAN_LABELS[plan.planId]} · Manage
+              </button>
+            )}
             <div className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 md:flex">
               <Search size={15} /> <span className="text-slate-500">Search…</span>
             </div>

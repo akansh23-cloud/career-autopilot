@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './hooks/useAuth.jsx';
+import { syncPlanFromServer } from './lib/plan.js';
 import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
@@ -57,6 +58,8 @@ export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
   const [active, setActive] = useState('dash');
+
+  useEffect(() => { if (user) syncPlanFromServer(); }, [user]);
 
   if (loading) return <Splash />;
 

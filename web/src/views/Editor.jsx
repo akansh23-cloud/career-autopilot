@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Wand2, Copy, Check, PenLine, AlertTriangle, Download, FileText, Briefcase,
-  Star, Plus, Upload, ImagePlus, Loader2, X, FileType2, Eye, Sparkles,
+  Star, Plus, Upload, ImagePlus, Loader2, X, FileType2, Eye, Sparkles, Shield, Lock, RefreshCw,
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -14,9 +14,11 @@ import {
 } from '../lib/resumeStore.js';
 import {
   parseResume, TEMPLATES, getTemplate, recommendTemplateId, exportResumePDF,
-  exportResumeDOCX, buildCustomTemplate, setCustomTemplate,
+  exportResumeDOCX, buildCustomTemplate, setCustomTemplate, atsEstimate,
 } from '../lib/resumeTemplates.js';
 import { TemplateGallery, TemplatePreviewModal, ResumePaper } from '../components/ResumeTemplates.jsx';
+import { analyzeTemplateImage } from '../lib/templateAnalyze.js';
+import { canUploadCustom, canExportDocx, useMeter, canUse, promptUpgrade, templateAllowance } from '../lib/plan.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -140,122 +142,112 @@ async function fileToImage(file) {
 }
 
 function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCustom, selected }) {
+  const allowed = canUploadCustom();
   const [preview, setPreview] = useState(customSpec?.imageDataUrl || null);
   const [mime, setMime] = useState('image/png');
-  const [status, setStatus] = useState(customSpec ? 'done' : 'idle'); // idle|reading|analyzing|done|error|fallback
+  const [status, setStatus] = useState(customSpec ? 'done' : 'idle'); // idle|reading|analyzing|done|error
   const [err, setErr] = useState('');
+  const [analysis, setAnalysis] = useState(customSpec || null);
+  const [source, setSource] = useState(customSpec?.source || 'ai');
+  const [atsSafe, setAtsSafe] = useState(!!customSpec?.atsSafe);
   const inputRef = useRef(null);
+
+  const tpl = analysis ? buildCustomTemplate({ ...analysis, atsSafe }) : null;
+  const twoCol = tpl?.layout === 'twocol';
 
   const onPick = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (!allowed) { promptUpgrade('Custom template upload is a Pro feature.', 'pro'); return; }
     setErr(''); setStatus('reading');
     try {
       const { dataUrl, mime: m } = await fileToImage(file);
       setPreview(dataUrl); setMime(m);
-      await analyze(dataUrl, m, file.name);
+      await runAnalyze(dataUrl, m, file.name, atsSafe);
     } catch (ex) { setErr(ex.message || 'Could not read that file.'); setStatus('error'); }
   };
 
-  const analyze = async (dataUrl, m, name) => {
+  const runAnalyze = async (dataUrl, m, name, safe) => {
     setStatus('analyzing'); setErr('');
-    const base64 = String(dataUrl).split(',')[1];
-    const prompt = `You are a resume layout analyst. Look at this resume TEMPLATE image and describe its visual structure.
-Return ONLY JSON, no prose: {"columns":1 or 2,"headerStyle":"plain" or "dark" or "banner","headerAlign":"left" or "center","accent":"#RRGGBB","fontKind":"sans" or "serif","pages":"single" or "multi","sectionOrder":["summary","experience","skills","education","projects"],"note":"one short sentence"}`;
     try {
-      const d = await AI.message({
-        model: 'claude-sonnet-4-20250514', max_tokens: 600,
-        messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: m, data: base64 } },
-          { type: 'text', text: prompt },
-        ] }],
-      });
-      const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-      const m2 = text.match(/\{[\s\S]*\}/);
-      const spec = m2 ? JSON.parse(m2[0]) : null;
-      if (!spec) throw new Error('no-json');
-      finishBuild({
-        name: name ? `From: ${name}`.slice(0, 40) : 'Custom template',
-        columns: Number(spec.columns) === 2 ? 2 : 1,
-        headerStyle: spec.headerStyle === 'dark' || spec.headerStyle === 'banner' ? 'dark' : 'plain',
-        headerAlign: spec.headerAlign === 'center' ? 'center' : 'left',
-        accent: /^#?[0-9a-f]{6}$/i.test(String(spec.accent).replace('#', '')) ? (spec.accent.startsWith('#') ? spec.accent : '#' + spec.accent) : '#334155',
-        font: spec.fontKind === 'serif' ? 'Georgia, "Times New Roman", serif' : '"Helvetica Neue", Arial, sans-serif',
-        pages: spec.pages === 'multi' ? 'multi' : 'single',
-        note: spec.note || 'Template-inspired layout from your upload.',
-        imageDataUrl: dataUrl,
-      });
-    } catch {
-      // graceful fallback — AI vision unavailable; let the user pick a style
-      setStatus('fallback');
-    }
+      const { analysis: a, source: src } = await analyzeTemplateImage(dataUrl, m, name);
+      const spec = { ...a, imageDataUrl: dataUrl, source: src, atsSafe: safe, selectedAt: new Date().toISOString() };
+      setAnalysis(spec); setSource(src);
+      finishBuild(spec, safe);
+    } catch (ex) { setErr('Analysis failed. Try another file.'); setStatus('error'); }
   };
 
-  const finishBuild = (spec) => {
-    const tpl = buildCustomTemplate(spec);
-    setCustomTemplate(tpl);
-    saveCustomTemplateSpec(spec);
+  const finishBuild = (spec, safe) => {
+    const built = buildCustomTemplate({ ...spec, atsSafe: safe });
+    setCustomTemplate(built);
+    saveCustomTemplateSpec({ ...spec, atsSafe: safe });
     setStatus('done');
-    onBuilt(spec, tpl);
+    onBuilt({ ...spec, atsSafe: safe }, built);
   };
 
-  const buildFromChoice = (choice) => {
-    finishBuild({
-      name: 'Custom (style-matched)',
-      columns: choice.columns, headerStyle: choice.headerStyle, headerAlign: 'left',
-      accent: choice.accent,
-      font: choice.font === 'serif' ? 'Georgia, "Times New Roman", serif' : '"Helvetica Neue", Arial, sans-serif',
-      pages: 'single', note: 'Template-inspired layout (style selected manually).',
-      imageDataUrl: preview,
-    });
+  const toggleAtsSafe = (safe) => {
+    setAtsSafe(safe);
+    if (analysis) finishBuild(analysis, safe);
   };
+  const reAnalyze = () => { if (preview) runAnalyze(preview, mime, analysis?.templateName, atsSafe); };
+  const clear = () => { setPreview(null); setStatus('idle'); setErr(''); setAnalysis(null); onClear(); };
 
-  const clear = () => { setPreview(null); setStatus('idle'); setErr(''); onClear(); };
+  if (!allowed) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5 text-center">
+        <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/[0.05] text-aurora-violet ring-1 ring-white/10"><Lock size={18} /></div>
+        <p className="text-[13px] font-semibold text-white">Custom template upload</p>
+        <p className="text-[11px] leading-snug text-slate-500">Upload a resume template image/PDF and we’ll rebuild your resume in that design. Available on Pro & Premium.</p>
+        <Button size="sm" className="mt-1" onClick={() => promptUpgrade('Custom template upload is a Pro feature.', 'pro')}><Sparkles size={13} /> Upgrade to unlock</Button>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col overflow-hidden rounded-2xl border transition ${selected ? 'border-aurora-violet/60 ring-1 ring-aurora-violet/30 bg-aurora-violet/5' : 'border-dashed border-white/15 bg-white/[0.02]'}`}>
-      <div className="flex h-[176px] items-center justify-center border-b border-white/8 bg-[#0d1018] p-2">
+      <div className="relative flex h-[176px] items-center justify-center border-b border-white/8 bg-[#0d1018] p-2">
         {preview ? (
-          <img src={preview} alt="uploaded template" className="max-h-full max-w-full rounded object-contain" />
+          <>
+            <img src={preview} alt="uploaded template" className="max-h-full max-w-full rounded object-contain" />
+            {status === 'analyzing' && <div className="absolute inset-0 grid place-items-center bg-black/55"><span className="flex items-center gap-1.5 text-[11px] text-white"><Loader2 size={13} className="animate-spin" /> Analysing layout…</span></div>}
+          </>
         ) : (
           <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 text-center">
             <Upload size={20} className="text-slate-500" />
-            <span className="text-xs font-medium text-slate-300">Upload your own template</span>
-            <span className="px-3 text-[10px] leading-snug text-slate-600">PNG · JPG · JPEG · WEBP · PDF — we read the layout and rebuild your resume in it</span>
+            <span className="text-xs font-medium text-slate-300">My Uploaded Template</span>
+            <span className="px-3 text-[10px] leading-snug text-slate-600">PNG · JPG · JPEG · PDF — we read the layout and rebuild your resume in it</span>
             <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.pdf" className="hidden" onChange={onPick} />
           </label>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="flex items-center justify-between">
-          <p className="text-[13px] font-semibold text-white">Custom template</p>
-          <Badge tone="violet" className="text-[9px]">From upload</Badge>
+          <p className="text-[13px] font-semibold text-white">My Uploaded Template</p>
+          {tpl ? <Badge tone={tpl.atsScore >= 85 ? 'mint' : tpl.atsScore >= 65 ? 'cyan' : 'amber'} className="text-[9px]">ATS {tpl.atsScore}</Badge> : <Badge tone="violet" className="text-[9px]">From upload</Badge>}
         </div>
 
         {status === 'reading' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-cyan"><Loader2 size={12} className="animate-spin" /> Reading file…</p>}
-        {status === 'analyzing' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-cyan"><Loader2 size={12} className="animate-spin" /> Analysing layout with AI…</p>}
         {status === 'error' && <p className="flex items-center gap-1.5 text-[11px] text-amber-glow"><AlertTriangle size={12} /> {err}</p>}
-        {status === 'done' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint"><Check size={12} /> Template ready — your resume was matched to this layout.</p>}
-
-        {status === 'fallback' && (
-          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
-            <p className="text-[10.5px] text-slate-400">AI analysis wasn't available, so pick a style to build a template-inspired layout:</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => buildFromChoice({ columns: 1, headerStyle: 'plain', accent: '#0e7490', font: 'sans' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Single · accent</button>
-              <button onClick={() => buildFromChoice({ columns: 2, headerStyle: 'plain', accent: '#0f172a', font: 'sans' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Two column</button>
-              <button onClick={() => buildFromChoice({ columns: 1, headerStyle: 'dark', accent: '#b45309', font: 'serif' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Dark header</button>
-              <button onClick={() => buildFromChoice({ columns: 1, headerStyle: 'plain', accent: '#6d28d9', font: 'sans' })} className="rounded-lg bg-white/5 px-2 py-1.5 text-[10.5px] text-slate-200 hover:bg-white/10">Modern accent</button>
+        {status === 'done' && (
+          <>
+            <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint"><Check size={12} /> Matched: {tpl.layout === 'twocol' ? 'two-column' : tpl.layout === 'darkheader' ? 'banner header' : 'single-column'} layout.</p>
+            {source === 'fallback' && <p className="text-[10px] text-slate-500">Template matched using fallback mode — try “Re-analyse”.</p>}
+            {twoCol && !atsSafe && <p className="flex items-center gap-1.5 text-[10px] text-amber-glow"><AlertTriangle size={11} /> Two-column may lower ATS parsing. Use ATS-safe for applications.</p>}
+            <div className="mt-0.5 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-0.5 text-[10px]">
+              <button onClick={() => toggleAtsSafe(false)} className={`flex-1 rounded-md px-2 py-1 transition ${!atsSafe ? 'bg-aurora-violet/25 text-white' : 'text-slate-400'}`}>Visual</button>
+              <button onClick={() => toggleAtsSafe(true)} className={`flex-1 rounded-md px-2 py-1 transition ${atsSafe ? 'bg-aurora-mint/20 text-white' : 'text-slate-400'}`}><Shield size={9} className="mr-0.5 inline" />ATS-safe</button>
             </div>
-          </div>
+          </>
         )}
 
-        <div className="mt-auto flex gap-2 pt-1">
+        <div className="mt-auto flex flex-wrap gap-2 pt-1">
           {status === 'done' ? (
             <>
               <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-aurora-violet/25 text-white ring-1 ring-aurora-violet/40' : 'btn-primary text-white hover:brightness-110'}`}>
-                {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this'}
+                {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this custom template'}
               </button>
+              <button onClick={reAnalyze} title="Re-analyse template" className="rounded-lg border border-white/12 px-2.5 py-1.5 text-[11px] text-slate-300 hover:bg-white/10"><RefreshCw size={12} /></button>
               <button onClick={clear} className="rounded-lg border border-white/12 px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-red-400">Remove</button>
             </>
           ) : preview ? (
@@ -336,10 +328,18 @@ export default function Editor() {
   const data = useMemo(() => parseResume(activeText), [activeText]);
   const selectedTpl = getTemplate(tplId);
 
-  const pickTemplate = (id) => { setTplId(id); saveSelectedTemplate(id); };
+  const pickTemplate = (id) => {
+    const allow = templateAllowance();
+    if (id !== 'custom' && allow !== Infinity) {
+      const idx = TEMPLATES.findIndex((t) => t.id === id);
+      if (idx >= allow) { promptUpgrade('Unlock all 8 resume templates with Pro.', 'pro'); return; }
+    }
+    setTplId(id); saveSelectedTemplate(id);
+  };
 
   const tailor = async () => {
     if (resume.trim().length < 40 || jd.trim().length < 20) { setErr('Add both your resume and the job description.'); return; }
+    if (!canUse('tailoring')) { promptUpgrade('You’ve used all your resume tailoring this month. Upgrade for more.', 'pro'); return; }
     setStatus('loading'); setErr(''); setOut('');
     const prompt = `Rewrite and tailor the resume below to the job description. Keep it truthful — never invent experience, companies, dates, certifications, metrics or tools.
 Length preference: ${len}. If Single page, compress bullets and remove weaker content. If Multi page, keep sections complete and do not split section content.
@@ -351,6 +351,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
       const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const next = text.trim();
       setOut(next); setStatus('done');
+      useMeter('tailoring');
       safeWrite({ resume, jd, tpl: tplId, len, out: next, updatedAt: new Date().toISOString() });
     } catch (e) { setErr(e.message || 'Tailoring failed.'); setStatus('error'); }
   };
@@ -367,6 +368,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
   };
   const doDOCX = () => {
     if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
+    if (!canExportDocx()) { promptUpgrade('DOCX export is available on Pro & Premium. Free plan exports PDF.', 'pro'); return; }
     setBusy('docx');
     try { exportResumeDOCX(data, tplId, { fileName: `${safeName}-${selectedTpl.id}.doc` }); }
     finally { setBusy(''); }

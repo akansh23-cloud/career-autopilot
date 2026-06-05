@@ -7,6 +7,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import * as db from './db.js';
+import * as subs from './paymentsStore.js';
 import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
 
 dotenv.config();
@@ -24,6 +25,7 @@ const CROSS_SITE = process.env.COOKIE_CROSS_SITE === '1' || String(process.env.C
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || (CROSS_SITE ? 'none' : 'lax')).toLowerCase();
 const COOKIE_SECURE = process.env.COOKIE_SECURE === '1' || CROSS_SITE || process.env.NODE_ENV === 'production';
 
+app.use('/api/payments/webhook', express.raw({ type: '*/*' }));
 app.use(express.json({ limit: '12mb' }));
 /* Reflect the caller's origin and allow credentials so the OAuth status fetch works
    whether the app is opened same-origin or from a configured frontend origin. */
@@ -2499,6 +2501,92 @@ app.post('/opportunities/convert-to-resume', (req, res) => {
 });
 
 /* ============================================================
+   PAYMENTS  —  Razorpay integration (India, INR)
+   Amounts are mapped on the backend ONLY; the frontend never sets price.
+   Secrets are read from env and never returned to the client.
+   ============================================================ */
+const PLAN_AMOUNTS = { pro: 39900, premium: 79900 }; // paise (₹399 / ₹799)
+const RZP_ID = () => process.env.RAZORPAY_KEY_ID || '';
+const RZP_SECRET = () => process.env.RAZORPAY_KEY_SECRET || '';
+const rzpConfigured = () => Boolean(RZP_ID() && RZP_SECRET());
+
+async function rzpCreateOrder(amount, receipt) {
+  const auth = Buffer.from(`${RZP_ID()}:${RZP_SECRET()}`).toString('base64');
+  const r = await fetch('https://api.razorpay.com/v1/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+    body: JSON.stringify({ amount, currency: 'INR', receipt, payment_capture: 1 }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error?.description || 'razorpay_order_failed');
+  return data;
+}
+
+app.post('/api/payments/create-order', requireAuth, async (req, res) => {
+  try {
+    const planId = String(req.body?.planId || '').toLowerCase();
+    if (!PLAN_AMOUNTS[planId]) return res.status(400).json({ ok: false, error: 'invalid_plan', message: 'Unknown plan.' });
+    if (!rzpConfigured()) return res.status(503).json({ ok: false, error: 'gateway_not_configured', message: 'Payment gateway is not configured. Add Razorpay environment variables.' });
+    const amount = PLAN_AMOUNTS[planId]; // backend-trusted amount
+    const order = await rzpCreateOrder(amount, `ca_${planId}_${Date.now()}`);
+    subs.recordOrder(req.user, { orderId: order.id, planId, amount });
+    res.json({ ok: true, keyId: RZP_ID(), order: { id: order.id, amount: order.amount, currency: order.currency }, planId });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'order_failed', message: 'Could not create the payment order. Please try again.' });
+  }
+});
+
+app.post('/api/payments/verify', requireAuth, (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planId } = req.body || {};
+    if (!rzpConfigured()) return res.status(503).json({ ok: false, error: 'gateway_not_configured' });
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !PLAN_AMOUNTS[planId]) {
+      return res.status(400).json({ ok: false, error: 'missing_fields' });
+    }
+    const expected = crypto.createHmac('sha256', RZP_SECRET()).update(`${razorpay_order_id}|${razorpay_payment_id}`).digest('hex');
+    const a = Buffer.from(expected); const b = Buffer.from(String(razorpay_signature));
+    const valid = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!valid) return res.status(400).json({ ok: false, error: 'invalid_signature', message: 'Payment could not be verified.' });
+    const rec = subs.saveSubscription(req.user, {
+      planId, paymentId: razorpay_payment_id, orderId: razorpay_order_id,
+      amount: PLAN_AMOUNTS[planId], status: 'active', source: 'razorpay',
+    });
+    res.json({ ok: true, planId: rec.planId, status: rec.status, paymentId: rec.paymentId, orderId: rec.orderId, expiresAt: rec.expiresAt });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'verify_failed', message: 'Verification error.' });
+  }
+});
+
+app.post('/api/payments/webhook', (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+    const signature = req.headers['x-razorpay-signature'];
+    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body || {}));
+    if (!secret) return res.status(503).json({ ok: false, error: 'webhook_not_configured' });
+    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    const a = Buffer.from(expected); const b = Buffer.from(String(signature || ''));
+    if (!(a.length === b.length && crypto.timingSafeEqual(a, b))) return res.status(400).json({ ok: false, error: 'invalid_signature' });
+    const evt = JSON.parse(raw.toString('utf8'));
+    const entity = evt?.payload?.payment?.entity;
+    if (entity && (evt.event === 'payment.captured' || evt.event === 'order.paid')) {
+      const amount = entity.amount;
+      const planId = amount >= PLAN_AMOUNTS.premium ? 'premium' : 'pro';
+      const email = entity.email || (entity.notes && entity.notes.email) || null;
+      if (email) subs.saveSubscription({ email }, { planId, paymentId: entity.id, orderId: entity.order_id, amount, status: 'active', source: 'razorpay' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: 'webhook_error' });
+  }
+});
+
+app.get('/api/payments/subscription-status', requireAuth, (req, res) => {
+  const s = subs.getSubscription(req.user);
+  res.json({ ok: true, planId: s.planId, status: s.status, source: s.source || 'default', expiresAt: s.expiresAt || null, paymentId: s.paymentId || null, orderId: s.orderId || null, gatewayConfigured: rzpConfigured() });
+});
+
+
+/* ============================================================
    CAREER PROJECT STUDIO  —  AI generation endpoints
    Each tries the Anthropic model (if ANTHROPIC_API_KEY is set) and
    falls back to deterministic generation so the UI always works.
@@ -2610,6 +2698,40 @@ app.post('/api/projects/generate-interview-prep', requireAuth, async (req, res) 
   const ai = parseJSONLoose(await anthropicJSON(prompt, 1400));
   if (Array.isArray(ai) && ai.length) return res.json({ ok: true, questions: ai, generatedBy: 'ai' });
   res.json({ ok: true, questions: psInterview(p), generatedBy: 'template' });
+});
+
+/* ============================================================
+   CUSTOM TEMPLATE ANALYSIS  (vision)
+   Accepts a base64 image (PDF first-page is rasterised client-side) and
+   returns a structured layout spec. Falls back to the client analyzer
+   (dominant colour + column detection) when AI vision is unavailable.
+   ============================================================ */
+app.post('/api/templates/analyze-custom-template', requireAuth, async (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  const { imageBase64, mime } = req.body || {};
+  const data = String(imageBase64 || '').includes(',') ? String(imageBase64).split(',')[1] : imageBase64;
+  if (!key) return res.json({ ok: false, error: 'ai_unavailable', message: 'Vision analysis unavailable; using fallback.' });
+  if (!data) return res.status(400).json({ ok: false, error: 'no_image' });
+  const prompt = `You are a resume layout analyst. Analyse this resume TEMPLATE image and return ONLY JSON, no prose:
+{"templateName":string,"layoutType":"single-column"|"two-column"|"sidebar-left"|"sidebar-right"|"banner-header","pageSize":"A4"|"Letter","margins":{"top":number,"right":number,"bottom":number,"left":number},"colorPalette":{"accent":"#RRGGBB","headerBg":"#RRGGBB","text":"#RRGGBB"},"fontStyle":"sans"|"serif","headerLayout":"left"|"center"|"banner","contactLayout":"inline"|"stacked","sectionOrder":["summary","experience","skills","education","projects","certifications"],"sectionStyles":{"titleCase":"upper"|"title","divider":"bar"|"line"|"none","accentTitles":true|false},"columnLayout":1|2,"bulletStyle":"disc"|"dash"|"square","dividerStyle":"line"|"bar"|"none","spacingRules":"tight"|"normal"|"airy","atsScoreEstimate":number,"recommendations":[string]}`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 900, messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data } },
+        { type: 'text', text: prompt },
+      ] }] }),
+    });
+    if (!r.ok) return res.json({ ok: false, error: 'ai_unavailable' });
+    const j = await r.json().catch(() => null);
+    const text = (j?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const parsed = parseJSONLoose(text);
+    if (!parsed) return res.json({ ok: false, error: 'parse_failed' });
+    res.json({ ok: true, source: 'ai', analysis: parsed });
+  } catch (e) {
+    res.json({ ok: false, error: 'ai_error' });
+  }
 });
 
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */

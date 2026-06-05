@@ -367,7 +367,7 @@ function baseCSS(style, mode) {
     .r-jobline{font-weight:700;color:#0f172a;font-size:${fs + 0.3}pt;margin-top:6pt}
     .r-meta{font-weight:400;color:#64748b;font-size:${fs - 0.5}pt}
     .r-para{color:#374151;margin-top:3pt}
-    .r-ul{list-style:disc;margin:3pt 0 3pt 16pt;color:#374151}
+    .r-ul{list-style:${style.bullet || 'disc'};margin:3pt 0 3pt 16pt;color:#374151}
     .r-ul li{margin:1.5pt 0;padding-left:2pt}
     .r-body{color:#374151;margin-top:3pt}
     .r-entry{margin-bottom:${compact ? 3 : 5}pt}
@@ -585,23 +585,96 @@ export function triggerDownload(blob, name) {
    AI vision is unavailable (fallback path).
    -------------------------------------------------------------------------- */
 
+/* Build a real template config from a structured analysis spec.
+   Accepts either the rich analysis JSON (from vision/fallback) or the older
+   simple {columns,headerStyle,accent,...} shape. `atsSafe` forces a clean,
+   single-column, parser-friendly layout while keeping colours/fonts/order. */
 export function buildCustomTemplate(spec = {}) {
-  const accent = spec.accent || '#334155';
-  const layout = spec.columns === 2 ? 'twocol' : spec.headerStyle === 'dark' ? 'darkheader' : 'single';
+  const a = normalizeTemplateSpec(spec);
+  const atsSafe = !!spec.atsSafe;
+
+  let layout = a.columns === 2 ? 'twocol' : a.headerLayout === 'banner' ? 'darkheader' : 'single';
+  if (atsSafe) layout = a.headerLayout === 'banner' ? 'darkheader' : 'single';
+
+  const sectionStyle = a.accentTitles
+    ? (a.fontKind === 'serif' ? 'gold' : 'bar')
+    : (a.divider === 'none' ? 'caps' : 'rule');
+
+  const bullet = a.bulletStyle === 'dash' ? "'–  '" : a.bulletStyle === 'square' ? 'square' : 'disc';
+
   const style = {
-    font: spec.font || '"Helvetica Neue", Arial, sans-serif',
-    accent,
+    font: a.font,
+    accent: a.accent,
     rule: 'bar',
-    nameSize: spec.headerStyle === 'dark' ? 26 : 24,
-    sectionStyle: spec.headerStyle === 'dark' ? 'gold' : 'bar',
-    skills: 'chips',
-    headerAlign: spec.headerAlign || (layout === 'single' ? 'left' : 'left'),
+    nameSize: layout === 'darkheader' ? 26 : 24,
+    sectionStyle,
+    skills: atsSafe ? 'inline' : (a.columns === 2 ? 'chips' : 'chips'),
+    headerAlign: a.headerAlign,
+    bullet,
+    spacious: a.spacing === 'airy',
   };
-  if (layout === 'darkheader') { style.headerBg = spec.headerBg || '#111827'; style.headerText = '#ffffff'; }
-  if (layout === 'twocol') { style.sidebarBg = spec.sidebarBg || '#0f172a'; style.sidebarText = '#e2e8f0'; }
+  if (a.order && a.order.length) style.order = a.order;
+  if (layout === 'darkheader') { style.headerBg = a.headerBg || '#111827'; style.headerText = '#ffffff'; }
+  if (layout === 'twocol') { style.sidebarBg = a.sidebarBg || a.accent || '#0f172a'; style.sidebarText = '#e2e8f0'; }
+
+  const ats = atsEstimate({ layout, atsSafe, analysisScore: a.atsScoreEstimate });
+
   return {
-    id: 'custom', name: spec.name || 'Custom template', atsScore: 85, atsLabel: 'High',
-    pages: spec.pages === 'multi' ? 'multi' : 'single', tone: 'violet', layout, style,
-    fit: 'Based on your uploaded template', desc: spec.note || 'Template-inspired layout built from your upload.',
+    id: 'custom',
+    name: atsSafe ? `${a.name} (ATS-safe)` : a.name,
+    atsScore: ats.score, atsLabel: ats.label,
+    pages: a.pages === 'multi' ? 'multi' : 'single',
+    tone: 'violet', layout, style,
+    fit: 'Based on your uploaded template',
+    desc: a.note || 'Template-inspired layout built from your upload.',
+    custom: true,
   };
+}
+
+/* Map both the rich analysis JSON and the legacy simple spec onto one shape. */
+function normalizeTemplateSpec(spec = {}) {
+  const sectionMap = { summary: 'summary', experience: 'experience', work: 'experience', skills: 'skills', education: 'education', projects: 'projects', certifications: 'certifications', certs: 'certifications' };
+  const order = Array.isArray(spec.sectionOrder)
+    ? spec.sectionOrder.map((s) => sectionMap[String(s).toLowerCase()]).filter(Boolean)
+    : null;
+  const palette = spec.colorPalette || {};
+  const accentRaw = palette.accent || spec.accent || '#334155';
+  const accent = /^#?[0-9a-f]{6}$/i.test(String(accentRaw).replace('#', '')) ? (String(accentRaw).startsWith('#') ? accentRaw : '#' + accentRaw) : '#334155';
+  const fontKind = spec.fontStyle || spec.fontKind || 'sans';
+  const layoutType = String(spec.layoutType || '').toLowerCase();
+  const columns = Number(spec.columnLayout) === 2 || Number(spec.columns) === 2 || /two|sidebar/.test(layoutType) ? 2 : 1;
+  const headerLayout = /banner/.test(layoutType) || spec.headerStyle === 'dark' || spec.headerStyle === 'banner' || spec.headerLayout === 'banner'
+    ? 'banner'
+    : (spec.headerLayout === 'center' || spec.headerAlign === 'center' ? 'center' : 'left');
+  const ss = spec.sectionStyles || {};
+  return {
+    name: (spec.templateName || spec.name || 'My Uploaded Template').slice(0, 42),
+    accent,
+    headerBg: palette.headerBg || spec.headerBg,
+    sidebarBg: palette.headerBg || spec.sidebarBg,
+    font: fontKind === 'serif' ? 'Georgia, "Times New Roman", serif' : '"Helvetica Neue", Arial, sans-serif',
+    fontKind,
+    columns,
+    headerLayout,
+    headerAlign: headerLayout === 'center' ? 'center' : 'left',
+    order,
+    accentTitles: ss.accentTitles !== undefined ? !!ss.accentTitles : true,
+    divider: ss.divider || spec.dividerStyle || 'bar',
+    bulletStyle: spec.bulletStyle || 'disc',
+    spacing: spec.spacingRules || 'normal',
+    pages: spec.pages === 'multi' ? 'multi' : 'single',
+    atsScoreEstimate: Number(spec.atsScoreEstimate) || null,
+    note: spec.note || (spec.recommendations && spec.recommendations[0]) || 'Template-inspired layout built from your upload.',
+  };
+}
+
+/* ATS estimate for the generated layout. Two-column/sidebar reduces parseability. */
+export function atsEstimate({ layout, atsSafe, analysisScore } = {}) {
+  let score = analysisScore && analysisScore > 0 ? Math.round(analysisScore) : 88;
+  if (!atsSafe && layout === 'twocol') score = Math.min(score, 62);
+  else if (!atsSafe && layout === 'darkheader') score = Math.min(score, 80);
+  if (atsSafe) score = Math.max(score, 90);
+  score = Math.max(30, Math.min(99, score));
+  const label = score >= 85 ? 'High' : score >= 65 ? 'Medium' : 'Low';
+  return { score, label };
 }

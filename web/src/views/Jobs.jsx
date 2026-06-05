@@ -7,6 +7,7 @@ import { ROLE_GROUPS } from '../lib/roles.js';
 import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume, getStoredJobResults, saveStoredJobResults, saveSelectedJob } from '../lib/resumeStore.js';
 import { saveStudioSeed } from '../lib/projectStore.js';
 import { inferType } from '../lib/projectGen.js';
+import { canUse, useMeter, canTrack, promptUpgrade } from '../lib/plan.js';
 
 const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d']];
 const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
@@ -15,6 +16,12 @@ const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
 const ROLE_OPTIONS = Object.values(ROLE_GROUPS).flat();
 
 const TRACKER_KEY = 'careerAutopilot.trackerBoard.v1';
+function trackedCount() {
+  try {
+    const board = JSON.parse(localStorage.getItem(TRACKER_KEY) || '{}');
+    return Object.values(board).flat().length;
+  } catch { return 0; }
+}
 function addJobToTracker(j) {
   try {
     const empty = { saved: [], applied: [], interview: [], offer: [] };
@@ -309,6 +316,7 @@ export default function JobsView({ go }) {
   const toggleSave = (j) => { const k = keyForJob(j); const next = { ...saved, [k]: !saved[k] }; setSaved(next); saveStoredJobResults({ ...getStoredJobResults(), saved: next }); };
 
   const openPeople = async (type, j, opts = {}) => {
+    if (!canUse('contacts')) { promptUpgrade('You’ve used all your contact searches this month. Upgrade for more.', 'pro'); return; }
     const title = type === 'referrals' ? 'Referral paths' : type === 'linkedin' ? 'Public LinkedIn profiles' : 'Hiring contacts';
     setPeople({ open: true, title, status: 'loading', contacts: [], err: '', note: '', job: j, draft: '', copied: false });
     const domain = j.companyDomain || j.domain || domainFromUrl(j.url);
@@ -316,14 +324,15 @@ export default function JobsView({ go }) {
     try {
       const d = type === 'referrals' ? await Contacts.referrals(payload) : await Contacts.find(payload);
       const contacts = d.contacts || [];
+      useMeter('contacts');
       setPeople((p) => ({ ...p, status: 'done', contacts, note: d.note || '', err: d.ok === false ? d.error : '' }));
       if (opts.autoDraft && contacts.length) makeDraft(contacts[0]);
     }
     catch (err) { setPeople((p) => ({ ...p, status: 'error', err: err.message || 'Lookup failed.' })); }
   };
-  const makeDraft = async (c) => { setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
+  const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
-  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'buildproject') { const gaps = (j._missing || []).slice(0, 12); saveStudioSeed({ job: { title: j.title, company: j.company }, missingSkills: gaps, type: inferType(gaps, j.title) }); go?.('projectstudio'); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
+  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'buildproject') { const gaps = (j._missing || []).slice(0, 12); saveStudioSeed({ job: { title: j.title, company: j.company }, missingSkills: gaps, type: inferType(gaps, j.title) }); go?.('projectstudio'); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { if (!canTrack(trackedCount())) { promptUpgrade('Free plan tracks up to 20 jobs. Upgrade for unlimited tracking.', 'pro'); return; } addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
 
   return <>
     <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />

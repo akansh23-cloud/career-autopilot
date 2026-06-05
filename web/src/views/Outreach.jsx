@@ -3,6 +3,7 @@ import { Send, Search, Mail, Building2, User, Sparkles, Copy, Check, AlertTriang
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal, Field } from '../components/ui/kit.jsx';
 import { Contacts, AI } from '../lib/api.js';
+import { canUse, useMeter, promptUpgrade } from '../lib/plan.js';
 
 export default function Outreach() {
   const [company, setCompany] = useState('');
@@ -22,12 +23,14 @@ export default function Outreach() {
   };
 
   const openDraft = async (c) => {
+    if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; }
     setDraft({ open: true, contact: c, text: '', loading: true, copied: false });
     const prompt = `Write a short, warm, personalised LinkedIn/email outreach message to ${c.name || 'a recruiter'}${c.title ? ` (${c.title})` : ''} at ${company || c.company || 'the company'}.
 I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 90 words, specific, no fluff, friendly. Output the message only.`;
     try {
       const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
       const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+      useMeter('outreach');
       setDraft((d) => ({ ...d, text, loading: false }));
     } catch (e) { setDraft((d) => ({ ...d, text: 'Could not generate (is ANTHROPIC_API_KEY set?). ' + e.message, loading: false })); }
   };
