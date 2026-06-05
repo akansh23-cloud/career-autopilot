@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
-  Rocket, Globe2, Users, UserSearch,
+  Rocket, Globe2, Users, UserSearch, ShieldCheck,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -63,6 +63,7 @@ function NavList({ active, onPick }) {
 
 function SidebarInner({ active, onPick }) {
   const plan = usePlanId();
+  const isAdmin = !!plan.isAdmin;
   const paid = plan.planId !== 'free';
   return (
     <>
@@ -75,7 +76,13 @@ function SidebarInner({ active, onPick }) {
       <NavList active={active} onPick={onPick} />
       <div className="mt-auto p-4">
         <div className="gradient-border p-4">
-          {paid ? (
+          {isAdmin ? (
+            <>
+              <p className="flex items-center gap-1.5 text-[13px] font-medium text-white"><ShieldCheck size={14} className="text-aurora-mint" /> Full Access</p>
+              <p className="mt-1 text-xs text-muted">Admin account — every feature unlocked.</p>
+              <button onClick={() => openPricing()} className="mt-3 w-full rounded-lg border border-aurora-mint/30 bg-aurora-mint/10 py-2 text-xs font-semibold text-[#A7F2DD] hover:bg-aurora-mint/20">View access</button>
+            </>
+          ) : paid ? (
             <>
               <p className="text-[13px] font-medium text-white">{PLAN_LABELS[plan.planId]} plan active</p>
               <p className="mt-1 text-xs text-muted">Manage your plan and usage.</p>
@@ -129,7 +136,14 @@ export default function Shell({ active, onPick, title, children }) {
           <button onClick={() => setDrawer(true)} className="rounded-lg p-2 text-slate-300 hover:bg-white/6 lg:hidden"><Menu size={20} /></button>
           <h1 className="font-display text-lg font-semibold text-white">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
-            {plan.planId === 'free' ? (
+            {plan.isAdmin ? (
+              <button
+                onClick={() => openPricing()}
+                className="hidden items-center gap-1.5 rounded-xl border border-aurora-mint/40 bg-aurora-mint/10 px-3 py-2 text-xs font-semibold text-[#A7F2DD] transition hover:bg-aurora-mint/20 sm:flex"
+              >
+                <ShieldCheck size={14} /> Admin · Full Access
+              </button>
+            ) : plan.planId === 'free' ? (
               <button
                 onClick={() => openPricing('pro')}
                 className="hidden items-center gap-1.5 rounded-xl border border-aurora-violet/30 bg-aurora-violet/10 px-3 py-2 text-xs font-semibold text-[#C2BBFF] transition hover:bg-aurora-violet/20 sm:flex"

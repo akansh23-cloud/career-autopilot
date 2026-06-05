@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import * as db from './db.js';
 import * as subs from './paymentsStore.js';
+import * as access from './access.js';
 import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
 
 dotenv.config();
@@ -2524,6 +2525,9 @@ async function rzpCreateOrder(amount, receipt) {
 
 app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   try {
+    if (access.isAdminEmail(req.user && req.user.email)) {
+      return res.status(400).json({ ok: false, error: 'admin_full_access', message: 'This account has admin full access. Payment is not required.' });
+    }
     const planId = String(req.body?.planId || '').toLowerCase();
     if (!PLAN_AMOUNTS[planId]) return res.status(400).json({ ok: false, error: 'invalid_plan', message: 'Unknown plan.' });
     if (!rzpConfigured()) return res.status(503).json({ ok: false, error: 'gateway_not_configured', message: 'Payment gateway is not configured. Add Razorpay environment variables.' });
@@ -2582,7 +2586,24 @@ app.post('/api/payments/webhook', (req, res) => {
 
 app.get('/api/payments/subscription-status', requireAuth, (req, res) => {
   const s = subs.getSubscription(req.user);
-  res.json({ ok: true, planId: s.planId, status: s.status, source: s.source || 'default', expiresAt: s.expiresAt || null, paymentId: s.paymentId || null, orderId: s.orderId || null, gatewayConfigured: rzpConfigured() });
+  const email = (req.user && req.user.email) || '';
+  const role = access.getUserRole(email, s.planId);
+  const isAdmin = role === 'admin';
+  const effectivePlan = access.effectivePlan(role, s.planId);
+  res.json({
+    ok: true,
+    email,
+    planId: s.planId,
+    status: isAdmin ? 'active' : s.status,
+    source: isAdmin ? 'admin' : (s.source || 'default'),
+    expiresAt: isAdmin ? null : (s.expiresAt || null),
+    paymentId: s.paymentId || null,
+    orderId: s.orderId || null,
+    gatewayConfigured: rzpConfigured(),
+    role, isAdmin, effectivePlan,
+    limits: access.limitsForRole(role, s.planId),
+    features: access.featuresForRole(role, s.planId),
+  });
 });
 
 

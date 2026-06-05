@@ -60,6 +60,7 @@ function Cell({ value }) {
 }
 
 function ManagePlan({ plan }) {
+  const isAdmin = !!plan.isAdmin;
   const usage = getAllUsage();
   const lim = LIMITS[plan.planId] || LIMITS.free;
   const meters = ['tailoring', 'contacts', 'outreach'];
@@ -71,26 +72,32 @@ function ManagePlan({ plan }) {
           <span className="text-sm font-semibold text-white">Manage plan</span>
         </div>
         <div className="flex items-center gap-2">
-          <Badge tone={plan.planId === 'free' ? 'default' : plan.planId === 'premium' ? 'amber' : 'violet'}>{PLAN_LABELS[plan.planId]}</Badge>
-          <Badge tone={plan.status === 'active' ? 'mint' : 'amber'}>{plan.status === 'active' ? 'Active' : plan.status}</Badge>
-          {plan.source === 'razorpay' && <Badge tone="cyan">Razorpay</Badge>}
+          {isAdmin
+            ? <Badge tone="mint">Admin · Full Access</Badge>
+            : <Badge tone={plan.planId === 'free' ? 'default' : plan.planId === 'premium' ? 'amber' : 'violet'}>{PLAN_LABELS[plan.planId]}</Badge>}
+          <Badge tone="mint">Active</Badge>
+          {!isAdmin && plan.source === 'razorpay' && <Badge tone="cyan">Razorpay</Badge>}
         </div>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        {meters.map((m) => {
-          const max = lim[m];
-          const used = Number(usage[m] || 0);
-          const pct = isUnlimited(max) ? 0 : Math.min(100, Math.round((used / max) * 100));
-          return (
-            <div key={m} className="rounded-xl border border-white/8 bg-ink-950/55 p-2.5">
-              <div className="flex justify-between text-[10px] text-slate-400"><span className="capitalize">{METER_LABELS[m]}</span><span>{used}{isUnlimited(max) ? '' : ` / ${max}`}</span></div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${isUnlimited(max) ? 8 : pct}%` }} /></div>
-              {isUnlimited(max) && <span className="mt-1 block text-[9px] text-aurora-mint">Unlimited</span>}
-            </div>
-          );
-        })}
-      </div>
-      {plan.expiresAt && plan.planId !== 'free' && (
+      {isAdmin ? (
+        <p className="mt-3 text-[12px] text-slate-400">All features are unlocked on this account — unlimited tailoring, contacts, outreach, tracking, every template and custom uploads. No usage limits apply.</p>
+      ) : (
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {meters.map((m) => {
+            const max = lim[m];
+            const used = Number(usage[m] || 0);
+            const pct = isUnlimited(max) ? 0 : Math.min(100, Math.round((used / max) * 100));
+            return (
+              <div key={m} className="rounded-xl border border-white/8 bg-ink-950/55 p-2.5">
+                <div className="flex justify-between text-[10px] text-slate-400"><span className="capitalize">{METER_LABELS[m]}</span><span>{used}{isUnlimited(max) ? '' : ` / ${max}`}</span></div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${isUnlimited(max) ? 8 : pct}%` }} /></div>
+                {isUnlimited(max) && <span className="mt-1 block text-[9px] text-aurora-mint">Unlimited</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!isAdmin && plan.expiresAt && plan.planId !== 'free' && (
         <p className="mt-2 text-[11px] text-slate-500">Renews/expires on {new Date(plan.expiresAt).toLocaleDateString()}.</p>
       )}
     </div>
@@ -115,9 +122,10 @@ export default function PricingModal() {
   }, []);
 
   const phaseLabel = phase === 'creating' ? 'Creating order…' : phase === 'verifying' ? 'Verifying payment…' : 'Processing payment…';
+  const isAdmin = !!plan.isAdmin;
 
   const choose = async (p) => {
-    if (p.id === 'free' || p.id === plan.planId) return;
+    if (isAdmin || p.id === 'free' || p.id === plan.planId) return;
     setBusyPlan(p.id); setPhase('creating'); setToast(null);
     try {
       const next = await startCheckout(p.id, { user, onState: setPhase });
@@ -131,7 +139,12 @@ export default function PricingModal() {
 
   return (
     <Modal open={open} onClose={() => setOpen(false)} width="max-w-5xl" title="Plans & pricing">
-      {reason && (
+      {isAdmin && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-3 text-sm text-slate-100">
+          <ShieldCheck size={16} className="text-aurora-mint" /> You have admin full access. Payment is not required for this account.
+        </div>
+      )}
+      {reason && !isAdmin && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-4 py-2.5 text-sm text-amber-glow">
           <AlertTriangle size={15} /> {reason}
         </div>
@@ -144,11 +157,11 @@ export default function PricingModal() {
       <div className="grid gap-4 md:grid-cols-3">
         {PLANS.map((p) => {
           const Icon = p.icon;
-          const isCurrent = plan.planId === p.id;
+          const isCurrent = !isAdmin && plan.planId === p.id;
           const isBusy = busyPlan === p.id;
           return (
-            <div key={p.id} className={`relative flex flex-col rounded-2xl border p-5 ${p.highlight && !isCurrent ? 'border-aurora-violet/50 bg-aurora-violet/[0.07] ring-1 ring-aurora-violet/25' : isCurrent ? 'border-aurora-mint/40 bg-aurora-mint/[0.05]' : 'border-white/10 bg-white/[0.02]'}`}>
-              {p.highlight && !isCurrent && (
+            <div key={p.id} className={`relative flex flex-col rounded-2xl border p-5 ${p.highlight && !isCurrent && !isAdmin ? 'border-aurora-violet/50 bg-aurora-violet/[0.07] ring-1 ring-aurora-violet/25' : isCurrent ? 'border-aurora-mint/40 bg-aurora-mint/[0.05]' : 'border-white/10 bg-white/[0.02]'}`}>
+              {p.highlight && !isCurrent && !isAdmin && (
                 <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-aurora-cta px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-glow">Most popular</span>
               )}
               {isCurrent && (
@@ -175,11 +188,12 @@ export default function PricingModal() {
 
               <Button
                 className="mt-5 w-full"
-                variant={isCurrent ? 'soft' : p.id === 'free' ? 'soft' : 'primary'}
-                disabled={isCurrent || p.id === 'free' || isBusy || !!busyPlan}
+                variant={isAdmin ? 'soft' : isCurrent ? 'soft' : p.id === 'free' ? 'soft' : 'primary'}
+                disabled={isAdmin || isCurrent || p.id === 'free' || isBusy || !!busyPlan}
                 onClick={() => choose(p)}
               >
-                {isBusy ? <><Loader2 size={15} className="animate-spin" /> {phaseLabel}</>
+                {isAdmin ? <><Check size={15} /> Included</>
+                  : isBusy ? <><Loader2 size={15} className="animate-spin" /> {phaseLabel}</>
                   : isCurrent ? <><Check size={15} /> Current plan</>
                   : p.id === 'free' ? 'Free plan'
                   : <><Sparkles size={15} /> {p.id === 'pro' ? 'Upgrade to Pro' : 'Go Premium'}</>}

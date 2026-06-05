@@ -127,6 +127,8 @@ Open **http://localhost:3000**. The backend automatically serves the built `dist
 | Resume parsing (PDF/DOCX/TXT) | ✅ | — |
 | Verified job search (Remotive/RemoteOK/Arbeitnow/Jobicy) | ✅ (via backend, no keys) | — |
 | Resume analysis, tailoring, match scoring, cover letters, recruiter messages, interview prep | — | `ANTHROPIC_API_KEY` |
+| Plan upgrades (Razorpay checkout) | shows "gateway not configured" message | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` |
+| Admin full access (bypass all plan limits, no payment) | normal Free/Pro/Premium for everyone | `ADMIN_EMAILS` (comma-separated emails) |
 | Connect LinkedIn (OAuth) | — | `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` |
 | Connect Indeed (OAuth) | — | Indeed partner approval + `INDEED_*` |
 

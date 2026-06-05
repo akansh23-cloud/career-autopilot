@@ -14,6 +14,9 @@ export const LIMITS = {
   pro:     { tailoring: 50, contacts: 100, tracking: U,  templates: 8, customUpload: true,  docx: true,  outreach: 100 },
   premium: { tailoring: U,  contacts: U,   tracking: U,  templates: U, customUpload: true,  docx: true,  outreach: U },
 };
+const ADMIN_LIMITS = { tailoring: U, contacts: U, tracking: U, templates: U, customUpload: true, docx: true, outreach: U };
+
+export const PLAN_LABELS_FULL = { free: 'Free', pro: 'Pro', premium: 'Premium', admin: 'Full Access' };
 
 export const METER_LABELS = {
   tailoring: 'resume tailoring',
@@ -46,7 +49,11 @@ export function setPlan(plan) {
   return next;
 }
 export function planId() { return getPlan().planId; }
+export function isAdmin() { return !!getPlan().isAdmin; }
+export function effectivePlan() { const p = getPlan(); return p.isAdmin ? 'admin' : p.planId; }
 export function limitsFor(id = planId()) { return LIMITS[id] || LIMITS.free; }
+/* limits for the CURRENT user, honoring admin full-access */
+function currentLimits() { return isAdmin() ? ADMIN_LIMITS : limitsFor(); }
 export function isUnlimited(n) { return n === Infinity || n === U; }
 
 /* ---------------- usage counters (per month) ---------------- */
@@ -60,17 +67,21 @@ export function getUsage(meter) { return Number(usageRoot()[meter] || 0); }
 export function getAllUsage() { const r = usageRoot(); const { __month, ...rest } = r; return rest; }
 
 export function remaining(meter, id = planId()) {
+  if (isAdmin()) return Infinity;
   const lim = limitsFor(id)[meter];
   if (isUnlimited(lim)) return Infinity;
   return Math.max(0, lim - getUsage(meter));
 }
-export function canUse(meter, id = planId()) {
-  const lim = limitsFor(id)[meter];
+export function canUse(meter) {
+  if (isAdmin()) return true;
+  const lim = currentLimits()[meter];
   if (isUnlimited(lim)) return true;
   return getUsage(meter) < lim;
 }
-/* increment a meter; returns true if allowed (and recorded), false if blocked */
+/* increment a meter; returns true if allowed (and recorded), false if blocked.
+   Admins never consume quota. */
 export function useMeter(meter, n = 1) {
+  if (isAdmin()) return true;
   if (!canUse(meter)) return false;
   const all = usageRoot();
   all[meter] = Number(all[meter] || 0) + n;
@@ -80,17 +91,19 @@ export function useMeter(meter, n = 1) {
 }
 /* tracking is a count, not a monthly meter — check against current total */
 export function canTrack(currentCount) {
-  const lim = limitsFor().tracking;
+  if (isAdmin()) return true;
+  const lim = currentLimits().tracking;
   return isUnlimited(lim) || currentCount < lim;
 }
 
 /* feature flags */
-export function canUploadCustom() { return !!limitsFor().customUpload; }
-export function canExportDocx() { return !!limitsFor().docx; }
-export function templateAllowance() { return limitsFor().templates; } // number or Infinity
+export function canUploadCustom() { return isAdmin() || !!currentLimits().customUpload; }
+export function canExportDocx() { return isAdmin() || !!currentLimits().docx; }
+export function templateAllowance() { return isAdmin() ? Infinity : currentLimits().templates; } // number or Infinity
 
-/* trigger the upgrade modal with a contextual reason */
+/* trigger the upgrade modal with a contextual reason (no-op for admins) */
 export function promptUpgrade(reason, suggested = 'pro') {
+  if (isAdmin()) return;
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-open-pricing', { detail: { plan: suggested, reason } }));
 }
 
@@ -101,7 +114,17 @@ export async function syncPlanFromServer() {
     if (!r.ok) return getPlan();
     const d = await r.json();
     if (d && d.ok && d.planId && LIMITS[d.planId]) {
-      return setPlan({ planId: d.planId, status: d.status || 'active', source: d.source || 'razorpay', expiresAt: d.expiresAt, paymentId: d.paymentId, orderId: d.orderId });
+      return setPlan({
+        planId: d.planId,
+        status: d.status || 'active',
+        source: d.source || 'razorpay',
+        expiresAt: d.expiresAt,
+        paymentId: d.paymentId,
+        orderId: d.orderId,
+        role: d.role || (d.isAdmin ? 'admin' : d.planId),
+        isAdmin: !!d.isAdmin,
+        effectivePlan: d.effectivePlan || (d.isAdmin ? 'admin' : d.planId),
+      });
     }
   } catch {}
   return getPlan();
