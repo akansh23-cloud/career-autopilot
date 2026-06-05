@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
-  Rocket, Globe2, Users, UserSearch, ShieldCheck,
+  Rocket, Globe2, Users, UserSearch, ShieldCheck, User,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -22,6 +22,7 @@ function usePlanId() {
 
 export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'profile', label: 'Profile', icon: User },
   { id: 'resume', label: 'Resume', icon: FileText },
   { id: 'editor', label: 'Editor', icon: PenLine },
   { id: 'jobs', label: 'Jobs', icon: Briefcase },

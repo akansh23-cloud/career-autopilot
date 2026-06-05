@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './hooks/useAuth.jsx';
 import { syncPlanFromServer } from './lib/plan.js';
+import { needsOnboarding, PROFILE_EVENT } from './lib/userProfile.js';
 import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
@@ -9,7 +10,9 @@ import Shell, { NAV } from './components/app/Shell.jsx';
 import { Spinner } from './components/ui/kit.jsx';
 import PricingModal from './components/PricingModal.jsx';
 
-import Dashboard from './views/Dashboard.jsx';
+import RoleDashboard from './views/RoleDashboard.jsx';
+import Onboarding from './views/Onboarding.jsx';
+import Profile from './views/Profile.jsx';
 import Resume from './views/Resume.jsx';
 import Editor from './views/Editor.jsx';
 import JobsView from './views/Jobs.jsx';
@@ -24,7 +27,8 @@ import PartnerMatch from './views/PartnerMatch.jsx';
 import RecruiterConsole from './views/RecruiterConsole.jsx';
 
 const VIEWS = {
-  dash: Dashboard,
+  dash: RoleDashboard,
+  profile: Profile,
   resume: Resume,
   editor: Editor,
   jobs: JobsView,
@@ -58,8 +62,16 @@ export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
   const [active, setActive] = useState('dash');
+  const [onboarded, setOnboarded] = useState(!needsOnboarding());
 
   useEffect(() => { if (user) syncPlanFromServer(); }, [user]);
+  useEffect(() => {
+    const f = () => setOnboarded(!needsOnboarding());
+    window.addEventListener(PROFILE_EVENT, f);
+    return () => window.removeEventListener(PROFILE_EVENT, f);
+  }, []);
+  // re-check once a user is present (covers fresh logins)
+  useEffect(() => { if (user) setOnboarded(!needsOnboarding()); }, [user]);
 
   if (loading) return <Splash />;
 
@@ -72,7 +84,11 @@ export default function App() {
     );
   }
 
-  const ViewCmp = VIEWS[active] || Dashboard;
+  if (!onboarded) {
+    return <Onboarding onDone={() => setOnboarded(true)} />;
+  }
+
+  const ViewCmp = VIEWS[active] || RoleDashboard;
   const title = (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
 
   return (

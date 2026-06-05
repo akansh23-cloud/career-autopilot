@@ -10,12 +10,31 @@ import { ROLE_GROUPS, ALL_ROLES } from '../lib/roles.js';
 import { getStoredResume, saveStoredResume, getResumeSearchRole } from '../lib/resumeStore.js';
 import {
   getProjects, saveProject, deleteProject, consumeStudioSeed, peekStudioSeed,
-  computeProofScore, taskProgress,
+  computeProofScore, taskProgress, proofScoreBreakdown, getPublishedProjects,
 } from '../lib/projectStore.js';
 import {
   LEVELS, DURATIONS, TYPES, generateRoadmap, generateResumeBullets,
   generateLinkedinPost, generateInterviewPrep, generateReadme,
 } from '../lib/projectGen.js';
+import { projectXP } from '../lib/xp.js';
+import { deriveBadges } from '../lib/badges.js';
+import { roleConsistency } from '../lib/roleFit.js';
+import { getAccessForUser } from '../lib/access.js';
+import { isUnlimited, promptUpgrade } from '../lib/plan.js';
+import { useAuth } from '../hooks/useAuth.jsx';
+import { BadgePill } from '../components/proof/ProofViews.jsx';
+
+/* publish-readiness gate (Part 6) */
+function publishReadiness(p) {
+  const missing = [];
+  if (!p.title) missing.push('a title');
+  if (!(p.useCase || p.problemStatement)) missing.push('a description');
+  if (!(p.techStack || []).length) missing.push('a tech stack');
+  if (!(p.githubUrl && p.githubUrl.trim()) && !(p.screenshots || []).length) missing.push('a GitHub link or uploaded proof');
+  if (taskProgress(p) < 60) missing.push('roadmap progress above 60%');
+  if (!(p.readme && p.readme.trim().length > 40)) missing.push('a generated README');
+  return { ready: missing.length === 0, missing };
+}
 
 function CopyBtn({ text, label = 'Copy' }) {
   const [done, setDone] = useState(false);
@@ -196,6 +215,45 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
           <div className="h-2 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${progress}%` }} /></div>
         </div>
 
+        {/* proof score breakdown + XP + badge eligibility + consistency (Parts 3,4,5,8) */}
+        {(() => {
+          const bd = proofScoreBreakdown(p);
+          const xp = projectXP(p);
+          const badges = deriveBadges([p]);
+          const cons = roleConsistency(p);
+          return (
+            <div className="space-y-3">
+              {!cons.ok && (
+                <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100">
+                  <AlertTriangle size={13} className="mr-1.5 inline" /> {cons.warning}
+                </div>
+              )}
+              <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Proof score breakdown</div>
+                  <Badge tone={bd.score >= 70 ? 'mint' : bd.score >= 40 ? 'cyan' : 'amber'}>{bd.score}/100 · +{xp.xp} XP</Badge>
+                </div>
+                <div className="space-y-1">
+                  {bd.rows.map((r) => (
+                    <div key={r.key} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-36 shrink-0 text-slate-400">{r.label}</span>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${(r.score / r.max) * 100}%` }} /></div>
+                      <span className="w-10 text-right font-mono text-slate-300">{r.score}/{r.max}</span>
+                    </div>
+                  ))}
+                </div>
+                {bd.recommendation && <p className="mt-2 text-[12px] text-aurora-cyan">{bd.recommendation}</p>}
+              </div>
+              {badges.length > 0 && (
+                <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
+                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Verified skill badges earned</div>
+                  <div className="flex flex-wrap gap-1.5">{badges.map((b) => <BadgePill key={b.skillName + b.level} badge={b} />)}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* links */}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="GitHub repo URL"><Input value={p.githubUrl || ''} onChange={(e) => patch({ githubUrl: e.target.value })} placeholder="https://github.com/you/project" /></Field>
@@ -289,6 +347,11 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <Rocket size={15} /> {p.published ? 'Published — update sandbox' : 'Publish to Sandbox'}
           </Button>
           <CopyBtn text={p.resumeBullets.map((b) => '• ' + b).join('\n')} label="Copy bullets" />
+          {(() => {
+            const { ready, missing } = publishReadiness(p);
+            if (ready || p.published) return null;
+            return <span className="text-[11px] text-amber-100/80"><AlertTriangle size={12} className="mr-1 inline" />To publish, add {missing.join(', ')}.</span>;
+          })()}
         </div>
       </div>
     </Modal>
@@ -319,6 +382,8 @@ function WorkspaceCard({ p, onOpen, onDelete }) {
 
 /* ---------------- Main view ---------------- */
 export default function ProjectStudio({ go }) {
+  const { user } = useAuth();
+  const access = useMemo(() => getAccessForUser(user), [user]);
   const resume = getStoredResume();
   const seed = useMemo(() => consumeStudioSeed(), []);
   const [role, setRole] = useState(seed?.job?.title || getResumeSearchRole() || 'Software Engineer');
@@ -364,7 +429,22 @@ export default function ProjectStudio({ go }) {
     flash('Project bullets added to your resume.');
   };
   const onWsChange = (next) => { saveProject(next); setProjects(getProjects()); };
-  const publish = (p) => { const next = saveProject({ ...p, published: true }); setProjects(getProjects()); setOpenWs(next); flash('Published to Sandbox.'); };
+  const publish = (p) => {
+    const { ready, missing } = publishReadiness(p);
+    if (!ready) { flash('Not ready to publish — add ' + missing.join(', ') + '.'); return; }
+    if (!p.published) {
+      const cap = access.limits.sandboxPublish;
+      const publishedCount = getPublishedProjects().filter((x) => x.id !== p.id).length;
+      if (!isUnlimited(cap) && publishedCount >= cap) {
+        promptUpgrade('sandboxPublish', `Your ${access.effectivePlan} plan allows ${cap} published sandbox project${cap === 1 ? '' : 's'}. Upgrade to publish more.`);
+        return;
+      }
+    }
+    const next = saveProject({ ...p, published: true });
+    setProjects(getProjects());
+    setOpenWs(next);
+    flash('Published to Sandbox.');
+  };
 
   return (
     <>

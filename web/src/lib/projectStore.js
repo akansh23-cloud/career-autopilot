@@ -52,20 +52,12 @@ export function getPublishedProjects() {
   return getProjects().filter((p) => p.published);
 }
 
-/* ---------------- Proof-of-work score ---------------- */
-export function computeProofScore(p = {}) {
-  let s = 0;
-  if (p.githubUrl && p.githubUrl.trim()) s += 20;
-  if (p.liveDemoUrl && p.liveDemoUrl.trim()) s += 20;
-  if (p.readme && p.readme.trim().length > 40) s += 15;
-  const checklist = p.checklist || [];
-  const pct = checklist.length ? checklist.filter((c) => c.done).length / checklist.length : 0;
-  if (pct >= 0.7) s += 20;
-  if ((p.screenshots || []).length > 0) s += 10;
-  if (p.interviewQuestions && p.interviewQuestions.length > 0) s += 10;
-  if (p.linkedinPost && p.linkedinPost.trim().length > 20) s += 5;
-  return Math.min(100, s);
-}
+/* ---------------- Proof-of-work score (Part 5) ----------------
+   Delegates to lib/proofScore.js (weighted breakdown). Still returns a number
+   so every existing caller keeps working. */
+import { proofScore as _proofScore, proofBreakdown as _proofBreakdown } from './proofScore.js';
+export function computeProofScore(p = {}) { return _proofScore(p); }
+export function proofScoreBreakdown(p = {}) { return _proofBreakdown(p); }
 export function taskProgress(p = {}) {
   const tasks = p.tasks || [];
   if (!tasks.length) return 0;

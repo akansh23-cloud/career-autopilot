@@ -15,40 +15,54 @@ const PLANS = [
     id: 'free', name: 'Free', icon: Zap, tone: 'default', price: '₹0', cadence: 'forever',
     tagline: 'Get started and explore the workspace.',
     features: [
+      { label: 'Active project workspaces', value: '1' },
+      { label: 'AI project roadmaps', value: '2 / month' },
       { label: 'Resume tailoring', value: '3 / month' },
       { label: 'Contact search', value: '5 / month' },
       { label: 'Job tracking', value: 'Up to 20 jobs' },
+      { label: 'Sandbox publishing', value: '1 project' },
+      { label: 'Project proof score', value: 'Basic' },
+      { label: 'Skill XP & badges', value: 'Basic (non-verified)' },
       { label: 'Resume templates', value: '4 templates' },
-      { label: 'Upload custom template', value: false },
       { label: 'PDF / DOCX export', value: 'PDF only' },
-      { label: 'AI outreach drafts', value: '5 / month' },
+      { label: 'Upload custom template', value: false },
     ],
   },
   {
     id: 'pro', name: 'Pro', icon: Rocket, tone: 'violet', price: '₹399', cadence: '/ month', highlight: true,
-    tagline: 'For an active job search across many roles.',
+    tagline: 'Build proof, earn verified badges, get noticed.',
     features: [
+      { label: 'Active project workspaces', value: 'Up to 10' },
+      { label: 'AI generations', value: '100 / month' },
       { label: 'Resume tailoring', value: '50 / month' },
       { label: 'Contact search', value: '100 / month' },
       { label: 'Job tracking', value: 'Unlimited' },
-      { label: 'Resume templates', value: 'All 8 templates' },
-      { label: 'Upload custom template', value: true },
-      { label: 'PDF / DOCX export', value: 'PDF + DOCX' },
-      { label: 'AI outreach drafts', value: '100 / month' },
+      { label: 'Sandbox publishing', value: 'Up to 5 projects' },
+      { label: 'Detailed project guides + Enhancer', value: true },
+      { label: 'Skill Gap → Project generator', value: true },
+      { label: 'Skill XP & Project Verified badges', value: true },
+      { label: 'README / bullets / LinkedIn / interview prep', value: true },
+      { label: 'Partner matching + placement readiness', value: true },
+      { label: 'Role fit score', value: 'Basic' },
+      { label: 'PDF / DOCX export + custom templates', value: true },
     ],
   },
   {
     id: 'premium', name: 'Premium', icon: Crown, tone: 'amber', price: '₹799', cadence: '/ month',
-    tagline: 'Maximum firepower with unlimited everything.',
+    tagline: 'Recruiter-ready proof with unlimited firepower.',
     features: [
-      { label: 'Resume tailoring', value: 'Unlimited' },
-      { label: 'Contact search', value: 'Unlimited' },
-      { label: 'Job tracking', value: 'Unlimited' },
-      { label: 'Resume templates', value: 'All + custom uploads' },
-      { label: 'Upload custom template', value: true },
-      { label: 'PDF / DOCX export', value: 'PDF + DOCX' },
-      { label: 'AI outreach drafts', value: 'Unlimited + follow-ups' },
-      { label: 'Recruiter & project features', value: true },
+      { label: 'Workspaces / AI / tailoring / contacts', value: 'Unlimited*' },
+      { label: 'Advanced project & deployment verification', value: true },
+      { label: 'Recruiter-Ready badges', value: true },
+      { label: 'Boosted sandbox visibility', value: true },
+      { label: 'Advanced GitHub analyzer', value: true },
+      { label: 'Advanced role fit score', value: true },
+      { label: 'Recruiter discovery', value: true },
+      { label: 'AI outreach sequences + follow-ups', value: true },
+      { label: 'Advanced referral finder', value: true },
+      { label: 'Full interview prep + mock defense', value: true },
+      { label: 'Full analytics dashboard', value: true },
+      { label: 'All templates + custom uploads', value: true },
     ],
   },
 ];
@@ -212,7 +226,7 @@ export default function PricingModal() {
       <ManagePlan plan={plan} />
 
       <p className="mt-4 text-center text-[11px] text-slate-600">
-        Prices in INR. Secured by Razorpay. Your card details are never stored by Career Autopilot.
+        *Unlimited subject to fair usage. Prices in INR. Secured by Razorpay (cards, UPI & netbanking). Your payment details are never stored by Career Autopilot.
       </p>
     </Modal>
   );
