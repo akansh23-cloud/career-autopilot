@@ -1,3 +1,30 @@
+# v7.2 — Vercel serverless session/Mongo hotfix (2026-06-07)
+
+Fixes a regression I introduced in v7.1: the Mongo-backed session store only
+connected inside the `app.listen` block, which Vercel never runs — so every
+request (including `/auth/me`) hit an un-connected Mongoose, timed out, and
+returned a generic 500. The frontend then mis-read that as "Google OAuth isn't
+configured".
+
+Root cause: session middleware used the Mongo store before any `connectDB()`.
+
+Changes:
+- `server.js` — added a serverless-safe DB-readiness gate that `await db.connectDB()` (cached promise, reused on warm invocations) BEFORE the session middleware. On a configured-but-unreachable DB in production it returns a clear **503 JSON**, not a 500. `/health` and `/health/db` are exempt so status is always inspectable. `/auth/me` is now wrapped so it can never 500 — it always returns a well-formed `{authenticated:false, providers}` payload. Passes `connect: db.connectDB` into the session store. Added DB/session/google status to `/health` and a new `/health/db` probe.
+- `sessionStore.js` — every method (`get/set/touch/destroy/clear/length`) now `await`s the injected `connect()` before touching Mongo and calls back with the error safely (never hangs). This is the serverless-safe ordering.
+- `web/src/hooks/useAuth.jsx` + `web/src/components/SignInModal.jsx` — track an `authError` separately from provider config; when `/auth/me` is unreachable the UI now says “Auth server is unavailable. Check MongoDB/session configuration (/health/db).” instead of the misleading OAuth message, and no longer disables the Google button on a transient auth-server error.
+
+Tests added (`test/auth.test.js`, `test/sessionStore.test.js`, `test/_googleEnv.js`):
+- `/auth/me` returns 200 / `authenticated:false` for anonymous users (no crash).
+- `/auth/me` reports `providers.google.enabled=true` when Google env is set.
+- `/health` exposes db/sessionStore/google; `/health/db` returns db:off (200) with no URI.
+- Simulated Mongo failure: every session-store method calls back with the error and does not hang, and `connect()` runs before any query (serverless ordering).
+
+MemoryStore is still never used in production; Mongo-backed sessions preserved; local dev (no/unreachable DB) degrades gracefully; existing tests unaffected (DB off in test).
+
+Run: `npm run build && npm run test && npm run lint && npm run audit:ci`
+
+---
+
 # v7.1 — Functional & UI regression fixes (2026-06-07)
 
 Targeted fixes against the latest regression report. No major features removed;

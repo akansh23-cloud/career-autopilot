@@ -55,10 +55,36 @@ app.use(express.json({ limit: '5mb' }));
    (production never uses the in-memory MemoryStore). Without a DB (local dev/
    test) we fall back to the default in-process store. config.js already refuses
    to boot production without MONGODB_URI, so production always lands here. */
-const sessionStore = db.dbEnabled() ? createMongooseSessionStore(session) : undefined;
+const sessionStore = db.dbEnabled() ? createMongooseSessionStore(session, { connect: db.connectDB }) : undefined;
 if (!sessionStore && config.IS_PROD) {
   logger.error('No session store configured in production (MONGODB_URI missing) — refusing MemoryStore.');
 }
+
+/* Serverless-safe DB readiness gate. MUST run before the session middleware so
+   the Mongo-backed session store never touches an un-connected Mongoose (which
+   on Vercel would buffer then time out, turning /auth/me into a 500). Uses the
+   cached connection promise in db.js, so warm invocations reuse one pool.
+   Health endpoints are exempt so the DB status can always be inspected. */
+app.use(async (req, res, next) => {
+  if (!db.dbEnabled()) return next();                 // no DB → in-process session (dev/test)
+  if (req.path === '/health' || req.path === '/health/db') return next();
+  try {
+    await db.connectDB();                              // cached; reused on warm starts
+    return next();
+  } catch (e) {
+    logger.error('Database unavailable for request', { path: req.path, message: e.message });
+    // Production: a configured-but-unreachable DB is a clear 503, never a vague 500.
+    if (config.IS_PROD) {
+      if (res.headersSent) return next(e);
+      return res.status(503).json({
+        error: 'service_unavailable',
+        message: 'Database temporarily unavailable. Check MongoDB/session configuration.',
+      });
+    }
+    // Dev: degrade gracefully so local work without a reachable DB still loads.
+    return next();
+  }
+});
 
 app.use(session({
   name: 'career_autopilot.sid',
@@ -1047,11 +1073,27 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
 app.get('/health', (req, res) => res.json({
   ok: true,
   ai: !!process.env.ANTHROPIC_API_KEY,
+  db: db.dbEnabled() ? 'configured' : 'off',
+  sessionStore: db.dbEnabled() ? 'mongodb' : 'memory',
+  google: googleEnabled(),
   sources: SOURCES.map(s => s.name),
   aiJobGeneration: false,
   strictJobVerification: STRICT_JOB_VERIFICATION,
   time: new Date().toISOString()
 }));
+
+/* Deployment-debug probe: actually attempts the (cached) Mongo connection and
+   reports the result. Returns 200 when the DB is reachable or intentionally off,
+   503 when it is configured but unreachable. */
+app.get('/health/db', async (req, res) => {
+  if (!db.dbEnabled()) return res.json({ ok: true, db: 'off', message: 'MONGODB_URI not set — running session/cookie only.' });
+  try {
+    await db.connectDB();
+    res.json({ ok: true, db: 'connected' });
+  } catch (e) {
+    res.status(503).json({ ok: false, db: 'unreachable', message: e.message });
+  }
+});
 
 /* ============================================================
    OAUTH PROVIDERS  (no passwords ever — official OAuth only)
@@ -1355,21 +1397,32 @@ app.post('/auth/dev-login', authLimiter, async (req, res) => {
   req.session.save(() => res.json({ ok: true, user }));
 });
 
-/* Who am I + which sign-in methods this server offers. */
+/* Who am I + which sign-in methods this server offers. Must never 500 — the
+   client uses it to decide what to render, so on any internal hiccup we still
+   return a well-formed "not authenticated" payload with provider flags. */
 app.get('/auth/me', async (req, res) => {
-  let u = currentUser(req);
-  // Enrich with persisted fields (role, createdAt, lastLoginAt, loginCount) when the DB is on.
-  if (u && db.dbEnabled()) {
-    try {
-      const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
-      if (fresh) u = { ...u, ...fresh, picture: fresh.picture || u.picture };
-    } catch { /* never block /auth/me on a DB issue */ }
+  try {
+    let u = currentUser(req);
+    // Enrich with persisted fields (role, createdAt, lastLoginAt, loginCount) when the DB is on.
+    if (u && db.dbEnabled()) {
+      try {
+        const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
+        if (fresh) u = { ...u, ...fresh, picture: fresh.picture || u.picture };
+      } catch { /* never block /auth/me on a DB issue */ }
+    }
+    res.json({
+      authenticated: !!u,
+      user: u || null,
+      providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } },
+    });
+  } catch (e) {
+    logger.error('/auth/me failed unexpectedly', { message: e.message });
+    res.status(200).json({
+      authenticated: false,
+      user: null,
+      providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } },
+    });
   }
-  res.json({
-    authenticated: !!u,
-    user: u || null,
-    providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } }
-  });
 });
 
 /* Sign out of the user session (separate from connector /auth/:provider/logout). */

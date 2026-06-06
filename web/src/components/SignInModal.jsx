@@ -16,7 +16,7 @@ function GoogleMark() {
 }
 
 export default function SignInModal({ open, onClose }) {
-  const { providers, devLogin } = useAuth();
+  const { providers, devLogin, authError } = useAuth();
   const [busy, setBusy] = useState(false);
   const [demo, setDemo] = useState({ name: '', email: '' });
   const [showDemo, setShowDemo] = useState(false);
@@ -41,13 +41,17 @@ export default function SignInModal({ open, onClose }) {
       <div className="mt-6 space-y-3">
         <button
           onClick={google}
-          disabled={busy || !providers?.google?.enabled}
+          disabled={busy || (!authError && !providers?.google?.enabled)}
           className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-white/12 bg-white text-[15px] font-medium text-slate-800 transition hover:bg-white/90 disabled:opacity-50"
         >
           {busy ? <Spinner className="border-slate-400 border-t-slate-700" /> : <GoogleMark />}
           Continue with Google
         </button>
-        {!providers?.google?.enabled && (
+        {authError ? (
+          <p className="text-center text-xs text-amber-glow/80">
+            Auth server is unavailable. Check MongoDB/session configuration (see <code className="font-mono">/health/db</code>).
+          </p>
+        ) : !providers?.google?.enabled && (
           <p className="text-center text-xs text-amber-glow/80">
             Google OAuth isn’t configured on this server yet — add the keys in <code className="font-mono">.env</code>.
           </p>

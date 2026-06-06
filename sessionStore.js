@@ -14,7 +14,7 @@ import mongoose from 'mongoose';
 
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
 
-export function createMongooseSessionStore(session, { ttlMs = DEFAULT_TTL_MS } = {}) {
+export function createMongooseSessionStore(session, { ttlMs = DEFAULT_TTL_MS, connect } = {}) {
   const Store = session.Store;
 
   const schema = new mongoose.Schema(
@@ -30,6 +30,12 @@ export function createMongooseSessionStore(session, { ttlMs = DEFAULT_TTL_MS } =
 
   const SessionModel = mongoose.models.Session || mongoose.model('Session', schema);
 
+  // Ensure the (cached) connection is live before any store op. On serverless
+  // (Vercel) the listen block never runs, so the connection is established here
+  // on first use and reused on warm invocations. Without this, the very first
+  // session read/write hits an un-connected Mongoose and times out → 500.
+  const ready = async () => { if (typeof connect === 'function') await connect(); };
+
   const expiryFor = (sess) => {
     const ms = sess?.cookie?.maxAge;
     return new Date(Date.now() + (typeof ms === 'number' && ms > 0 ? ms : ttlMs));
@@ -37,8 +43,8 @@ export function createMongooseSessionStore(session, { ttlMs = DEFAULT_TTL_MS } =
 
   class MongooseStore extends Store {
     get(sid, cb) {
-      SessionModel.findById(sid)
-        .lean()
+      ready()
+        .then(() => SessionModel.findById(sid).lean())
         .then((doc) => {
           if (!doc) return cb(null, null);
           if (doc.expires && doc.expires.getTime() <= Date.now()) {
@@ -51,33 +57,32 @@ export function createMongooseSessionStore(session, { ttlMs = DEFAULT_TTL_MS } =
     }
 
     set(sid, sess, cb = () => {}) {
-      SessionModel.updateOne(
-        { _id: sid },
-        { $set: { session: sess, expires: expiryFor(sess) } },
-        { upsert: true }
-      )
+      ready()
+        .then(() => SessionModel.updateOne({ _id: sid }, { $set: { session: sess, expires: expiryFor(sess) } }, { upsert: true }))
         .then(() => cb(null))
         .catch((err) => cb(err));
     }
 
     destroy(sid, cb = () => {}) {
-      SessionModel.deleteOne({ _id: sid })
+      ready()
+        .then(() => SessionModel.deleteOne({ _id: sid }))
         .then(() => cb(null))
         .catch((err) => cb(err));
     }
 
     touch(sid, sess, cb = () => {}) {
-      SessionModel.updateOne({ _id: sid }, { $set: { expires: expiryFor(sess) } })
+      ready()
+        .then(() => SessionModel.updateOne({ _id: sid }, { $set: { expires: expiryFor(sess) } }))
         .then(() => cb(null))
         .catch((err) => cb(err));
     }
 
     clear(cb = () => {}) {
-      SessionModel.deleteMany({}).then(() => cb(null)).catch((err) => cb(err));
+      ready().then(() => SessionModel.deleteMany({})).then(() => cb(null)).catch((err) => cb(err));
     }
 
     length(cb = () => {}) {
-      SessionModel.countDocuments({}).then((n) => cb(null, n)).catch((err) => cb(err));
+      ready().then(() => SessionModel.countDocuments({})).then((n) => cb(null, n)).catch((err) => cb(err));
     }
   }
 
