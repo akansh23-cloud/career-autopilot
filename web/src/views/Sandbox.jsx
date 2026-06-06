@@ -8,13 +8,90 @@ import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.js
 import { ScoreRing, BadgePill, BadgeModal, StatusBadge, ArchitectureDiagram } from '../components/proof/ProofViews.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import {
-  getPublishedProjects, getProjects, saveProject, savePartnerRequest, uid, proofScoreBreakdown,
+  getPublishedProjects, getProjects, saveProject, savePartnerRequest, saveStudioSeed, uid, proofScoreBreakdown,
 } from '../lib/projectStore.js';
 import { deriveBadges } from '../lib/badges.js';
 import { rankProjects } from '../lib/roleFit.js';
 import { calculateProjectStatus } from '../lib/projectStatus.js';
 import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
+
+
+const MARKET_IDEAS = [
+  {
+    id: 'idea-campus-skill-market',
+    title: 'Campus Skill Exchange Marketplace',
+    targetRole: 'Full Stack Developer',
+    type: 'Full Stack',
+    tags: ['React', 'Node.js', 'MongoDB', 'Matching Algorithm', 'Payments'],
+    problem: 'Students have skills but no structured way to trade help, form teams, and prove contributions across projects.',
+    businessAngle: 'Can become a college SaaS for project collaboration, peer tutoring, and placement-cell proof tracking.',
+    difficulty: 'Intermediate',
+  },
+  {
+    id: 'idea-local-business-ai',
+    title: 'AI CRM for Local Shops and Clinics',
+    targetRole: 'Backend Developer',
+    type: 'Full Stack',
+    tags: ['Auth', 'CRM', 'WhatsApp', 'Analytics', 'AI Summaries'],
+    problem: 'Small businesses lose repeat customers because they do not track follow-ups, reminders, service history or leads properly.',
+    businessAngle: 'Subscription SaaS for local shops, clinics, tutors, salons and repair businesses.',
+    difficulty: 'Intermediate',
+  },
+  {
+    id: 'idea-devops-cost-guard',
+    title: 'Cloud Cost Guardrail Dashboard',
+    targetRole: 'DevOps Engineer',
+    type: 'DevOps',
+    tags: ['AWS', 'Docker', 'CI/CD', 'Terraform', 'Monitoring'],
+    problem: 'Students and startups deploy cloud projects but do not understand cost, idle resources, alerts or budget limits.',
+    businessAngle: 'A lightweight FinOps tool for student builders and early startups to avoid cloud bill shocks.',
+    difficulty: 'Advanced',
+  },
+  {
+    id: 'idea-placement-readiness',
+    title: 'Placement Readiness Operating System',
+    targetRole: 'Product Engineer',
+    type: 'Full Stack',
+    tags: ['Roadmaps', 'XP', 'Resume', 'Analytics', 'Recruiter Console'],
+    problem: 'Students do random learning without a measurable path from projects to resume to interviews to recruiter discovery.',
+    businessAngle: 'Can become a B2B college placement platform plus student subscription product.',
+    difficulty: 'Advanced',
+  },
+];
+
+function MarketplaceIdeas({ go, flash }) {
+  const startIdea = (idea) => {
+    saveStudioSeed({
+      idea,
+      targetRole: idea.targetRole,
+      type: idea.type,
+      missingSkills: idea.tags,
+      jd: `${idea.title}\n\nProblem statement: ${idea.problem}\n\nBusiness angle: ${idea.businessAngle}\n\nBuild a recruiter-ready project with architecture, GitHub, live demo, README, interview prep and startup-style validation.`,
+    });
+    flash('Idea loaded into Career Project Studio.');
+    go?.('projectstudio');
+  };
+  return (
+    <SectionCard title="Startup-grade project ideas" action={<Badge tone="amber">Marketplace ideas</Badge>} className="mb-4">
+      <p className="mb-3 text-[13px] leading-relaxed text-slate-400">Use this marketplace not only to show finished projects, but also to discover serious project/problem statements that can become portfolio proof, hackathon entries, or startup experiments.</p>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {MARKET_IDEAS.map((idea) => (
+          <div key={idea.id} className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-aurora-violet/35">
+            <div className="flex items-start justify-between gap-2">
+              <h4 className="font-medium leading-tight text-white">{idea.title}</h4>
+              <Badge tone={idea.difficulty === 'Advanced' ? 'amber' : 'cyan'}>{idea.difficulty}</Badge>
+            </div>
+            <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-400">{idea.problem}</p>
+            <div className="mt-2 rounded-xl border border-white/8 bg-ink-950/55 p-2 text-[11px] leading-relaxed text-slate-500"><span className="text-slate-300">Business angle:</span> {idea.businessAngle}</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">{idea.tags.slice(0, 5).map((t) => <Badge key={t} tone="violet">{t}</Badge>)}</div>
+            <Button size="sm" className="mt-auto pt-3" onClick={() => startIdea(idea)}><Rocket size={13} /> Build this idea</Button>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
 
 function recruiterSummary(p, userName) {
   if (p.recruiterSummary && p.recruiterSummary.trim()) return p.recruiterSummary;
@@ -167,6 +244,8 @@ export default function Sandbox({ go }) {
           </div>
         </div>
       </SectionCard>
+
+      <MarketplaceIdeas go={go} flash={flash} />
 
       <SectionCard title="Published projects" action={<Badge tone="mint">{filtered.length}</Badge>}>
         {list.length === 0 ? (

@@ -11,6 +11,7 @@ import { Spinner } from './components/ui/kit.jsx';
 import PricingModal from './components/PricingModal.jsx';
 import { hydrateResumeFromServer, setResumeStoreUser } from './lib/resumeStore.js';
 import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectStore.js';
+import { setMissionUser } from './lib/missions.js';
 
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
@@ -73,6 +74,7 @@ export default function App() {
       setProfileUser(null);
       setResumeStoreUser(null);
       setProjectStoreUser(null);
+      setMissionUser(null);
       setWorkspaceReady(false);
       return () => { live = false; };
     }
@@ -80,6 +82,7 @@ export default function App() {
     setProfileUser(user);
     setResumeStoreUser(user);
     setProjectStoreUser(user);
+    setMissionUser(user);
     syncPlanFromServer();
     Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer()])
       .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });

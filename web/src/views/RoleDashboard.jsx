@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, Award, TrendingUp, Target, Building2, UserSearch, GraduationCap,
-  Briefcase, KanbanSquare, Send, ArrowRight, Sparkles,
+  Briefcase, KanbanSquare, Send, ArrowRight, Sparkles, CheckCircle2, Circle, Code2, Mic, CalendarCheck,
 } from 'lucide-react';
 import { PageIntro, SectionCard, StatCard } from './common.jsx';
 import { Badge, Button, EmptyState } from '../components/ui/kit.jsx';
@@ -14,6 +14,7 @@ import { deriveBadges } from '../lib/badges.js';
 import { roleConsistency, buildCandidates } from '../lib/roleFit.js';
 import { getAccessForUser } from '../lib/access.js';
 import { getProfile, ROLE_LABELS } from '../lib/userProfile.js';
+import { getWeeklyMissions, setMissionDone, missionStats } from '../lib/missions.js';
 
 function useProjectsLive() {
   const [projects, setProjects] = useState(getProjects());
@@ -27,6 +28,66 @@ function useProjectsLive() {
     };
   }, []);
   return projects;
+}
+
+
+const MISSION_STYLE = {
+  project: { icon: Rocket, tone: 'violet', label: 'Project' },
+  coding: { icon: Code2, tone: 'cyan', label: 'Coding' },
+  interview: { icon: Mic, tone: 'amber', label: 'Interview' },
+  career: { icon: Briefcase, tone: 'mint', label: 'Resume' },
+  opportunity: { icon: Target, tone: 'violet', label: 'Market' },
+};
+
+function WeeklyMissionPanel({ go }) {
+  const [missions, setMissions] = useState(getWeeklyMissions());
+  useEffect(() => {
+    const sync = () => setMissions(getWeeklyMissions());
+    window.addEventListener('career-missions-updated', sync);
+    window.addEventListener('career-projects-updated', sync);
+    window.addEventListener('career-resume-updated', sync);
+    return () => {
+      window.removeEventListener('career-missions-updated', sync);
+      window.removeEventListener('career-projects-updated', sync);
+      window.removeEventListener('career-resume-updated', sync);
+    };
+  }, []);
+  const stats = missionStats(missions);
+  const toggle = (m) => setMissions(setMissionDone(m.id, !m.done));
+  return (
+    <SectionCard title="This week’s skill sprint" action={<Badge tone="mint">{stats.done}/{stats.total} done · {stats.xpEarned}/{stats.xpTotal} XP</Badge>}>
+      <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+        <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+          <span>Weekly progress</span><span>{stats.percent}%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${stats.percent}%` }} /></div>
+        <p className="mt-2 text-[12px] leading-relaxed text-slate-400">A balanced mix of building, coding, interview practice and market alignment so students return weekly and improve with visible proof.</p>
+      </div>
+      <div className="space-y-2.5">
+        {missions.map((m) => {
+          const meta = MISSION_STYLE[m.type] || MISSION_STYLE.project;
+          const Icon = meta.icon;
+          return (
+            <div key={m.id} className={`rounded-xl border p-3 transition ${m.done ? 'border-aurora-mint/25 bg-aurora-mint/8' : 'border-white/8 bg-white/[0.02] hover:border-white/18'}`}>
+              <div className="flex items-start gap-3">
+                <button onClick={() => toggle(m)} className={`mt-0.5 ${m.done ? 'text-aurora-mint' : 'text-slate-500 hover:text-slate-200'}`}>{m.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={meta.tone}><Icon size={10} /> {meta.label}</Badge>
+                    <span className="text-[11px] text-slate-500">{m.minutes} min · +{m.xp} XP</span>
+                  </div>
+                  <p className="mt-1 text-sm font-medium text-white">{m.title}</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{m.detail}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Why: {m.why}</p>
+                </div>
+                <Button size="sm" variant="soft" onClick={() => go(m.route)}>{m.cta}</Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
 }
 
 function StudentDashboard({ go }) {
@@ -67,6 +128,10 @@ function StudentDashboard({ go }) {
           ))}
         </div>
       )}
+
+      <div className="mt-4">
+        <WeeklyMissionPanel go={go} />
+      </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <SectionCard title="Top skill XP" action={<button onClick={() => go('profile')} className="text-xs text-aurora-cyan hover:underline">View all</button>}>

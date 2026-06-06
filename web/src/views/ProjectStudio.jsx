@@ -695,11 +695,11 @@ export default function ProjectStudio({ go }) {
   const userName = user?.name || user?.displayName || 'You';
   const resume = getStoredResume();
   const seed = useMemo(() => consumeStudioSeed(), []);
-  const [role, setRole] = useState(seed?.job?.title || getResumeSearchRole() || 'Software Engineer');
-  const [level, setLevel] = useState('Intermediate');
+  const [role, setRole] = useState(seed?.targetRole || seed?.job?.title || getResumeSearchRole() || 'Software Engineer');
+  const [level, setLevel] = useState(seed?.idea?.difficulty || 'Intermediate');
   const [duration, setDuration] = useState('1 week');
   const [type, setType] = useState(seed?.type || 'Full Stack');
-  const [jd, setJd] = useState('');
+  const [jd, setJd] = useState(seed?.jd || '');
   const [useGaps, setUseGaps] = useState(Boolean(seed?.missingSkills?.length));
   const gaps = seed?.missingSkills || [];
 
@@ -723,7 +723,9 @@ export default function ProjectStudio({ go }) {
       targetRole: role, difficulty: level, duration, type,
       sourceMissingSkills: useGaps && gaps.length ? gaps : extractSkillsFromJD(jd),
       jd: jd.trim(), resumeText: resume.text || '',
-      sourceJob: seed?.job ? { title: seed.job.title, company: seed.job.company } : null,
+      sourceJob: seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null),
+      title: seed?.idea?.title || undefined,
+      problemStatement: seed?.idea?.problem || undefined,
     };
     try { const p = await generateRoadmap(input); setProject(p); setStatus('done'); }
     catch { setStatus('error'); }
@@ -766,10 +768,14 @@ export default function ProjectStudio({ go }) {
 
       {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-slate-100">{toast}</div>}
 
-      {seed?.job && (
+      {(seed?.job || seed?.idea) && (
         <div className="mb-4 rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 px-4 py-3 text-sm text-slate-200">
           <Sparkles size={15} className="mr-1.5 inline text-aurora-violet" />
-          Project generated from gaps in <span className="font-medium text-white">{seed.job.title}</span>{seed.job.company ? <> at <span className="font-medium text-white">{seed.job.company}</span></> : null}.
+          {seed?.idea ? (
+            <>Marketplace idea loaded: <span className="font-medium text-white">{seed.idea.title}</span>. Generate it into a guided startup-grade project roadmap.</>
+          ) : (
+            <>Project generated from gaps in <span className="font-medium text-white">{seed.job.title}</span>{seed.job.company ? <> at <span className="font-medium text-white">{seed.job.company}</span></> : null}.</>
+          )}
         </div>
       )}
 
