@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './hooks/useAuth.jsx';
 import { syncPlanFromServer } from './lib/plan.js';
-import { needsOnboarding, PROFILE_EVENT } from './lib/userProfile.js';
+import { hydrateProfileFromServer, needsOnboarding, PROFILE_EVENT, setProfileUser } from './lib/userProfile.js';
 import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
 import Shell, { NAV } from './components/app/Shell.jsx';
 import { Spinner } from './components/ui/kit.jsx';
 import PricingModal from './components/PricingModal.jsx';
+import { hydrateResumeFromServer, setResumeStoreUser } from './lib/resumeStore.js';
+import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectStore.js';
 
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
@@ -63,17 +65,34 @@ export default function App() {
   const [signIn, setSignIn] = useState(false);
   const [active, setActive] = useState('dash');
   const [onboarded, setOnboarded] = useState(!needsOnboarding());
+  const [workspaceReady, setWorkspaceReady] = useState(false);
 
-  useEffect(() => { if (user) syncPlanFromServer(); }, [user]);
+  useEffect(() => {
+    let live = true;
+    if (!user) {
+      setProfileUser(null);
+      setResumeStoreUser(null);
+      setProjectStoreUser(null);
+      setWorkspaceReady(false);
+      return () => { live = false; };
+    }
+    setWorkspaceReady(false);
+    setProfileUser(user);
+    setResumeStoreUser(user);
+    setProjectStoreUser(user);
+    syncPlanFromServer();
+    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer()])
+      .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });
+    return () => { live = false; };
+  }, [user]);
   useEffect(() => {
     const f = () => setOnboarded(!needsOnboarding());
     window.addEventListener(PROFILE_EVENT, f);
     return () => window.removeEventListener(PROFILE_EVENT, f);
   }, []);
-  // re-check once a user is present (covers fresh logins)
-  useEffect(() => { if (user) setOnboarded(!needsOnboarding()); }, [user]);
+  // profile updates after onboarding/settings should refresh the gate
 
-  if (loading) return <Splash />;
+  if (loading || (user && !workspaceReady)) return <Splash />;
 
   if (!user) {
     return (

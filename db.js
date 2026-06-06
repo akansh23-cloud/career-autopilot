@@ -102,6 +102,20 @@ const activitySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
+const userStateSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    profile: { type: mongoose.Schema.Types.Mixed, default: {} },
+    resume: { type: mongoose.Schema.Types.Mixed, default: {} },
+    projects: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    tracker: { type: mongoose.Schema.Types.Mixed, default: {} },
+    xpSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true, minimize: false }
+);
+
 /* avoid OverwriteModelError on hot-reload / warm starts */
 export const User = mongoose.models.User || mongoose.model('User', userSchema);
 export const SupportTicket =
@@ -111,6 +125,7 @@ export const Application =
   mongoose.models.Application || mongoose.model('Application', applicationSchema);
 export const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
 export const Activity = mongoose.models.Activity || mongoose.model('Activity', activitySchema);
+export const UserState = mongoose.models.UserState || mongoose.model('UserState', userStateSchema);
 
 /* ---- public shape (only safe fields ever leave the server) ---- */
 export function publicUser(doc) {
@@ -206,6 +221,76 @@ export async function ticketsByUser({ userId, email }) {
   } catch (err) {
     console.error('[db] ticketsByUser failed:', err.message);
     return [];
+  }
+}
+
+
+function isObjectId(id) { return id && mongoose.isValidObjectId(id); }
+function cleanEmail(email) { return email ? String(email).trim().toLowerCase() : ''; }
+async function resolveUserId({ userId, email }) {
+  if (isObjectId(userId)) return new mongoose.Types.ObjectId(userId);
+  const em = cleanEmail(email);
+  if (!em) return null;
+  const u = await User.findOne({ email: em }).select('_id').lean();
+  return u?._id || null;
+}
+
+export async function getUserState({ userId, email }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const doc = await UserState.findOne({ userId: uid }).lean();
+    if (!doc) return { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {} };
+    return {
+      profile: doc.profile || {},
+      resume: doc.resume || {},
+      projects: Array.isArray(doc.projects) ? doc.projects : [],
+      tracker: doc.tracker || {},
+      xpSnapshot: doc.xpSnapshot || {},
+      updatedAt: doc.updatedAt || null,
+    };
+  } catch (err) {
+    console.error('[db] getUserState failed:', err.message);
+    return null;
+  }
+}
+
+export async function patchUserState({ userId, email, patch }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const em = cleanEmail(email);
+    const allowed = ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot'];
+    const set = { email: em };
+    for (const k of allowed) if (Object.prototype.hasOwnProperty.call(patch || {}, k)) set[k] = patch[k];
+    await UserState.updateOne({ userId: uid }, { $set: set }, { upsert: true });
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] patchUserState failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function saveResumeSnapshot({ userId, email, resume }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const score = Number(resume?.analysis?.score ?? resume?.analysis?.ats ?? NaN);
+    await patchUserState({ userId: uid, email, patch: { resume } });
+    if (!Number.isNaN(score)) {
+      await Resume.create({ userId: uid, fileName: resume?.fileName || '', score: Math.max(0, Math.min(100, Math.round(score))), delta: null });
+      await Activity.create({ userId: uid, text: `Analyzed resume${resume?.targetRole ? ` for ${resume.targetRole}` : ''} — ATS score ${Math.round(score)}/100`, tone: score >= 75 ? 'mint' : 'cyan' });
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] saveResumeSnapshot failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
   }
 }
 

@@ -6,6 +6,13 @@ const JOB_RESULTS_KEY = 'careerAutopilot.jobResults.v1';
 const SELECTED_JOB_KEY = 'careerAutopilot.selectedJob.v1';
 const TEMPLATE_KEY = 'careerAutopilot.selectedTemplate.v1';
 const CUSTOM_TPL_KEY = 'careerAutopilot.customTemplate.v1';
+let currentUserKey = 'guest';
+function normalizeUserKey(user) {
+  const raw = user?.email || user?.id || 'guest';
+  return String(raw).trim().toLowerCase().replace(/[^a-z0-9@._-]+/g, '_') || 'guest';
+}
+export function setResumeStoreUser(user) { currentUserKey = normalizeUserKey(user); }
+function scoped(base) { return `${base}:${currentUserKey}`; }
 
 const fallback = {
   text: '',
@@ -19,7 +26,7 @@ const fallback = {
 function safeRead(key) {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = window.localStorage.getItem(scoped(key)) || (currentUserKey !== 'guest' ? window.localStorage.getItem(key) : null);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -29,7 +36,7 @@ function safeRead(key) {
 function safeWrite(key, value) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(scoped(key), JSON.stringify(value));
   } catch {
     // Browser storage may be blocked/full. The app should still keep in-memory state.
   }
@@ -37,7 +44,37 @@ function safeWrite(key, value) {
 
 function safeRemove(key) {
   if (typeof window === 'undefined') return;
-  try { window.localStorage.removeItem(key); } catch {}
+  try { window.localStorage.removeItem(scoped(key)); } catch {}
+}
+
+async function patchServerState(patch) {
+  try {
+    await fetch('/api/user/state', {
+      method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+  } catch {}
+}
+async function saveResumeAnalysisToServer(resume) {
+  try {
+    await fetch('/api/resume/save-analysis', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume }),
+    });
+  } catch {}
+}
+export async function hydrateResumeFromServer() {
+  try {
+    const r = await fetch('/api/user/state', { credentials: 'include' });
+    if (!r.ok) return getStoredResume();
+    const d = await r.json();
+    const resume = d?.state?.resume;
+    if (resume && Object.keys(resume).length) {
+      safeWrite(KEY, { ...fallback, ...resume, updatedAt: resume.updatedAt || new Date().toISOString() });
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-resume-updated', { detail: getStoredResume() }));
+    }
+  } catch {}
+  return getStoredResume();
 }
 
 export function getStoredResume() {
@@ -47,12 +84,15 @@ export function getStoredResume() {
 export function saveStoredResume(patch) {
   const next = { ...getStoredResume(), ...patch, updatedAt: new Date().toISOString() };
   safeWrite(KEY, next);
+  patchServerState({ resume: next });
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('career-resume-updated', { detail: next }));
   return next;
 }
 
 export function saveResumeAnalysis(analysis) {
-  return saveStoredResume({ analysis, analysedAt: new Date().toISOString() });
+  const next = saveStoredResume({ analysis, analysedAt: new Date().toISOString() });
+  saveResumeAnalysisToServer(next);
+  return next;
 }
 
 export function clearStoredResume() {

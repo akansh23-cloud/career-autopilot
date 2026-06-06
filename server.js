@@ -1469,6 +1469,50 @@ app.post('/apply/:provider/submit', (req, res) => {
   });
 });
 
+
+
+/* ============================================================
+   USER APP STATE — cross-device persistence for onboarding,
+   resume dashboard stats and project/XP state. DB-backed when
+   MONGODB_URI is configured; local-only clients still work.
+   ============================================================ */
+app.get('/api/user/state', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const state = await db.getUserState({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, state: state || { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {} }, db: db.dbEnabled() });
+});
+
+app.patch('/api/user/state', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const body = req.body || {};
+  const allowed = {};
+  for (const k of ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot']) {
+    if (Object.prototype.hasOwnProperty.call(body, k)) allowed[k] = body[k];
+  }
+  const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: allowed });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+app.get('/api/user/profile', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const state = await db.getUserState({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, profile: state?.profile || {}, db: db.dbEnabled() });
+});
+
+app.put('/api/user/profile', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const profile = req.body?.profile || req.body || {};
+  const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: { profile } });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, profile, db: db.dbEnabled(), result });
+});
+
+app.post('/api/resume/save-analysis', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const resume = req.body?.resume || req.body || {};
+  const result = await db.saveResumeSnapshot({ userId: u?.id, email: u?.email, resume });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
 /* ============================================================
    CONTACTS / REFERRALS  (compliant provider lookups)
    ------------------------------------------------------------

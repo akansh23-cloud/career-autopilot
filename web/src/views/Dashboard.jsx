@@ -7,6 +7,11 @@ import { PageIntro, StatCard, SectionCard, BarChart } from './common.jsx';
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui/kit.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { Dashboard as DashboardApi } from '../lib/api.js';
+import { getStoredResume, getStoredJobResults } from '../lib/resumeStore.js';
+import { getProjects } from '../lib/projectStore.js';
+import { careerXP, topSkills } from '../lib/xp.js';
+import { deriveBadges } from '../lib/badges.js';
+import { getAccessForUser } from '../lib/access.js';
 
 const TONE_BG = {
   cyan: 'bg-aurora-cyan', violet: 'bg-aurora-violet', mint: 'bg-aurora-mint', amber: 'bg-amber-glow',
@@ -80,12 +85,23 @@ export default function Dashboard({ go }) {
   }
 
   // ---- Ready ----
-  const s = data?.summary || {};
+  const base = data?.summary || {};
+  const localResume = getStoredResume();
+  const localJobs = getStoredJobResults();
+  const projects = getProjects();
+  const access = getAccessForUser(user);
+  const career = careerXP(projects);
+  const skills = topSkills(projects, 3);
+  const badges = deriveBadges(projects, access);
+  const resumeScore = base.resumeScore ?? localResume.analysis?.score ?? localResume.analysis?.ats ?? null;
+  const s = { ...base, resumeScore };
   const demo = !!data?.demo;
   const funnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0 };
   const weekly = s.weekly || { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [0, 0, 0, 0, 0, 0, 0] };
-  const activity = s.activity || [];
-  const matches = s.matches || [];
+  const activity = [...(s.activity || [])];
+  if (localResume.analysis && !activity.some((a) => /resume/i.test(a.text || ''))) activity.unshift({ text: `Resume analyzed${localResume.targetRole ? ` for ${localResume.targetRole}` : ''} — score ${resumeScore || 'ready'}`, when: 'Saved locally', tone: 'cyan' });
+  if (projects.length && !activity.some((a) => /project/i.test(a.text || ''))) activity.unshift({ text: `${projects.length} project workspace${projects.length === 1 ? '' : 's'} active with ${career.total} Career XP`, when: 'Saved locally', tone: 'violet' });
+  const matches = (s.matches && s.matches.length ? s.matches : (localJobs.jobs || []).slice(0, 5));
   const funnelEmpty = !Object.values(funnel).some((v) => v > 0);
 
   return (
@@ -115,6 +131,26 @@ export default function Dashboard({ go }) {
         <StatCard i={3} icon={Send} tone="amber" label="Outreach sent" value={String(s.outreachSent ?? 0)}
           hint={!s.outreachSent ? 'Send your first outreach' : undefined}
           onClick={!s.outreachSent ? () => go('contacts') : undefined} />
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <SectionCard title="Project progress" className="lg:col-span-2" action={<Badge tone="violet">Proof-of-work</Badge>}>
+          {projects.length === 0 ? (
+            <EmptyState icon={Trophy} title="No project workspace yet" hint="Create a guided project to start earning verified skill XP and badges." action={<Button size="sm" onClick={() => go('projectstudio')}>Create project</Button>} />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Career XP</p><p className="mt-1 font-display text-2xl text-white">{career.total}</p><p className="text-[11px] text-slate-500">{career.level}</p></div>
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Verified badges</p><p className="mt-1 font-display text-2xl text-white">{badges.length}</p><p className="text-[11px] text-slate-500">Proof-based skills</p></div>
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Top skill</p><p className="mt-1 truncate font-display text-2xl text-white">{skills[0]?.skillName || '—'}</p><p className="text-[11px] text-slate-500">{skills[0] ? `${skills[0].xp} XP · ${skills[0].level}` : 'Add project evidence'}</p></div>
+            </div>
+          )}
+        </SectionCard>
+        <SectionCard title="Next best action">
+          <div className="space-y-3 text-sm text-slate-300">
+            <p>{resumeScore == null ? 'Upload and analyze your resume first.' : projects.length === 0 ? 'Turn your resume gaps into one guided proof-of-work project.' : badges.length === 0 ? 'Complete tasks and connect GitHub/live demo to earn your first verified badge.' : 'Publish your strongest verified project to the sandbox.'}</p>
+            <Button size="sm" variant="soft" onClick={() => go(projects.length ? 'projectstudio' : 'resume')}>{projects.length ? 'Open project workspace' : 'Start with resume'}</Button>
+          </div>
+        </SectionCard>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">

@@ -23,6 +23,7 @@ export const api = {
   get: (p) => req('GET', p),
   post: (p, b) => req('POST', p, b),
   put: (p, b) => req('PUT', p, b),
+  patch: (p, b) => req('PATCH', p, b),
   del: (p) => req('DELETE', p),
 };
 
@@ -73,4 +74,15 @@ export const Support = {
 
 export const Dashboard = {
   summary: () => api.get('/dashboard/summary'),
+};
+
+export const UserState = {
+  get: () => api.get('/api/user/state'),
+  patch: (body) => api.patch('/api/user/state', body),
+  getProfile: () => api.get('/api/user/profile'),
+  saveProfile: (profile) => api.put('/api/user/profile', { profile }),
+};
+
+export const ResumeApi = {
+  saveAnalysis: (resume) => api.post('/api/resume/save-analysis', { resume }),
 };
