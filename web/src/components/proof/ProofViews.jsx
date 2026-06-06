@@ -1,7 +1,7 @@
 import { Award, Github, Globe, X, CheckCircle2, Circle, Lock } from 'lucide-react';
 import { Badge, Button, Modal } from '../ui/kit.jsx';
 import { badgeTone } from '../../lib/badges.js';
-import { levelFor, nextStepFor } from '../../lib/xp.js';
+import { levelFor, nextStepFor, SKILL_STATE_LABELS, SKILL_STATE_TONES } from '../../lib/xp.js';
 import { statusTone } from '../../lib/projectStatus.js';
 import { layoutGraph } from '../../lib/architecture.js';
 
@@ -86,7 +86,10 @@ export function XpBar({ skill }) {
     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm font-medium text-white">{skill.skillName}</span>
-        <Badge tone="violet">{info.level}</Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {skill.state && <Badge tone={SKILL_STATE_TONES[skill.state] || 'default'}>{SKILL_STATE_LABELS[skill.state] || skill.state}</Badge>}
+          <Badge tone="violet">{info.level}</Badge>
+        </div>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8">
         <div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${info.pct}%` }} />

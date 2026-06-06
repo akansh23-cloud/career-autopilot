@@ -3,10 +3,17 @@ import { Save, Check, Linkedin, Plug, LogOut, User, Briefcase, AlertTriangle, Sh
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Field, Badge, Avatar, Spinner } from '../components/ui/kit.jsx';
 import { Profile, Auth } from '../lib/api.js';
+import { ROLE_GROUPS } from '../lib/roles.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSupport } from '../support/SupportProvider.jsx';
 
 const MODES = ['Any', 'Remote', 'On-site', 'Hybrid'];
+const ROLE_SUGGESTIONS = Object.values(ROLE_GROUPS).flat();
+const LOCATION_SUGGESTIONS = ['Remote', 'Hybrid', 'Bengaluru', 'Hyderabad', 'Pune', 'Mumbai', 'Delhi NCR', 'Chennai', 'Kolkata', 'London', 'New York', 'San Francisco', 'Berlin', 'Singapore', 'Dubai', 'Toronto'];
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD', 'AED'];
+const SALARY_SUGGESTIONS = ['600000', '900000', '1200000', '1800000', '2400000', '3600000'];
+// Accepts linkedin.com/in/handle, /pub/, company pages, with or without www/https.
+const LINKEDIN_RE = /^(https?:\/\/)?(www\.)?([a-z]{2,3}\.)?linkedin\.com\/(in|pub|company|school)\/[^\s/]+\/?.*$/i;
 const fmtDate = (d) => { if (!d) return '—'; try { return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return '—'; } };
 
 export default function Settings() {
@@ -37,9 +44,15 @@ export default function Settings() {
 
   const save = async () => {
     setSaving(true); setErr(''); setSaved(false);
+    const lk = linkedinUrl.trim();
+    if (lk && !LINKEDIN_RE.test(lk)) {
+      setErr('Enter a valid LinkedIn URL, e.g. https://linkedin.com/in/your-handle');
+      setSaving(false);
+      return;
+    }
     try {
       await Profile.saveCareer({
-        linkedinUrl: linkedinUrl || undefined,
+        linkedinUrl: lk || undefined,
         preferences: {
           titles: prefs.titles.split(',').map((s) => s.trim()).filter(Boolean),
           locations: prefs.locations.split(',').map((s) => s.trim()).filter(Boolean),
@@ -60,9 +73,12 @@ export default function Settings() {
         <div className="space-y-4">
           <SectionCard title="Job preferences">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Target roles" hint="comma separated"><Input value={prefs.titles} onChange={(e) => setPrefs({ ...prefs, titles: e.target.value })} placeholder="DevOps Engineer, Platform Engineer" /></Field>
-              <Field label="Locations" hint="comma separated"><Input value={prefs.locations} onChange={(e) => setPrefs({ ...prefs, locations: e.target.value })} placeholder="Remote, Bengaluru" /></Field>
+              <Field label="Target roles" hint="comma separated · pick from suggestions or type your own"><Input list="role-suggestions" value={prefs.titles} onChange={(e) => setPrefs({ ...prefs, titles: e.target.value })} placeholder="DevOps Engineer, Platform Engineer" /></Field>
+              <Field label="Locations" hint="comma separated · suggestions allowed"><Input list="location-suggestions" value={prefs.locations} onChange={(e) => setPrefs({ ...prefs, locations: e.target.value })} placeholder="Remote, Bengaluru" /></Field>
             </div>
+            <datalist id="role-suggestions">{ROLE_SUGGESTIONS.map((r) => <option key={r} value={r} />)}</datalist>
+            <datalist id="location-suggestions">{LOCATION_SUGGESTIONS.map((l) => <option key={l} value={l} />)}</datalist>
+            <datalist id="salary-suggestions">{SALARY_SUGGESTIONS.map((s) => <option key={s} value={s} />)}</datalist>
             <div className="mt-3">
               <span className="mb-1.5 block text-[13px] font-medium text-slate-300">Work mode</span>
               <div className="flex flex-wrap gap-2">
@@ -73,9 +89,13 @@ export default function Settings() {
               </div>
             </div>
             <div className="mt-3 grid gap-4 sm:grid-cols-3">
-              <Field label="Min salary"><Input type="number" value={prefs.salaryMin} onChange={(e) => setPrefs({ ...prefs, salaryMin: e.target.value })} placeholder="1200000" /></Field>
-              <Field label="Max salary"><Input type="number" value={prefs.salaryMax} onChange={(e) => setPrefs({ ...prefs, salaryMax: e.target.value })} placeholder="2400000" /></Field>
-              <Field label="Currency"><Input value={prefs.salaryCurrency} onChange={(e) => setPrefs({ ...prefs, salaryCurrency: e.target.value })} placeholder="INR" /></Field>
+              <Field label="Min salary" hint="annual"><Input list="salary-suggestions" type="number" value={prefs.salaryMin} onChange={(e) => setPrefs({ ...prefs, salaryMin: e.target.value })} placeholder="1200000" /></Field>
+              <Field label="Max salary" hint="annual"><Input list="salary-suggestions" type="number" value={prefs.salaryMax} onChange={(e) => setPrefs({ ...prefs, salaryMax: e.target.value })} placeholder="2400000" /></Field>
+              <Field label="Currency">
+                <select value={CURRENCIES.includes(prefs.salaryCurrency) ? prefs.salaryCurrency : 'INR'} onChange={(e) => setPrefs({ ...prefs, salaryCurrency: e.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100 outline-none">
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </Field>
             </div>
           </SectionCard>
 

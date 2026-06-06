@@ -165,8 +165,16 @@ export default function App() {
   const ViewCmp = VIEWS[active] || RoleDashboard;
   const title = (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
 
+  // Guarded navigation: only switch to a real, registered view id. Unknown or
+  // stale ids are ignored (instead of silently rendering the dashboard or a
+  // blank page), so internal links can never land on the wrong workspace.
+  const navigate = (id) => {
+    if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) setActive(id);
+    else if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
+  };
+
   return (
-    <Shell active={active} onPick={setActive} title={title}>
+    <Shell active={active} onPick={navigate} title={title}>
       <AnimatePresence mode="wait">
         <motion.div
           key={active}
@@ -175,7 +183,7 @@ export default function App() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          <ViewCmp go={setActive} />
+          <ViewCmp go={navigate} />
         </motion.div>
       </AnimatePresence>
       <PricingModal />

@@ -15,7 +15,7 @@ import { api } from './api.js';
 import { buildProject, generateRoadmap as genRoadmap } from './projectGen.js';
 import { getProfile } from './userProfile.js';
 import { getStoredResume, getSelectedJob } from './resumeStore.js';
-import { saveProject, getProject, uid, savePartnerRequest } from './projectStore.js';
+import { saveProject, getProject, uid, savePartnerRequest, findDuplicateProject } from './projectStore.js';
 import { calculateProjectStatus } from './projectStatus.js';
 import { proofBreakdown } from './proofScore.js';
 
@@ -270,6 +270,61 @@ export async function validateIdea(idea = {}) {
   if (!report) report = {};
   const total = validationTotal(report.score || {});
   return { report, total, generatedBy };
+}
+
+/* ------------------------------------------------------------------ */
+/* Deterministic validation (#6) — objective, reproducible checks that  */
+/* do NOT depend on the AI. These are the AUTHORITATIVE gate; the AI    */
+/* report is only ever shown as a suggestion alongside these.          */
+/* ------------------------------------------------------------------ */
+function durationToDays(d = '') {
+  const s = String(d).toLowerCase().trim();
+  if (!s) return null;
+  if (s.includes('weekend')) return 2;
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(day|week|month)/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return m[2] === 'day' ? n : m[2] === 'week' ? n * 7 : n * 30;
+}
+
+export function deterministicValidation(project = {}) {
+  const checks = [];
+  const add = (id, label, ok, detail = '') => checks.push({ id, label, ok, detail });
+
+  const title = String(project.title || '').trim();
+  const targetRole = String(project.targetRole || project.creator?.fromRecommendation?.targetRoleFit || '').trim();
+  const skills = Array.isArray(project.skillsCovered) ? project.skillsCovered.filter(Boolean) : [];
+  const gaps = (project.sourceMissingSkills || project.creator?.fromRecommendation?.missingSkillsCovered || []).filter(Boolean);
+  const summary = project.problemStatement || project.summary || project.creator?.summary || '';
+  const milestones = project.industry?.milestones || [];
+  const hasArchitecture = !!(String(project.architectureDiagram || '').trim() || String(project.architecture || '').trim());
+  const days = durationToDays(project.duration);
+
+  // Required fields (blocking)
+  add('title', 'Project has a title', !!title, title ? '' : 'Add a project title before validating.');
+  add('targetRole', 'Target role is set', !!targetRole, targetRole ? '' : 'Set the target role this project supports.');
+  add('skillGap', 'At least one skill / skill gap to build', gaps.length > 0 || skills.length > 0, (gaps.length || skills.length) ? '' : 'Add the skills or gaps this project should cover.');
+
+  // Quality checks (non-blocking but surfaced)
+  add('summary', 'Has a problem statement', String(summary).trim().length >= 20, String(summary).trim().length >= 20 ? '' : 'Describe the problem this project solves (≥20 chars).');
+  const dup = findDuplicateProject(project);
+  add('duplicate', 'Not a duplicate of an existing project', !dup, dup ? `Matches existing project "${dup.title}". Open that one instead of creating another.` : '');
+  const durationOk = days == null ? true : days >= 2 && days <= 120;
+  add('duration', 'Roadmap duration is realistic', durationOk, durationOk ? '' : `"${project.duration}" looks unrealistic — choose between a weekend and ~3 months.`);
+  add('architecture', 'System architecture present', hasArchitecture, hasArchitecture ? '' : 'Generate the blueprint to produce a system architecture.');
+  add('milestones', 'Roadmap has milestones', milestones.length > 0, milestones.length ? '' : 'Generate the build roadmap to produce milestones.');
+
+  const REQUIRED = ['title', 'targetRole', 'skillGap'];
+  const blocking = checks.filter((c) => !c.ok && REQUIRED.includes(c.id));
+  const passed = checks.filter((c) => c.ok).length;
+  return {
+    checks,
+    passed,
+    total: checks.length,
+    requiredOk: blocking.length === 0, // gates blueprint/roadmap generation
+    blocking,
+    duplicate: dup ? { id: dup.id, title: dup.title } : null,
+  };
 }
 
 /* ------------------------------------------------------------------ */

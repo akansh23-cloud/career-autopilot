@@ -16,7 +16,7 @@ import {
   IDEA_BANK, MARKETPLACE_TABS, FIT_LABELS, VAL_LABELS, IP_DISCLAIMER,
   assembleContext, discover, projectFitScore, createProjectFromRec, validateIdea,
   buildBlueprint, buildAdaptiveRoadmap, roadmapProgress, toggleTask, creatorStatus,
-  buildIpReadiness, buildCollabDraft, publishCollabDraft, fetchTrends,
+  buildIpReadiness, buildCollabDraft, publishCollabDraft, fetchTrends, deterministicValidation,
   getCreatorState, saveCreatorState, persistProjectStep, getCreatorProjects,
 } from '../lib/projectCreator.js';
 import {
@@ -91,6 +91,58 @@ function ScoreBars({ rows, labels }) {
   );
 }
 
+/* Deterministic checks panel (#6). These are objective and reproducible — they
+   are the authoritative gate, NOT AI output. */
+function DeterministicChecks({ result, onOpenDuplicate }) {
+  if (!result) return null;
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <ShieldCheck size={16} className="text-aurora-cyan" />
+        <p className="text-sm font-semibold text-white">Deterministic checks</p>
+        <Badge tone={result.requiredOk ? 'mint' : 'amber'}>{result.passed}/{result.total} passed</Badge>
+        <span className="ml-auto text-[11px] text-slate-500">Objective · not AI-generated</span>
+      </div>
+      <div className="space-y-1.5">
+        {result.checks.map((c) => (
+          <div key={c.id} className="flex items-start gap-2 text-[13px]">
+            {c.ok
+              ? <Check size={15} className="mt-0.5 shrink-0 text-aurora-mint" />
+              : <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-glow" />}
+            <span className={c.ok ? 'text-slate-300' : 'text-slate-200'}>
+              {c.label}
+              {!c.ok && c.detail && <span className="block text-[12px] text-amber-100/80">{c.detail}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+      {result.duplicate && onOpenDuplicate && (
+        <Button size="sm" variant="soft" className="mt-3" onClick={() => onOpenDuplicate(result.duplicate.id)}>
+          Open existing project instead
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/* Reusable "complete required fields" gate for blueprint/roadmap steps (#7/#8). */
+function RequiredFieldsGate({ result }) {
+  return (
+    <div className="rounded-2xl border border-amber-glow/30 bg-amber-glow/10 p-4">
+      <div className="flex items-center gap-2 text-amber-100">
+        <AlertTriangle size={16} className="text-amber-glow" />
+        <p className="text-sm font-semibold">Complete the required fields first</p>
+      </div>
+      <p className="mt-1 text-[13px] text-amber-100/80">This step uses your actual project context. Add the missing items below, then come back:</p>
+      <ul className="mt-2 space-y-1">
+        {result.blocking.map((c) => (
+          <li key={c.id} className="text-[13px] text-amber-100">• {c.detail || c.label}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /* =================================================================== */
 /* Main view                                                           */
 /* =================================================================== */
@@ -126,7 +178,7 @@ export default function ProjectCreator({ go }) {
 
       <div className="mt-5">
         {step === 'discover' && <DiscoverStep {...{ user, access, isPremium, state, setState, pickProject, projects }} />}
-        {step === 'validate' && <ValidateStep {...{ selected, isPremium, setStep }} />}
+        {step === 'validate' && <ValidateStep {...{ selected, isPremium, setStep, pickProject }} />}
         {step === 'blueprint' && <BlueprintStep {...{ selected, setStep }} />}
         {step === 'build' && <BuildStep {...{ selected, setStep }} />}
         {step === 'verify' && <VerifyStep {...{ selected, user, isPremium, setStep }} />}
@@ -420,10 +472,12 @@ function IdeaCard({ idea, onBuild, busy }) {
 /* =================================================================== */
 /* STEP 2 — Validate                                                   */
 /* =================================================================== */
-function ValidateStep({ selected, isPremium, setStep }) {
+function ValidateStep({ selected, isPremium, setStep, pickProject }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(selected?.creator?.validation || null);
   useEffect(() => { setData(selected?.creator?.validation || null); }, [selected?.id]);
+
+  const det = useMemo(() => (selected ? deterministicValidation(selected) : null), [selected, selected?.tasks, selected?.architectureDiagram]);
 
   if (!selected) return <NeedProject />;
 
@@ -440,16 +494,34 @@ function ValidateStep({ selected, isPremium, setStep }) {
   const r = data?.report;
   return (
     <div className="space-y-4">
-      <SectionCard title="Validation engine" action={<Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={loading}>{loading ? 'Validating…' : data ? <><RefreshCw size={14} /> Re-run</> : <><Wand2 size={14} /> Validate idea</>}</Button>}>
-        {loading ? <Loading msg="Validating product potential…" /> : !data ? (
-          <EmptyState icon={ShieldCheck} title="Validate before you build" hint="Generate a structured validation report: problem severity, users, alternatives, feasibility, monetization, risks and a validation score." />
+      {/* Authoritative, deterministic gate — always shown, never AI-derived. */}
+      <SectionCard title="Validation">
+        <DeterministicChecks result={det} onOpenDuplicate={(id) => pickProject?.(id, 'validate')} />
+        {det && !det.requiredOk && (
+          <p className="mt-3 text-[13px] text-amber-100/80">Resolve the required checks above before generating AI suggestions or moving on.</p>
+        )}
+        {det && det.requiredOk && (
+          <div className="mt-3 flex justify-end"><Button onClick={() => setStep('blueprint')}>Next: Blueprint <ArrowRight size={15} /></Button></div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="AI validation suggestions"
+        action={<Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={loading || (det && !det.requiredOk)}>{loading ? 'Validating…' : data ? <><RefreshCw size={14} /> Re-run</> : <><Wand2 size={14} /> Get AI suggestions</>}</Button>}
+      >
+        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#C2BBFF]">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>These are AI-generated <strong>suggestions</strong>, not verified facts. Scores are estimates to guide thinking — treat them as prompts to research, not proof.</span>
+        </div>
+        {loading ? <Loading msg="Generating validation suggestions…" /> : !data ? (
+          <EmptyState icon={ShieldCheck} title="Optional AI suggestions" hint="Generate a structured set of AI suggestions: problem severity, users, alternatives, feasibility, monetization, risks and an estimated score." />
         ) : (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-4">
-              <ScoreRing score={data.total} label="Validation" size={64} />
+              <ScoreRing score={data.total} label="AI estimate" size={64} />
               <div>
-                <p className="text-sm font-medium text-white">Validation score: {data.total}/100</p>
-                <p className="text-[13px] text-slate-400">{data.total >= 75 ? 'Strong — startup-ready threshold met.' : data.total >= 55 ? 'Promising — tighten differentiation and users.' : 'Early — sharpen the problem and proof.'}</p>
+                <p className="text-sm font-medium text-white">AI estimated score: {data.total}/100 <span className="text-[12px] font-normal text-slate-500">(suggestion)</span></p>
+                <p className="text-[13px] text-slate-400">{data.total >= 75 ? 'AI thinks this is strong — verify with the checks above and real user signal.' : data.total >= 55 ? 'AI sees promise — tighten differentiation and users.' : 'AI suggests sharpening the problem and proof.'}</p>
               </div>
             </div>
             {r?.genericWarning && (
@@ -466,7 +538,6 @@ function ValidateStep({ selected, isPremium, setStep }) {
               <Accordion title="Validation questions" icon={ShieldCheck}><List items={r.validationQuestions} /></Accordion>
               <Accordion title="First 10 users & metrics" icon={Rocket}><p className="mb-1 text-slate-400">First 10 users:</p><List items={r.firstTenUsersStrategy} tone="mint" /><p className="mb-1 mt-2 text-slate-400">Success metrics:</p><List items={r.successMetrics} /></Accordion>
             </div>
-            <div className="flex justify-end"><Button onClick={() => setStep('blueprint')}>Next: Blueprint <ArrowRight size={15} /></Button></div>
           </div>
         )}
       </SectionCard>
@@ -481,6 +552,7 @@ function BlueprintStep({ selected, setStep }) {
   const [loading, setLoading] = useState(false);
   const [bp, setBp] = useState(selected?.creator?.blueprint || null);
   useEffect(() => { setBp(selected?.creator?.blueprint || null); }, [selected?.id]);
+  const det = useMemo(() => (selected ? deterministicValidation(selected) : null), [selected]);
   if (!selected) return <NeedProject />;
 
   const run = async () => {
@@ -491,6 +563,19 @@ function BlueprintStep({ selected, setStep }) {
       setBp(blueprint);
     } finally { setLoading(false); }
   };
+
+  // #7 — architecture/blueprint must use real context; block generic output when
+  // required context is missing.
+  if (det && !det.requiredOk) {
+    return (
+      <div className="space-y-4">
+        <SectionCard title="Product blueprint">
+          <RequiredFieldsGate result={det} />
+          <div className="mt-3"><Button size="sm" variant="soft" onClick={() => setStep('validate')}>Back to validation</Button></div>
+        </SectionCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -537,6 +622,7 @@ function BlueprintStep({ selected, setStep }) {
 function BuildStep({ selected, setStep }) {
   const [loading, setLoading] = useState(false);
   const [level, setLevel] = useState(selected?.creator?.roadmapLevel || selected?.difficulty || 'Intermediate');
+  const det = useMemo(() => (selected ? deterministicValidation(selected) : null), [selected]);
   if (!selected) return <NeedProject />;
   const tasks = selected.tasks || [];
   const progress = roadmapProgress(selected);
@@ -551,6 +637,17 @@ function BuildStep({ selected, setStep }) {
     tasks.forEach((t) => { const k = t.milestone || 'Tasks'; (m[k] = m[k] || []).push(t); });
     return m;
   }, [tasks]);
+
+  if (det && !det.requiredOk) {
+    return (
+      <div className="space-y-4">
+        <SectionCard title="Build roadmap">
+          <RequiredFieldsGate result={det} />
+          <div className="mt-3"><Button size="sm" variant="soft" onClick={() => setStep('validate')}>Back to validation</Button></div>
+        </SectionCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

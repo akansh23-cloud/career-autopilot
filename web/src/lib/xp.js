@@ -7,6 +7,25 @@
 
 import { proofScore } from './proofScore.js';
 import { engagementSignals } from './engagement.js';
+import { calculateProjectStatus, STATUS_RANK } from './projectStatus.js';
+
+/* Skill states (#12). A skill is only "completed"/"verified" when a proving
+   project has actually reached that status — never just because it appears in a
+   recommendation. "recommended" is reserved for skills with no proving project
+   yet (surfaced from target-role recommendations elsewhere). */
+export const SKILL_STATES = ['recommended', 'in_progress', 'completed', 'verified'];
+export const SKILL_STATE_LABELS = {
+  recommended: 'Recommended',
+  in_progress: 'In progress',
+  completed: 'Completed',
+  verified: 'Verified',
+};
+export const SKILL_STATE_TONES = {
+  recommended: 'default',
+  in_progress: 'cyan',
+  completed: 'violet',
+  verified: 'mint',
+};
 
 export const XP_ACTIONS = {
   taskComplete: 5,
@@ -45,6 +64,14 @@ export function levelFor(xp = 0) {
 
 const len = (a) => (Array.isArray(a) ? a.length : 0);
 const has = (s) => typeof s === 'string' && s.trim().length > 0;
+
+/* Map the best proving-project status rank to a skill state. Ranks come from
+   projectStatus.STATUS_RANK: Draft/In Progress < Completed < Verified/Recruiter Ready. */
+function skillStateFromRank(rank = -1) {
+  if (rank >= (STATUS_RANK.Verified ?? 3)) return 'verified';
+  if (rank >= (STATUS_RANK.Completed ?? 2)) return 'completed';
+  return 'in_progress';
+}
 
 /* XP a single project has earned from the evidence present on it */
 export function projectXP(p = {}) {
@@ -86,17 +113,19 @@ export function deriveSkillXP(projects = []) {
       const name = String(raw).trim();
       if (!name) continue;
       const key = name.toLowerCase();
-      if (!skills[key]) skills[key] = { skillName: name, xp: 0, evidenceCount: 0, projects: [], lastUpdated: null };
+      if (!skills[key]) skills[key] = { skillName: name, xp: 0, evidenceCount: 0, projects: [], lastUpdated: null, _bestRank: -1 };
       // each proving project contributes its earned XP to the skill it proves
       skills[key].xp += xp;
       skills[key].evidenceCount += 1;
-      skills[key].projects.push({ id: p.id, title: p.title, proofScore: proofScore(p) });
+      const st = calculateProjectStatus(p);
+      skills[key]._bestRank = Math.max(skills[key]._bestRank, st.rank ?? -1);
+      skills[key].projects.push({ id: p.id, title: p.title, proofScore: proofScore(p), status: st.status });
       const t = p.updatedAt || p.createdAt || null;
       if (t && (!skills[key].lastUpdated || t > skills[key].lastUpdated)) skills[key].lastUpdated = t;
     }
   }
   return Object.values(skills)
-    .map((s) => ({ ...s, ...levelFor(s.xp) }))
+    .map((s) => ({ ...s, state: skillStateFromRank(s._bestRank), ...levelFor(s.xp) }))
     .sort((a, b) => b.xp - a.xp);
 }
 

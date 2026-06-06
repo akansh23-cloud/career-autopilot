@@ -68,7 +68,7 @@ export const jobsSearchQuerySchema = z.object({
   role: shortText(120).optional(),
   location: shortText(120).optional(),
   mode: z.enum(['Any', 'Remote', 'Hybrid', 'On-site', 'Onsite']).optional(),
-  freshness: z.enum(['24h', '3d', '7d']).optional(),
+  freshness: z.enum(['24h', '3d', '7d', '30d', 'latest']).optional(),
   limit: z.coerce.number().int().min(1).max(40).optional(),
   verify: z.enum(['0', '1']).optional(),
   strict: z.enum(['0', '1', 'true', 'false']).optional(),

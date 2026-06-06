@@ -11,6 +11,8 @@ import * as access from './access.js';
 import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
 import * as config from './config.js';
 import { logger } from './logger.js';
+import { maxFreshDaysFromQuery, passesFreshness } from './freshness.js';
+import { createMongooseSessionStore } from './sessionStore.js';
 import {
   corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
   authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
@@ -49,8 +51,18 @@ app.use(corsMiddleware);
 app.use('/api/payments/webhook', express.raw({ type: '*/*' }));
 app.use(express.json({ limit: '5mb' }));
 
+/* Persistent session store: when MongoDB is configured we store sessions there
+   (production never uses the in-memory MemoryStore). Without a DB (local dev/
+   test) we fall back to the default in-process store. config.js already refuses
+   to boot production without MONGODB_URI, so production always lands here. */
+const sessionStore = db.dbEnabled() ? createMongooseSessionStore(session) : undefined;
+if (!sessionStore && config.IS_PROD) {
+  logger.error('No session store configured in production (MONGODB_URI missing) — refusing MemoryStore.');
+}
+
 app.use(session({
   name: 'career_autopilot.sid',
+  store: sessionStore,
   secret: config.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -162,7 +174,7 @@ function roleTokens(role) {
   return normText(role).split(/\s+/)
     .filter(w => w.length > 2 && !['engineer', 'developer', 'analyst', 'manager', 'intern', 'internship', 'the', 'and', 'for'].includes(w));
 }
-function maxFreshDaysFromQuery(v) { return v === '24h' ? 1 : v === '3d' ? 3 : 7; }
+function maxFreshDaysFromQuery_LEGACY_REMOVED() { /* moved to ./freshness.js */ }
 
 async function fetchJson(url, timeout = JOB_FETCH_TIMEOUT, headers = {}) {
   const ctrl = new AbortController();
@@ -928,11 +940,13 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
       let reason = '';
       if (!j.title || !j.company) reason = 'missing title/company';
       else if (!j.url || !/^https?:\/\//i.test(j.url)) reason = 'missing direct job URL';
-      else if (typeof j.postedDays !== 'number') { if (strict) reason = 'posted date missing (strict freshness on)'; }
-      else if (j.postedDays > maxDays) reason = `too old (${j.postedDays}d > ${maxDays}d)`;
-      else if (!validRoleMatch(j, role)) reason = 'role mismatch';
-      else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
-      else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
+      else {
+        const fr = passesFreshness(typeof j.postedDays === 'number' ? j.postedDays : null, req.query.freshness || '7d');
+        if (!fr.ok) reason = fr.reason;
+        else if (!validRoleMatch(j, role)) reason = 'role mismatch';
+        else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
+        else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
+      }
       const k = jobKey(j);
       if (!reason && seen.has(k)) reason = 'duplicate';
       // One audit row per job, mutated in place later if it goes to verification.
@@ -3478,7 +3492,17 @@ if (!process.env.VERCEL && config.NODE_ENV !== 'test') {
   if (db.dbEnabled()) {
     db.connectDB()
       .then(() => logger.info('MongoDB connected'))
-      .catch((e) => logger.error('MongoDB connection failed — running session-only', { message: e.message }));
+      .catch((e) => {
+        // In production, a configured-but-unreachable database is fatal: the app
+        // persists users/sessions/dashboards in Mongo and must not silently run
+        // without persistence. In development we degrade to session-only.
+        if (config.IS_PROD) {
+          logger.error('MongoDB connection failed in production — refusing to start.', { message: e.message });
+          // eslint-disable-next-line no-process-exit
+          process.exit(1);
+        }
+        logger.error('MongoDB connection failed — running session-only (dev)', { message: e.message });
+      });
   }
   app.listen(port, () => {
     logger.info(`Career Autopilot running on http://localhost:${port}`, {

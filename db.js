@@ -305,7 +305,7 @@ export function emptyDashboardSummary() {
     liveApplications: 0,
     recruiterReplies: 0,
     outreachSent: 0,
-    funnel: { saved: 0, applied: 0, interview: 0, offer: 0 },
+    funnel: { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 },
     weekly: { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [0, 0, 0, 0, 0, 0, 0] },
     activity: [],   // [{ text, when, tone }]
     matches: [],    // populated only after the user runs a real job search

@@ -14,6 +14,16 @@ import { openPricing } from '../PricingModal.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
 import { getUserRole, PROFILE_EVENT } from '../../lib/userProfile.js';
 
+// Platform-aware command-palette shortcut. Mac shows ⌘K; Windows/Linux show
+// Ctrl K. On touch/mobile the shortcut hint is hidden entirely (the kbd lives
+// inside a md:flex-only button, and we also guard with hasFinevPointer below).
+function detectShortcut() {
+  if (typeof navigator === 'undefined') return { isMac: false, label: 'Ctrl K' };
+  const ua = `${navigator.platform || ''} ${navigator.userAgent || ''}`;
+  const isMac = /Mac|iPhone|iPad|iPod/i.test(ua);
+  return { isMac, label: isMac ? '\u2318K' : 'Ctrl K' };
+}
+
 function usePlanId() {
   const [p, setP] = useState(getPlan());
   useEffect(() => {
@@ -189,14 +199,20 @@ function SidebarInner({ active, onPick, onSupport }) {
   const paid = plan.planId !== 'free';
   return (
     <>
-      <div className="flex items-center gap-2.5 px-5 py-5">
+      <div className="flex shrink-0 items-center gap-2.5 px-5 py-5">
         <span className="grid h-9 w-9 place-items-center rounded-xl btn-primary text-white shadow-glow">
           <Zap size={18} strokeWidth={2.5} />
         </span>
         <span className="font-display text-[16px] font-semibold tracking-tight text-white">Career Autopilot</span>
       </div>
-      <GroupedNav active={active} onPick={onPick} onSupport={onSupport} role={role} />
-      <div className="mt-auto p-4">
+      {/* Scrollable nav region: grows to fill remaining height and scrolls
+          internally so every menu item stays reachable on short laptop /
+          small-desktop / mobile viewports. overscroll-contain stops the page
+          body from scrolling behind it (no body scroll-lock side effects). */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 [scrollbar-width:thin]">
+        <GroupedNav active={active} onPick={onPick} onSupport={onSupport} role={role} />
+      </div>
+      <div className="shrink-0 p-4">
         <div className="gradient-border p-4">
           {isAdmin ? (
             <>
@@ -229,6 +245,7 @@ export default function Shell({ active, onPick, title, children }) {
   const support = useSupport();
   const [drawer, setDrawer] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [shortcut] = useState(detectShortcut);
   const pick = (id) => { onPick(id); setDrawer(false); };
   const openSupportChat = () => { support?.openSupport?.({ tab: 'chat' }); setDrawer(false); };
 
@@ -304,7 +321,7 @@ export default function Shell({ active, onPick, title, children }) {
               aria-label="Open command palette"
             >
               <Search size={15} /> <span className="text-slate-500">Search…</span>
-              <kbd className="ml-2 flex items-center gap-0.5 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-500">⌘K</kbd>
+              <kbd className="ml-2 flex items-center gap-0.5 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-500">{shortcut.label}</kbd>
             </button>
             <button
               onClick={() => setPalette(true)}

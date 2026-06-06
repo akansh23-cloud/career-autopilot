@@ -96,7 +96,7 @@ export default function Dashboard({ go }) {
   const resumeScore = base.resumeScore ?? localResume.analysis?.score ?? localResume.analysis?.ats ?? null;
   const s = { ...base, resumeScore };
   const demo = !!data?.demo;
-  const funnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0 };
+  const funnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 };
   const weekly = s.weekly || { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [0, 0, 0, 0, 0, 0, 0] };
   const activity = [...(s.activity || [])];
   if (localResume.analysis && !activity.some((a) => /resume/i.test(a.text || ''))) activity.unshift({ text: `Resume analyzed${localResume.targetRole ? ` for ${localResume.targetRole}` : ''} — score ${resumeScore || 'ready'}`, when: 'Saved locally', tone: 'cyan' });
@@ -179,8 +179,8 @@ export default function Dashboard({ go }) {
           ) : (
             <>
               <BarChart data={weekly.values} labels={weekly.labels} />
-              <div className="mt-4 grid grid-cols-4 gap-3 border-t border-white/8 pt-4">
-                {[['Saved', funnel.saved], ['Applied', funnel.applied], ['Interview', funnel.interview], ['Offer', funnel.offer]].map(([l, v]) => (
+              <div className="mt-4 grid grid-cols-5 gap-3 border-t border-white/8 pt-4">
+                {[['Saved', funnel.saved], ['Applied', funnel.applied], ['Interview', funnel.interview], ['Offer', funnel.offer], ['Rejected', funnel.rejected || 0]].map(([l, v]) => (
                   <div key={l}>
                     <div className="font-display text-xl text-white">{v}</div>
                     <div className="text-[11px] text-slate-500">{l}</div>
