@@ -25,6 +25,19 @@ export function isAdminEmail(email) {
   return !!e && adminEmails().includes(e);
 }
 
+/* Lower-cased Set of admin emails — handy for O(1) lookups when mapping a whole
+   user directory. Never derived from anything client-supplied. */
+export function adminEmailSet() {
+  return new Set(adminEmails());
+}
+
+/* Authoritative admin check used by the admin-only API guard. Admin status is
+   granted ONLY by (a) the server-side ADMIN_EMAILS allowlist, or (b) a persisted
+   User.role === 'admin' from the database — never from client-supplied data. */
+export function resolveIsAdmin({ email, dbRole } = {}) {
+  return isAdminEmail(email) || dbRole === 'admin';
+}
+
 /* getUserRole(userEmail, planId) → 'admin' | existing plan role | 'free' */
 export function getUserRole(userEmail, planId = 'free') {
   if (isAdminEmail(userEmail)) return 'admin';

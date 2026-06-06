@@ -41,6 +41,11 @@ const userSchema = new mongoose.Schema(
     lastLoginAt: { type: Date, default: Date.now },
     loginCount: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
+    // ---- Admin-managed account metadata (added for the Admin User Directory) ----
+    // Both are optional with safe defaults so existing user documents keep
+    // working without any migration: a missing field simply reads as the default.
+    adminNotes: { type: String, default: '' },        // internal admin-only notes
+    featuredTalent: { type: Boolean, default: false }, // admin "featured talent" flag
   },
   { timestamps: true } // createdAt + updatedAt
 );
@@ -728,4 +733,362 @@ export async function listShortlists({ recruiterUserId, recruiterEmail }) {
     const rows = await Shortlist.find({ recruiterUserId: rid }).sort({ createdAt: -1 }).limit(200).lean();
     return rows.map((s) => ({ candidateUserId: String(s.candidateUserId), note: s.note || '', createdAt: s.createdAt }));
   } catch { return []; }
+}
+
+/* ============================================================
+   ADMIN USER DIRECTORY  /  TALENT INTELLIGENCE
+   ------------------------------------------------------------
+   Powers the admin-only User Directory screen. Everything here is
+   gated behind requireAuth + requireAdmin in server.js — these
+   helpers never check roles themselves, they assume the caller has
+   already proven admin authority server-side.
+
+   Key safety properties:
+   - adminUserDTO() is the ONLY shape that ever leaves the server.
+     It NEVER includes googleId, OAuth tokens, sessions, raw resume
+     files, API keys or any secret. Adding a new field to a schema
+     does not auto-expose it; it must be explicitly mapped here.
+   - The filter / sort / paginate / stats helpers are PURE functions
+     of already-safe DTOs, so they are unit-testable without a DB and
+     can never leak an unmapped field.
+   - All DB reads degrade to a safe empty result when the DB is off.
+   ============================================================ */
+
+// Hard cap on how many user docs we hydrate per directory request. The platform
+// targets students / early-career applicants, so this is comfortably above any
+// realistic single-view size while bounding memory + query cost. When the user
+// base outgrows this, switch to an indexed aggregation pipeline (see README).
+const ADMIN_DIRECTORY_FETCH_CAP = 2000;
+
+const lc = (s) => String(s == null ? '' : s).trim().toLowerCase();
+
+/* Normalize a user's "type" for the directory. Admin wins (via the email
+   allowlist resolved server-side, or a persisted User.role === 'admin'),
+   otherwise we use the onboarding persona role, otherwise 'user'. */
+function resolveUserType({ email, dbRole, profileRole, adminEmailSet }) {
+  if ((adminEmailSet && adminEmailSet.has(lc(email))) || dbRole === 'admin') return 'admin';
+  const persona = String(profileRole || '').trim();
+  const ALLOWED = ['student', 'professional', 'recruiter', 'college_admin'];
+  return ALLOWED.includes(persona) ? persona : 'user';
+}
+
+/* Map a (User, NetworkProfile, UserState, appStats) tuple to the safe directory
+   DTO. NEVER returns secrets. Missing pieces fall back to safe defaults so a user
+   with only a User record (no network profile yet) still renders cleanly. */
+export function adminUserDTO({ user = {}, network = null, state = null, appStats = null, adminEmailSet = null } = {}) {
+  const metrics = (network && network.metrics) || {};
+  const profile = (state && state.profile) || {};
+
+  // Skills: prefer the derived network skillNames; fall back to the comma-separated
+  // onboarding skills string. De-duplicated, trimmed, never null.
+  const skillNames = Array.isArray(metrics.skillNames) && metrics.skillNames.length
+    ? metrics.skillNames
+    : String(profile.skills || profile.skillsHiring || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+  const skills = [...new Set(skillNames.map((s) => String(s).trim()).filter(Boolean))];
+
+  const topSkills = Array.isArray(metrics.topSkills)
+    ? metrics.topSkills.map((s) => ({ name: String(s.name || ''), xp: Number(s.xp || 0), level: s.level || null })).filter((s) => s.name)
+    : skills.slice(0, 6).map((name) => ({ name, xp: 0, level: null }));
+
+  const visibility = network?.visibility || 'private';
+  const recruiterVisible = !!(network && network.openToRecruiters);
+  // Last active = the most recent of login and profile-sync timestamps.
+  const loginAt = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() : 0;
+  const netAt = network?.updatedAt ? new Date(network.updatedAt).getTime() : 0;
+  const lastActiveMs = Math.max(loginAt, netAt);
+
+  return {
+    id: String(user._id || user.id || ''),
+    name: user.name || network?.name || 'Member',
+    email: user.email || network?.email || null,
+    avatar: user.avatar || network?.picture || null,
+    userType: resolveUserType({ email: user.email, dbRole: user.role, profileRole: network?.role || profile.role, adminEmailSet }),
+    currentRole: network?.currentCompany || profile.currentRole || '',
+    targetRole: network?.targetRole || profile.targetRole || profile.hiringRole || '',
+    speciality: network?.track || '',
+    location: network?.location || profile.location || '',
+    xp: Number(metrics.careerXP || 0),
+    experienceLevel: metrics.level || 'Beginner',
+    skills,
+    topSkills,
+    verifiedSkillsCount: Number(metrics.verifiedBadges || 0),
+    badgeCount: Number(metrics.badgeCount || 0),
+    completedProjectsCount: Number(metrics.publishedCount || 0),
+    totalProjectsCount: Array.isArray(state?.projects) ? state.projects.length : Number(metrics.publishedCount || 0),
+    savedJobsCount: Number(appStats?.saved || 0),
+    appliedJobsCount: Number(appStats?.applied || 0),
+    profileCompletion: Number(network?.completeness || 0),
+    readiness: Number(metrics.readiness || 0),
+    trustScore: Number(network?.trustScore || 0),
+    trustLevel: network?.trustLevel || 'New',
+    visibility,
+    recruiterVisible,
+    visibilityStatus: recruiterVisible ? 'recruiter-visible' : (visibility === 'public' ? 'public' : 'private'),
+    featuredTalent: !!user.featuredTalent,
+    adminNotes: typeof user.adminNotes === 'string' ? user.adminNotes : '',
+    isActive: user.isActive !== false,
+    loginCount: Number(user.loginCount || 0),
+    lastActiveAt: lastActiveMs ? new Date(lastActiveMs).toISOString() : (user.lastLoginAt || null),
+    createdAt: user.createdAt || null,
+  };
+}
+
+/* ---- pure query helpers over already-safe DTOs (unit-testable, no DB) ---- */
+
+const ACTIVE_WINDOW_MS = 30 * 86400000; // a user is "active" if seen in the last 30 days
+export function isActiveDTO(dto, now = Date.now()) {
+  if (dto.isActive === false) return false;
+  if (!dto.lastActiveAt) return false;
+  return now - new Date(dto.lastActiveAt).getTime() <= ACTIVE_WINDOW_MS;
+}
+
+export function filterAdminUsers(rows = [], filters = {}) {
+  const q = lc(filters.q);
+  const skill = lc(filters.skill);
+  const speciality = lc(filters.speciality);
+  const targetRole = lc(filters.targetRole);
+  const experienceLevel = lc(filters.experienceLevel);
+  const location = lc(filters.location);
+  const userType = lc(filters.userType);
+  const minCompletion = Number(filters.minCompletion || 0);
+  const projectStatus = lc(filters.projectStatus); // '', 'completed', 'none'
+  const recruiterVisibleOnly = filters.recruiterVisible === true || filters.recruiterVisible === 'true';
+  const activity = lc(filters.activity); // '', 'active', 'inactive'
+  const now = Date.now();
+
+  return rows.filter((u) => {
+    if (q) {
+      const hay = `${u.name} ${u.email || ''} ${u.skills.join(' ')} ${u.targetRole} ${u.speciality}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (skill && !u.skills.some((s) => lc(s).includes(skill))) return false;
+    if (speciality && !lc(u.speciality).includes(speciality)) return false;
+    if (targetRole && !lc(u.targetRole).includes(targetRole)) return false;
+    if (experienceLevel && lc(u.experienceLevel) !== experienceLevel) return false;
+    if (location && !lc(u.location).includes(location)) return false;
+    if (userType && lc(u.userType) !== userType) return false;
+    if (minCompletion && Number(u.profileCompletion) < minCompletion) return false;
+    if (projectStatus === 'completed' && Number(u.completedProjectsCount) <= 0) return false;
+    if (projectStatus === 'none' && Number(u.completedProjectsCount) > 0) return false;
+    if (recruiterVisibleOnly && !u.recruiterVisible) return false;
+    if (activity === 'active' && !isActiveDTO(u, now)) return false;
+    if (activity === 'inactive' && isActiveDTO(u, now)) return false;
+    return true;
+  });
+}
+
+const SORTERS = {
+  xp: (a, b) => b.xp - a.xp,
+  active: (a, b) => new Date(b.lastActiveAt || 0) - new Date(a.lastActiveAt || 0),
+  completion: (a, b) => b.profileCompletion - a.profileCompletion,
+  projects: (a, b) => b.completedProjectsCount - a.completedProjectsCount,
+  created: (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+  name: (a, b) => String(a.name).localeCompare(String(b.name)),
+};
+export function sortAdminUsers(rows = [], sort = 'xp') {
+  const fn = SORTERS[sort] || SORTERS.xp;
+  return rows.slice().sort(fn);
+}
+
+export function paginateAdminUsers(rows = [], page = 1, pageSize = 24) {
+  const total = rows.length;
+  const size = Math.max(1, Math.min(100, Number(pageSize) || 24));
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const p = Math.max(1, Math.min(totalPages, Number(page) || 1));
+  const start = (p - 1) * size;
+  return { items: rows.slice(start, start + size), total, page: p, pageSize: size, totalPages };
+}
+
+export function adminDirectoryStats(rows = []) {
+  const now = Date.now();
+  const skillCounts = new Map();
+  let active = 0, recruiterVisible = 0, completedProjectUsers = 0, featured = 0;
+  for (const u of rows) {
+    if (isActiveDTO(u, now)) active += 1;
+    if (u.recruiterVisible) recruiterVisible += 1;
+    if (Number(u.completedProjectsCount) > 0) completedProjectUsers += 1;
+    if (u.featuredTalent) featured += 1;
+    for (const s of u.skills) {
+      const k = String(s).trim();
+      if (k) skillCounts.set(k, (skillCounts.get(k) || 0) + 1);
+    }
+  }
+  let topSkill = null, topSkillCount = 0;
+  for (const [k, v] of skillCounts) if (v > topSkillCount) { topSkill = k; topSkillCount = v; }
+  return {
+    totalUsers: rows.length,
+    activeUsers: active,
+    recruiterVisibleUsers: recruiterVisible,
+    completedProjectUsers,
+    featuredUsers: featured,
+    topSkill,
+    topSkillCount,
+  };
+}
+
+/* ---- DB-backed directory functions ---- */
+
+async function loadAppStatsByUser(ids) {
+  // saved vs applied (anything past "saved") application counts, per user.
+  try {
+    const rows = await Application.aggregate([
+      { $match: { userId: { $in: ids } } },
+      { $group: {
+        _id: '$userId',
+        saved: { $sum: { $cond: [{ $eq: ['$stage', 'saved'] }, 1, 0] } },
+        applied: { $sum: { $cond: [{ $ne: ['$stage', 'saved'] }, 1, 0] } },
+      } },
+    ]);
+    const map = new Map();
+    for (const r of rows) map.set(String(r._id), { saved: r.saved || 0, applied: r.applied || 0 });
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+/* List users for the admin directory. `adminEmailSet` is a Set<string> of
+   lower-cased admin emails resolved server-side (never trusts the client). */
+export async function adminListUsers({ filters = {}, sort = 'xp', page = 1, pageSize = 24, adminEmailSet = null } = {}) {
+  if (!URI) {
+    return { ok: true, db: false, users: [], total: 0, page: 1, pageSize: Number(pageSize) || 24, totalPages: 1, stats: adminDirectoryStats([]) };
+  }
+  try {
+    await connectDB();
+    const users = await User.find({}).limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
+    const ids = users.map((u) => u._id);
+    const [networks, states, appStats] = await Promise.all([
+      NetworkProfile.find({ userId: { $in: ids } }).lean(),
+      UserState.find({ userId: { $in: ids } }).select('userId profile projects').lean(),
+      loadAppStatsByUser(ids),
+    ]);
+    const netByUser = new Map(networks.map((n) => [String(n.userId), n]));
+    const stateByUser = new Map(states.map((s) => [String(s.userId), s]));
+
+    const allDtos = users.map((u) => adminUserDTO({
+      user: u,
+      network: netByUser.get(String(u._id)) || null,
+      state: stateByUser.get(String(u._id)) || null,
+      appStats: appStats.get(String(u._id)) || null,
+      adminEmailSet,
+    }));
+
+    // Stats reflect the WHOLE platform (independent of the active filter).
+    const stats = adminDirectoryStats(allDtos);
+    const filtered = sortAdminUsers(filterAdminUsers(allDtos, filters), sort);
+    const paged = paginateAdminUsers(filtered, page, pageSize);
+    return { ok: true, db: true, ...paged, stats };
+  } catch (err) {
+    console.error('[db] adminListUsers failed:', err.message);
+    return { ok: false, db: true, error: 'db_error', users: [], total: 0, page: 1, pageSize: 24, totalPages: 1, stats: adminDirectoryStats([]) };
+  }
+}
+
+/* Detailed safe view of a single user for the drawer. Adds grouped skills,
+   a safe projects subset and activity — still NEVER any secret. */
+export async function adminGetUserDetail({ id, adminEmailSet = null } = {}) {
+  if (!URI) return { ok: false, db: false, reason: 'db_disabled' };
+  if (!isObjectId(id)) return { ok: false, db: true, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const user = await User.findById(id).lean();
+    if (!user) return { ok: false, db: true, reason: 'not_found' };
+    const [network, state, appStats, activity] = await Promise.all([
+      NetworkProfile.findOne({ userId: user._id }).lean(),
+      UserState.findOne({ userId: user._id }).select('userId profile projects').lean(),
+      loadAppStatsByUser([user._id]),
+      Activity.find({ userId: user._id }).sort({ createdAt: -1 }).limit(8).lean(),
+    ]);
+    const dto = adminUserDTO({ user, network, state, appStats: appStats.get(String(user._id)) || null, adminEmailSet });
+
+    // Safe projects subset (titles + proof links only, no raw file contents).
+    const projects = Array.isArray(state?.projects)
+      ? state.projects.slice(0, 20).map((p) => ({
+          id: String(p.id || ''),
+          title: String(p.title || 'Untitled project'),
+          type: p.type || '',
+          published: !!p.published,
+          github: p.githubUrl ? true : false,
+          live: p.liveDemoUrl ? true : false,
+          skills: Array.isArray(p.skillsCovered) ? p.skillsCovered.slice(0, 6) : [],
+          updatedAt: p.updatedAt || p.createdAt || null,
+        }))
+      : [];
+
+    // Skills grouped by state when the network snapshot carries it; otherwise a
+    // single "tracked" group from the derived skill names (never fabricated).
+    const grouped = { verified: [], completed: [], in_progress: [], recommended: [] };
+    const metrics = (network && network.metrics) || {};
+    const ts = Array.isArray(metrics.topSkills) ? metrics.topSkills : [];
+    for (const s of ts) {
+      const item = { name: String(s.name || ''), xp: Number(s.xp || 0), level: s.level || null };
+      if (!item.name) continue;
+      // Heuristic from earned XP/level — coarse but honest (no invented states).
+      if ((item.xp || 0) >= 500) grouped.verified.push(item);
+      else if ((item.xp || 0) >= 200) grouped.completed.push(item);
+      else grouped.in_progress.push(item);
+    }
+
+    return { ok: true, db: true, user: dto, projects, skillGroups: grouped, activity: activity.map((a) => ({ text: a.text, tone: a.tone || 'cyan', at: a.createdAt })) };
+  } catch (err) {
+    console.error('[db] adminGetUserDetail failed:', err.message);
+    return { ok: false, db: true, reason: 'db_error' };
+  }
+}
+
+/* Admin toggles a user's recruiter visibility. This sets the existing opt-in
+   flag on the user's network profile. Recruiter-facing discovery already
+   requires openToRecruiters, so this is the single source of truth. */
+export async function adminSetVisibility({ id, recruiterVisible }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  if (!isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const want = !!recruiterVisible;
+    const set = { openToRecruiters: want };
+    // When enabling, lift visibility out of 'private' so the profile can actually
+    // surface to recruiters; never force it all the way to fully 'public'.
+    const update = want
+      ? [{ $set: { openToRecruiters: true, visibility: { $cond: [{ $eq: ['$visibility', 'private'] }, 'published_only', '$visibility'] } } }]
+      : { $set: set };
+    const r = await NetworkProfile.updateOne({ userId: id }, update);
+    if (!r.matchedCount) return { ok: false, reason: 'no_network_profile' };
+    return { ok: true, recruiterVisible: want };
+  } catch (err) {
+    console.error('[db] adminSetVisibility failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function adminSetNotes({ id, adminNotes }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  if (!isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const notes = String(adminNotes || '').slice(0, 4000);
+    const r = await User.updateOne({ _id: id }, { $set: { adminNotes: notes } });
+    if (!r.matchedCount) return { ok: false, reason: 'not_found' };
+    return { ok: true, adminNotes: notes };
+  } catch (err) {
+    console.error('[db] adminSetNotes failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function adminSetFeatured({ id, featuredTalent }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  if (!isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const want = !!featuredTalent;
+    const r = await User.updateOne({ _id: id }, { $set: { featuredTalent: want } });
+    if (!r.matchedCount) return { ok: false, reason: 'not_found' };
+    return { ok: true, featuredTalent: want };
+  } catch (err) {
+    console.error('[db] adminSetFeatured failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
 }

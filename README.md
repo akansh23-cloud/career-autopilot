@@ -180,6 +180,20 @@ Open **http://localhost:3000**. The backend automatically serves the built `dist
 | GET | `/auth/status` | Connected providers + profile. |
 | POST | `/auth/:provider/logout` | Disconnect a provider. |
 | POST | `/apply/:provider/submit` | Manual-only by default (202); add approved API logic here. |
+| GET | `/api/admin/users` | **Admin only.** Paginated User Directory / Talent Intelligence. Query: `q, skill, speciality, targetRole, experienceLevel, location, userType, minCompletion, projectStatus, recruiterVisible, activity, sort, page, pageSize`. Returns `{ ok, users:[safeDTO], total, page, pageSize, totalPages, stats }`. |
+| GET | `/api/admin/users/:id` | **Admin only.** Detailed safe view: profile DTO + grouped skills + safe project list + job stats + recent activity. |
+| PATCH | `/api/admin/users/:id/visibility` | **Admin only.** Body `{ recruiterVisible }`. Toggles the user's recruiter opt-in (`NetworkProfile.openToRecruiters`). |
+| PATCH | `/api/admin/users/:id/admin-notes` | **Admin only.** Body `{ adminNotes }`. Internal admin-only note (≤4000 chars). |
+| PATCH | `/api/admin/users/:id/featured` | **Admin only.** Body `{ featuredTalent }`. Marks/unmarks featured talent. |
+
+### Admin User Directory / Talent Intelligence
+
+A dedicated admin-only screen (sidebar → **Admin → User Directory**, deep-link `#/admin/users`) listing every account with XP, speciality, skills, target role, completed projects, profile completion, visibility status, account type and last-active date. Supports search, multi-field filtering (incl. by skill — DevOps, Kubernetes, React, Java, AI/ML, Cloud…), sorting and pagination, plus a per-user detail drawer.
+
+- **Authorization is server-side only.** Every `/api/admin/*` route runs `requireAuth` then `requireAdmin`; admin status is resolved from `ADMIN_EMAILS` or a persisted `User.role === 'admin'` — the client role is never trusted. Unauthenticated → `401`, authenticated non-admin (including recruiters) → `403`. The sidebar item and command-palette entry are hidden for non-admins, and the page itself renders **Access Denied** if opened directly.
+- **No data leakage.** Responses are mapped through `adminUserDTO()`, which only ever emits safe fields — never `googleId`, OAuth/access/refresh tokens, sessions, passwords, raw resume files or API keys. Adding a field to a schema does not auto-expose it.
+- **Privacy-first recruiter visibility.** Recruiter visibility reuses the existing `NetworkProfile.openToRecruiters` opt-in (default **private**). The future recruiter-facing Talent Directory should consume `/api/network/candidates`, which only returns opted-in profiles — recruiters never get the admin directory.
+- **Scaling note.** `adminListUsers` hydrates up to `ADMIN_DIRECTORY_FETCH_CAP` (2000) user docs, then filters/sorts/paginates in memory (skill data lives in a Mixed `metrics` field, so an in-memory pass is simplest and the filter/sort/paginate logic is pure + unit-tested). Past that size, move to an indexed aggregation pipeline.
 
 ### Example: verify a URL
 ```bash

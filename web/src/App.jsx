@@ -35,6 +35,7 @@ import CareerProfile, { PublicProfile } from './views/CareerProfile.jsx';
 import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
 import ProjectCreator from './views/ProjectCreator.jsx';
+import AdminUsers from './views/AdminUsers.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -55,6 +56,7 @@ const VIEWS = {
   recruiter: RecruiterConsole,
   growth: Growth,
   settings: Settings,
+  adminusers: AdminUsers,
 };
 
 function Splash() {
@@ -78,6 +80,14 @@ function parseProfileHash() {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+// Direct deep-link to the admin User Directory (#/admin/users). The view itself
+// re-checks admin status and renders Access Denied for non-admins, so this is a
+// convenience entry point — never an authorization bypass.
+function isAdminUsersHash() {
+  if (typeof window === 'undefined') return false;
+  return /^#\/admin\/users\b/.test(window.location.hash || '');
+}
+
 export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
@@ -92,6 +102,15 @@ export default function App() {
 
   useEffect(() => {
     const f = () => setPublicId(parseProfileHash());
+    window.addEventListener('hashchange', f);
+    return () => window.removeEventListener('hashchange', f);
+  }, []);
+
+  // Honor a #/admin/users deep link: route to the admin view on load + on change.
+  // (The view enforces admin access; this only selects which workspace to show.)
+  useEffect(() => {
+    const f = () => { if (isAdminUsersHash()) setActive('adminusers'); };
+    f();
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
   }, []);

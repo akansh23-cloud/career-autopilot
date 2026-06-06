@@ -101,3 +101,20 @@ export const UserState = {
 export const ResumeApi = {
   saveAnalysis: (resume) => api.post('/api/resume/save-analysis', { resume }),
 };
+
+// Admin-only User Directory / Talent Intelligence. Every call is gated by
+// requireAuth + requireAdmin on the backend; the UI also hides these surfaces
+// from non-admins, but the server is the source of truth.
+export const Admin = {
+  listUsers: (params = {}) => {
+    const clean = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== '' && v !== false && v != null)
+    );
+    const qs = new URLSearchParams(clean).toString();
+    return api.get('/api/admin/users' + (qs ? `?${qs}` : ''));
+  },
+  getUser: (id) => api.get(`/api/admin/users/${encodeURIComponent(id)}`),
+  setVisibility: (id, recruiterVisible) => api.patch(`/api/admin/users/${encodeURIComponent(id)}/visibility`, { recruiterVisible }),
+  setNotes: (id, adminNotes) => api.patch(`/api/admin/users/${encodeURIComponent(id)}/admin-notes`, { adminNotes }),
+  setFeatured: (id, featuredTalent) => api.patch(`/api/admin/users/${encodeURIComponent(id)}/featured`, { featuredTalent }),
+};

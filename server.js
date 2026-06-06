@@ -1312,6 +1312,29 @@ function requireAuth(req, res, next) {
   next();
 }
 
+/* Admin-only guard. MUST run after requireAuth. Admin authority is resolved
+   entirely server-side: the ADMIN_EMAILS allowlist, or a persisted
+   User.role === 'admin'. The client role/plan is NEVER trusted here.
+   - 401 if unauthenticated
+   - 403 if authenticated but not an admin */
+async function requireAdmin(req, res, next) {
+  const u = req.user || currentUser(req);
+  if (!u) return res.status(401).json({ error: 'auth_required', message: 'Please sign in to continue.' });
+  req.user = u;
+  let dbRole = null;
+  if (!access.isAdminEmail(u.email) && db.dbEnabled()) {
+    try {
+      const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
+      dbRole = fresh?.role || null;
+    } catch { /* fall through to allowlist-only decision */ }
+  }
+  if (!access.resolveIsAdmin({ email: u.email, dbRole })) {
+    return res.status(403).json({ error: 'forbidden', message: 'Admin access required.' });
+  }
+  req.isAdmin = true;
+  next();
+}
+
 /* HTTP status for a persistence (DB write) result.
    - DB on + write ok        → 200
    - DB on + write failed     → 500 (real server-side error)
@@ -1762,6 +1785,70 @@ app.post('/api/network/shortlists', requireAuth, async (req, res) => {
     recruiterUserId: u?.id, recruiterEmail: u?.email,
     candidateUserId: body.candidateUserId, note: body.note,
   });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   ADMIN — USER DIRECTORY / TALENT INTELLIGENCE
+   ------------------------------------------------------------
+   Admin-only endpoints behind requireAuth + requireAdmin:
+   - 401 if unauthenticated, 403 if not an admin (enforced server-side
+     from ADMIN_EMAILS / persisted role — the client role is never trusted)
+   - Responses are mapped to safe DTOs (db.adminUserDTO); secrets,
+     OAuth tokens, sessions and raw files are never returned
+   - Listing supports search, filtering, sorting and pagination
+   Recruiters explicitly do NOT get access here — the future recruiter
+   "Talent Directory" uses /api/network/candidates, which only ever
+   returns opted-in (openToRecruiters) profiles.
+   ============================================================ */
+
+// Parse + clamp directory query params (all optional, all safe defaults).
+function parseDirectoryQuery(q = {}) {
+  const filters = {
+    q: String(q.q || '').slice(0, 120),
+    skill: String(q.skill || '').slice(0, 60),
+    speciality: String(q.speciality || '').slice(0, 60),
+    targetRole: String(q.targetRole || '').slice(0, 80),
+    experienceLevel: String(q.experienceLevel || '').slice(0, 40),
+    location: String(q.location || '').slice(0, 80),
+    userType: String(q.userType || '').slice(0, 40),
+    minCompletion: Math.max(0, Math.min(100, Number(q.minCompletion) || 0)),
+    projectStatus: ['completed', 'none'].includes(String(q.projectStatus)) ? String(q.projectStatus) : '',
+    recruiterVisible: q.recruiterVisible === 'true' || q.recruiterVisible === true,
+    activity: ['active', 'inactive'].includes(String(q.activity)) ? String(q.activity) : '',
+  };
+  const sort = ['xp', 'active', 'completion', 'projects', 'created', 'name'].includes(String(q.sort)) ? String(q.sort) : 'xp';
+  const page = Math.max(1, Number(q.page) || 1);
+  const pageSize = Math.max(1, Math.min(100, Number(q.pageSize) || 24));
+  return { filters, sort, page, pageSize };
+}
+
+app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  const { filters, sort, page, pageSize } = parseDirectoryQuery(req.query || {});
+  const result = await db.adminListUsers({ filters, sort, page, pageSize, adminEmailSet: access.adminEmailSet() });
+  res.json(result);
+});
+
+app.get('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.adminGetUserDetail({ id: req.params.id, adminEmailSet: access.adminEmailSet() });
+  const code = result.ok ? 200 : (result.reason === 'not_found' ? 404 : result.reason === 'bad_request' ? 400 : 200);
+  res.status(code).json(result);
+});
+
+app.patch('/api/admin/users/:id/visibility', requireAuth, requireAdmin, async (req, res) => {
+  const recruiterVisible = req.body?.recruiterVisible === true || req.body?.recruiterVisible === 'true';
+  const result = await db.adminSetVisibility({ id: req.params.id, recruiterVisible });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+app.patch('/api/admin/users/:id/admin-notes', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.adminSetNotes({ id: req.params.id, adminNotes: req.body?.adminNotes });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+app.patch('/api/admin/users/:id/featured', requireAuth, requireAdmin, async (req, res) => {
+  const featuredTalent = req.body?.featuredTalent === true || req.body?.featuredTalent === 'true';
+  const result = await db.adminSetFeatured({ id: req.params.id, featuredTalent });
   res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
 });
 

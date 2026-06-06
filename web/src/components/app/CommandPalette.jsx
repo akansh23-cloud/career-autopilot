@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { NAV } from './Shell.jsx';
 import { useSupport } from '../../support/SupportProvider.jsx';
+import { getPlan } from '../../lib/plan.js';
 
 /* ============================================================
    Global command palette / AI action bar (⌘K · Ctrl K).
@@ -56,7 +57,12 @@ export default function CommandPalette({ open, setOpen, onPick }) {
 
   // Build the flat, filtered, grouped result list.
   const groups = useMemo(() => {
+    // Admin-only workspaces (e.g. the User Directory) must never surface in the
+    // palette for non-admins — the server still enforces access, this keeps the
+    // UI honest too.
+    const isAdmin = !!getPlan().isAdmin;
     const navItems = NAV
+      .filter((n) => !n.adminOnly || isAdmin)
       .filter((n) => fuzzy(q, n.label) || fuzzy(q, n.id))
       .map((n) => ({ key: `nav-${n.id}`, label: n.label, icon: n.icon, hint: 'Workspace', run: () => onPick(n.id) }));
 

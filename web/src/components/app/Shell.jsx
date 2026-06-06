@@ -66,6 +66,7 @@ export const NAV = [
   { id: 'recruiter', label: 'Recruiter Console', icon: UserSearch },
   { id: 'growth', label: 'Growth', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'adminusers', label: 'User Directory', icon: ShieldCheck, adminOnly: true },
 ];
 
 // Role-scoped nav ordering. null => all items (admin / college_admin).
@@ -85,6 +86,7 @@ const NAV_GROUPS = [
   { label: 'Job Hunt', ids: ['jobs', 'tracker'] },
   { label: 'LinkedIn Growth', ids: ['growth'] },
   { label: 'Project Studio', ids: ['projectstudio', 'projectcreator', 'sandbox', 'partners'] },
+  { label: 'Admin', ids: ['adminusers'] },
 ];
 const MORE_IDS = ['opportunities', 'contacts', 'leaderboards', 'referralexchange', 'recruiter', 'profile', 'settings'];
 
@@ -92,7 +94,10 @@ function groupsForRole(role) {
   const order = ROLE_NAV[role];
   const allowed = order ? new Set(order) : null; // null => admin/college see all
   const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
-  const keep = (id) => !!byId[id] && (!allowed || allowed.has(id));
+  // An item is kept only if it exists, is allowed for the role, AND — when it is
+  // flagged adminOnly — only for the admin role. This is the hard gate that keeps
+  // the admin User Directory out of every non-admin sidebar (incl. the catch-all).
+  const keep = (id) => !!byId[id] && (!allowed || allowed.has(id)) && (!byId[id].adminOnly || role === 'admin');
 
   const placed = new Set();
   const primary = NAV_GROUPS
