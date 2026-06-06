@@ -8,7 +8,10 @@ import {
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input, Field, Spinner } from '../components/ui/kit.jsx';
 import { ROLE_GROUPS, ALL_ROLES } from '../lib/roles.js';
-import { getStoredResume, saveStoredResume, getResumeSearchRole } from '../lib/resumeStore.js';
+import { getStoredResume, saveStoredResume, getResumeSearchRole, getStoredJobResults } from '../lib/resumeStore.js';
+import { getProfile, getUserRole } from '../lib/userProfile.js';
+import Recommendations from '../components/project/Recommendations.jsx';
+import { preferredDifficulty } from '../lib/projectRecommend.js';
 import {
   getProjects, saveProject, deleteProject, consumeStudioSeed, peekStudioSeed,
   computeProofScore, taskProgress, proofScoreBreakdown, getPublishedProjects,
@@ -74,8 +77,19 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
             <Badge tone="violet"><Target size={11} /> {p.targetRole}</Badge>
             <Badge tone="amber"><Gauge size={11} /> {p.difficulty}</Badge>
             <Badge tone="cyan"><Clock size={11} /> {p.duration}</Badge>
+            {p.recommendation && <Badge tone="mint"><Sparkles size={11} /> Fit {p.recommendation.fitScore}/100 · {p.recommendation.confidence}</Badge>}
           </div>
         </div>
+
+        {p.recommendation?.whyRecommended?.length > 0 && (
+          <div className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/[0.06] p-3">
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-aurora-violet">Why this project was recommended</div>
+            <ul className="space-y-1 text-[12px] leading-relaxed text-slate-300">
+              {p.recommendation.whyRecommended.slice(0, 5).map((w, i) => <li key={i} className="flex gap-1.5"><Check size={12} className="mt-0.5 shrink-0 text-aurora-mint" /> {w}</li>)}
+            </ul>
+            {p.recommendation.sourceUrl && <a href={p.recommendation.sourceUrl} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-[11px] text-aurora-cyan underline">Inspiration source ({p.recommendation.sourceLabel}) ↗</a>}
+          </div>
+        )}
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
@@ -695,11 +709,11 @@ export default function ProjectStudio({ go }) {
   const userName = user?.name || user?.displayName || 'You';
   const resume = getStoredResume();
   const seed = useMemo(() => consumeStudioSeed(), []);
-  const [role, setRole] = useState(seed?.job?.title || getResumeSearchRole() || 'Software Engineer');
-  const [level, setLevel] = useState('Intermediate');
+  const [role, setRole] = useState(seed?.targetRole || seed?.job?.title || getResumeSearchRole() || 'Software Engineer');
+  const [level, setLevel] = useState(seed?.idea?.difficulty || preferredDifficulty('Intermediate'));
   const [duration, setDuration] = useState('1 week');
   const [type, setType] = useState(seed?.type || 'Full Stack');
-  const [jd, setJd] = useState('');
+  const [jd, setJd] = useState(seed?.jd || '');
   const [useGaps, setUseGaps] = useState(Boolean(seed?.missingSkills?.length));
   const gaps = seed?.missingSkills || [];
 
@@ -723,10 +737,74 @@ export default function ProjectStudio({ go }) {
       targetRole: role, difficulty: level, duration, type,
       sourceMissingSkills: useGaps && gaps.length ? gaps : extractSkillsFromJD(jd),
       jd: jd.trim(), resumeText: resume.text || '',
-      sourceJob: seed?.job ? { title: seed.job.title, company: seed.job.company } : null,
+      sourceJob: seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null),
+      title: seed?.idea?.title || undefined,
+      problemStatement: seed?.idea?.problem || undefined,
     };
     try { const p = await generateRoadmap(input); setProject(p); setStatus('done'); }
     catch { setStatus('error'); }
+  };
+
+  const dd = (arr) => Array.from(new Set((arr || []).map((s) => String(s).trim()).filter(Boolean)));
+  const parseSkillList = (v) => Array.isArray(v) ? v : String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+  /* Assemble the real-user-context signal bundle the recommender scores against. */
+  const buildCtx = () => {
+    const profile = getProfile();
+    const r = getStoredResume();
+    const jobsState = getStoredJobResults();
+    const savedJobs = Array.isArray(jobsState.jobs) ? jobsState.jobs : [];
+    const missing = dd([
+      ...(useGaps ? gaps : []),
+      ...(r.analysis?.missingKeywords || []),
+      ...extractSkillsFromJD(jd),
+    ]);
+    const plan = access.effectivePlan;
+    const allowedSources = plan === 'free'
+      ? ['curated', 'job-gap']
+      : plan === 'pro'
+        ? ['github', 'curated', 'job-gap']
+        : ['github', 'kaggle', 'producthunt', 'devpost', 'curated', 'job-gap'];
+    return {
+      userRole: getUserRole(), yearSem: profile.yearSem || '', branch: profile.branch || '',
+      targetRole: role, currentSkills: dd([...parseSkillList(profile.skills), ...(r.analysis?.strengths || [])]),
+      resumeAnalysis: r.analysis || null, resumeText: r.text || '',
+      missingSkills: missing, savedJobs,
+      selectedDuration: duration, selectedDifficulty: level, projectType: type,
+      allowedSources, useExternalSources: plan !== 'free',
+    };
+  };
+
+  /* Generate the full industry-level roadmap from a SELECTED recommendation,
+     preserving the recommendation metadata on the project. */
+  const onGenerateFromRec = async (cand) => {
+    setStatus('loading'); setProject(null);
+    const recRole = cand.targetRoles?.[0] || role;
+    const recType = TYPES.includes(cand.projectType) ? cand.projectType : type;
+    setRole(recRole); setType(recType);
+    if (LEVELS.includes(cand.difficulty)) setLevel(cand.difficulty);
+    if (DURATIONS.includes(cand.estimatedDuration)) setDuration(cand.estimatedDuration);
+    const input = {
+      targetRole: recRole,
+      difficulty: LEVELS.includes(cand.difficulty) ? cand.difficulty : level,
+      duration: DURATIONS.includes(cand.estimatedDuration) ? cand.estimatedDuration : duration,
+      type: recType,
+      sourceMissingSkills: dd([...(cand.coveredMissingSkills || []), ...(cand.skillsCovered || [])]),
+      title: cand.title,
+      problemStatement: cand.summary,
+      resumeText: resume.text || '',
+      sourceJob: { title: cand.title, company: cand.sourceLabel },
+    };
+    try {
+      const p = await generateRoadmap(input);
+      p.recommendation = {
+        fitScore: cand.fitScore, confidence: cand.confidence, scoreBreakdown: cand.scoreBreakdown,
+        whyRecommended: cand.whyRecommended, sourceType: cand.sourceType, sourceLabel: cand.sourceLabel,
+        sourceUrl: cand.sourceUrl, expectedProofOutputs: cand.expectedProofOutputs, category: cand.category,
+      };
+      setProject(p); setStatus('done');
+      flash('Full roadmap generated from your selected recommendation.');
+    } catch { setStatus('error'); }
   };
 
   const saveWorkspace = () => { const saved = saveProject(project); setProjects(getProjects()); flash('Saved to workspaces.'); setOpenWs(saved); };
@@ -766,12 +844,20 @@ export default function ProjectStudio({ go }) {
 
       {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-slate-100">{toast}</div>}
 
-      {seed?.job && (
+      {(seed?.job || seed?.idea) && (
         <div className="mb-4 rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 px-4 py-3 text-sm text-slate-200">
           <Sparkles size={15} className="mr-1.5 inline text-aurora-violet" />
-          Project generated from gaps in <span className="font-medium text-white">{seed.job.title}</span>{seed.job.company ? <> at <span className="font-medium text-white">{seed.job.company}</span></> : null}.
+          {seed?.idea ? (
+            <>Marketplace idea loaded: <span className="font-medium text-white">{seed.idea.title}</span>. Generate it into a guided startup-grade project roadmap.</>
+          ) : (
+            <>Project generated from gaps in <span className="font-medium text-white">{seed.job.title}</span>{seed.job.company ? <> at <span className="font-medium text-white">{seed.job.company}</span></> : null}.</>
+          )}
         </div>
       )}
+
+      <div className="mb-6">
+        <Recommendations buildCtx={buildCtx} access={access} onGenerate={onGenerateFromRec} flash={flash} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.25fr]">
         {/* form */}

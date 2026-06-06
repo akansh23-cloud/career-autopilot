@@ -1469,6 +1469,155 @@ app.post('/apply/:provider/submit', (req, res) => {
   });
 });
 
+
+
+/* ============================================================
+   USER APP STATE — cross-device persistence for onboarding,
+   resume dashboard stats and project/XP state. DB-backed when
+   MONGODB_URI is configured; local-only clients still work.
+   ============================================================ */
+app.get('/api/user/state', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const state = await db.getUserState({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, state: state || { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {} }, db: db.dbEnabled() });
+});
+
+app.patch('/api/user/state', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const body = req.body || {};
+  const allowed = {};
+  for (const k of ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot']) {
+    if (Object.prototype.hasOwnProperty.call(body, k)) allowed[k] = body[k];
+  }
+  const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: allowed });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+app.get('/api/user/profile', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const state = await db.getUserState({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, profile: state?.profile || {}, db: db.dbEnabled() });
+});
+
+app.put('/api/user/profile', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const profile = req.body?.profile || req.body || {};
+  const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: { profile } });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, profile, db: db.dbEnabled(), result });
+});
+
+app.post('/api/resume/save-analysis', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const resume = req.body?.resume || req.body || {};
+  const result = await db.saveResumeSnapshot({ userId: u?.id, email: u?.email, resume });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+/* ============================================================
+   CAREER PROOF NETWORK
+   ------------------------------------------------------------
+   Recruiter-visible profiles, segmented leaderboards, structured
+   referral exchange + community feed and shortlists. DB-backed when
+   MONGODB_URI is set (true cross-user network); the frontend falls
+   back to user-scoped local storage otherwise. Trust score, XP and
+   role-fit are NEVER accepted as authoritative from the client —
+   trust is recomputed server-side from objective inputs.
+   ============================================================ */
+const REFERRAL_WEEKLY_LIMITS = { free: 3, pro: 15, premium: 60, admin: 1000 };
+function planForReq(req) {
+  const email = (req.user && req.user.email) || '';
+  const s = subs.getSubscription(req.user || {});
+  const role = access.getUserRole(email, s.planId);
+  return { planId: s.planId, role, isAdmin: role === 'admin', effectivePlan: access.effectivePlan(role, s.planId) };
+}
+
+/* Upsert my own network profile (snapshot of derived metrics + visibility). */
+app.put('/api/network/profile', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const payload = req.body?.profile || req.body || {};
+  payload.name = payload.name || u?.name || 'Member';
+  payload.picture = payload.picture || u?.picture || null;
+  const result = await db.upsertNetworkProfile({ userId: u?.id, email: u?.email, payload });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+
+/* Public / recruiter-safe view of a profile (privacy enforced server-side). */
+app.get('/api/network/profile/:userId', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.getNetworkProfile({ viewerUserId: u?.id, targetUserId: req.params.userId });
+  res.json({ ...result, db: db.dbEnabled() });
+});
+
+/* Leaderboard source: all eligible (public / published / open-to-recruiter) profiles. */
+app.get('/api/network/leaderboards', requireAuth, async (req, res) => {
+  const profiles = await db.listNetworkProfiles({ forRecruiter: false });
+  res.json({ ok: true, profiles, db: db.dbEnabled() });
+});
+
+/* Recruiter candidate discovery (respects visibility + open-to-recruiters). */
+app.get('/api/network/candidates', requireAuth, async (req, res) => {
+  const profiles = await db.listNetworkProfiles({ forRecruiter: true });
+  res.json({ ok: true, profiles, db: db.dbEnabled() });
+});
+
+/* Referral exchange + community feed posts. */
+app.get('/api/network/posts', requireAuth, async (req, res) => {
+  const posts = await db.listReferralPosts({ type: req.query.type || undefined });
+  res.json({ ok: true, posts, db: db.dbEnabled() });
+});
+app.post('/api/network/posts', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const body = req.body || {};
+  if (!body.type) return res.status(400).json({ ok: false, error: 'type_required' });
+  const result = await db.createReferralPost({
+    userId: u?.id, email: u?.email, name: u?.name, picture: u?.picture,
+    type: String(body.type), fields: body.fields || {},
+  });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+app.delete('/api/network/posts/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deleteReferralPost({ userId: u?.id, email: u?.email, postId: req.params.id });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+app.post('/api/network/posts/:id/report', requireAuth, async (req, res) => {
+  const result = await db.reportReferralPost({ postId: req.params.id });
+  res.json({ ...result, db: db.dbEnabled() });
+});
+
+/* Referral requests — anti-spam weekly limit by plan. */
+app.post('/api/network/requests', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const { isAdmin, effectivePlan } = planForReq(req);
+  const limit = REFERRAL_WEEKLY_LIMITS[effectivePlan] ?? REFERRAL_WEEKLY_LIMITS.free;
+  if (!isAdmin && db.dbEnabled()) {
+    const used = await db.countRecentReferralRequests({ userId: u?.id, email: u?.email, sinceMs: 7 * 86400000 });
+    if (used >= limit) return res.status(429).json({ ok: false, error: 'weekly_limit_reached', limit, used });
+  }
+  const body = req.body || {};
+  const result = await db.createReferralRequest({
+    userId: u?.id, email: u?.email, toUserId: body.toUserId, postId: body.postId,
+    kind: body.kind, message: body.message,
+  });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, limit, db: db.dbEnabled() });
+});
+
+/* Recruiter shortlists. */
+app.get('/api/network/shortlists', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const shortlists = await db.listShortlists({ recruiterUserId: u?.id, recruiterEmail: u?.email });
+  res.json({ ok: true, shortlists, db: db.dbEnabled() });
+});
+app.post('/api/network/shortlists', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const body = req.body || {};
+  const result = await db.shortlistCandidate({
+    recruiterUserId: u?.id, recruiterEmail: u?.email,
+    candidateUserId: body.candidateUserId, note: body.note,
+  });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+
 /* ============================================================
    CONTACTS / REFERRALS  (compliant provider lookups)
    ------------------------------------------------------------
@@ -2952,6 +3101,151 @@ app.post('/api/projects/verify-live-link', requireAuth, async (req, res) => {
     clearTimeout(timer);
     res.json({ ok: true, success: true, reachable: false, statusCode: 0, finalUrl: parsed.toString(), responseTimeMs: Date.now() - started, checkedAt: new Date().toISOString(), warnings: ['Verification failed unexpectedly. Needs manual review.'] });
   }
+});
+
+/* ============================================================
+   PROJECT RECOMMENDATION ENGINE — external source discovery (Part 5/6/10)
+   Sources are INSPIRATION only; we convert them into original idea seeds and
+   never tell the user to clone a repo. Every connector degrades gracefully to
+   curated ideas, and results are cached (6h) so we don't hammer external APIs.
+   Secrets (KAGGLE_KEY, PRODUCTHUNT_TOKEN, GITHUB_TOKEN) stay on the server.
+   ============================================================ */
+const discoverCache = new Map(); // key -> { at, data }
+const DISCOVER_TTL = 6 * 60 * 60 * 1000;
+function cacheGet(key) { const e = discoverCache.get(key); if (e && Date.now() - e.at < DISCOVER_TTL) return e.data; return null; }
+function cacheSet(key, data) { discoverCache.set(key, { at: Date.now(), data }); return data; }
+const lc = (s) => String(s || '').trim().toLowerCase();
+
+function roleToTopics(role = '', projectType = '', skills = []) {
+  const hay = (lc(role) + ' ' + lc(projectType) + ' ' + skills.map(lc).join(' '));
+  if (/devops|sre|platform/.test(hay)) return ['devops', 'kubernetes', 'terraform'];
+  if (/cloud/.test(hay)) return ['serverless', 'aws', 'terraform'];
+  if (/front[\s-]?end/.test(hay)) return ['react', 'frontend', 'data-visualization'];
+  if (/back[\s-]?end/.test(hay)) return ['nodejs', 'api', 'express'];
+  if (/machine learning|ai\/ml|\bml\b|data scien/.test(hay)) return ['machine-learning', 'deep-learning', 'mlops'];
+  if (/data analyst|\bdata\b|analytics/.test(hay)) return ['data-visualization', 'data-engineering', 'sql'];
+  if (/cyber|security/.test(hay)) return ['security', 'pentesting', 'owasp'];
+  return ['full-stack', 'mern', 'react'];
+}
+const TOPIC_SKILLS = {
+  devops: ['Docker', 'Kubernetes', 'CI/CD', 'Monitoring'], kubernetes: ['Kubernetes', 'Helm', 'Docker'], terraform: ['Terraform', 'IaC', 'Cloud'],
+  serverless: ['AWS Lambda', 'API Gateway', 'IaC'], aws: ['AWS', 'Cloud', 'IAM'],
+  react: ['React', 'State Management', 'API Integration'], frontend: ['Responsive UI', 'Accessibility', 'Deployment'], 'data-visualization': ['Visualization', 'Dashboard', 'Insights'],
+  nodejs: ['Node.js', 'API', 'Auth'], api: ['REST', 'API', 'Validation'], express: ['Express', 'Node.js', 'Middleware'],
+  'machine-learning': ['Dataset', 'Model', 'Evaluation'], 'deep-learning': ['Model', 'Training', 'Evaluation'], mlops: ['MLflow', 'Deployment', 'Monitoring'],
+  'data-engineering': ['ETL', 'Pipeline', 'SQL'], sql: ['SQL', 'Insights', 'Reporting'],
+  security: ['Auth', 'Scanning', 'Security Controls'], pentesting: ['Scanning', 'Threat Model', 'Logs'], owasp: ['OWASP', 'Security Controls', 'Auth'],
+  'full-stack': ['Frontend', 'Backend', 'Database'], mern: ['React', 'Node.js', 'MongoDB'],
+};
+function typeForTopics(topics = []) {
+  const t = topics.join(' ');
+  if (/devops|kubernetes|terraform/.test(t)) return 'DevOps';
+  if (/serverless|aws/.test(t)) return 'Cloud';
+  if (/machine|deep|mlops/.test(t)) return 'AI/ML';
+  if (/data-eng|data-vis|sql/.test(t)) return 'Data';
+  if (/security|pentest|owasp/.test(t)) return 'Cybersecurity';
+  if (/react|frontend/.test(t) && !/full-stack|mern|api|node/.test(t)) return 'Frontend';
+  if (/node|api|express/.test(t)) return 'Backend';
+  return 'Full Stack';
+}
+
+async function discoverGithub(body = {}) {
+  const { targetRole, skills = [], projectType, difficulty } = body;
+  const topics = roleToTopics(targetRole, projectType, skills);
+  const key = 'gh:' + topics.join(',');
+  const cached = cacheGet(key);
+  if (cached) return { ...cached, cached: true };
+  const out = [];
+  try {
+    for (const topic of topics.slice(0, 3)) {
+      const stars = /terraform|owasp|pentest|mlops|data-eng/.test(topic) ? 20 : 50;
+      const q = encodeURIComponent(`topic:${topic} stars:>${stars}`);
+      let data;
+      try { data = await ghFetch(`/search/repositories?q=${q}&sort=stars&order=desc&per_page=4`); }
+      catch (e) { if (e.code === 'rate_limited') throw e; else continue; }
+      for (const repo of (data.items || []).slice(0, 3)) {
+        const type = typeForTopics([topic]);
+        const skillsCovered = Array.from(new Set([...(TOPIC_SKILLS[topic] || []), ...(repo.topics || []).slice(0, 3).map((t) => t.replace(/-/g, ' '))])).slice(0, 8);
+        out.push({
+          sourceType: 'github', sourceLabel: 'GitHub trending', sourceUrl: repo.html_url,
+          title: `Build your own ${topic.replace(/-/g, ' ')} ${type === 'Full Stack' ? 'platform' : 'project'}`,
+          summary: `Inspired by trending open-source work in ${topic.replace(/-/g, ' ')} (${(repo.stargazers_count || 0).toLocaleString()}★). Build an ORIGINAL ${type} project applying the same patterns — do not clone the repo.`,
+          detectedSkills: skillsCovered, techStack: skillsCovered, projectType: type,
+          difficulty: difficulty || 'Intermediate', estimatedDuration: '2 weeks',
+          inspirationSignals: [`${repo.stargazers_count || 0}★`, repo.language].filter(Boolean),
+          startupPotential: 0.5, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment', 'tests'],
+        });
+      }
+    }
+    return cacheSet(key, { ok: true, candidates: dedupeByTitle(out), source: 'github' });
+  } catch (e) {
+    return { ok: false, error: e.code === 'rate_limited' ? 'rate_limited' : 'github_error', candidates: [], message: 'GitHub is rate-limited or unavailable — using curated inspiration.' };
+  }
+}
+function dedupeByTitle(rows) { const seen = new Set(); return rows.filter((r) => { const k = lc(r.title); if (seen.has(k)) return false; seen.add(k); return true; }); }
+
+const KAGGLE_IDEAS = [
+  { title: 'Customer Churn Prediction Service', summary: 'Use a public churn dataset to train, evaluate and serve a churn model behind an API with a small dashboard.', detectedSkills: ['Dataset', 'Model', 'Evaluation', 'Python', 'API'], projectType: 'AI/ML', difficulty: 'Intermediate', estimatedDuration: '1 month', startupPotential: 0.6, proofOutputs: ['GitHub repo', 'README', 'live demo', 'tests'] },
+  { title: 'Retail Sales Forecasting Dashboard', summary: 'Forecast sales from a time-series dataset and present results in an interactive dashboard with insights.', detectedSkills: ['Dataset', 'Model', 'Visualization', 'Python', 'Insights'], projectType: 'Data', difficulty: 'Intermediate', estimatedDuration: '2 weeks', startupPotential: 0.5, proofOutputs: ['GitHub repo', 'README', 'screenshots', 'live demo'] },
+];
+const PRODUCTHUNT_IDEAS = [
+  { title: 'AI Meeting Notes & Action Items SaaS', summary: 'A trending product category: turn meeting transcripts into summaries and tracked action items. Build a simplified student version.', detectedSkills: ['API', 'AI', 'Auth', 'Frontend', 'Deployment'], projectType: 'Full Stack', difficulty: 'Intermediate', estimatedDuration: '1 month', businessUseCase: 'Productivity SaaS for teams.', startupPotential: 0.9, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment'] },
+  { title: 'No-code Form → Workflow Automation', summary: 'Inspired by trending automation products — let users build forms that trigger simple workflows/notifications.', detectedSkills: ['Backend', 'API', 'Database', 'Frontend', 'Deployment'], projectType: 'Full Stack', difficulty: 'Advanced', estimatedDuration: '1 month', businessUseCase: 'SMB automation SaaS.', startupPotential: 0.85, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment', 'tests'] },
+];
+const DEVPOST_IDEAS = [
+  { title: 'Disaster Relief Resource Matching App', summary: 'Hackathon-style build: match people who need help with nearby resources/volunteers in real time.', detectedSkills: ['Full Stack', 'Geolocation', 'API', 'Database', 'Deployment'], projectType: 'Full Stack', difficulty: 'Intermediate', estimatedDuration: '2 weeks', businessUseCase: 'Civic-tech / NGO tool.', startupPotential: 0.6, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment'] },
+  { title: 'Accessibility Checker Browser Tool', summary: 'Hackathon-style build: scan a page for accessibility issues and suggest fixes — a strong, demoable proof piece.', detectedSkills: ['Frontend', 'Accessibility', 'API Integration', 'Deployment'], projectType: 'Frontend', difficulty: 'Intermediate', estimatedDuration: '1 week', startupPotential: 0.5, proofOutputs: ['GitHub repo', 'README', 'live demo', 'screenshots'] },
+];
+
+app.post('/api/projects/discover/github', requireAuth, async (req, res) => {
+  const r = await discoverGithub(req.body || {});
+  res.json(r.ok ? r : { ok: true, candidates: [], warning: r.message, error: r.error });
+});
+app.post('/api/projects/discover/kaggle', requireAuth, (req, res) => {
+  const configured = Boolean(process.env.KAGGLE_USERNAME && process.env.KAGGLE_KEY);
+  // We do not proxy Kaggle's authenticated API here; curated dataset/project ideas
+  // are returned either way so the feature always works.
+  res.json({ ok: true, configured, source: configured ? 'kaggle' : 'curated', candidates: KAGGLE_IDEAS.map((i) => ({ ...i, sourceType: 'kaggle', sourceLabel: 'Kaggle' })), message: configured ? 'Using Kaggle-style data project ideas.' : 'Kaggle integration not configured. Using curated data project ideas.' });
+});
+app.post('/api/projects/discover/producthunt', requireAuth, (req, res) => {
+  const configured = Boolean(process.env.PRODUCTHUNT_TOKEN);
+  res.json({ ok: true, configured, source: configured ? 'producthunt' : 'curated', candidates: PRODUCTHUNT_IDEAS.map((i) => ({ ...i, sourceType: 'producthunt', sourceLabel: 'Product Hunt' })), message: configured ? 'Using Product Hunt trend-style ideas.' : 'Product Hunt token not configured. Using curated startup/product ideas.' });
+});
+app.post('/api/projects/discover/devpost', requireAuth, (req, res) => {
+  res.json({ ok: true, configured: false, source: 'curated', candidates: DEVPOST_IDEAS.map((i) => ({ ...i, sourceType: 'devpost', sourceLabel: 'Hackathon' })), message: 'Using curated hackathon-style ideas.' });
+});
+
+app.post('/api/projects/recommend', requireAuth, async (req, res) => {
+  const body = req.body || {};
+  const allowed = Array.isArray(body.allowedSources) ? body.allowedSources : ['github', 'curated'];
+  const candidates = [];
+  const signalsUsed = { github: false, kaggle: false, productHunt: false, devpost: false, curated: true };
+  const warnings = [];
+
+  if (allowed.includes('github')) {
+    const gh = await discoverGithub(body);
+    if (gh.ok && gh.candidates.length) { candidates.push(...gh.candidates); signalsUsed.github = true; }
+    else if (gh.message) warnings.push(gh.message);
+  }
+  if (allowed.includes('kaggle') && /ai|ml|data|machine/i.test(`${body.targetRole} ${body.projectType}`)) {
+    candidates.push(...KAGGLE_IDEAS.map((i) => ({ ...i, sourceType: 'kaggle', sourceLabel: 'Kaggle' }))); signalsUsed.kaggle = true;
+    if (!process.env.KAGGLE_KEY) warnings.push('Kaggle not configured — using curated data project ideas.');
+  }
+  if (allowed.includes('producthunt')) {
+    candidates.push(...PRODUCTHUNT_IDEAS.map((i) => ({ ...i, sourceType: 'producthunt', sourceLabel: 'Product Hunt' }))); signalsUsed.productHunt = true;
+    if (!process.env.PRODUCTHUNT_TOKEN) warnings.push('Product Hunt token not configured — using curated startup ideas.');
+  }
+  if (allowed.includes('devpost')) {
+    candidates.push(...DEVPOST_IDEAS.map((i) => ({ ...i, sourceType: 'devpost', sourceLabel: 'Hackathon' }))); signalsUsed.devpost = true;
+  }
+
+  res.json({
+    ok: true,
+    candidates: dedupeByTitle(candidates),
+    signalsUsed,
+    warnings,
+    explanation: `Collected ${candidates.length} inspiration candidates from ${[signalsUsed.github && 'GitHub', signalsUsed.kaggle && 'Kaggle', signalsUsed.productHunt && 'Product Hunt', signalsUsed.devpost && 'hackathons'].filter(Boolean).join(', ') || 'curated sources'}. Scoring happens against your profile, resume gaps and matched jobs.`,
+  });
 });
 
 /* ============================================================

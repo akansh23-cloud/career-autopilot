@@ -5,19 +5,45 @@
 const PROJECTS_KEY = 'careerAutopilot.projects.v1';
 const PARTNERS_KEY = 'careerAutopilot.partnerRequests.v1';
 const SEED_KEY = 'careerAutopilot.projectSeed.v1';
+let currentUserKey = 'guest';
+function normalizeUserKey(user) {
+  const raw = user?.email || user?.id || 'guest';
+  return String(raw).trim().toLowerCase().replace(/[^a-z0-9@._-]+/g, '_') || 'guest';
+}
+export function setProjectStoreUser(user) { currentUserKey = normalizeUserKey(user); }
+function scoped(base) { return `${base}:${currentUserKey}`; }
 
 const EV = {
   projects: 'career-projects-updated',
   partners: 'career-partners-updated',
 };
 
+async function patchServerState(patch) {
+  try {
+    await fetch('/api/user/state', {
+      method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+  } catch {}
+}
+export async function hydrateProjectsFromServer() {
+  try {
+    const r = await fetch('/api/user/state', { credentials: 'include' });
+    if (!r.ok) return getProjects();
+    const d = await r.json();
+    const projects = d?.state?.projects;
+    if (Array.isArray(projects)) write(PROJECTS_KEY, projects, EV.projects);
+  } catch {}
+  return getProjects();
+}
+
 function read(key) {
   if (typeof window === 'undefined') return null;
-  try { const r = window.localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch { return null; }
+  try { const r = window.localStorage.getItem(scoped(key)) || (currentUserKey !== 'guest' ? window.localStorage.getItem(key) : null); return r ? JSON.parse(r) : null; } catch { return null; }
 }
 function write(key, value, evName) {
   if (typeof window === 'undefined') return value;
-  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  try { window.localStorage.setItem(scoped(key), JSON.stringify(value)); } catch {}
   if (evName) window.dispatchEvent(new CustomEvent(evName, { detail: value }));
   return value;
 }
@@ -43,10 +69,13 @@ export function saveProject(project) {
   next.proofScore = computeProofScore(next);
   if (idx >= 0) list[idx] = next; else list[0] = next;
   write(PROJECTS_KEY, list, EV.projects);
+  patchServerState({ projects: list });
   return next;
 }
 export function deleteProject(id) {
-  write(PROJECTS_KEY, getProjects().filter((p) => p.id !== id), EV.projects);
+  const next = getProjects().filter((p) => p.id !== id);
+  write(PROJECTS_KEY, next, EV.projects);
+  patchServerState({ projects: next });
 }
 export function getPublishedProjects() {
   return getProjects().filter((p) => p.published);
@@ -70,7 +99,7 @@ export function saveStudioSeed(seed) {
 }
 export function consumeStudioSeed() {
   const s = read(SEED_KEY);
-  if (typeof window !== 'undefined') { try { window.localStorage.removeItem(SEED_KEY); } catch {} }
+  if (typeof window !== 'undefined') { try { window.localStorage.removeItem(scoped(SEED_KEY)); } catch {} }
   return s;
 }
 export function peekStudioSeed() { return read(SEED_KEY); }

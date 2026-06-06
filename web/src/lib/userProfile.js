@@ -1,11 +1,19 @@
-// User role + onboarding profile (Part 1 / persistence Part 11).
-// Persisted to localStorage with clean helpers. The *role* here is the chosen
-// persona (student/professional/recruiter/college_admin). Admin status is NOT
-// stored client-side — it is resolved server-side from the session email and
-// surfaced via plan.js (isAdmin). Nothing here can grant admin.
+// User role + onboarding profile.
+// Local cache is scoped by authenticated user; canonical cross-device state is
+// stored by backend /api/user/profile when MongoDB is configured.
 
-const KEY = 'careerAutopilot.profile.v1';
+const BASE_KEY = 'careerAutopilot.profile.v1';
 export const PROFILE_EVENT = 'career-profile-updated';
+
+let currentUserKey = 'guest';
+function normalizeUserKey(user) {
+  const raw = user?.email || user?.id || 'guest';
+  return String(raw).trim().toLowerCase().replace(/[^a-z0-9@._-]+/g, '_') || 'guest';
+}
+export function setProfileUser(user) {
+  currentUserKey = normalizeUserKey(user);
+}
+function key() { return `${BASE_KEY}:${currentUserKey}`; }
 
 export const USER_ROLES = ['student', 'professional', 'recruiter', 'college_admin', 'admin'];
 
@@ -26,13 +34,42 @@ export const ONBOARDING_CHOICES = [
 
 function read() {
   if (typeof window === 'undefined') return null;
-  try { const r = window.localStorage.getItem(KEY); return r ? JSON.parse(r) : null; } catch { return null; }
+  try {
+    const scoped = window.localStorage.getItem(key());
+    if (scoped) return JSON.parse(scoped);
+    // one-time migration from old global key for the currently signed-in user
+    const legacy = window.localStorage.getItem(BASE_KEY);
+    if (legacy && currentUserKey !== 'guest') {
+      window.localStorage.setItem(key(), legacy);
+      return JSON.parse(legacy);
+    }
+    return null;
+  } catch { return null; }
 }
 function write(v) {
-  if (typeof window === 'undefined') return v;
-  try { window.localStorage.setItem(KEY, JSON.stringify(v)); } catch {}
-  window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: v }));
+  if (typeof window !== 'undefined') {
+    try { window.localStorage.setItem(key(), JSON.stringify(v)); } catch {}
+    window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: v }));
+  }
   return v;
+}
+async function saveProfileToServer(profile) {
+  try {
+    await fetch('/api/user/profile', {
+      method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile }),
+    });
+  } catch { /* local cache still works */ }
+}
+
+export async function hydrateProfileFromServer() {
+  try {
+    const r = await fetch('/api/user/profile', { credentials: 'include' });
+    if (!r.ok) return getProfile();
+    const d = await r.json();
+    if (d?.profile && Object.keys(d.profile).length) return write(d.profile);
+  } catch {}
+  return getProfile();
 }
 
 export function getProfile() { return read() || {}; }
@@ -41,12 +78,18 @@ export function saveOnboarding(data) {
   const prev = getProfile();
   const next = { ...prev, ...data, completedAt: new Date().toISOString() };
   if (!USER_ROLES.includes(next.role)) next.role = 'student';
-  return write(next);
+  write(next);
+  saveProfileToServer(next);
+  return next;
 }
 
-export function patchProfile(changes) { return write({ ...getProfile(), ...changes }); }
+export function patchProfile(changes) {
+  const next = { ...getProfile(), ...changes, updatedAt: new Date().toISOString() };
+  write(next);
+  saveProfileToServer(next);
+  return next;
+}
 
-// Stored persona role; falls back to 'student' for routing if unset.
 export function getUserRole() {
   const r = getProfile().role;
   return USER_ROLES.includes(r) ? r : 'student';
@@ -58,11 +101,10 @@ export function needsOnboarding() {
 }
 
 export function resetOnboarding() {
-  if (typeof window !== 'undefined') { try { window.localStorage.removeItem(KEY); } catch {} }
+  if (typeof window !== 'undefined') { try { window.localStorage.removeItem(key()); } catch {} }
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: {} }));
 }
 
-// Role-specific onboarding field definitions (rendered by the Onboarding view).
 export const ROLE_FIELDS = {
   student: [
     { id: 'college', label: 'College name', type: 'text' },
