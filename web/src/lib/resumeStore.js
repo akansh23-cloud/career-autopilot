@@ -1,4 +1,5 @@
 import { inferRoleFromResume } from './roles.js';
+import { csrfHeaders } from './csrf.js';
 
 const KEY = 'careerAutopilot.resume.v1';
 const JOB_KEY = 'careerAutopilot.pendingJobSearch.v1';
@@ -26,7 +27,10 @@ const fallback = {
 function safeRead(key) {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(scoped(key)) || (currentUserKey !== 'guest' ? window.localStorage.getItem(key) : null);
+    // Read ONLY the user-scoped key. Never fall back to a legacy unscoped key —
+    // that is what let a previous user's data bleed into a new sign-in on a
+    // shared browser. Canonical data is rehydrated from the server on login.
+    const raw = window.localStorage.getItem(scoped(key));
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -50,7 +54,7 @@ function safeRemove(key) {
 async function patchServerState(patch) {
   try {
     await fetch('/api/user/state', {
-      method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(patch),
     });
   } catch {}
@@ -58,7 +62,7 @@ async function patchServerState(patch) {
 async function saveResumeAnalysisToServer(resume) {
   try {
     await fetch('/api/resume/save-analysis', {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ resume }),
     });
   } catch {}

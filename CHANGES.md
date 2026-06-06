@@ -1,3 +1,17 @@
+# v7 — Production hardening (2026-06-06)
+
+Security & production-readiness pass against the regression report:
+- Dependencies: npm audit clean (mongoose/mammoth upgraded; tar/node-pre-gyp pinned via overrides).
+- MongoDB required in production (fail-fast); persistence writes return 503 in prod when DB unavailable.
+- Removed unscoped localStorage fallback (cross-user leak); client cache cleared on logout/user change.
+- Helmet security headers + strict CSP; X-Powered-By off; strict credentialed-CORS allowlist.
+- CSRF double-submit protection; per-route rate limiting; zod input validation; 5MB JSON cap.
+- Centralized error handler (no stack/secret leaks) + structured redacting logger.
+- Job search: shorter timeouts, overall budget, short result cache.
+- Support FAQ matcher fixed (payment vs login); added billing FAQs.
+- Vite code-splitting (main chunk 1.15MB -> 0.5MB).
+- Tests (node:test), ESLint flat config, Playwright smoke scaffold; docs: SECURITY/TESTING/DEPLOYMENT/ENVIRONMENT.
+
 # Career Autopilot — changes
 
 Built & verified: `npm run build` (clean), `node --check server.js` (clean), parser/renderer unit-tested, contact fallback tested via authenticated request.

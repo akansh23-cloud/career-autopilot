@@ -21,7 +21,7 @@ const EV = {
 async function patchServerState(patch) {
   try {
     await fetch('/api/user/state', {
-      method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(patch),
     });
   } catch {}
@@ -39,7 +39,8 @@ export async function hydrateProjectsFromServer() {
 
 function read(key) {
   if (typeof window === 'undefined') return null;
-  try { const r = window.localStorage.getItem(scoped(key)) || (currentUserKey !== 'guest' ? window.localStorage.getItem(key) : null); return r ? JSON.parse(r) : null; } catch { return null; }
+  // Read ONLY the user-scoped key — no legacy unscoped fallback (cross-user leak).
+  try { const r = window.localStorage.getItem(scoped(key)); return r ? JSON.parse(r) : null; } catch { return null; }
 }
 function write(key, value, evName) {
   if (typeof window === 'undefined') return value;
@@ -85,6 +86,7 @@ export function getPublishedProjects() {
    Delegates to lib/proofScore.js (weighted breakdown). Still returns a number
    so every existing caller keeps working. */
 import { proofScore as _proofScore, proofBreakdown as _proofBreakdown } from './proofScore.js';
+import { csrfHeaders } from './csrf.js';
 export function computeProofScore(p = {}) { return _proofScore(p); }
 export function proofScoreBreakdown(p = {}) { return _proofBreakdown(p); }
 export function taskProgress(p = {}) {

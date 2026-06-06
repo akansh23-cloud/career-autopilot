@@ -10,6 +10,7 @@
 // single-device, with the same empty states.
 
 import { getProjects, getPublishedProjects, proofScoreBreakdown } from './projectStore.js';
+import { csrfHeaders } from './csrf.js';
 import { deriveSkillXP, careerXP, projectXP } from './xp.js';
 import { deriveBadges } from './badges.js';
 import { engagementSignals } from './engagement.js';
@@ -217,7 +218,7 @@ async function syncProfileToServer(np = getNetworkProfileLocal()) {
   try {
     const assembled = assembleMyProfile();
     await fetch('/api/network/profile', {
-      method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ profile: assembled }),
     });
   } catch { /* local still works */ }
@@ -377,7 +378,7 @@ export async function createPost(type, fields) {
   write(POSTS_KEY, [post, ...local]);
   try {
     const r = await fetch('/api/network/posts', {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ type, fields }),
     });
     if (r.ok) { const d = await r.json(); if (d?.post) return d.post; }
@@ -387,13 +388,13 @@ export async function createPost(type, fields) {
 
 export async function deletePost(id) {
   write(POSTS_KEY, getReferralPostsLocal().filter((p) => p.id !== id));
-  try { await fetch('/api/network/posts/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'include' }); } catch {}
+  try { await fetch('/api/network/posts/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'include', headers: csrfHeaders() }); } catch {}
 }
 
 export async function reportPost(id) {
   const list = getReferralPostsLocal().map((p) => p.id === id ? { ...p, reports: (p.reports || 0) + 1 } : p);
   write(POSTS_KEY, list);
-  try { await fetch('/api/network/posts/' + encodeURIComponent(id) + '/report', { method: 'POST', credentials: 'include' }); } catch {}
+  try { await fetch('/api/network/posts/' + encodeURIComponent(id) + '/report', { method: 'POST', credentials: 'include', headers: csrfHeaders() }); } catch {}
 }
 
 /* ---------------- Mutual referral matching ----------------
@@ -438,7 +439,7 @@ export async function sendReferralRequest({ toUserId, postId, kind, message, eff
   write(REQUESTS_KEY, [reqObj, ...local]);
   try {
     const r = await fetch('/api/network/requests', {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ toUserId, postId, kind, message }),
     });
     if (r.status === 429) { const d = await r.json().catch(() => ({})); return { ok: false, error: 'weekly_limit_reached', limit: d.limit || limit, used: d.used }; }
@@ -455,7 +456,7 @@ export async function toggleShortlistCandidate(candidateUserId, note = '') {
   const next = exists ? list.filter((s) => s.candidateUserId !== candidateUserId) : [{ candidateUserId, note, createdAt: new Date().toISOString() }, ...list];
   write(SHORTLIST_KEY, next);
   if (!exists) {
-    try { await fetch('/api/network/shortlists', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateUserId, note }) }); } catch {}
+    try { await fetch('/api/network/shortlists', { method: 'POST', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ candidateUserId, note }) }); } catch {}
   }
   return !exists;
 }

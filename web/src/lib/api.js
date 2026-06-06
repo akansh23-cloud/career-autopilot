@@ -2,11 +2,26 @@
 // proxied to the backend during `vite` dev. Always sends the session cookie.
 const json = (r) => r.text().then((t) => (t ? JSON.parse(t) : {}));
 
+// Read the readable double-submit CSRF cookie the server sets, so we can echo it
+// back in the X-CSRF-Token header on state-changing requests.
+function csrfToken() {
+  if (typeof document === 'undefined') return '';
+  const m = document.cookie.match(/(?:^|;\s*)ca_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 async function req(method, path, body) {
+  const headers = body ? { 'Content-Type': 'application/json' } : {};
+  if (UNSAFE.has(method)) {
+    const token = csrfToken();
+    if (token) headers['X-CSRF-Token'] = token;
+  }
   const res = await fetch(path, {
     method,
     credentials: 'include',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await json(res).catch(() => ({}));

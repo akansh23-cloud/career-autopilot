@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './hooks/useAuth.jsx';
 import { syncPlanFromServer } from './lib/plan.js';
 import { hydrateProfileFromServer, needsOnboarding, PROFILE_EVENT, setProfileUser } from './lib/userProfile.js';
+import { clearAppCache, purgeLegacyUnscopedKeys } from './lib/userCache.js';
 import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
@@ -84,6 +85,10 @@ export default function App() {
   const [onboarded, setOnboarded] = useState(!needsOnboarding());
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [publicId, setPublicId] = useState(() => parseProfileHash());
+  const prevUserIdRef = useRef(null);
+
+  // One-time cleanup of any pre-scoping legacy keys left by older builds.
+  useEffect(() => { purgeLegacyUnscopedKeys(); }, []);
 
   useEffect(() => {
     const f = () => setPublicId(parseProfileHash());
@@ -94,6 +99,9 @@ export default function App() {
   useEffect(() => {
     let live = true;
     if (!user) {
+      // Signed out: wipe ALL client cache so nothing survives for the next user.
+      if (prevUserIdRef.current) clearAppCache();
+      prevUserIdRef.current = null;
       setProfileUser(null);
       setResumeStoreUser(null);
       setProjectStoreUser(null);
@@ -103,6 +111,10 @@ export default function App() {
       setWorkspaceReady(false);
       return () => { live = false; };
     }
+    // A different user signed in on this browser → clear the previous user's cache
+    // before wiring up the new identity, then rehydrate from the server.
+    if (prevUserIdRef.current && prevUserIdRef.current !== user.id) clearAppCache();
+    prevUserIdRef.current = user.id;
     setWorkspaceReady(false);
     setProfileUser(user);
     setResumeStoreUser(user);
