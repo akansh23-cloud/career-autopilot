@@ -13,6 +13,7 @@ import { hydrateResumeFromServer, setResumeStoreUser } from './lib/resumeStore.j
 import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectStore.js';
 import { setMissionUser } from './lib/missions.js';
 import { setNetworkUser, hydrateNetworkFromServer } from './lib/network.js';
+import { setCreatorUser, hydrateCreatorFromServer } from './lib/projectCreator.js';
 
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
@@ -32,11 +33,13 @@ import RecruiterConsole from './views/RecruiterConsole.jsx';
 import CareerProfile, { PublicProfile } from './views/CareerProfile.jsx';
 import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
+import ProjectCreator from './views/ProjectCreator.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
   careerprofile: CareerProfile,
   profile: Profile,
+  projectcreator: ProjectCreator,
   resume: Resume,
   editor: Editor,
   jobs: JobsView,
@@ -96,6 +99,7 @@ export default function App() {
       setProjectStoreUser(null);
       setMissionUser(null);
       setNetworkUser(null);
+      setCreatorUser(null);
       setWorkspaceReady(false);
       return () => { live = false; };
     }
@@ -105,8 +109,9 @@ export default function App() {
     setProjectStoreUser(user);
     setMissionUser(user);
     setNetworkUser(user);
+    setCreatorUser(user);
     syncPlanFromServer();
-    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer()])
+    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer(), hydrateCreatorFromServer()])
       .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });
     return () => { live = false; };
   }, [user]);

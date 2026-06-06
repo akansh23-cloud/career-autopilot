@@ -112,6 +112,7 @@ const userStateSchema = new mongoose.Schema(
     projects: { type: [mongoose.Schema.Types.Mixed], default: [] },
     tracker: { type: mongoose.Schema.Types.Mixed, default: {} },
     xpSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
+    creator: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true, minimize: false }
 );
@@ -264,7 +265,7 @@ export async function patchUserState({ userId, email, patch }) {
     const uid = await resolveUserId({ userId, email });
     if (!uid) return { ok: false, reason: 'user_not_found' };
     const em = cleanEmail(email);
-    const allowed = ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot'];
+    const allowed = ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot', 'creator'];
     const set = { email: em };
     for (const k of allowed) if (Object.prototype.hasOwnProperty.call(patch || {}, k)) set[k] = patch[k];
     await UserState.updateOne({ userId: uid }, { $set: set }, { upsert: true });

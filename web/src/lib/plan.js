@@ -10,11 +10,11 @@ export const PLAN_LABELS = { free: 'Free', pro: 'Pro', premium: 'Premium' };
 
 const U = Infinity;
 export const LIMITS = {
-  free:    { tailoring: 3,  contacts: 5,   tracking: 20, templates: 4, customUpload: false, docx: false, outreach: 5,   workspaces: 1,  aiGen: 2,   sandboxPublish: 1 },
-  pro:     { tailoring: 50, contacts: 100, tracking: U,  templates: 8, customUpload: true,  docx: true,  outreach: 100, workspaces: 10, aiGen: 100, sandboxPublish: 5 },
-  premium: { tailoring: U,  contacts: U,   tracking: U,  templates: U, customUpload: true,  docx: true,  outreach: U,   workspaces: U,  aiGen: U,   sandboxPublish: U },
+  free:    { tailoring: 3,  contacts: 5,   tracking: 20, templates: 4, customUpload: false, docx: false, outreach: 5,   workspaces: 1,  aiGen: 2,   sandboxPublish: 1, creatorRecs: 6 },
+  pro:     { tailoring: 50, contacts: 100, tracking: U,  templates: 8, customUpload: true,  docx: true,  outreach: 100, workspaces: 10, aiGen: 100, sandboxPublish: 5, creatorRecs: 60 },
+  premium: { tailoring: U,  contacts: U,   tracking: U,  templates: U, customUpload: true,  docx: true,  outreach: U,   workspaces: U,  aiGen: U,   sandboxPublish: U, creatorRecs: U },
 };
-const ADMIN_LIMITS = { tailoring: U, contacts: U, tracking: U, templates: U, customUpload: true, docx: true, outreach: U, workspaces: U, aiGen: U, sandboxPublish: U };
+const ADMIN_LIMITS = { tailoring: U, contacts: U, tracking: U, templates: U, customUpload: true, docx: true, outreach: U, workspaces: U, aiGen: U, sandboxPublish: U, creatorRecs: U };
 
 export const PLAN_LABELS_FULL = { free: 'Free', pro: 'Pro', premium: 'Premium', admin: 'Full Access' };
 
@@ -23,6 +23,7 @@ export const METER_LABELS = {
   contacts: 'contact searches',
   tracking: 'tracked jobs',
   outreach: 'AI outreach drafts',
+  creatorRecs: 'project recommendations',
 };
 
 function read(key) {

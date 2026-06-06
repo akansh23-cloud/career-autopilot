@@ -1479,14 +1479,14 @@ app.post('/apply/:provider/submit', (req, res) => {
 app.get('/api/user/state', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const state = await db.getUserState({ userId: u?.id, email: u?.email });
-  res.json({ ok: true, state: state || { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {} }, db: db.dbEnabled() });
+  res.json({ ok: true, state: state || { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {}, creator: {} }, db: db.dbEnabled() });
 });
 
 app.patch('/api/user/state', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const body = req.body || {};
   const allowed = {};
-  for (const k of ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot']) {
+  for (const k of ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot', 'creator']) {
     if (Object.prototype.hasOwnProperty.call(body, k)) allowed[k] = body[k];
   }
   const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: allowed });
@@ -2871,6 +2871,223 @@ app.post('/api/projects/generate-interview-prep', requireAuth, async (req, res) 
 });
 
 /* ============================================================
+   PROJECT CREATOR  —  Product Building Operating System
+   Discovery, Validation, Blueprint, Roadmap and IP-readiness.
+   Each endpoint tries Anthropic (key stays server-side) and falls
+   back to deterministic generation so the UI always works.
+   ============================================================ */
+const CREATOR_TYPES = ['Career Project', 'Portfolio Project', 'Startup Experiment', 'SaaS MVP', 'Hackathon Project', 'Open Source Tool'];
+const CREATOR_CATEGORIES = ['Best Career Fit', 'Best Quick Win', 'Best Portfolio Impact', 'Best Startup Potential', 'Best Beginner-Friendly'];
+
+function clampScore(n, lo = 0, hi = 100) { n = Math.round(Number(n) || 0); return Math.max(lo, Math.min(hi, n)); }
+function confidenceFor(score) { return score >= 80 ? 'High' : score >= 60 ? 'Medium' : 'Low'; }
+
+// Deterministic discovery — always returns 5 ranked, well-formed recommendations.
+function creatorDiscoverFallback(ctx = {}) {
+  const role = ctx.targetRole || 'Software Engineer';
+  const level = ctx.difficulty || 'Intermediate';
+  const missing = (ctx.missingSkills || []).filter(Boolean);
+  const current = (ctx.currentSkills || []).filter(Boolean);
+  const seedSkill = missing[0] || current[0] || 'APIs';
+  const dur = ctx.duration || '2 weeks';
+  const weekly = ctx.weeklyTime || '6–10 hrs';
+  const base = [
+    { type: 'Career Project', category: 'Best Career Fit', difficulty: level, startup: 35, quick: false,
+      title: `${role} proof-of-work platform using ${seedSkill}`,
+      summary: `A deployable ${role}-aligned application that demonstrates ${[seedSkill, missing[1]].filter(Boolean).join(' + ') || 'core production skills'} end-to-end.`,
+      targetUsers: 'Hiring managers and recruiters reviewing your portfolio',
+      skills: Array.from(new Set([seedSkill, ...missing.slice(0, 3), 'REST APIs', 'Testing', 'CI/CD'])).slice(0, 8) },
+    { type: 'Portfolio Project', category: 'Best Quick Win', difficulty: 'Beginner', startup: 20, quick: true,
+      title: `Weekend ${seedSkill} mini-app with live demo`,
+      summary: `A small but polished, fully deployed app you can finish quickly to fill the most visible resume gap.`,
+      targetUsers: 'Recruiters scanning for a working live demo',
+      skills: Array.from(new Set([seedSkill, ...current.slice(0, 2), 'Deployment', 'README'])).slice(0, 6) },
+    { type: 'SaaS MVP', category: 'Best Portfolio Impact', difficulty: 'Advanced', startup: 70, quick: false,
+      title: `Multi-tenant SaaS dashboard for ${role.split(' ')[0] || 'teams'} workflows`,
+      summary: `A production-grade SaaS MVP with auth, billing-ready architecture, analytics and a deployed multi-user demo.`,
+      targetUsers: 'Small teams who need a focused workflow tool',
+      skills: Array.from(new Set([...missing.slice(0, 2), 'Auth', 'Postgres', 'Stripe/Razorpay', 'Multi-tenant', 'Analytics'])).slice(0, 8) },
+    { type: 'Startup Experiment', category: 'Best Startup Potential', difficulty: level, startup: 82, quick: false,
+      title: `AI workflow tool that automates a real ${role.split(' ')[0] || 'industry'} pain point`,
+      summary: `Solve one painful, specific workflow with an AI-assisted product validated against real users — strong startup and proof potential.`,
+      targetUsers: 'Professionals losing time on a manual, repetitive task',
+      skills: Array.from(new Set(['LLM integration', ...missing.slice(0, 2), 'APIs', 'Deployment', 'Analytics'])).slice(0, 8) },
+    { type: 'Open Source Tool', category: 'Best Beginner-Friendly', difficulty: 'Beginner', startup: 30, quick: true,
+      title: `Open-source CLI/library for ${seedSkill}`,
+      summary: `A small, well-documented open-source tool that is approachable to build and shows clean code, tests and docs.`,
+      targetUsers: 'Developers who need a focused utility',
+      skills: Array.from(new Set([seedSkill, ...current.slice(0, 2), 'Testing', 'Docs', 'Packaging'])).slice(0, 6) },
+  ];
+  return base.map((b) => {
+    const stillMissing = missing.filter((s) => !b.skills.map((x) => x.toLowerCase()).includes(String(s).toLowerCase()));
+    const missingCovered = missing.filter((s) => b.skills.map((x) => x.toLowerCase()).includes(String(s).toLowerCase()));
+    return {
+      title: b.title, summary: b.summary, type: b.type, category: b.category,
+      targetUsers: b.targetUsers, targetRoleFit: role,
+      skillsCovered: b.skills, missingSkillsCovered: missingCovered, stillMissingSkills: stillMissing.slice(0, 5),
+      difficulty: b.difficulty, estimatedDuration: dur, weeklyTime: weekly,
+      startupPotential: b.startup, proofPotential: b.quick ? 70 : 88,
+      whyRecommended: missingCovered.length
+        ? `Directly closes ${missingCovered.slice(0, 3).join(', ')} which your target role needs and your current profile lacks.`
+        : `Aligned with ${role} and produces strong, recruiter-visible proof of work.`,
+      sourceSignals: ['target role', missing.length ? 'resume skill gaps' : 'current skills', 'preferred difficulty'].filter(Boolean),
+      expectedProofOutputs: ['Public GitHub repo', 'Live deployed demo', 'README + architecture diagram', b.type.includes('Startup') || b.type.includes('SaaS') ? 'First-users validation notes' : 'Test suite'],
+      resumeImpactPreview: `Adds a quantified bullet: "Built and deployed ${b.title} using ${b.skills.slice(0, 3).join(', ')}."`,
+      recruiterImpactPreview: `Signals hands-on ${b.skills.slice(0, 2).join(' & ')} with a verifiable live demo — stronger than a self-reported skill list.`,
+    };
+  });
+}
+
+app.post('/api/creator/discover', requireAuth, async (req, res) => {
+  const ctx = req.body || {};
+  const prompt = `You are a senior career + startup mentor. Recommend EXACTLY 5 distinct project/product ideas for this person. Return ONLY a JSON array (no prose). Each object MUST have keys: title, summary (one line), type (one of ${JSON.stringify(CREATOR_TYPES)}), category (one of ${JSON.stringify(CREATOR_CATEGORIES)} — use each category once), targetUsers, targetRoleFit, skillsCovered (array), missingSkillsCovered (array), stillMissingSkills (array), difficulty (Beginner|Intermediate|Advanced), estimatedDuration, weeklyTime, startupPotential (0-100 int), proofPotential (0-100 int), whyRecommended, sourceSignals (array), expectedProofOutputs (array), resumeImpactPreview, recruiterImpactPreview. Context: role="${ctx.targetRole || ''}", level="${ctx.difficulty || ''}", year/sem="${ctx.yearSem || ''}", branch="${ctx.branch || ''}", currentSkills=${JSON.stringify((ctx.currentSkills || []).slice(0, 20))}, missingSkills=${JSON.stringify((ctx.missingSkills || []).slice(0, 20))}, weeklyTime="${ctx.weeklyTime || ''}", preferredType="${ctx.preferredType || ''}", preferredDuration="${ctx.duration || ''}", startFrom="${ctx.startFrom || ''}", customIdea="""${(ctx.customIdea || '').slice(0, 600)}""", savedJob="""${(ctx.savedJob || '').slice(0, 600)}""". Make ideas specific and non-generic (avoid plain CRUD); prefer AI workflows, real users, deployment, analytics or domain depth.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2600));
+  let recs = Array.isArray(ai) ? ai.filter((r) => r && r.title) : null;
+  if (!recs || !recs.length) recs = creatorDiscoverFallback(ctx);
+  // normalise score fields
+  recs = recs.slice(0, 5).map((r) => ({
+    ...r,
+    startupPotential: clampScore(r.startupPotential),
+    proofPotential: clampScore(r.proofPotential ?? 70),
+  }));
+  res.json({ ok: true, recommendations: recs, generatedBy: ai ? 'ai' : 'template' });
+});
+
+function creatorValidateFallback(idea = {}) {
+  const title = idea.title || 'this project';
+  const generic = /todo|crud|blog|notes app|to-do|simple/i.test(`${title} ${idea.summary || ''}`);
+  return {
+    problemSeverity: generic ? 'Low–medium: the core problem is common and already well served.' : 'Medium–high: a specific, repeated pain point with weak existing solutions.',
+    targetUsers: idea.targetUsers || 'Early adopters who feel the problem weekly.',
+    userPainPoints: ['Wastes time on a manual/repetitive task', 'Existing tools are too generic or too expensive', 'No single place to do the whole workflow'],
+    existingAlternatives: ['Spreadsheets / manual process', 'A generic horizontal SaaS', 'An enterprise tool that is overkill'],
+    whyAlternativesWeak: ['Not tailored to this exact workflow', 'Poor UX for the specific user', 'Too costly or heavy for the target user'],
+    marketJobRelevance: `Demonstrates skills employers hiring for ${idea.targetRoleFit || 'this role'} actively screen for.`,
+    mvpFeasibility: 'Feasible as a focused MVP within the estimated duration if scope stays on one core workflow.',
+    buildDifficulty: idea.difficulty || 'Intermediate',
+    monetization: ['Subscription for power users', 'Usage-based pricing', 'Free portfolio tier + paid teams tier'],
+    careerValue: 'High — produces a deployable, defensible proof-of-work artifact.',
+    startupPotential: clampScore(idea.startupPotential ?? 50),
+    risks: ['Scope creep beyond the core workflow', 'Low differentiation if AI/real-user depth is skipped', 'Distribution: reaching the first users'],
+    assumptions: ['Users will switch from their current manual process', 'The core workflow is painful enough to pay for', 'You can reach 10 target users to test'],
+    validationQuestions: ['What do you do today to solve this?', 'How much time/money does it cost you weekly?', 'What would make you switch tools?', 'Would you pay for this? How much?'],
+    firstTenUsersStrategy: ['Personally onboard 10 people who have the problem', 'Post in 2–3 niche communities', 'Offer free setup in exchange for feedback'],
+    successMetrics: ['10 activated users', 'Core task completed by 50%+ of signups', 'A deployed demo with real usage', '1 testimonial / case study'],
+    genericWarning: generic ? 'This looks like a common CRUD app. Add an AI workflow, real users, deployment, analytics, or a domain-specific problem to make it stronger.' : '',
+    score: {
+      problemClarity: generic ? 12 : 16, userNeed: generic ? 10 : 16, feasibility: 15,
+      differentiation: generic ? 8 : 15, careerValue: 16, startupPotential: clampScore((idea.startupPotential ?? 50) / 100 * 12, 0, 12), proofPotential: clampScore((idea.proofPotential ?? 70) / 100 * 13, 0, 13),
+    },
+  };
+}
+
+app.post('/api/creator/validate', requireAuth, async (req, res) => {
+  const idea = (req.body && req.body.idea) || {};
+  const prompt = `You are a startup + career validation mentor. Validate this project/product idea and return ONLY JSON (no prose) with keys: problemSeverity, targetUsers, userPainPoints (array), existingAlternatives (array), whyAlternativesWeak (array), marketJobRelevance, mvpFeasibility, buildDifficulty, monetization (array), careerValue, startupPotential (0-100 int), risks (array), assumptions (array), validationQuestions (array), firstTenUsersStrategy (array), successMetrics (array), genericWarning (string, empty if not generic), score (object with int fields: problemClarity 0-20, userNeed 0-20, feasibility 0-15, differentiation 0-15, careerValue 0-10, startupPotential 0-12, proofPotential 0-13). Idea: ${JSON.stringify(idea).slice(0, 2500)}. If it is a generic CRUD/todo/blog app, set genericWarning advising to add AI workflow, real users, deployment, analytics or domain depth.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2000));
+  const report = (ai && ai.score) ? ai : creatorValidateFallback(idea);
+  res.json({ ok: true, report, generatedBy: (ai && ai.score) ? 'ai' : 'template' });
+});
+
+function creatorBlueprintFallback(p = {}) {
+  const skills = (p.skillsCovered || p.skills || []).slice(0, 8);
+  return {
+    productVision: `${p.title || 'The product'} helps ${p.targetUsers || 'its users'} solve a real workflow problem with a focused, deployable tool.`,
+    positioning: `For ${p.targetUsers || 'target users'} who struggle with the core problem, unlike generic alternatives, this is purpose-built and fast to adopt.`,
+    problemStatement: p.problemStatement || p.summary || 'A specific, repeated workflow problem that current tools handle poorly.',
+    personas: ['Primary user who performs the core task', 'Admin who manages the workspace', 'Viewer/stakeholder who consumes results'],
+    userJourneys: ['Sign up → set up workspace → complete core task → see result', 'Return → review history → take next action'],
+    mvpScope: ['Auth + workspace', 'The single core workflow end-to-end', 'Persistence + basic dashboard', 'Deployed public demo'],
+    advancedFeatures: ['Role-based access', 'Analytics + insights', 'Integrations / API', 'Billing-ready multi-tenant'],
+    featurePrioritization: [{ feature: 'Core workflow', priority: 'P0' }, { feature: 'Auth', priority: 'P0' }, { feature: 'Dashboard', priority: 'P1' }, { feature: 'Analytics', priority: 'P2' }],
+    nonFunctional: ['Performance (p95 budget)', 'Security (auth, validation, secrets)', 'Reliability + error handling', 'Observability', 'Accessibility'],
+    securityRequirements: ['Hash passwords (bcrypt)', 'Validate all input', 'Authz on every protected route', 'Secrets in env vars, never in repo', 'Rate limiting on auth'],
+    techStack: p.techStack || ['React', 'TypeScript', 'Node.js', 'Express', 'PostgreSQL', 'Docker'],
+    systemArchitecture: p.architecture || 'Client → API → services → database, with auth middleware, CI/CD and a public deployment.',
+    databaseSchema: p.databaseSchema || ['users(id, email, password_hash, role, created_at)', 'workspaces(id, owner_id FK, name)', 'items(id, workspace_id FK, payload jsonb, created_at)'],
+    apiDesign: ['POST /api/auth/register', 'POST /api/auth/login', 'GET /api/items', 'POST /api/items'],
+    uiScreens: ['Landing', 'Auth', 'Dashboard', 'Core workflow', 'Settings'],
+    folderStructure: p.repoStructure || 'client/\n  src/\nserver/\n  routes/\n  services/\n.github/workflows/ci.yml\ndocker-compose.yml\nREADME.md',
+    integrations: ['Auth provider (optional)', 'One external API', 'Payments (Stripe/Razorpay) if monetised'],
+    deploymentArchitecture: ['Containerise client + API', 'Managed Postgres', 'CI/CD on main', 'Frontend on Vercel, API on Render/Railway'],
+    testingStrategy: ['Unit tests for services', 'API integration tests', 'One E2E user journey'],
+    analytics: ['Activation (completed core task)', 'Retention (returning users)', 'Error rate', 'Latency p95'],
+    launchChecklist: ['Live demo works in incognito', 'README with setup + screenshots', 'Architecture diagram', 'Resume bullets + recruiter summary', 'Announcement post drafted'],
+  };
+}
+
+app.post('/api/creator/blueprint', requireAuth, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `You are a senior product engineer. Produce a product blueprint as ONLY JSON (no prose) with keys: productVision, positioning, problemStatement, personas (array), userJourneys (array), mvpScope (array), advancedFeatures (array), featurePrioritization (array of {feature, priority}), nonFunctional (array), securityRequirements (array), techStack (array), systemArchitecture (string), databaseSchema (array of strings), apiDesign (array of strings), uiScreens (array), folderStructure (string), integrations (array), deploymentArchitecture (array), testingStrategy (array), analytics (array), launchChecklist (array). Project: ${JSON.stringify({ title: p.title, summary: p.summary, type: p.type, targetUsers: p.targetUsers, skills: p.skillsCovered || p.skills, targetRole: p.targetRole || p.targetRoleFit }).slice(0, 2500)}.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2600));
+  const blueprint = (ai && ai.productVision) ? ai : creatorBlueprintFallback(p);
+  res.json({ ok: true, blueprint, generatedBy: (ai && ai.productVision) ? 'ai' : 'template' });
+});
+
+function creatorIpFallback(p = {}) {
+  const title = p.title || 'the invention';
+  const skills = (p.skillsCovered || p.skills || []).slice(0, 6);
+  const novel = /ai|ml|llm|algorithm|optimi|real-time|distributed|pipeline|model/i.test(`${title} ${(skills).join(' ')} ${p.summary || ''}`);
+  const score = {
+    novelTechnicalProblem: novel ? 15 : 9,
+    uniqueTechnicalSolution: novel ? 18 : 12,
+    priorArtDifference: novel ? 14 : 9,
+    implementationDepth: 11,
+    industrialUsefulness: 8,
+    documentationReadiness: 6,
+  };
+  const total = Object.values(score).reduce((a, b) => a + b, 0);
+  let classification = 'Portfolio Project';
+  if (total >= 75) classification = 'Patent Review Recommended';
+  else if (total >= 60) classification = 'Research/Innovation Candidate';
+  else if (total >= 45) classification = 'Startup MVP';
+  return {
+    inventionSummary: `${title}: a system that addresses a specific technical problem using ${skills.slice(0, 3).join(', ') || 'a novel approach'}.`,
+    technicalProblem: 'Existing approaches are manual, slow, or generic for this specific workflow.',
+    technicalSolution: `A method/system combining ${skills.slice(0, 3).join(', ') || 'the core components'} to automate and improve the workflow.`,
+    noveltyPoints: ['Specific combination of components for this workflow', 'Automation of a previously manual step', 'Domain-specific data/heuristics'],
+    inventiveStepHypothesis: 'The combination is non-obvious if it produces a measurable improvement not achievable by simply combining known tools.',
+    industrialUse: 'Applicable in the target industry as a deployable product/service.',
+    priorArtKeywords: Array.from(new Set([...(skills.slice(0, 3)), 'automation', 'system', 'method', (p.type || 'software')])).slice(0, 8),
+    comparableSolutions: ['Search Google Patents + Espacenet for the core method', 'Review top 3 commercial alternatives', 'Check open-source projects in the space'],
+    systemDiagramsChecklist: ['System architecture diagram', 'Data flow diagram', 'Sequence diagram for the core method', 'Component interaction diagram'],
+    provisionalSpecOutline: ['Title', 'Field of invention', 'Background / problem', 'Summary', 'Detailed description', 'Drawings', 'Claims (draft)', 'Abstract'],
+    claimPreparationNotes: ['Draft one independent claim for the core method', 'Add dependent claims for key variations', 'Keep claims tied to a concrete technical effect'],
+    documentationChecklist: ['Dated invention log', 'Architecture + flow diagrams', 'Working prototype / demo', 'Test results / metrics', 'Prior-art notes'],
+    score,
+    patentReadinessScore: total,
+    classification,
+    risks: ['Software/abstract-idea subject-matter limits in some jurisdictions', 'Possible prior art — search before filing', 'Public disclosure before filing can affect rights'],
+  };
+}
+
+app.post('/api/creator/ip', requireAuth, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `You are an IP-readiness assistant (NOT a lawyer). Return ONLY JSON (no prose) with keys: inventionSummary, technicalProblem, technicalSolution, noveltyPoints (array), inventiveStepHypothesis, industrialUse, priorArtKeywords (array), comparableSolutions (array), systemDiagramsChecklist (array), provisionalSpecOutline (array), claimPreparationNotes (array), documentationChecklist (array), score (object ints: novelTechnicalProblem 0-20, uniqueTechnicalSolution 0-25, priorArtDifference 0-20, implementationDepth 0-15, industrialUsefulness 0-10, documentationReadiness 0-10), patentReadinessScore (int 0-100 = sum of score), classification (one of "Portfolio Project","Startup MVP","Research/Innovation Candidate","Patent Review Recommended"), risks (array). Do not claim patentability. Project: ${JSON.stringify({ title: p.title, summary: p.summary, type: p.type, skills: p.skillsCovered || p.skills, problem: p.problemStatement }).slice(0, 2500)}.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2200));
+  const report = (ai && ai.score && typeof ai.patentReadinessScore !== 'undefined') ? ai : creatorIpFallback(p);
+  res.json({ ok: true, report, generatedBy: (ai && ai.score) ? 'ai' : 'template' });
+});
+
+/* Optional external trend sources — best-effort, never blocks the UI. */
+app.get('/api/creator/trends', requireAuth, async (req, res) => {
+  const out = { github: [], productHunt: [], sources: { github: false, productHunt: !!process.env.PRODUCTHUNT_TOKEN } };
+  try {
+    const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    const r = await fetch(`https://api.github.com/search/repositories?q=created:%3E${since}&sort=stars&order=desc&per_page=6`, {
+      headers: { 'User-Agent': 'career-autopilot', Accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      out.github = (d.items || []).slice(0, 6).map((it) => ({ name: it.full_name, description: it.description || '', stars: it.stargazers_count, url: it.html_url, language: it.language || '' }));
+      out.sources.github = true;
+    }
+  } catch {}
+  res.json({ ok: true, ...out });
+});
+
+
+/* ============================================================
    PART 1 — GITHUB PUBLIC REPO ANALYSIS  (no OAuth required)
    Parses any of: https://github.com/u/r , github.com/u/r , u/r
    Uses GitHub's public REST API (optionally GITHUB_TOKEN for higher limits).
@@ -3101,151 +3318,6 @@ app.post('/api/projects/verify-live-link', requireAuth, async (req, res) => {
     clearTimeout(timer);
     res.json({ ok: true, success: true, reachable: false, statusCode: 0, finalUrl: parsed.toString(), responseTimeMs: Date.now() - started, checkedAt: new Date().toISOString(), warnings: ['Verification failed unexpectedly. Needs manual review.'] });
   }
-});
-
-/* ============================================================
-   PROJECT RECOMMENDATION ENGINE — external source discovery (Part 5/6/10)
-   Sources are INSPIRATION only; we convert them into original idea seeds and
-   never tell the user to clone a repo. Every connector degrades gracefully to
-   curated ideas, and results are cached (6h) so we don't hammer external APIs.
-   Secrets (KAGGLE_KEY, PRODUCTHUNT_TOKEN, GITHUB_TOKEN) stay on the server.
-   ============================================================ */
-const discoverCache = new Map(); // key -> { at, data }
-const DISCOVER_TTL = 6 * 60 * 60 * 1000;
-function cacheGet(key) { const e = discoverCache.get(key); if (e && Date.now() - e.at < DISCOVER_TTL) return e.data; return null; }
-function cacheSet(key, data) { discoverCache.set(key, { at: Date.now(), data }); return data; }
-const lc = (s) => String(s || '').trim().toLowerCase();
-
-function roleToTopics(role = '', projectType = '', skills = []) {
-  const hay = (lc(role) + ' ' + lc(projectType) + ' ' + skills.map(lc).join(' '));
-  if (/devops|sre|platform/.test(hay)) return ['devops', 'kubernetes', 'terraform'];
-  if (/cloud/.test(hay)) return ['serverless', 'aws', 'terraform'];
-  if (/front[\s-]?end/.test(hay)) return ['react', 'frontend', 'data-visualization'];
-  if (/back[\s-]?end/.test(hay)) return ['nodejs', 'api', 'express'];
-  if (/machine learning|ai\/ml|\bml\b|data scien/.test(hay)) return ['machine-learning', 'deep-learning', 'mlops'];
-  if (/data analyst|\bdata\b|analytics/.test(hay)) return ['data-visualization', 'data-engineering', 'sql'];
-  if (/cyber|security/.test(hay)) return ['security', 'pentesting', 'owasp'];
-  return ['full-stack', 'mern', 'react'];
-}
-const TOPIC_SKILLS = {
-  devops: ['Docker', 'Kubernetes', 'CI/CD', 'Monitoring'], kubernetes: ['Kubernetes', 'Helm', 'Docker'], terraform: ['Terraform', 'IaC', 'Cloud'],
-  serverless: ['AWS Lambda', 'API Gateway', 'IaC'], aws: ['AWS', 'Cloud', 'IAM'],
-  react: ['React', 'State Management', 'API Integration'], frontend: ['Responsive UI', 'Accessibility', 'Deployment'], 'data-visualization': ['Visualization', 'Dashboard', 'Insights'],
-  nodejs: ['Node.js', 'API', 'Auth'], api: ['REST', 'API', 'Validation'], express: ['Express', 'Node.js', 'Middleware'],
-  'machine-learning': ['Dataset', 'Model', 'Evaluation'], 'deep-learning': ['Model', 'Training', 'Evaluation'], mlops: ['MLflow', 'Deployment', 'Monitoring'],
-  'data-engineering': ['ETL', 'Pipeline', 'SQL'], sql: ['SQL', 'Insights', 'Reporting'],
-  security: ['Auth', 'Scanning', 'Security Controls'], pentesting: ['Scanning', 'Threat Model', 'Logs'], owasp: ['OWASP', 'Security Controls', 'Auth'],
-  'full-stack': ['Frontend', 'Backend', 'Database'], mern: ['React', 'Node.js', 'MongoDB'],
-};
-function typeForTopics(topics = []) {
-  const t = topics.join(' ');
-  if (/devops|kubernetes|terraform/.test(t)) return 'DevOps';
-  if (/serverless|aws/.test(t)) return 'Cloud';
-  if (/machine|deep|mlops/.test(t)) return 'AI/ML';
-  if (/data-eng|data-vis|sql/.test(t)) return 'Data';
-  if (/security|pentest|owasp/.test(t)) return 'Cybersecurity';
-  if (/react|frontend/.test(t) && !/full-stack|mern|api|node/.test(t)) return 'Frontend';
-  if (/node|api|express/.test(t)) return 'Backend';
-  return 'Full Stack';
-}
-
-async function discoverGithub(body = {}) {
-  const { targetRole, skills = [], projectType, difficulty } = body;
-  const topics = roleToTopics(targetRole, projectType, skills);
-  const key = 'gh:' + topics.join(',');
-  const cached = cacheGet(key);
-  if (cached) return { ...cached, cached: true };
-  const out = [];
-  try {
-    for (const topic of topics.slice(0, 3)) {
-      const stars = /terraform|owasp|pentest|mlops|data-eng/.test(topic) ? 20 : 50;
-      const q = encodeURIComponent(`topic:${topic} stars:>${stars}`);
-      let data;
-      try { data = await ghFetch(`/search/repositories?q=${q}&sort=stars&order=desc&per_page=4`); }
-      catch (e) { if (e.code === 'rate_limited') throw e; else continue; }
-      for (const repo of (data.items || []).slice(0, 3)) {
-        const type = typeForTopics([topic]);
-        const skillsCovered = Array.from(new Set([...(TOPIC_SKILLS[topic] || []), ...(repo.topics || []).slice(0, 3).map((t) => t.replace(/-/g, ' '))])).slice(0, 8);
-        out.push({
-          sourceType: 'github', sourceLabel: 'GitHub trending', sourceUrl: repo.html_url,
-          title: `Build your own ${topic.replace(/-/g, ' ')} ${type === 'Full Stack' ? 'platform' : 'project'}`,
-          summary: `Inspired by trending open-source work in ${topic.replace(/-/g, ' ')} (${(repo.stargazers_count || 0).toLocaleString()}★). Build an ORIGINAL ${type} project applying the same patterns — do not clone the repo.`,
-          detectedSkills: skillsCovered, techStack: skillsCovered, projectType: type,
-          difficulty: difficulty || 'Intermediate', estimatedDuration: '2 weeks',
-          inspirationSignals: [`${repo.stargazers_count || 0}★`, repo.language].filter(Boolean),
-          startupPotential: 0.5, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment', 'tests'],
-        });
-      }
-    }
-    return cacheSet(key, { ok: true, candidates: dedupeByTitle(out), source: 'github' });
-  } catch (e) {
-    return { ok: false, error: e.code === 'rate_limited' ? 'rate_limited' : 'github_error', candidates: [], message: 'GitHub is rate-limited or unavailable — using curated inspiration.' };
-  }
-}
-function dedupeByTitle(rows) { const seen = new Set(); return rows.filter((r) => { const k = lc(r.title); if (seen.has(k)) return false; seen.add(k); return true; }); }
-
-const KAGGLE_IDEAS = [
-  { title: 'Customer Churn Prediction Service', summary: 'Use a public churn dataset to train, evaluate and serve a churn model behind an API with a small dashboard.', detectedSkills: ['Dataset', 'Model', 'Evaluation', 'Python', 'API'], projectType: 'AI/ML', difficulty: 'Intermediate', estimatedDuration: '1 month', startupPotential: 0.6, proofOutputs: ['GitHub repo', 'README', 'live demo', 'tests'] },
-  { title: 'Retail Sales Forecasting Dashboard', summary: 'Forecast sales from a time-series dataset and present results in an interactive dashboard with insights.', detectedSkills: ['Dataset', 'Model', 'Visualization', 'Python', 'Insights'], projectType: 'Data', difficulty: 'Intermediate', estimatedDuration: '2 weeks', startupPotential: 0.5, proofOutputs: ['GitHub repo', 'README', 'screenshots', 'live demo'] },
-];
-const PRODUCTHUNT_IDEAS = [
-  { title: 'AI Meeting Notes & Action Items SaaS', summary: 'A trending product category: turn meeting transcripts into summaries and tracked action items. Build a simplified student version.', detectedSkills: ['API', 'AI', 'Auth', 'Frontend', 'Deployment'], projectType: 'Full Stack', difficulty: 'Intermediate', estimatedDuration: '1 month', businessUseCase: 'Productivity SaaS for teams.', startupPotential: 0.9, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment'] },
-  { title: 'No-code Form → Workflow Automation', summary: 'Inspired by trending automation products — let users build forms that trigger simple workflows/notifications.', detectedSkills: ['Backend', 'API', 'Database', 'Frontend', 'Deployment'], projectType: 'Full Stack', difficulty: 'Advanced', estimatedDuration: '1 month', businessUseCase: 'SMB automation SaaS.', startupPotential: 0.85, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment', 'tests'] },
-];
-const DEVPOST_IDEAS = [
-  { title: 'Disaster Relief Resource Matching App', summary: 'Hackathon-style build: match people who need help with nearby resources/volunteers in real time.', detectedSkills: ['Full Stack', 'Geolocation', 'API', 'Database', 'Deployment'], projectType: 'Full Stack', difficulty: 'Intermediate', estimatedDuration: '2 weeks', businessUseCase: 'Civic-tech / NGO tool.', startupPotential: 0.6, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment'] },
-  { title: 'Accessibility Checker Browser Tool', summary: 'Hackathon-style build: scan a page for accessibility issues and suggest fixes — a strong, demoable proof piece.', detectedSkills: ['Frontend', 'Accessibility', 'API Integration', 'Deployment'], projectType: 'Frontend', difficulty: 'Intermediate', estimatedDuration: '1 week', startupPotential: 0.5, proofOutputs: ['GitHub repo', 'README', 'live demo', 'screenshots'] },
-];
-
-app.post('/api/projects/discover/github', requireAuth, async (req, res) => {
-  const r = await discoverGithub(req.body || {});
-  res.json(r.ok ? r : { ok: true, candidates: [], warning: r.message, error: r.error });
-});
-app.post('/api/projects/discover/kaggle', requireAuth, (req, res) => {
-  const configured = Boolean(process.env.KAGGLE_USERNAME && process.env.KAGGLE_KEY);
-  // We do not proxy Kaggle's authenticated API here; curated dataset/project ideas
-  // are returned either way so the feature always works.
-  res.json({ ok: true, configured, source: configured ? 'kaggle' : 'curated', candidates: KAGGLE_IDEAS.map((i) => ({ ...i, sourceType: 'kaggle', sourceLabel: 'Kaggle' })), message: configured ? 'Using Kaggle-style data project ideas.' : 'Kaggle integration not configured. Using curated data project ideas.' });
-});
-app.post('/api/projects/discover/producthunt', requireAuth, (req, res) => {
-  const configured = Boolean(process.env.PRODUCTHUNT_TOKEN);
-  res.json({ ok: true, configured, source: configured ? 'producthunt' : 'curated', candidates: PRODUCTHUNT_IDEAS.map((i) => ({ ...i, sourceType: 'producthunt', sourceLabel: 'Product Hunt' })), message: configured ? 'Using Product Hunt trend-style ideas.' : 'Product Hunt token not configured. Using curated startup/product ideas.' });
-});
-app.post('/api/projects/discover/devpost', requireAuth, (req, res) => {
-  res.json({ ok: true, configured: false, source: 'curated', candidates: DEVPOST_IDEAS.map((i) => ({ ...i, sourceType: 'devpost', sourceLabel: 'Hackathon' })), message: 'Using curated hackathon-style ideas.' });
-});
-
-app.post('/api/projects/recommend', requireAuth, async (req, res) => {
-  const body = req.body || {};
-  const allowed = Array.isArray(body.allowedSources) ? body.allowedSources : ['github', 'curated'];
-  const candidates = [];
-  const signalsUsed = { github: false, kaggle: false, productHunt: false, devpost: false, curated: true };
-  const warnings = [];
-
-  if (allowed.includes('github')) {
-    const gh = await discoverGithub(body);
-    if (gh.ok && gh.candidates.length) { candidates.push(...gh.candidates); signalsUsed.github = true; }
-    else if (gh.message) warnings.push(gh.message);
-  }
-  if (allowed.includes('kaggle') && /ai|ml|data|machine/i.test(`${body.targetRole} ${body.projectType}`)) {
-    candidates.push(...KAGGLE_IDEAS.map((i) => ({ ...i, sourceType: 'kaggle', sourceLabel: 'Kaggle' }))); signalsUsed.kaggle = true;
-    if (!process.env.KAGGLE_KEY) warnings.push('Kaggle not configured — using curated data project ideas.');
-  }
-  if (allowed.includes('producthunt')) {
-    candidates.push(...PRODUCTHUNT_IDEAS.map((i) => ({ ...i, sourceType: 'producthunt', sourceLabel: 'Product Hunt' }))); signalsUsed.productHunt = true;
-    if (!process.env.PRODUCTHUNT_TOKEN) warnings.push('Product Hunt token not configured — using curated startup ideas.');
-  }
-  if (allowed.includes('devpost')) {
-    candidates.push(...DEVPOST_IDEAS.map((i) => ({ ...i, sourceType: 'devpost', sourceLabel: 'Hackathon' }))); signalsUsed.devpost = true;
-  }
-
-  res.json({
-    ok: true,
-    candidates: dedupeByTitle(candidates),
-    signalsUsed,
-    warnings,
-    explanation: `Collected ${candidates.length} inspiration candidates from ${[signalsUsed.github && 'GitHub', signalsUsed.kaggle && 'Kaggle', signalsUsed.productHunt && 'Product Hunt', signalsUsed.devpost && 'hackathons'].filter(Boolean).join(', ') || 'curated sources'}. Scoring happens against your profile, resume gaps and matched jobs.`,
-  });
 });
 
 /* ============================================================

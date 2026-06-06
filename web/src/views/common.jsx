@@ -1,4 +1,85 @@
 import { motion } from 'framer-motion';
+import { ArrowRight, Sparkles } from 'lucide-react';
+
+/* Compact, dependency-free progress ring for the dashboard hero.
+   Avoids importing ScoreRing from proof/ to keep common.jsx cycle-free. */
+function MiniRing({ value = 0, label }) {
+  const v = Math.max(0, Math.min(100, Math.round(value)));
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  const off = c - (v / 100) * c;
+  return (
+    <div className="relative grid place-items-center">
+      <svg width="92" height="92" viewBox="0 0 92 92" className="-rotate-90">
+        <circle cx="46" cy="46" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
+        <motion.circle
+          cx="46" cy="46" r={r} fill="none" stroke="url(#nbaGrad)" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={c} initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: off }}
+          transition={{ duration: 0.9, ease: 'easeOut' }}
+        />
+        <defs>
+          <linearGradient id="nbaGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#7C6CFF" /><stop offset="60%" stopColor="#3DD6F5" /><stop offset="100%" stopColor="#52E6C2" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="absolute flex flex-col items-center">
+        <span className="font-display text-xl font-semibold text-white">{v}</span>
+        {label && <span className="text-[9px] uppercase tracking-wide text-slate-500">{label}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* The single focal point of the dashboard: one outcome headline, one primary
+   CTA, a few quiet secondary jumps, and an optional readiness ring. Purely
+   presentational — every dashboard computes these from its existing data. */
+export function NextBestAction({ eyebrow = 'Next best action', title, description, primary, secondary = [], score = null, scoreLabel = 'Ready' }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+      className="gradient-border relative overflow-hidden p-6 sm:p-7"
+    >
+      <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-aurora-violet/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-aurora-cyan/10 blur-3xl" />
+      <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-2.5 py-1 text-[11px] font-medium text-[#C2BBFF]">
+            <Sparkles size={12} /> {eyebrow}
+          </span>
+          <h2 className="mt-3 font-display text-2xl font-semibold leading-tight text-white sm:text-[26px]">{title}</h2>
+          {description && <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">{description}</p>}
+          {primary && (
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={primary.onClick}
+                className="btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+              >
+                {primary.icon ? <primary.icon size={16} /> : <Sparkles size={16} />}
+                {primary.label}
+                <ArrowRight size={15} />
+              </button>
+              {secondary.map((s) => (
+                <button
+                  key={s.label}
+                  onClick={s.onClick}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-[13px] text-slate-300 transition hover:border-white/25 hover:text-white"
+                >
+                  {s.icon && <s.icon size={14} />}{s.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {score != null && (
+          <div className="shrink-0 self-start sm:self-center">
+            <MiniRing value={score} label={scoreLabel} />
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
 
 export function PageIntro({ title, sub, action }) {
   return (

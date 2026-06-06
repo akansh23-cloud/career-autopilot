@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, Github, Globe, Target, Award, Eye, Mail, Copy, Users, Star, Filter, Search,
-  ShieldCheck, BadgeCheck, BookOpen, Database, Lightbulb, Bookmark, Sparkles, Loader2,
-  AlertTriangle, Gauge, Clock,
+  ShieldCheck, BadgeCheck, BookOpen,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.jsx';
@@ -11,12 +10,6 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import {
   getPublishedProjects, getProjects, saveProject, savePartnerRequest, saveStudioSeed, uid, proofScoreBreakdown,
 } from '../lib/projectStore.js';
-import { getStoredResume, getStoredJobResults } from '../lib/resumeStore.js';
-import { getProfile, getUserRole } from '../lib/userProfile.js';
-import { api } from '../lib/api.js';
-import {
-  CURATED_IDEAS, normalizeCandidate, scoreCandidate, saveIdea, getSavedIdeas, FIT_WEIGHTS,
-} from '../lib/projectRecommend.js';
 import { deriveBadges } from '../lib/badges.js';
 import { rankProjects } from '../lib/roleFit.js';
 import { calculateProjectStatus } from '../lib/projectStatus.js';
@@ -24,141 +17,78 @@ import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
 
 
-const STARTUP_PROBLEMS = [
-  { title: 'Campus Skill Exchange Marketplace', problem: 'Students have skills but no structured way to trade help, form teams, and prove contributions across projects.', businessUseCase: 'College SaaS for collaboration, peer tutoring and placement-cell proof tracking.', targetRole: 'Full Stack Developer', projectType: 'Full Stack', skillsCovered: ['React', 'Node.js', 'MongoDB', 'Matching Algorithm', 'Payments'], difficulty: 'Intermediate', estimatedDuration: '1 month', startupPotential: 0.8, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment'] },
-  { title: 'AI CRM for Local Shops & Clinics', problem: 'Small businesses lose repeat customers because they do not track follow-ups, reminders, service history or leads.', businessUseCase: 'Subscription SaaS for shops, clinics, tutors, salons and repair businesses.', targetRole: 'Backend Engineer', projectType: 'Full Stack', skillsCovered: ['Auth', 'CRM', 'WhatsApp', 'Analytics', 'AI'], difficulty: 'Intermediate', estimatedDuration: '1 month', startupPotential: 0.9, proofOutputs: ['GitHub repo', 'README', 'live demo', 'deployment'] },
-  { title: 'Cloud Cost Guardrail Dashboard', problem: 'Students and startups deploy cloud projects but do not understand cost, idle resources, alerts or budget limits.', businessUseCase: 'A lightweight FinOps tool to avoid cloud bill shocks.', targetRole: 'DevOps Engineer', projectType: 'DevOps', skillsCovered: ['AWS', 'Docker', 'CI/CD', 'Terraform', 'Monitoring'], difficulty: 'Advanced', estimatedDuration: '1 month', startupPotential: 0.85, proofOutputs: ['GitHub repo', 'README', 'live demo', 'CI/CD', 'deployment'] },
+const MARKET_IDEAS = [
+  {
+    id: 'idea-campus-skill-market',
+    title: 'Campus Skill Exchange Marketplace',
+    targetRole: 'Full Stack Developer',
+    type: 'Full Stack',
+    tags: ['React', 'Node.js', 'MongoDB', 'Matching Algorithm', 'Payments'],
+    problem: 'Students have skills but no structured way to trade help, form teams, and prove contributions across projects.',
+    businessAngle: 'Can become a college SaaS for project collaboration, peer tutoring, and placement-cell proof tracking.',
+    difficulty: 'Intermediate',
+  },
+  {
+    id: 'idea-local-business-ai',
+    title: 'AI CRM for Local Shops and Clinics',
+    targetRole: 'Backend Developer',
+    type: 'Full Stack',
+    tags: ['Auth', 'CRM', 'WhatsApp', 'Analytics', 'AI Summaries'],
+    problem: 'Small businesses lose repeat customers because they do not track follow-ups, reminders, service history or leads properly.',
+    businessAngle: 'Subscription SaaS for local shops, clinics, tutors, salons and repair businesses.',
+    difficulty: 'Intermediate',
+  },
+  {
+    id: 'idea-devops-cost-guard',
+    title: 'Cloud Cost Guardrail Dashboard',
+    targetRole: 'DevOps Engineer',
+    type: 'DevOps',
+    tags: ['AWS', 'Docker', 'CI/CD', 'Terraform', 'Monitoring'],
+    problem: 'Students and startups deploy cloud projects but do not understand cost, idle resources, alerts or budget limits.',
+    businessAngle: 'A lightweight FinOps tool for student builders and early startups to avoid cloud bill shocks.',
+    difficulty: 'Advanced',
+  },
+  {
+    id: 'idea-placement-readiness',
+    title: 'Placement Readiness Operating System',
+    targetRole: 'Product Engineer',
+    type: 'Full Stack',
+    tags: ['Roadmaps', 'XP', 'Resume', 'Analytics', 'Recruiter Console'],
+    problem: 'Students do random learning without a measurable path from projects to resume to interviews to recruiter discovery.',
+    businessAngle: 'Can become a B2B college placement platform plus student subscription product.',
+    difficulty: 'Advanced',
+  },
 ];
-
-const MARKET_TABS = [
-  ['ideas', 'Project Ideas', Lightbulb],
-  ['startup', 'Startup Problems', Rocket],
-  ['github', 'Trending from GitHub', Github],
-  ['data', 'Data / AI Ideas', Database],
-  ['hackathon', 'Hackathon Style', Award],
-];
-
-function FitModal({ open, onClose, cand }) {
-  if (!cand) return null;
-  const b = cand.scoreBreakdown || {};
-  const rows = [['Role match', b.targetRoleMatch, FIT_WEIGHTS.targetRoleMatch], ['Missing skills', b.missingSkillCoverage, FIT_WEIGHTS.missingSkillCoverage], ['Resume gaps', b.resumeGapImprovement, FIT_WEIGHTS.resumeGapImprovement], ['Job market', b.jobMarketRelevance, FIT_WEIGHTS.jobMarketRelevance], ['Level fit', b.userLevelFit, FIT_WEIGHTS.userLevelFit], ['Proof potential', b.proofPotential, FIT_WEIGHTS.proofPotential]];
-  return (
-    <Modal open={open} onClose={onClose} width="max-w-lg" title={`Recommendation fit · ${cand.fitScore}/100`}>
-      <div className="space-y-3">
-        <p className="text-[12px] text-slate-400">How this idea fits your profile, resume gaps and matched jobs. Estimated based on skill overlap and available project/job data.</p>
-        <div className="grid grid-cols-2 gap-2">
-          {rows.map(([l, v, m]) => (
-            <div key={l}><div className="flex justify-between text-[10px] text-slate-400"><span>{l}</span><span>{v ?? 0}/{m}</span></div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.round(((v ?? 0) / m) * 100)}%` }} /></div></div>
-          ))}
-        </div>
-        <ul className="space-y-1 rounded-xl border border-white/8 bg-ink-950/55 p-3 text-[12px] text-slate-300">
-          {(cand.whyRecommended || []).slice(0, 5).map((w, i) => <li key={i}>• {w}</li>)}
-        </ul>
-      </div>
-    </Modal>
-  );
-}
-
-function IdeaCard({ cand, onBuild, onSave, onFit, saved }) {
-  return (
-    <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-aurora-violet/35">
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="font-medium leading-tight text-white">{cand.title}</h4>
-        <Badge tone={cand.fitScore >= 80 ? 'mint' : cand.fitScore >= 60 ? 'cyan' : 'amber'}>{cand.fitScore}/100</Badge>
-      </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <Badge tone="violet">{cand.sourceLabel}</Badge>
-        <Badge tone="amber"><Gauge size={10} /> {cand.difficulty}</Badge>
-        <Badge tone="cyan"><Clock size={10} /> {cand.estimatedDuration}</Badge>
-        {cand.startupPotential >= 0.6 && <Badge tone="amber"><Rocket size={10} /> Startup {Math.round(cand.startupPotential * 100)}%</Badge>}
-      </div>
-      <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-400">{cand.summary}</p>
-      {cand.businessUseCase && <div className="mt-2 rounded-xl border border-white/8 bg-ink-950/55 p-2 text-[11px] leading-relaxed text-slate-500"><span className="text-slate-300">Business use case:</span> {cand.businessUseCase}</div>}
-      <div className="mt-2 flex flex-wrap gap-1.5">{cand.skillsCovered.slice(0, 6).map((t) => <Badge key={t} tone="cyan">{t}</Badge>)}</div>
-      {cand.sourceUrl && <a href={cand.sourceUrl} target="_blank" rel="noreferrer" className="mt-1.5 text-[10px] text-aurora-cyan underline">inspiration source ↗</a>}
-      <div className="mt-auto flex flex-wrap gap-2 pt-3">
-        <Button size="sm" onClick={() => onBuild(cand)}><Rocket size={13} /> Build this</Button>
-        <Button size="sm" variant="soft" onClick={() => onSave(cand)}><Bookmark size={13} /> {saved ? 'Saved' : 'Save idea'}</Button>
-        <Button size="sm" variant="soft" onClick={() => onFit(cand)}><Sparkles size={13} /> View fit</Button>
-      </div>
-    </div>
-  );
-}
 
 function MarketplaceIdeas({ go, flash }) {
-  const [tab, setTab] = useState('ideas');
-  const [remote, setRemote] = useState({}); // tab -> { status, items, warning }
-  const [fit, setFit] = useState(null);
-  const [savedIds, setSavedIds] = useState(getSavedIdeas().map((i) => i.id));
-
-  const ctx = useMemo(() => {
-    const profile = getProfile(); const r = getStoredResume(); const jobsState = getStoredJobResults();
-    return {
-      userRole: getUserRole(), yearSem: profile.yearSem || '',
-      targetRole: profile.targetRole || r.targetRole || r.analysis?.recommendedRole || 'Software Engineer',
-      currentSkills: String(profile.skills || '').split(',').map((s) => s.trim()).filter(Boolean),
-      resumeAnalysis: r.analysis || null, resumeText: r.text || '',
-      missingSkills: (r.analysis?.missingKeywords) || [],
-      savedJobs: Array.isArray(jobsState.jobs) ? jobsState.jobs : [],
-    };
-  }, []);
-
-  const score = (raw, sourceType) => scoreCandidate(normalizeCandidate(raw, sourceType), ctx);
-
-  const localIdeas = useMemo(() => CURATED_IDEAS.map((i) => score(i, 'curated')).sort((a, b) => b.fitScore - a.fitScore), [ctx]);
-  const startupIdeas = useMemo(() => STARTUP_PROBLEMS.map((i) => score({ ...i, summary: i.problem }, 'curated')).sort((a, b) => b.startupPotential - a.startupPotential), [ctx]);
-
-  const ENDPOINT = { github: '/api/projects/discover/github', data: '/api/projects/discover/kaggle', hackathon: '/api/projects/discover/devpost' };
-  useEffect(() => {
-    if (!ENDPOINT[tab] || remote[tab]) return;
-    setRemote((m) => ({ ...m, [tab]: { status: 'loading', items: [] } }));
-    api.post(ENDPOINT[tab], { targetRole: ctx.targetRole, skills: ctx.currentSkills, missingSkills: ctx.missingSkills })
-      .then((r) => {
-        const items = (r?.candidates || []).map((c) => score(c, c.sourceType || tab)).sort((a, b) => b.fitScore - a.fitScore);
-        setRemote((m) => ({ ...m, [tab]: { status: items.length ? 'done' : 'empty', items, warning: r?.warning || r?.message } }));
-      })
-      .catch(() => setRemote((m) => ({ ...m, [tab]: { status: 'error', items: [], warning: 'This source is unavailable right now — try curated Project Ideas.' } })));
-  }, [tab]);
-
-  const buildIdea = (cand) => {
+  const startIdea = (idea) => {
     saveStudioSeed({
-      idea: { title: cand.title, problem: cand.summary, difficulty: cand.difficulty, businessAngle: cand.businessUseCase },
-      targetRole: cand.targetRoles?.[0] || ctx.targetRole, type: cand.projectType,
-      missingSkills: cand.skillsCovered,
-      jd: `${cand.title}\n\nProblem: ${cand.summary}\n\n${cand.businessUseCase ? 'Business use case: ' + cand.businessUseCase : ''}\n\nBuild an original, recruiter-ready project (not a clone) with architecture, GitHub, live demo, README, tests and interview prep.`,
+      idea,
+      targetRole: idea.targetRole,
+      type: idea.type,
+      missingSkills: idea.tags,
+      jd: `${idea.title}\n\nProblem statement: ${idea.problem}\n\nBusiness angle: ${idea.businessAngle}\n\nBuild a recruiter-ready project with architecture, GitHub, live demo, README, interview prep and startup-style validation.`,
     });
     flash('Idea loaded into Career Project Studio.');
     go?.('projectstudio');
   };
-  const onSave = (cand) => { saveIdea(cand); setSavedIds(getSavedIdeas().map((i) => i.id)); flash('Saved to your ideas.'); };
-
-  const current = tab === 'ideas' ? { status: 'done', items: localIdeas } : tab === 'startup' ? { status: 'done', items: startupIdeas } : (remote[tab] || { status: 'loading', items: [] });
-
   return (
-    <SectionCard title="Project ideas & inspiration" action={<Badge tone="amber">Inspiration · not user-published</Badge>} className="mb-4">
-      <p className="mb-3 text-[13px] leading-relaxed text-slate-400">Discover original, source-backed project and startup ideas, scored against your profile. These are inspiration — they are <span className="text-slate-300">not</span> projects published by users. Build any one to generate a full roadmap.</p>
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {MARKET_TABS.map(([id, label, Icon]) => (
-          <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition ${tab === id ? 'bg-aurora-violet/20 text-white ring-1 ring-aurora-violet/40' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
-            <Icon size={13} /> {label}
-          </button>
+    <SectionCard title="Startup-grade project ideas" action={<Badge tone="amber">Marketplace ideas</Badge>} className="mb-4">
+      <p className="mb-3 text-[13px] leading-relaxed text-slate-400">Use this marketplace not only to show finished projects, but also to discover serious project/problem statements that can become portfolio proof, hackathon entries, or startup experiments.</p>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {MARKET_IDEAS.map((idea) => (
+          <div key={idea.id} className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-aurora-violet/35">
+            <div className="flex items-start justify-between gap-2">
+              <h4 className="font-medium leading-tight text-white">{idea.title}</h4>
+              <Badge tone={idea.difficulty === 'Advanced' ? 'amber' : 'cyan'}>{idea.difficulty}</Badge>
+            </div>
+            <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-400">{idea.problem}</p>
+            <div className="mt-2 rounded-xl border border-white/8 bg-ink-950/55 p-2 text-[11px] leading-relaxed text-slate-500"><span className="text-slate-300">Business angle:</span> {idea.businessAngle}</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">{idea.tags.slice(0, 5).map((t) => <Badge key={t} tone="violet">{t}</Badge>)}</div>
+            <Button size="sm" className="mt-auto pt-3" onClick={() => startIdea(idea)}><Rocket size={13} /> Build this idea</Button>
+          </div>
         ))}
       </div>
-
-      {current.status === 'loading' && <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400"><Loader2 size={16} className="animate-spin" /> Finding real project inspiration…</div>}
-      {(current.status === 'error' || current.status === 'empty') && (
-        <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/10 p-3 text-[12px] text-amber-glow"><AlertTriangle size={13} className="mr-1 inline" />{current.warning || 'No ideas found for this source — try curated Project Ideas.'}</div>
-      )}
-      {current.status === 'done' && (
-        <>
-          {remote[tab]?.warning && <div className="mb-3 rounded-xl border border-white/10 bg-ink-950/55 p-2.5 text-[11px] text-slate-400">{remote[tab].warning}</div>}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {current.items.map((cand) => <IdeaCard key={cand.id} cand={cand} onBuild={buildIdea} onSave={onSave} onFit={setFit} saved={savedIds.includes(cand.id)} />)}
-          </div>
-        </>
-      )}
-      <FitModal open={!!fit} onClose={() => setFit(null)} cand={fit} />
     </SectionCard>
   );
 }

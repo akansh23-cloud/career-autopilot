@@ -3,9 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
-  Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake,
+  Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake, Wand2,
+  MoreHorizontal, LifeBuoy, ChevronRight,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
+import CommandPalette from './CommandPalette.jsx';
+import { useSupport } from '../../support/SupportProvider.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { openPricing } from '../PricingModal.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
@@ -38,6 +41,7 @@ export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'careerprofile', label: 'Career Profile', icon: BadgeCheck },
   { id: 'profile', label: 'Profile', icon: User },
+  { id: 'projectcreator', label: 'Project Creator', icon: Wand2 },
   { id: 'resume', label: 'Resume', icon: FileText },
   { id: 'editor', label: 'Editor', icon: PenLine },
   { id: 'jobs', label: 'Jobs', icon: Briefcase },
@@ -56,49 +60,133 @@ export const NAV = [
 
 // Role-scoped nav ordering. null => all items (admin / college_admin).
 const ROLE_NAV = {
-  student: ['dash', 'careerprofile', 'projectstudio', 'partners', 'sandbox', 'leaderboards', 'referralexchange', 'resume', 'editor', 'opportunities', 'tracker', 'growth', 'settings'],
-  professional: ['dash', 'careerprofile', 'resume', 'editor', 'jobs', 'contacts', 'referralexchange', 'leaderboards', 'tracker', 'sandbox', 'opportunities', 'growth', 'settings'],
+  student: ['dash', 'careerprofile', 'projectcreator', 'projectstudio', 'partners', 'sandbox', 'leaderboards', 'referralexchange', 'resume', 'editor', 'opportunities', 'tracker', 'growth', 'settings'],
+  professional: ['dash', 'careerprofile', 'projectcreator', 'resume', 'editor', 'jobs', 'contacts', 'referralexchange', 'leaderboards', 'tracker', 'sandbox', 'opportunities', 'growth', 'settings'],
   recruiter: ['dash', 'recruiter', 'leaderboards', 'careerprofile', 'sandbox', 'settings'],
 };
 
-function navForRole(role) {
+// Journey-based grouping for progressive disclosure. Every id here is a real
+// NAV id, and a catch-all below guarantees any role-allowed id that isn't
+// explicitly placed still appears under "More" — so no feature can be lost.
+const NAV_GROUPS = [
+  { label: null, ids: ['dash'] },                 // Overview — bare, no header
+  { label: 'Career', ids: ['careerprofile'] },
+  { label: 'Resume Studio', ids: ['resume', 'editor'] },
+  { label: 'Job Hunt', ids: ['jobs', 'tracker'] },
+  { label: 'LinkedIn Growth', ids: ['growth'] },
+  { label: 'Project Studio', ids: ['projectstudio', 'projectcreator', 'sandbox', 'partners'] },
+];
+const MORE_IDS = ['opportunities', 'contacts', 'leaderboards', 'referralexchange', 'recruiter', 'profile', 'settings'];
+
+function groupsForRole(role) {
   const order = ROLE_NAV[role];
-  if (!order) return NAV; // admin + college_admin see everything
+  const allowed = order ? new Set(order) : null; // null => admin/college see all
   const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
-  return order.map((id) => byId[id]).filter(Boolean);
+  const keep = (id) => !!byId[id] && (!allowed || allowed.has(id));
+
+  const placed = new Set();
+  const primary = NAV_GROUPS
+    .map((g) => ({
+      label: g.label,
+      items: g.ids.filter(keep).map((id) => { placed.add(id); return byId[id]; }),
+    }))
+    .filter((g) => g.items.length);
+
+  // More = explicit secondary ids + any allowed id not yet placed (catch-all),
+  // de-duped, preserving a sensible order.
+  const moreOrder = [...MORE_IDS, ...NAV.map((n) => n.id)];
+  const seen = new Set();
+  const more = moreOrder.filter((id) => {
+    if (seen.has(id) || placed.has(id) || !keep(id)) return false;
+    seen.add(id);
+    return true;
+  }).map((id) => byId[id]);
+
+  return { primary, more };
 }
 
-function NavList({ active, onPick, items }) {
+function NavItem({ item, active, onPick }) {
+  const { id, label, icon: Icon } = item;
+  const on = active === id;
   return (
-    <nav className="flex flex-col gap-1 px-3">
-      {items.map(({ id, label, icon: Icon }) => {
-        const on = active === id;
-        return (
-          <button
-            key={id}
-            onClick={() => onPick(id)}
-            className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${
-              on ? 'text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-            }`}
+    <button
+      onClick={() => onPick(id)}
+      className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${
+        on ? 'text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+      }`}
+    >
+      {on && (
+        <motion.span layoutId="navActive" className="absolute inset-0 -z-0 rounded-xl bg-aurora-violet/15 ring-1 ring-aurora-violet/25" transition={{ type: 'spring', stiffness: 380, damping: 30 }} />
+      )}
+      <Icon size={18} className={`relative z-10 ${on ? 'text-aurora-cyan' : ''}`} />
+      <span className="relative z-10 truncate">{label}</span>
+    </button>
+  );
+}
+
+function MoreSection({ items, active, onPick, onSupport }) {
+  const activeInMore = items.some((it) => it.id === active);
+  const [open, setOpen] = useState(activeInMore);
+  // keep it open whenever the active view lives inside it
+  useEffect(() => { if (activeInMore) setOpen(true); }, [activeInMore]);
+  if (!items.length && !onSupport) return null;
+  return (
+    <div className="mt-1">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+      >
+        <MoreHorizontal size={18} />
+        <span className="flex-1 text-left">More</span>
+        <ChevronRight size={15} className={`text-slate-500 transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }} className="overflow-hidden"
           >
-            {on && (
-              <motion.span layoutId="navActive" className="absolute inset-0 -z-0 rounded-xl bg-aurora-violet/15 ring-1 ring-aurora-violet/25" transition={{ type: 'spring', stiffness: 380, damping: 30 }} />
-            )}
-            <Icon size={18} className={`relative z-10 ${on ? 'text-aurora-cyan' : ''}`} />
-            <span className="relative z-10 truncate">{label}</span>
-          </button>
-        );
-      })}
+            <div className="space-y-1 pl-2">
+              {items.map((it) => <NavItem key={it.id} item={it} active={active} onPick={onPick} />)}
+              {onSupport && (
+                <button
+                  onClick={onSupport}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+                >
+                  <LifeBuoy size={18} />
+                  <span className="truncate">Support</span>
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function GroupedNav({ active, onPick, onSupport, role }) {
+  const { primary, more } = groupsForRole(role);
+  return (
+    <nav className="flex flex-col gap-3 px-3">
+      {primary.map((g, gi) => (
+        <div key={g.label || `g-${gi}`} className="space-y-1">
+          {g.label && (
+            <p className="px-3 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">{g.label}</p>
+          )}
+          {g.items.map((it) => <NavItem key={it.id} item={it} active={active} onPick={onPick} />)}
+        </div>
+      ))}
+      <MoreSection items={more} active={active} onPick={onPick} onSupport={onSupport} />
     </nav>
   );
 }
 
-function SidebarInner({ active, onPick }) {
+function SidebarInner({ active, onPick, onSupport }) {
   const plan = usePlanId();
   const role = useRole();
   const isAdmin = !!plan.isAdmin;
   const paid = plan.planId !== 'free';
-  const items = navForRole(role);
   return (
     <>
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -107,7 +195,7 @@ function SidebarInner({ active, onPick }) {
         </span>
         <span className="font-display text-[16px] font-semibold tracking-tight text-white">Career Autopilot</span>
       </div>
-      <NavList active={active} onPick={onPick} items={items} />
+      <GroupedNav active={active} onPick={onPick} onSupport={onSupport} role={role} />
       <div className="mt-auto p-4">
         <div className="gradient-border p-4">
           {isAdmin ? (
@@ -138,14 +226,32 @@ function SidebarInner({ active, onPick }) {
 export default function Shell({ active, onPick, title, children }) {
   const { user, logout } = useAuth();
   const plan = usePlanId();
+  const support = useSupport();
   const [drawer, setDrawer] = useState(false);
+  const [palette, setPalette] = useState(false);
   const pick = (id) => { onPick(id); setDrawer(false); };
+  const openSupportChat = () => { support?.openSupport?.({ tab: 'chat' }); setDrawer(false); };
+
+  // Global ⌘K / Ctrl+K to open the command palette (ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        const el = document.activeElement;
+        const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+        if (typing) return;
+        e.preventDefault();
+        setPalette((p) => !p);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <div className="min-h-screen">
       {/* Fixed sidebar (desktop) */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--shell-sidebar)] flex-col border-r border-white/8 bg-ink-900/70 backdrop-blur-xl lg:flex">
-        <SidebarInner active={active} onPick={pick} />
+        <SidebarInner active={active} onPick={pick} onSupport={openSupportChat} />
       </aside>
 
       {/* Mobile drawer — keyed children so AnimatePresence always removes the backdrop on close */}
@@ -159,7 +265,7 @@ export default function Shell({ active, onPick, title, children }) {
             className="fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-white/8 bg-ink-900 lg:hidden"
           >
             <button onClick={() => setDrawer(false)} className="absolute right-3 top-4 rounded-lg p-2 text-slate-400 hover:bg-white/6"><X size={18} /></button>
-            <SidebarInner active={active} onPick={pick} />
+            <SidebarInner active={active} onPick={pick} onSupport={openSupportChat} />
           </motion.aside>,
         ]}
       </AnimatePresence>
@@ -192,9 +298,21 @@ export default function Shell({ active, onPick, title, children }) {
                 <Zap size={14} /> {PLAN_LABELS[plan.planId]} · Manage
               </button>
             )}
-            <div className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 md:flex">
+            <button
+              onClick={() => setPalette(true)}
+              className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 transition hover:border-white/15 hover:bg-white/[0.06] md:flex"
+              aria-label="Open command palette"
+            >
               <Search size={15} /> <span className="text-slate-500">Search…</span>
-            </div>
+              <kbd className="ml-2 flex items-center gap-0.5 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-500">⌘K</kbd>
+            </button>
+            <button
+              onClick={() => setPalette(true)}
+              className="grid h-9 w-9 place-items-center rounded-xl border border-white/8 bg-white/[0.03] text-slate-300 transition hover:bg-white/6 md:hidden"
+              aria-label="Open command palette"
+            >
+              <Search size={16} />
+            </button>
             <Dropdown
               trigger={
                 <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] py-1 pl-1 pr-2 transition hover:bg-white/6">
@@ -230,6 +348,8 @@ export default function Shell({ active, onPick, title, children }) {
           </AnimatePresence>
         </main>
       </div>
+
+      <CommandPalette open={palette} setOpen={setPalette} onPick={pick} />
     </div>
   );
 }
