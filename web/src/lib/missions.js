@@ -150,3 +150,19 @@ export function missionStats(missions = getWeeklyMissions()) {
   const xpTotal = missions.reduce((s, m) => s + (m.xp || 0), 0);
   return { total, done, percent: total ? Math.round((done / total) * 100) : 0, xpEarned, xpTotal };
 }
+
+/* Consecutive-week streak: counts back from the current week while at least one
+   mission was completed that week. Derived purely from persisted completion. */
+export function missionStreak() {
+  const state = read();
+  let streak = 0;
+  const d = new Date();
+  for (let i = 0; i < 52; i++) {
+    const wk = weekKey(d);
+    const completed = state[wk]?.completed || {};
+    if (Object.keys(completed).length > 0) streak += 1;
+    else if (i > 0) break; // allow the current week to be empty without breaking the streak
+    d.setUTCDate(d.getUTCDate() - 7);
+  }
+  return streak;
+}

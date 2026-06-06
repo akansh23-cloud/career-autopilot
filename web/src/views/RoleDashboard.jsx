@@ -15,6 +15,8 @@ import { roleConsistency, buildCandidates } from '../lib/roleFit.js';
 import { getAccessForUser } from '../lib/access.js';
 import { getProfile, ROLE_LABELS } from '../lib/userProfile.js';
 import { getWeeklyMissions, setMissionDone, missionStats } from '../lib/missions.js';
+import { assembleMyProfile, adoptionSuggestions } from '../lib/network.js';
+import { BadgeCheck, Medal, Handshake } from 'lucide-react';
 
 function useProjectsLive() {
   const [projects, setProjects] = useState(getProjects());
@@ -90,6 +92,54 @@ function WeeklyMissionPanel({ go }) {
   );
 }
 
+function ProfileAdoptionPanel({ go }) {
+  const [profile, setProfile] = useState(() => assembleMyProfile());
+  useEffect(() => {
+    const sync = () => setProfile(assembleMyProfile());
+    ['career-network-updated', 'career-projects-updated', 'career-profile-updated', 'career-missions-updated'].forEach((e) => window.addEventListener(e, sync));
+    return () => ['career-network-updated', 'career-projects-updated', 'career-profile-updated', 'career-missions-updated'].forEach((e) => window.removeEventListener(e, sync));
+  }, []);
+  const suggestions = adoptionSuggestions(profile);
+  const m = profile.metrics;
+  const eligible = m.publishedCount > 0;
+  return (
+    <SectionCard
+      title="Grow your Career Proof Profile"
+      action={<button onClick={() => go('careerprofile')} className="text-xs text-aurora-cyan hover:underline">Open profile</button>}
+    >
+      <div className="grid gap-4 md:grid-cols-[auto,1fr] md:items-center">
+        <div className="flex items-center gap-4">
+          <ScoreRing score={profile.completeness} label="Complete" />
+          <div className="text-xs text-slate-400">
+            <p className="text-sm font-medium text-white">{profile.trustLevel} · {profile.trustScore}/100 trust</p>
+            <p className="mt-0.5">{eligible ? 'Eligible for leaderboards' : 'Publish a project to rank'}</p>
+            <p className="mt-0.5">{m.missionStreak ? `${m.missionStreak}-week mission streak` : 'Start a weekly streak'}</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {suggestions.length ? suggestions.map((s, i) => (
+            <button key={i} onClick={() => go(s.cta)} className="lift flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-left text-[13px] text-slate-200 hover:border-white/20">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Sparkles size={14} /></span>
+              <span className="flex-1">{s.text}</span>
+              <ArrowRight size={14} className="text-slate-600" />
+            </button>
+          )) : (
+            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 px-3 py-2.5 text-[13px] text-[#A7F2DD]">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
+          )}
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+        {[[BadgeCheck, 'Career Profile', 'careerprofile'], [Medal, 'Leaderboards', 'leaderboards'], [Handshake, 'Referral Exchange', 'referralexchange']].map(([Icon, label, id]) => (
+          <button key={id} onClick={() => go(id)} className="lift flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-sm text-slate-200 hover:border-white/20">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={15} /></span>
+            {label}
+          </button>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
 function StudentDashboard({ go }) {
   const { user } = useAuth();
   const access = getAccessForUser(user);
@@ -128,6 +178,10 @@ function StudentDashboard({ go }) {
           ))}
         </div>
       )}
+
+      <div className="mt-4">
+        <ProfileAdoptionPanel go={go} />
+      </div>
 
       <div className="mt-4">
         <WeeklyMissionPanel go={go} />
@@ -239,6 +293,13 @@ export default function RoleDashboard({ go }) {
   if (access.role === 'student') return <StudentDashboard go={go} />;
   if (access.role === 'recruiter') return <RecruiterDashboard go={go} />;
   if (access.role === 'college_admin') return <CollegeDashboard go={go} />;
-  // professional + admin keep the original career command-centre dashboard
-  return <Dashboard go={go} />;
+  // professional + admin keep the original career command-centre dashboard, plus the proof-profile growth panel
+  return (
+    <>
+      <Dashboard go={go} />
+      <div className="mt-4">
+        <ProfileAdoptionPanel go={go} />
+      </div>
+    </>
+  );
 }

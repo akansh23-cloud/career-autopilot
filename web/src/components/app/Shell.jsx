@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
-  Rocket, Globe2, Users, UserSearch, ShieldCheck, User,
+  Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { openPricing } from '../PricingModal.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
+import { getUserRole, PROFILE_EVENT } from '../../lib/userProfile.js';
 
 function usePlanId() {
   const [p, setP] = useState(getPlan());
@@ -20,14 +21,30 @@ function usePlanId() {
   return p;
 }
 
+// Resolved role for nav scoping: admin (via plan) overrides persona role.
+function useRole() {
+  const compute = () => (getPlan().isAdmin ? 'admin' : getUserRole());
+  const [r, setR] = useState(compute());
+  useEffect(() => {
+    const f = () => setR(compute());
+    window.addEventListener(PLAN_EVENT, f);
+    window.addEventListener(PROFILE_EVENT, f);
+    return () => { window.removeEventListener(PLAN_EVENT, f); window.removeEventListener(PROFILE_EVENT, f); };
+  }, []);
+  return r;
+}
+
 export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'careerprofile', label: 'Career Profile', icon: BadgeCheck },
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'resume', label: 'Resume', icon: FileText },
   { id: 'editor', label: 'Editor', icon: PenLine },
   { id: 'jobs', label: 'Jobs', icon: Briefcase },
   { id: 'tracker', label: 'Tracker', icon: KanbanSquare },
   { id: 'contacts', label: 'Outreach', icon: Send },
+  { id: 'referralexchange', label: 'Referral Exchange', icon: Handshake },
+  { id: 'leaderboards', label: 'Leaderboards', icon: Medal },
   { id: 'opportunities', label: 'Opportunity Arena', icon: Trophy },
   { id: 'projectstudio', label: 'Career Project Studio', icon: Rocket },
   { id: 'sandbox', label: 'Project Sandbox', icon: Globe2 },
@@ -37,10 +54,24 @@ export const NAV = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-function NavList({ active, onPick }) {
+// Role-scoped nav ordering. null => all items (admin / college_admin).
+const ROLE_NAV = {
+  student: ['dash', 'careerprofile', 'projectstudio', 'partners', 'sandbox', 'leaderboards', 'referralexchange', 'resume', 'editor', 'opportunities', 'tracker', 'growth', 'settings'],
+  professional: ['dash', 'careerprofile', 'resume', 'editor', 'jobs', 'contacts', 'referralexchange', 'leaderboards', 'tracker', 'sandbox', 'opportunities', 'growth', 'settings'],
+  recruiter: ['dash', 'recruiter', 'leaderboards', 'careerprofile', 'sandbox', 'settings'],
+};
+
+function navForRole(role) {
+  const order = ROLE_NAV[role];
+  if (!order) return NAV; // admin + college_admin see everything
+  const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
+  return order.map((id) => byId[id]).filter(Boolean);
+}
+
+function NavList({ active, onPick, items }) {
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {NAV.map(({ id, label, icon: Icon }) => {
+      {items.map(({ id, label, icon: Icon }) => {
         const on = active === id;
         return (
           <button
@@ -64,8 +95,10 @@ function NavList({ active, onPick }) {
 
 function SidebarInner({ active, onPick }) {
   const plan = usePlanId();
+  const role = useRole();
   const isAdmin = !!plan.isAdmin;
   const paid = plan.planId !== 'free';
+  const items = navForRole(role);
   return (
     <>
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -74,7 +107,7 @@ function SidebarInner({ active, onPick }) {
         </span>
         <span className="font-display text-[16px] font-semibold tracking-tight text-white">Career Autopilot</span>
       </div>
-      <NavList active={active} onPick={onPick} />
+      <NavList active={active} onPick={onPick} items={items} />
       <div className="mt-auto p-4">
         <div className="gradient-border p-4">
           {isAdmin ? (

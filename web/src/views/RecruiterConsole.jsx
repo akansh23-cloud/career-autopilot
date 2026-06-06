@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp } from 'lucide-react';
+import { Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp, ShieldCheck, BadgeCheck, ExternalLink } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.jsx';
 import { ScoreRing, BadgePill, BadgeModal, StatusBadge } from '../components/proof/ProofViews.jsx';
@@ -10,6 +10,7 @@ import { calculateProjectStatus } from '../lib/projectStatus.js';
 import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
 import { ALL_ROLES } from '../lib/roles.js';
+import { fetchCandidates, roleFitForProfile, toggleShortlistCandidate, isShortlisted } from '../lib/network.js';
 
 function FitBars({ parts }) {
   return (
@@ -29,20 +30,31 @@ export default function RecruiterConsole() {
   const { user } = useAuth();
   const access = getAccessForUser(user);
   const [published, setPublished] = useState(getPublishedProjects());
+  const [netCandidates, setNetCandidates] = useState([]);
+  const [shortlistTick, setShortlistTick] = useState(0);
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
   const [skills, setSkills] = useState('');
   const [minScore, setMinScore] = useState(0);
+  const [minXP, setMinXP] = useState(0);
+  const [reqGithub, setReqGithub] = useState(false);
+  const [reqLive, setReqLive] = useState(false);
+  const [reqAvail, setReqAvail] = useState(false);
+  const [minTrust, setMinTrust] = useState(0);
   const [open, setOpen] = useState(null);
   const [badgeOpen, setBadgeOpen] = useState(null);
 
   useEffect(() => {
     const sync = () => setPublished(getPublishedProjects());
+    const loadNet = () => { fetchCandidates().then((list) => setNetCandidates(Array.isArray(list) ? list : [])); };
+    loadNet();
     window.addEventListener('career-projects-updated', sync);
     window.addEventListener('career-engagement-updated', sync);
+    window.addEventListener('career-network-updated', loadNet);
     return () => {
       window.removeEventListener('career-projects-updated', sync);
       window.removeEventListener('career-engagement-updated', sync);
+      window.removeEventListener('career-network-updated', loadNet);
     };
   }, []);
 
@@ -56,10 +68,36 @@ export default function RecruiterConsole() {
     let r = rankCandidates(candidates, query);
     const term = q.trim().toLowerCase();
     if (term) r = r.filter(({ candidate }) => [candidate.name, candidate.targetRole, candidate.topSkillNames.join(' ')].join(' ').toLowerCase().includes(term));
+    if (minXP) r = r.filter(({ candidate }) => (candidate.career?.total || 0) >= minXP);
+    if (reqGithub) r = r.filter(({ candidate }) => candidate.hasGithub);
+    if (reqLive) r = r.filter(({ candidate }) => candidate.hasDemo);
     return r;
-  }, [candidates, q, role, skills, minScore]);
+  }, [candidates, q, role, skills, minScore, minXP, reqGithub, reqLive]);
 
-  const rolesPresent = Array.from(new Set(candidates.map((c) => c.targetRole).filter(Boolean)));
+  // Career Proof Profiles (network layer) — opted-in, privacy-respecting, backend-or-self.
+  const rankedProfiles = useMemo(() => {
+    const wantSkills = skills.split(',').map((s) => s.trim()).filter(Boolean);
+    const term = q.trim().toLowerCase();
+    let list = (netCandidates || []).map((p) => ({ p, fit: roleFitForProfile(p, { role, skills: wantSkills }) }));
+    list = list.filter(({ p, fit }) => {
+      const m = p.metrics || {};
+      if (fit < minScore) return false;
+      if (minXP && (m.careerXP || 0) < minXP) return false;
+      if (reqGithub && !m.hasGithub) return false;
+      if (reqLive && !m.hasLive) return false;
+      if (reqAvail && !(p.openToRecruiters || p.visibility === 'public')) return false;
+      if (minTrust && (p.trustScore || 0) < minTrust) return false;
+      if (role && p.targetRole && !(`${p.targetRole}`.toLowerCase().includes(role.toLowerCase()) || role.toLowerCase().includes(`${p.targetRole}`.toLowerCase()))) return false;
+      if (term && ![p.name, p.targetRole, (m.skillNames || []).join(' ')].join(' ').toLowerCase().includes(term)) return false;
+      return true;
+    });
+    return list.sort((a, b) => b.fit - a.fit || (b.p.trustScore || 0) - (a.p.trustScore || 0));
+  }, [netCandidates, q, role, skills, minScore, minXP, reqGithub, reqLive, reqAvail, minTrust, shortlistTick]);
+
+  const viewProfile = (userId) => { if (userId) window.location.hash = `#/profile/${encodeURIComponent(userId)}`; };
+  const onShortlistProfile = async (userId) => { await toggleShortlistCandidate(userId); setShortlistTick((t) => t + 1); };
+
+  const rolesPresent = Array.from(new Set([...candidates.map((c) => c.targetRole), ...netCandidates.map((c) => c.targetRole)].filter(Boolean)));
 
   return (
     <>
@@ -82,7 +120,84 @@ export default function RecruiterConsole() {
             <span className="w-8 text-right font-mono text-xs text-slate-300">{minScore}</span>
           </div>
         </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
+            <span className="whitespace-nowrap text-[11px] text-slate-400">Min Skill XP</span>
+            <input type="range" min="0" max="3000" step="100" value={minXP} onChange={(e) => setMinXP(Number(e.target.value))} className="flex-1 accent-cyan-500" />
+            <span className="w-10 text-right font-mono text-xs text-slate-300">{minXP}</span>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
+            <span className="whitespace-nowrap text-[11px] text-slate-400">Min trust</span>
+            <input type="range" min="0" max="100" step="5" value={minTrust} onChange={(e) => setMinTrust(Number(e.target.value))} className="flex-1 accent-emerald-500" />
+            <span className="w-8 text-right font-mono text-xs text-slate-300">{minTrust}</span>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[
+            ['GitHub verified', reqGithub, () => setReqGithub((v) => !v)],
+            ['Live demo verified', reqLive, () => setReqLive((v) => !v)],
+            ['Open to recruiters', reqAvail, () => setReqAvail((v) => !v)],
+          ].map(([label, on, toggle]) => (
+            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#A7ECF8]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>{label}</button>
+          ))}
+        </div>
       </SectionCard>
+
+      <div className="mt-4">
+        <SectionCard title="Career Proof Profiles" action={<Badge tone="cyan">{rankedProfiles.length}</Badge>}>
+          <p className="mb-3 text-xs text-slate-400">Opted-in candidates with verified proof-of-work. Private profiles and hidden contact details are never shown.</p>
+          {netCandidates.length === 0 ? (
+            <EmptyState icon={BadgeCheck} title="No proof profiles yet" hint="Candidates appear here once they make their Career Proof Profile visible to recruiters and publish verified projects. No placeholder profiles are shown." />
+          ) : rankedProfiles.length === 0 ? (
+            <EmptyState icon={Search} title="No matches" hint="Try clearing filters or lowering the minimum fit / trust." />
+          ) : (
+            <div className="space-y-3">
+              {rankedProfiles.map(({ p, fit }, idx) => {
+                const m = p.metrics || {};
+                const sl = isShortlisted(p.userId);
+                return (
+                  <div key={p.userId} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-cyan/15 font-display text-sm font-bold text-aurora-cyan">#{idx + 1}</span>
+                        <div>
+                          <p className="font-medium text-white">{p.name}</p>
+                          <p className="text-xs text-slate-400">{p.targetRole || 'Open role'} · {m.level || 'Builder'} · {m.careerXP || 0} XP</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge tone="mint"><ShieldCheck size={11} /> {p.trustScore || 0} · {p.trustLevel || 'New'}</Badge>
+                        <ScoreRing score={fit} label="Role fit" />
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Top skills</div>
+                        <div className="flex flex-wrap gap-1.5">{(m.topSkills || []).slice(0, 5).map((s) => <Badge key={s.skillName} tone="cyan">{s.skillName} · {s.xp}xp</Badge>)}</div>
+                        {!(m.topSkills || []).length && <p className="text-xs text-slate-500">No skill XP yet.</p>}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.avgProofScore || 0}</p><p className="text-[10px] text-slate-500">Proof</p></div>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.verifiedBadges || 0}</p><p className="text-[10px] text-slate-500">Badges</p></div>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.publishedCount || 0}</p><p className="text-[10px] text-slate-500">Projects</p></div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                      {m.hasGithub && <Badge tone="violet"><Github size={11} /> Code</Badge>}
+                      {m.hasLive && <Badge tone="mint"><Globe size={11} /> Live</Badge>}
+                      {p.openToRecruiters && <Badge tone="cyan">Open to recruiters</Badge>}
+                      <div className="ml-auto flex gap-2">
+                        <Button size="sm" variant="soft" onClick={() => viewProfile(p.userId)}><ExternalLink size={13} /> View profile</Button>
+                        <Button size="sm" onClick={() => onShortlistProfile(p.userId)}><Star size={13} /> {sl ? 'Shortlisted' : 'Shortlist'}</Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
 
       <div className="mt-4">
         <SectionCard title="Ranked candidates" action={<Badge tone="mint">{ranked.length}</Badge>}>

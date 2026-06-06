@@ -12,6 +12,7 @@ import PricingModal from './components/PricingModal.jsx';
 import { hydrateResumeFromServer, setResumeStoreUser } from './lib/resumeStore.js';
 import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectStore.js';
 import { setMissionUser } from './lib/missions.js';
+import { setNetworkUser, hydrateNetworkFromServer } from './lib/network.js';
 
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
@@ -28,15 +29,21 @@ import ProjectStudio from './views/ProjectStudio.jsx';
 import Sandbox from './views/Sandbox.jsx';
 import PartnerMatch from './views/PartnerMatch.jsx';
 import RecruiterConsole from './views/RecruiterConsole.jsx';
+import CareerProfile, { PublicProfile } from './views/CareerProfile.jsx';
+import Leaderboards from './views/Leaderboards.jsx';
+import ReferralExchange from './views/ReferralExchange.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
+  careerprofile: CareerProfile,
   profile: Profile,
   resume: Resume,
   editor: Editor,
   jobs: JobsView,
   tracker: Tracker,
   contacts: Outreach,
+  referralexchange: ReferralExchange,
+  leaderboards: Leaderboards,
   opportunities: Arena,
   projectstudio: ProjectStudio,
   sandbox: Sandbox,
@@ -61,12 +68,25 @@ function Splash() {
   );
 }
 
+function parseProfileHash() {
+  if (typeof window === 'undefined') return null;
+  const m = (window.location.hash || '').match(/^#\/profile\/([^/?#]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
   const [active, setActive] = useState('dash');
   const [onboarded, setOnboarded] = useState(!needsOnboarding());
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [publicId, setPublicId] = useState(() => parseProfileHash());
+
+  useEffect(() => {
+    const f = () => setPublicId(parseProfileHash());
+    window.addEventListener('hashchange', f);
+    return () => window.removeEventListener('hashchange', f);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -75,6 +95,7 @@ export default function App() {
       setResumeStoreUser(null);
       setProjectStoreUser(null);
       setMissionUser(null);
+      setNetworkUser(null);
       setWorkspaceReady(false);
       return () => { live = false; };
     }
@@ -83,8 +104,9 @@ export default function App() {
     setResumeStoreUser(user);
     setProjectStoreUser(user);
     setMissionUser(user);
+    setNetworkUser(user);
     syncPlanFromServer();
-    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer()])
+    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer()])
       .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });
     return () => { live = false; };
   }, [user]);
@@ -103,6 +125,19 @@ export default function App() {
         <Landing onSignIn={() => setSignIn(true)} />
         <SignInModal open={signIn} onClose={() => setSignIn(false)} />
       </>
+    );
+  }
+
+  // Shareable recruiter-safe profile route: #/profile/:userId (works for any signed-in user).
+  if (publicId) {
+    const back = () => { window.location.hash = ''; setPublicId(null); };
+    return (
+      <div className="relative min-h-screen">
+        <Atmosphere variant="app" />
+        <main className="relative mx-auto max-w-5xl px-4 py-8 sm:px-6">
+          <PublicProfile userId={publicId} onBack={back} />
+        </main>
+      </div>
     );
   }
 

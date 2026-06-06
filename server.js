@@ -1514,6 +1514,111 @@ app.post('/api/resume/save-analysis', requireAuth, async (req, res) => {
 });
 
 /* ============================================================
+   CAREER PROOF NETWORK
+   ------------------------------------------------------------
+   Recruiter-visible profiles, segmented leaderboards, structured
+   referral exchange + community feed and shortlists. DB-backed when
+   MONGODB_URI is set (true cross-user network); the frontend falls
+   back to user-scoped local storage otherwise. Trust score, XP and
+   role-fit are NEVER accepted as authoritative from the client —
+   trust is recomputed server-side from objective inputs.
+   ============================================================ */
+const REFERRAL_WEEKLY_LIMITS = { free: 3, pro: 15, premium: 60, admin: 1000 };
+function planForReq(req) {
+  const email = (req.user && req.user.email) || '';
+  const s = subs.getSubscription(req.user || {});
+  const role = access.getUserRole(email, s.planId);
+  return { planId: s.planId, role, isAdmin: role === 'admin', effectivePlan: access.effectivePlan(role, s.planId) };
+}
+
+/* Upsert my own network profile (snapshot of derived metrics + visibility). */
+app.put('/api/network/profile', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const payload = req.body?.profile || req.body || {};
+  payload.name = payload.name || u?.name || 'Member';
+  payload.picture = payload.picture || u?.picture || null;
+  const result = await db.upsertNetworkProfile({ userId: u?.id, email: u?.email, payload });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+
+/* Public / recruiter-safe view of a profile (privacy enforced server-side). */
+app.get('/api/network/profile/:userId', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.getNetworkProfile({ viewerUserId: u?.id, targetUserId: req.params.userId });
+  res.json({ ...result, db: db.dbEnabled() });
+});
+
+/* Leaderboard source: all eligible (public / published / open-to-recruiter) profiles. */
+app.get('/api/network/leaderboards', requireAuth, async (req, res) => {
+  const profiles = await db.listNetworkProfiles({ forRecruiter: false });
+  res.json({ ok: true, profiles, db: db.dbEnabled() });
+});
+
+/* Recruiter candidate discovery (respects visibility + open-to-recruiters). */
+app.get('/api/network/candidates', requireAuth, async (req, res) => {
+  const profiles = await db.listNetworkProfiles({ forRecruiter: true });
+  res.json({ ok: true, profiles, db: db.dbEnabled() });
+});
+
+/* Referral exchange + community feed posts. */
+app.get('/api/network/posts', requireAuth, async (req, res) => {
+  const posts = await db.listReferralPosts({ type: req.query.type || undefined });
+  res.json({ ok: true, posts, db: db.dbEnabled() });
+});
+app.post('/api/network/posts', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const body = req.body || {};
+  if (!body.type) return res.status(400).json({ ok: false, error: 'type_required' });
+  const result = await db.createReferralPost({
+    userId: u?.id, email: u?.email, name: u?.name, picture: u?.picture,
+    type: String(body.type), fields: body.fields || {},
+  });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+app.delete('/api/network/posts/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deleteReferralPost({ userId: u?.id, email: u?.email, postId: req.params.id });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+app.post('/api/network/posts/:id/report', requireAuth, async (req, res) => {
+  const result = await db.reportReferralPost({ postId: req.params.id });
+  res.json({ ...result, db: db.dbEnabled() });
+});
+
+/* Referral requests — anti-spam weekly limit by plan. */
+app.post('/api/network/requests', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const { isAdmin, effectivePlan } = planForReq(req);
+  const limit = REFERRAL_WEEKLY_LIMITS[effectivePlan] ?? REFERRAL_WEEKLY_LIMITS.free;
+  if (!isAdmin && db.dbEnabled()) {
+    const used = await db.countRecentReferralRequests({ userId: u?.id, email: u?.email, sinceMs: 7 * 86400000 });
+    if (used >= limit) return res.status(429).json({ ok: false, error: 'weekly_limit_reached', limit, used });
+  }
+  const body = req.body || {};
+  const result = await db.createReferralRequest({
+    userId: u?.id, email: u?.email, toUserId: body.toUserId, postId: body.postId,
+    kind: body.kind, message: body.message,
+  });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, limit, db: db.dbEnabled() });
+});
+
+/* Recruiter shortlists. */
+app.get('/api/network/shortlists', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const shortlists = await db.listShortlists({ recruiterUserId: u?.id, recruiterEmail: u?.email });
+  res.json({ ok: true, shortlists, db: db.dbEnabled() });
+});
+app.post('/api/network/shortlists', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const body = req.body || {};
+  const result = await db.shortlistCandidate({
+    recruiterUserId: u?.id, recruiterEmail: u?.email,
+    candidateUserId: body.candidateUserId, note: body.note,
+  });
+  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+});
+
+/* ============================================================
    CONTACTS / REFERRALS  (compliant provider lookups)
    ------------------------------------------------------------
    COMPLIANCE: only official provider APIs gated behind env keys.
