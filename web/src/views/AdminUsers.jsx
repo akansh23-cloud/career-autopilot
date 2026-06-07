@@ -437,7 +437,7 @@ export default function AdminUsers() {
         title="User Directory"
         sub="Talent intelligence across every account — admin only."
         action={
-          <span className="inline-flex items-center gap-1.5 rounded-xl border border-aurora-violet/30 bg-aurora-violet/10 px-3 py-2 text-xs font-semibold text-[#C2BBFF]">
+          <span className="inline-flex items-center gap-1.5 rounded-xl border border-aurora-violet/30 bg-aurora-violet/10 px-3 py-2 text-xs font-semibold text-[#FFD49A]">
             <ShieldCheck size={14} /> Admin
           </span>
         }
@@ -472,7 +472,7 @@ export default function AdminUsers() {
         <button
           onClick={() => setShowFilters((s) => !s)}
           className={`inline-flex h-11 items-center gap-2 rounded-xl border px-3.5 text-sm transition ${
-            showFilters || activeFilterCount ? 'border-aurora-violet/40 bg-aurora-violet/10 text-[#C2BBFF]' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/25'
+            showFilters || activeFilterCount ? 'border-aurora-violet/40 bg-aurora-violet/10 text-[#FFD49A]' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/25'
           }`}
         >
           <SlidersHorizontal size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ''}

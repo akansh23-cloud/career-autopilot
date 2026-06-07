@@ -8,12 +8,12 @@ const cx = (...a) => a.filter(Boolean).join(' ');
 export const Button = forwardRef(function Button(
   { variant = 'primary', size = 'md', className, children, ...props }, ref) {
   const base =
-    'relative inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none active:scale-[.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-violet/60';
+    'relative inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none active:scale-[.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-violet/60';
   const sizes = { sm: 'h-9 px-3.5 text-[13px]', md: 'h-11 px-5 text-sm', lg: 'h-12 px-7 text-[15px]' };
   const variants = {
-    primary: 'btn-primary text-white hover:brightness-110 hover:-translate-y-0.5',
+    primary: 'btn-primary hover:brightness-105 hover:-translate-y-0.5',
     ghost: 'text-slate-200/80 hover:text-white hover:bg-white/5',
-    outline: 'border border-white/12 text-slate-100 hover:bg-white/5 hover:border-white/25',
+    outline: 'border border-white/14 text-slate-100 hover:bg-white/5 hover:border-aurora-violet/40',
     soft: 'bg-white/[0.06] text-slate-100 hover:bg-white/10 border border-white/8',
     danger: 'bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25',
   };
@@ -25,12 +25,23 @@ export const Button = forwardRef(function Button(
 });
 
 /* ---------------- Card ---------------- */
-export function Card({ className, hover, glow, children, ...p }) {
+export function Card({ className, hover, glow, spotlight, children, onMouseMove, ...p }) {
+  const useSpot = spotlight === undefined ? hover : spotlight;
+  const move = (e) => {
+    if (useSpot) {
+      const r = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`);
+      e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`);
+    }
+    onMouseMove?.(e);
+  };
   return (
     <div
+      onMouseMove={move}
       className={cx(
         'gradient-border p-5 shadow-card',
-        hover && 'lift hover:shadow-lift cursor-default',
+        useSpot && 'spotlight',
+        hover && 'lift hover:shadow-lift hover:border-aurora-violet/35 cursor-default',
         glow && 'shadow-glow',
         className
       )}
@@ -45,10 +56,10 @@ export function Card({ className, hover, glow, children, ...p }) {
 export function Badge({ tone = 'default', className, children }) {
   const tones = {
     default: 'bg-white/6 text-slate-300 border-white/10',
-    violet: 'bg-aurora-violet/12 text-[#C2BBFF] border-aurora-violet/30',
-    cyan: 'bg-aurora-cyan/12 text-[#A6ECFB] border-aurora-cyan/30',
-    mint: 'bg-aurora-mint/12 text-[#A7F2DD] border-aurora-mint/30',
-    amber: 'bg-amber-glow/12 text-[#FFD9A0] border-amber-glow/30',
+    violet: 'bg-aurora-violet/14 text-[#FFD49A] border-aurora-violet/35',
+    cyan: 'bg-aurora-cyan/12 text-[#9DEDE2] border-aurora-cyan/30',
+    mint: 'bg-aurora-mint/12 text-[#A7F2CE] border-aurora-mint/30',
+    amber: 'bg-amber-glow/14 text-[#FFE0A0] border-amber-glow/35',
     rose: 'bg-rose-500/12 text-rose-300 border-rose-400/30',
   };
   return (
@@ -61,7 +72,7 @@ export function Badge({ tone = 'default', className, children }) {
 /* ---------------- Spinner ---------------- */
 export function Spinner({ className }) {
   return (
-    <span className={cx('inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/25 border-t-white', className)} />
+    <span className={cx('inline-block h-4 w-4 animate-spin rounded-full border-2 border-aurora-violet/30 border-t-aurora-violet', className)} />
   );
 }
 
@@ -80,9 +91,9 @@ export function Avatar({ src, name = '', size = 36 }) {
   const [err, setErr] = useState(false);
   const style = { width: size, height: size };
   if (src && !err)
-    return <img src={src} alt={name} style={style} onError={() => setErr(true)} className="rounded-full object-cover ring-2 ring-white/10" />;
+    return <img src={src} alt={name} style={style} onError={() => setErr(true)} className="rounded-full object-cover ring-2 ring-aurora-violet/20" />;
   return (
-    <div style={style} className="grid place-items-center rounded-full bg-aurora-cta text-[12px] font-semibold text-white ring-2 ring-white/10">
+    <div style={style} className="grid place-items-center rounded-full bg-aurora-cta text-[12px] font-bold text-ink-950 ring-2 ring-white/15">
       {initials}
     </div>
   );
@@ -155,7 +166,7 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
           className="fixed inset-0 z-[100] grid place-items-center overflow-hidden p-3 sm:p-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         >
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+          <div className="absolute inset-0 bg-black/72 backdrop-blur-sm" onClick={onClose} />
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -186,9 +197,9 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
 /* ---------------- EmptyState ---------------- */
 export function EmptyState({ icon: Icon, title, hint, action }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 px-6 py-14 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/12 px-6 py-14 text-center">
       {Icon && (
-        <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-white/[0.04] text-aurora-cyan ring-1 ring-white/10">
+        <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-aurora-violet/10 text-aurora-violet ring-1 ring-aurora-violet/25">
           <Icon size={24} />
         </div>
       )}
@@ -204,7 +215,7 @@ export function Input({ className, ...p }) {
   return (
     <input
       className={cx(
-        'h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-aurora-violet/50 focus:bg-white/[0.05] focus:ring-2 focus:ring-aurora-violet/20',
+        'h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-aurora-violet/55 focus:bg-white/[0.05] focus:ring-2 focus:ring-aurora-violet/20',
         className
       )}
       {...p}

@@ -176,7 +176,7 @@ export default function ReferralExchange({ go }) {
         {!access.isAdmin && access.effectivePlan === 'free' && <button onClick={() => go?.('settings')} className="text-aurora-cyan hover:underline">Upgrade for more</button>}
       </div>
 
-      {notice && <div className="mb-4 rounded-xl border border-aurora-cyan/30 bg-aurora-cyan/10 px-4 py-2.5 text-[13px] text-[#A6ECFB]">{notice}</div>}
+      {notice && <div className="mb-4 rounded-xl border border-aurora-cyan/30 bg-aurora-cyan/10 px-4 py-2.5 text-[13px] text-[#9DEDE2]">{notice}</div>}
 
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         {TABS.map((t) => {

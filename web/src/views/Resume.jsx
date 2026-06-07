@@ -15,7 +15,7 @@ function extractJSON(text) {
 
 function Ring({ value }) {
   const r = 52, c = 2 * Math.PI * r, off = c - (value / 100) * c;
-  const tone = value >= 80 ? '#52E6C2' : value >= 60 ? '#3DD6F5' : '#FFB454';
+  const tone = value >= 80 ? '#46E6A6' : value >= 60 ? '#37D6C4' : '#FFC85A';
   return (
     <div className="relative grid h-36 w-36 place-items-center">
       <svg width="136" height="136" className="-rotate-90">

@@ -509,7 +509,7 @@ function ValidateStep({ selected, isPremium, setStep, pickProject }) {
         title="AI validation suggestions"
         action={<Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={loading || (det && !det.requiredOk)}>{loading ? 'Validating…' : data ? <><RefreshCw size={14} /> Re-run</> : <><Wand2 size={14} /> Get AI suggestions</>}</Button>}
       >
-        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#C2BBFF]">
+        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#FFD49A]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>These are AI-generated <strong>suggestions</strong>, not verified facts. Scores are estimates to guide thinking — treat them as prompts to research, not proof.</span>
         </div>

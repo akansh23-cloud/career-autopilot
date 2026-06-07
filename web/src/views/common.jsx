@@ -19,7 +19,7 @@ function MiniRing({ value = 0, label }) {
         />
         <defs>
           <linearGradient id="nbaGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#7C6CFF" /><stop offset="60%" stopColor="#3DD6F5" /><stop offset="100%" stopColor="#52E6C2" />
+            <stop offset="0%" stopColor="#FFB23E" /><stop offset="60%" stopColor="#37D6C4" /><stop offset="100%" stopColor="#46E6A6" />
           </linearGradient>
         </defs>
       </svg>
@@ -44,7 +44,7 @@ export function NextBestAction({ eyebrow = 'Next best action', title, descriptio
       <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-aurora-cyan/10 blur-3xl" />
       <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-2.5 py-1 text-[11px] font-medium text-[#C2BBFF]">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-2.5 py-1 text-[11px] font-medium text-[#FFD49A]">
             <Sparkles size={12} /> {eyebrow}
           </span>
           <h2 className="mt-3 font-display text-2xl font-semibold leading-tight text-white sm:text-[26px]">{title}</h2>
