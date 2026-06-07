@@ -3,7 +3,7 @@ import {
   Rocket, Award, TrendingUp, Target, Building2, UserSearch, GraduationCap,
   Briefcase, KanbanSquare, Send, ArrowRight, Sparkles, CheckCircle2, Circle, Code2, Mic, CalendarCheck,
 } from 'lucide-react';
-import { PageIntro, SectionCard, StatCard } from './common.jsx';
+import { PageIntro, SectionCard, StatCard, NextBestAction } from './common.jsx';
 import { Badge, Button, EmptyState } from '../components/ui/kit.jsx';
 import { ScoreRing, XpBar, BadgePill, BadgeModal, nextStepFor } from '../components/proof/ProofViews.jsx';
 import Dashboard from './Dashboard.jsx';
@@ -154,15 +154,32 @@ function StudentDashboard({ go }) {
   const avgProof = projects.length ? Math.round(projects.reduce((s, p) => s + proofScoreBreakdown(p).score, 0) / projects.length) : 0;
   const warnings = projects.map((p) => ({ p, c: roleConsistency(p) })).filter((x) => !x.c.ok);
 
+  const nba = projects.length === 0
+    ? { title: 'Build your first proof-of-work project', description: 'Pick a guided project matched to your target role and start earning verified skill XP and badges.', primary: { label: 'Start a project', icon: Rocket, onClick: () => go('projectstudio') } }
+    : published.length === 0
+    ? { title: 'Publish a project to get discovered', description: 'Publish your strongest project so it counts toward leaderboards and recruiter discovery.', primary: { label: 'Publish to sandbox', icon: Rocket, onClick: () => go('sandbox') } }
+    : { title: 'Keep your proof growing', description: 'Add evidence, finish this week’s missions and raise your proof score to stay recruiter-ready.', primary: { label: 'Open Project Studio', icon: Rocket, onClick: () => go('projectstudio') } };
+
   return (
     <>
       <PageIntro
         title={`Hi ${user?.name?.split(' ')[0] || 'there'} 👋`}
         sub={`${ROLE_LABELS[access.role]}${profile.targetRole ? ` · targeting ${profile.targetRole}` : ''} — build proof, earn XP, get recruiter-ready.`}
-        action={<Button onClick={() => go('projectstudio')}><Rocket size={16} /> Build a project</Button>}
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <NextBestAction
+        title={nba.title}
+        description={nba.description}
+        primary={nba.primary}
+        secondary={[
+          { label: 'Tailor resume', icon: Briefcase, onClick: () => go('resume') },
+          { label: 'Track applications', icon: KanbanSquare, onClick: () => go('tracker') },
+        ]}
+        score={projects.length ? avgProof : 0}
+        scoreLabel="Proof"
+      />
+
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard i={0} icon={TrendingUp} tone="violet" label="Career XP" value={String(career.total)} hint={career.next ? `${career.toNext} XP to ${career.next}` : 'Max level'} onClick={() => go('profile')} />
         <StatCard i={1} icon={Award} tone="mint" label="Verified badges" value={String(badges.length)} onClick={() => go('profile')} />
         <StatCard i={2} icon={Rocket} tone="cyan" label="Published" value={String(published.length)} hint={!published.length ? 'Publish your first project' : undefined} onClick={() => go('sandbox')} />

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './hooks/useAuth.jsx';
 import { syncPlanFromServer } from './lib/plan.js';
 import { hydrateProfileFromServer, needsOnboarding, PROFILE_EVENT, setProfileUser } from './lib/userProfile.js';
+import { clearAppCache, purgeLegacyUnscopedKeys } from './lib/userCache.js';
 import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
@@ -13,6 +14,7 @@ import { hydrateResumeFromServer, setResumeStoreUser } from './lib/resumeStore.j
 import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectStore.js';
 import { setMissionUser } from './lib/missions.js';
 import { setNetworkUser, hydrateNetworkFromServer } from './lib/network.js';
+import { setCreatorUser, hydrateCreatorFromServer } from './lib/projectCreator.js';
 
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
@@ -32,11 +34,14 @@ import RecruiterConsole from './views/RecruiterConsole.jsx';
 import CareerProfile, { PublicProfile } from './views/CareerProfile.jsx';
 import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
+import ProjectCreator from './views/ProjectCreator.jsx';
+import AdminUsers from './views/AdminUsers.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
   careerprofile: CareerProfile,
   profile: Profile,
+  projectcreator: ProjectCreator,
   resume: Resume,
   editor: Editor,
   jobs: JobsView,
@@ -51,6 +56,7 @@ const VIEWS = {
   recruiter: RecruiterConsole,
   growth: Growth,
   settings: Settings,
+  adminusers: AdminUsers,
 };
 
 function Splash() {
@@ -74,6 +80,14 @@ function parseProfileHash() {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+// Direct deep-link to the admin User Directory (#/admin/users). The view itself
+// re-checks admin status and renders Access Denied for non-admins, so this is a
+// convenience entry point — never an authorization bypass.
+function isAdminUsersHash() {
+  if (typeof window === 'undefined') return false;
+  return /^#\/admin\/users\b/.test(window.location.hash || '');
+}
+
 export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
@@ -81,6 +95,10 @@ export default function App() {
   const [onboarded, setOnboarded] = useState(!needsOnboarding());
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [publicId, setPublicId] = useState(() => parseProfileHash());
+  const prevUserIdRef = useRef(null);
+
+  // One-time cleanup of any pre-scoping legacy keys left by older builds.
+  useEffect(() => { purgeLegacyUnscopedKeys(); }, []);
 
   useEffect(() => {
     const f = () => setPublicId(parseProfileHash());
@@ -88,25 +106,43 @@ export default function App() {
     return () => window.removeEventListener('hashchange', f);
   }, []);
 
+  // Honor a #/admin/users deep link: route to the admin view on load + on change.
+  // (The view enforces admin access; this only selects which workspace to show.)
+  useEffect(() => {
+    const f = () => { if (isAdminUsersHash()) setActive('adminusers'); };
+    f();
+    window.addEventListener('hashchange', f);
+    return () => window.removeEventListener('hashchange', f);
+  }, []);
+
   useEffect(() => {
     let live = true;
     if (!user) {
+      // Signed out: wipe ALL client cache so nothing survives for the next user.
+      if (prevUserIdRef.current) clearAppCache();
+      prevUserIdRef.current = null;
       setProfileUser(null);
       setResumeStoreUser(null);
       setProjectStoreUser(null);
       setMissionUser(null);
       setNetworkUser(null);
+      setCreatorUser(null);
       setWorkspaceReady(false);
       return () => { live = false; };
     }
+    // A different user signed in on this browser → clear the previous user's cache
+    // before wiring up the new identity, then rehydrate from the server.
+    if (prevUserIdRef.current && prevUserIdRef.current !== user.id) clearAppCache();
+    prevUserIdRef.current = user.id;
     setWorkspaceReady(false);
     setProfileUser(user);
     setResumeStoreUser(user);
     setProjectStoreUser(user);
     setMissionUser(user);
     setNetworkUser(user);
+    setCreatorUser(user);
     syncPlanFromServer();
-    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer()])
+    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer(), hydrateCreatorFromServer()])
       .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });
     return () => { live = false; };
   }, [user]);
@@ -148,8 +184,16 @@ export default function App() {
   const ViewCmp = VIEWS[active] || RoleDashboard;
   const title = (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
 
+  // Guarded navigation: only switch to a real, registered view id. Unknown or
+  // stale ids are ignored (instead of silently rendering the dashboard or a
+  // blank page), so internal links can never land on the wrong workspace.
+  const navigate = (id) => {
+    if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) setActive(id);
+    else if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
+  };
+
   return (
-    <Shell active={active} onPick={setActive} title={title}>
+    <Shell active={active} onPick={navigate} title={title}>
       <AnimatePresence mode="wait">
         <motion.div
           key={active}
@@ -158,7 +202,7 @@ export default function App() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          <ViewCmp go={setActive} />
+          <ViewCmp go={navigate} />
         </motion.div>
       </AnimatePresence>
       <PricingModal />

@@ -63,9 +63,15 @@ export const FAQS = [
   { id: 'oauth-mismatch', category: 'Deployment', q: 'Why am I seeing OAuth redirect mismatch?',
     a: 'Google returns "redirect_uri_mismatch" when the URI it receives isn\'t in your Google Cloud Console "Authorized redirect URIs". Add the exact callback — e.g. https://your-app.vercel.app/auth/google/callback — and set the same value as GOOGLE_REDIRECT_URI on the server. It must match exactly: scheme, host, and path.',
     keywords: ['redirect mismatch', 'redirect_uri_mismatch', 'oauth redirect', 'redirect uri'] },
+  { id: 'payment-failed', category: 'Billing', q: 'My payment is not working / failed. What do I do?',
+    a: 'If a plan upgrade payment fails or does not go through: (1) make sure the payment gateway is configured by the operator (Razorpay keys), (2) retry the checkout — cards can be declined for bank-side reasons, (3) if money was deducted but the plan did not activate, it is auto-reconciled via the payment webhook within a few minutes, and (4) if it still does not resolve, create a billing support ticket with the order/payment reference and we will sort it out. We never store your card details.',
+    keywords: ['payment not working', 'payment failed', 'payment', 'cant pay', 'cannot pay', 'card declined', 'upgrade failed', 'billing issue', 'charged but', 'transaction failed', 'razorpay'] },
+  { id: 'refund', category: 'Billing', q: 'How do refunds and plan changes work?',
+    a: 'Plans activate immediately after a verified payment. For a refund or to change/cancel a plan, open a support ticket with category "billing" and your payment reference; refunds are reviewed case by case and processed back to the original payment method.',
+    keywords: ['refund', 'cancel plan', 'cancel subscription', 'money back', 'downgrade', 'change plan'] },
   { id: 'report-bug', category: 'Support', q: 'How do I report a bug?',
     a: 'Use this support chat — pick "Contact support" or create a ticket with the steps to reproduce, what you expected, and what happened. Screenshots help. We\'ll track it by ticket ID.',
-    keywords: ['report bug', 'bug', 'something broke', 'error', 'found a bug'] },
+    keywords: ['report bug', 'bug', 'something broke', 'found a bug'] },
   { id: 'feature-request', category: 'Support', q: 'How do I request a new feature?',
     a: 'Create a support ticket with category "Feature request" describing what you\'d like and why. Feature ideas are reviewed regularly.',
     keywords: ['feature request', 'request feature', 'suggest', 'new feature', 'idea'] },
@@ -80,25 +86,59 @@ export const QUICK_ACTIONS = [
   { label: 'Contact support', seed: '__ticket__' },
 ];
 
-const STOP = new Set(['the', 'a', 'an', 'is', 'are', 'do', 'how', 'why', 'i', 'my', 'to', 'of', 'in', 'on', 'and', 'for', 'with', 'me', 'it', 'you', 'your', 'what', 'can', 'does']);
+const STOP = new Set([
+  'the', 'a', 'an', 'is', 'are', 'do', 'how', 'why', 'i', 'my', 'to', 'of', 'in', 'on', 'and',
+  'for', 'with', 'me', 'it', 'you', 'your', 'what', 'can', 'does', 'when', 'where', 'will',
+  // generic help-desk filler that should never, on its own, decide an answer
+  'not', 'no', 'cant', 'cannot', 'wont', 'working', 'work', 'works', 'issue', 'issues',
+  'problem', 'problems', 'help', 'please', 'need', 'want', 'get', 'getting', 'have', 'having',
+  'use', 'using', 'this', 'that', 'there', 'here', 'app', 'page', 'thing', 'something', 'error',
+]);
 function toks(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 1 && !STOP.has(w));
 }
 
-/* Score a user message against each FAQ; return best match + related. */
+/* Score a user message against each FAQ; return best match + related + a
+   `confident` flag. Confidence requires a real signal — a matched keyword
+   phrase, or a clearly leading score driven by distinctive (non-filler)
+   tokens — so a couple of generic shared words can never trigger a wrong
+   confident answer (e.g. "payment not working" must NOT map to Google login). */
 export function matchFaq(message) {
   const qt = toks(message);
-  if (!qt.length) return { best: null, score: 0, related: [] };
+  const lower = String(message || '').toLowerCase();
+  if (!qt.length) return { best: null, score: 0, confident: false, related: [] };
   const scored = FAQS.map((f) => {
-    const hay = (f.q + ' ' + f.keywords.join(' ') + ' ' + f.a).toLowerCase();
+    const q = f.q.toLowerCase();
+    const kw = f.keywords.join(' ').toLowerCase();
+    const ans = f.a.toLowerCase();
     let score = 0;
-    for (const t of qt) if (hay.includes(t)) score += 1;
-    // strong boost when a full keyword phrase appears in the message
-    for (const k of f.keywords) if (message.toLowerCase().includes(k)) score += 3;
-    return { f, score };
+    let distinctive = 0;
+    for (const t of qt) {
+      if (f.keywords.some((k) => k.includes(t))) { score += 2; distinctive += 1; }   // strongest: token is part of a curated keyword
+      else if (q.includes(t)) { score += 1; }                                          // medium: token in the question
+      else if (kw.includes(t)) { score += 1; distinctive += 1; }
+      else if (ans.includes(t)) { score += 0.25; }                                     // weak: incidental mention in answer prose
+    }
+    // strong boost + guaranteed confidence when a full keyword phrase appears
+    let keywordHit = false;
+    for (const k of f.keywords) {
+      if (k.includes(' ') && lower.includes(k)) { score += 4; keywordHit = true; }
+      else if (lower.includes(k)) { score += 3; keywordHit = true; }
+    }
+    return { f, score, distinctive, keywordHit };
   }).sort((a, b) => b.score - a.score);
 
   const best = scored[0];
+  const runnerUp = scored[1] ? scored[1].score : 0;
   const related = scored.slice(1, 4).filter((s) => s.score > 0).map((s) => s.f);
-  return { best: best.score > 0 ? best.f : null, score: best.score, related };
+
+  // Confident with a keyword-phrase hit, OR multiple distinctive (curated)
+  // tokens on the leading FAQ, OR a clearly-leading score.
+  const confident =
+    best.score > 0 &&
+    (best.keywordHit ||
+      best.distinctive >= 2 ||
+      (best.score >= 3 && best.distinctive >= 1 && best.score - runnerUp >= 2));
+
+  return { best: best.score > 0 ? best.f : null, score: best.score, confident, related };
 }

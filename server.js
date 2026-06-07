@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import session from 'express-session';
 import crypto from 'crypto';
 import path from 'path';
@@ -10,34 +9,99 @@ import * as db from './db.js';
 import * as subs from './paymentsStore.js';
 import * as access from './access.js';
 import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
+import * as config from './config.js';
+import { logger } from './logger.js';
+import { maxFreshDaysFromQuery, passesFreshness } from './freshness.js';
+import { createMongooseSessionStore } from './sessionStore.js';
+import {
+  corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
+  authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
+  supportChatLimiter, ticketLimiter, generationLimiter, globalLimiter,
+} from './security.js';
+import {
+  validateBody, supportChatSchema, ticketSchema, userStatePatchSchema,
+  userProfileSchema, contactsFindSchema, createOrderSchema, verifyPaymentSchema,
+  networkPostSchema, networkRequestSchema, aiMessagesSchema, templateImageSchema,
+} from './validation.js';
 
 dotenv.config();
+
+// Validate environment up front. In production this exits on fatal misconfig
+// (missing MONGODB_URI / SESSION_SECRET) so the app never silently runs without
+// persistence or with a throwaway session secret.
+config.assertEnvOrExit(logger);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 app.set('trust proxy', 1); // honor X-Forwarded-Proto (Vercel/Render/etc.) so Secure cookies work
+app.disable('x-powered-by'); // do not advertise Express
 
-/* Cross-site cookies (SameSite=None; Secure) are needed ONLY when the frontend is
-   served from a DIFFERENT origin than this backend, over HTTPS. For the normal setup
-   (this server serves index.html → same origin) 'lax' is correct and works on plain http.
-   Set COOKIE_CROSS_SITE=1 (HTTPS only) if you host the UI on a separate domain. */
-const CROSS_SITE = process.env.COOKIE_CROSS_SITE === '1' || String(process.env.COOKIE_SAMESITE).toLowerCase() === 'none';
-const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || (CROSS_SITE ? 'none' : 'lax')).toLowerCase();
-const COOKIE_SECURE = process.env.COOKIE_SECURE === '1' || CROSS_SITE || process.env.NODE_ENV === 'production';
+/* Cookie policy is centralised in config.js. Cross-site cookies
+   (SameSite=None; Secure) are needed ONLY when the SPA is served from a
+   DIFFERENT origin than this backend, over HTTPS. */
+const COOKIE_SAMESITE = config.COOKIE_SAMESITE;
+const COOKIE_SECURE = config.COOKIE_SECURE;
 
+/* Security headers first, then the strict credentialed-CORS allowlist. */
+app.use(helmetMiddleware);
+app.use(corsMiddleware);
+
+/* Raw body ONLY for the Razorpay webhook (HMAC verification needs the exact bytes). */
 app.use('/api/payments/webhook', express.raw({ type: '*/*' }));
-app.use(express.json({ limit: '12mb' }));
-/* Reflect the caller's origin and allow credentials so the OAuth status fetch works
-   whether the app is opened same-origin or from a configured frontend origin. */
-app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: '5mb' }));
+
+/* Persistent session store: when MongoDB is configured we store sessions there
+   (production never uses the in-memory MemoryStore). Without a DB (local dev/
+   test) we fall back to the default in-process store. config.js already refuses
+   to boot production without MONGODB_URI, so production always lands here. */
+const sessionStore = db.dbEnabled() ? createMongooseSessionStore(session, { connect: db.connectDB }) : undefined;
+if (!sessionStore && config.IS_PROD) {
+  logger.error('No session store configured in production (MONGODB_URI missing) — refusing MemoryStore.');
+}
+
+/* Serverless-safe DB readiness gate. MUST run before the session middleware so
+   the Mongo-backed session store never touches an un-connected Mongoose (which
+   on Vercel would buffer then time out, turning /auth/me into a 500). Uses the
+   cached connection promise in db.js, so warm invocations reuse one pool.
+   Health endpoints are exempt so the DB status can always be inspected. */
+app.use(async (req, res, next) => {
+  if (!db.dbEnabled()) return next();                 // no DB → in-process session (dev/test)
+  if (req.path === '/health' || req.path === '/health/db') return next();
+  try {
+    await db.connectDB();                              // cached; reused on warm starts
+    return next();
+  } catch (e) {
+    logger.error('Database unavailable for request', { path: req.path, message: e.message });
+    // Production: a configured-but-unreachable DB is a clear 503, never a vague 500.
+    if (config.IS_PROD) {
+      if (res.headersSent) return next(e);
+      return res.status(503).json({
+        error: 'service_unavailable',
+        message: 'Database temporarily unavailable. Check MongoDB/session configuration.',
+      });
+    }
+    // Dev: degrade gracefully so local work without a reachable DB still loads.
+    return next();
+  }
+});
+
 app.use(session({
   name: 'career_autopilot.sid',
-  secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+  store: sessionStore,
+  secret: config.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: { httpOnly: true, sameSite: COOKIE_SAMESITE, secure: COOKIE_SECURE }
 }));
+
+/* Issue a readable CSRF token cookie, then enforce double-submit on
+   cookie-authenticated, state-changing requests. */
+app.use(csrfCookieIssuer);
+app.use(csrfProtection);
+
+/* Gentle global rate ceiling (skipped in the test env). */
+app.use(globalLimiter);
 
 /* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls).
    Prefer the built React/Vite app in dist/. Fall back to the legacy single-file UI if dist
@@ -67,11 +131,39 @@ app.get('/', (req, res) => {
 const PROTECTED_PREFIXES = ['/ai', '/jobs', '/contacts', '/opportunities', '/profile', '/apply', '/dashboard'];
 app.use(PROTECTED_PREFIXES, requireAuth);
 
-const JOB_FETCH_TIMEOUT  = Number(process.env.JOB_FETCH_TIMEOUT  || 12000);
-const JOB_VERIFY_TIMEOUT = Number(process.env.JOB_VERIFY_TIMEOUT || 9000);
+const JOB_FETCH_TIMEOUT  = Number(process.env.JOB_FETCH_TIMEOUT  || 6000);
+const JOB_VERIFY_TIMEOUT = Number(process.env.JOB_VERIFY_TIMEOUT || 5000);
+const JOB_SEARCH_BUDGET  = Number(process.env.JOB_SEARCH_BUDGET  || 8000); // overall deadline per source batch
+const JOB_CACHE_TTL_MS   = Number(process.env.JOB_CACHE_TTL_MS   || 90000); // cache identical searches briefly
 const STRICT_JOB_VERIFICATION = process.env.STRICT_JOB_VERIFICATION === '1';
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || process.env.X_RAPIDAPI_KEY || process.env.RAPID_API_KEY || '';
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'jsearch.p.rapidapi.com';
+
+/* Small bounded in-memory cache for identical job searches. Cuts repeat latency
+   and protects upstream provider quotas from refresh loops. */
+const _jobCache = new Map(); // key -> { at, payload }
+function jobCacheGet(key) {
+  const hit = _jobCache.get(key);
+  if (hit && Date.now() - hit.at < JOB_CACHE_TTL_MS) return hit.payload;
+  if (hit) _jobCache.delete(key);
+  return null;
+}
+function jobCacheSet(key, payload) {
+  _jobCache.set(key, { at: Date.now(), payload });
+  if (_jobCache.size > 200) {
+    // evict oldest
+    const oldest = [..._jobCache.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, 50);
+    for (const [k] of oldest) _jobCache.delete(k);
+  }
+}
+/* Race a promise against the overall search budget so one slow source can never
+   hang the whole request. */
+function withBudget(promise, ms, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
 
 /* ============================================================
    SHARED HELPERS
@@ -108,7 +200,7 @@ function roleTokens(role) {
   return normText(role).split(/\s+/)
     .filter(w => w.length > 2 && !['engineer', 'developer', 'analyst', 'manager', 'intern', 'internship', 'the', 'and', 'for'].includes(w));
 }
-function maxFreshDaysFromQuery(v) { return v === '24h' ? 1 : v === '3d' ? 3 : 7; }
+function maxFreshDaysFromQuery_LEGACY_REMOVED() { /* moved to ./freshness.js */ }
 
 async function fetchJson(url, timeout = JOB_FETCH_TIMEOUT, headers = {}) {
   const ctrl = new AbortController();
@@ -812,7 +904,7 @@ app.post('/jobs/verify', async (req, res) => {
    filter -> de-dupe -> verify URLs -> return only verified jobs
    query: role, location, mode, freshness(24h|3d|7d), limit, verify(0|1)
    ============================================================ */
-app.get('/jobs/search', async (req, res) => {
+app.get('/jobs/search', jobsLimiter, async (req, res) => {
   try {
     const role = req.query.role || 'software engineer';
     const loc = req.query.location || '';
@@ -824,10 +916,22 @@ app.get('/jobs/search', async (req, res) => {
       ? (req.query.strict === '1' || req.query.strict === 'true')
       : STRICT_JOB_VERIFICATION;
     const selected = requestedSources(req);
+
+    // Serve identical recent searches from cache (cuts latency, protects quotas).
+    const cacheKey = JSON.stringify({ role, loc, mode, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
+    const cached = jobCacheGet(cacheKey);
+    if (cached) return res.json({ ...cached, cached: true });
+
     const ctx = { role, location: loc, mode, freshness: req.query.freshness || '7d', selectedSources: selected, strict, diag: {} };
 
     const runnable = SOURCES.filter(s => !selected || sourceAllowed(s.name, selected) || ['SerpAPI','JSearch'].includes(s.name));
-    const settled = await Promise.allSettled(runnable.map(s => s.fetch(role, ctx)));
+    // Each source already has its own per-fetch timeout; the overall budget is a
+    // hard ceiling so one hung source can never stall the whole response.
+    const settled = await withBudget(
+      Promise.allSettled(runnable.map(s => s.fetch(role, ctx))),
+      JOB_SEARCH_BUDGET,
+      runnable.map(() => ({ status: 'fulfilled', value: [] })),
+    );
     const configured = configuredSources();
     const sources = configured.map(x => ({ source: x.source, ok: false, count: 0, active: x.active, integration: x.integration, reason: x.reason || '' }));
     const sourceIndex = new Map(sources.map((s, i) => [sourceKey(s.source), i]));
@@ -862,11 +966,13 @@ app.get('/jobs/search', async (req, res) => {
       let reason = '';
       if (!j.title || !j.company) reason = 'missing title/company';
       else if (!j.url || !/^https?:\/\//i.test(j.url)) reason = 'missing direct job URL';
-      else if (typeof j.postedDays !== 'number') { if (strict) reason = 'posted date missing (strict freshness on)'; }
-      else if (j.postedDays > maxDays) reason = `too old (${j.postedDays}d > ${maxDays}d)`;
-      else if (!validRoleMatch(j, role)) reason = 'role mismatch';
-      else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
-      else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
+      else {
+        const fr = passesFreshness(typeof j.postedDays === 'number' ? j.postedDays : null, req.query.freshness || '7d');
+        if (!fr.ok) reason = fr.reason;
+        else if (!validRoleMatch(j, role)) reason = 'role mismatch';
+        else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
+        else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
+      }
       const k = jobKey(j);
       if (!reason && seen.has(k)) reason = 'duplicate';
       // One audit row per job, mutated in place later if it goes to verification.
@@ -929,7 +1035,7 @@ app.get('/jobs/search', async (req, res) => {
     // strip internal helper before returning
     kept.forEach(j => { delete j._auditRow; });
 
-    res.json({
+    const payload = {
       jobs: kept, sources, audit, verified: verify,
       diagnostics: {
         apiKeyDetected: !!RAPIDAPI_KEY,
@@ -952,9 +1058,12 @@ app.get('/jobs/search', async (req, res) => {
       freshnessDays: maxDays, fetchedAt: new Date().toISOString(),
       note: verify ? 'Only structured-source jobs that passed URL verification are returned. No AI-generated jobs.'
                    : 'URL verification disabled (verify=0). Still structured-source only — no AI-generated jobs.'
-    });
+    };
+    jobCacheSet(cacheKey, payload);
+    res.json(payload);
   } catch (e) {
-    res.status(500).json({ error: e.message || String(e) });
+    logger.error('Job search failed', { message: e.message });
+    res.status(500).json({ error: 'job_search_failed', message: 'Job search failed. Please try again.' });
   }
 });
 
@@ -964,11 +1073,27 @@ app.get('/jobs/search', async (req, res) => {
 app.get('/health', (req, res) => res.json({
   ok: true,
   ai: !!process.env.ANTHROPIC_API_KEY,
+  db: db.dbEnabled() ? 'configured' : 'off',
+  sessionStore: db.dbEnabled() ? 'mongodb' : 'memory',
+  google: googleEnabled(),
   sources: SOURCES.map(s => s.name),
   aiJobGeneration: false,
   strictJobVerification: STRICT_JOB_VERIFICATION,
   time: new Date().toISOString()
 }));
+
+/* Deployment-debug probe: actually attempts the (cached) Mongo connection and
+   reports the result. Returns 200 when the DB is reachable or intentionally off,
+   503 when it is configured but unreachable. */
+app.get('/health/db', async (req, res) => {
+  if (!db.dbEnabled()) return res.json({ ok: true, db: 'off', message: 'MONGODB_URI not set — running session/cookie only.' });
+  try {
+    await db.connectDB();
+    res.json({ ok: true, db: 'connected' });
+  } catch (e) {
+    res.status(503).json({ ok: false, db: 'unreachable', message: e.message });
+  }
+});
 
 /* ============================================================
    OAUTH PROVIDERS  (no passwords ever — official OAuth only)
@@ -1187,6 +1312,40 @@ function requireAuth(req, res, next) {
   next();
 }
 
+/* Admin-only guard. MUST run after requireAuth. Admin authority is resolved
+   entirely server-side: the ADMIN_EMAILS allowlist, or a persisted
+   User.role === 'admin'. The client role/plan is NEVER trusted here.
+   - 401 if unauthenticated
+   - 403 if authenticated but not an admin */
+async function requireAdmin(req, res, next) {
+  const u = req.user || currentUser(req);
+  if (!u) return res.status(401).json({ error: 'auth_required', message: 'Please sign in to continue.' });
+  req.user = u;
+  let dbRole = null;
+  if (!access.isAdminEmail(u.email) && db.dbEnabled()) {
+    try {
+      const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
+      dbRole = fresh?.role || null;
+    } catch { /* fall through to allowlist-only decision */ }
+  }
+  if (!access.resolveIsAdmin({ email: u.email, dbRole })) {
+    return res.status(403).json({ error: 'forbidden', message: 'Admin access required.' });
+  }
+  req.isAdmin = true;
+  next();
+}
+
+/* HTTP status for a persistence (DB write) result.
+   - DB on + write ok        → 200
+   - DB on + write failed     → 500 (real server-side error)
+   - DB off in PRODUCTION     → 503 (persistence is required but unavailable;
+                                     never pretend the write succeeded)
+   - DB off in dev/test       → 200 (client is told db:false → "saved locally only") */
+function persistenceStatus(result) {
+  if (db.dbEnabled()) return result && result.ok ? 200 : 500;
+  return config.IS_PROD ? 503 : 200;
+}
+
 app.get('/auth/google/start', (req, res) => {
   if (!googleEnabled()) return res.redirect(buildReturn(req.query.returnTo || '/', { login: 'unavailable' }));
   const state = randomState();
@@ -1249,7 +1408,7 @@ app.get('/auth/google/callback', async (req, res) => {
 });
 
 /* Optional local/demo sign-in (guarded). */
-app.post('/auth/dev-login', async (req, res) => {
+app.post('/auth/dev-login', authLimiter, async (req, res) => {
   if (!allowDevLogin()) return res.status(403).json({ error: 'dev_login_disabled', message: 'Demo sign-in is disabled. Configure Google OAuth.' });
   const name = String((req.body && req.body.name) || 'Demo User').trim().slice(0, 60) || 'Demo User';
   const email = String((req.body && req.body.email) || 'demo@careerautopilot.local').trim().slice(0, 120);
@@ -1261,21 +1420,32 @@ app.post('/auth/dev-login', async (req, res) => {
   req.session.save(() => res.json({ ok: true, user }));
 });
 
-/* Who am I + which sign-in methods this server offers. */
+/* Who am I + which sign-in methods this server offers. Must never 500 — the
+   client uses it to decide what to render, so on any internal hiccup we still
+   return a well-formed "not authenticated" payload with provider flags. */
 app.get('/auth/me', async (req, res) => {
-  let u = currentUser(req);
-  // Enrich with persisted fields (role, createdAt, lastLoginAt, loginCount) when the DB is on.
-  if (u && db.dbEnabled()) {
-    try {
-      const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
-      if (fresh) u = { ...u, ...fresh, picture: fresh.picture || u.picture };
-    } catch { /* never block /auth/me on a DB issue */ }
+  try {
+    let u = currentUser(req);
+    // Enrich with persisted fields (role, createdAt, lastLoginAt, loginCount) when the DB is on.
+    if (u && db.dbEnabled()) {
+      try {
+        const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email });
+        if (fresh) u = { ...u, ...fresh, picture: fresh.picture || u.picture };
+      } catch { /* never block /auth/me on a DB issue */ }
+    }
+    res.json({
+      authenticated: !!u,
+      user: u || null,
+      providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } },
+    });
+  } catch (e) {
+    logger.error('/auth/me failed unexpectedly', { message: e.message });
+    res.status(200).json({
+      authenticated: false,
+      user: null,
+      providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } },
+    });
   }
-  res.json({
-    authenticated: !!u,
-    user: u || null,
-    providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } }
-  });
 });
 
 /* Sign out of the user session (separate from connector /auth/:provider/logout). */
@@ -1479,18 +1649,18 @@ app.post('/apply/:provider/submit', (req, res) => {
 app.get('/api/user/state', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const state = await db.getUserState({ userId: u?.id, email: u?.email });
-  res.json({ ok: true, state: state || { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {} }, db: db.dbEnabled() });
+  res.json({ ok: true, state: state || { profile: {}, resume: {}, projects: [], tracker: {}, xpSnapshot: {}, creator: {} }, db: db.dbEnabled() });
 });
 
-app.patch('/api/user/state', requireAuth, async (req, res) => {
+app.patch('/api/user/state', requireAuth, validateBody(userStatePatchSchema), async (req, res) => {
   const u = currentUser(req);
   const body = req.body || {};
   const allowed = {};
-  for (const k of ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot']) {
+  for (const k of ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot', 'creator']) {
     if (Object.prototype.hasOwnProperty.call(body, k)) allowed[k] = body[k];
   }
   const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: allowed });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, db: db.dbEnabled(), result });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled(), result });
 });
 
 app.get('/api/user/profile', requireAuth, async (req, res) => {
@@ -1503,14 +1673,14 @@ app.put('/api/user/profile', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const profile = req.body?.profile || req.body || {};
   const result = await db.patchUserState({ userId: u?.id, email: u?.email, patch: { profile } });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, profile, db: db.dbEnabled(), result });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, profile, db: db.dbEnabled(), result });
 });
 
 app.post('/api/resume/save-analysis', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const resume = req.body?.resume || req.body || {};
   const result = await db.saveResumeSnapshot({ userId: u?.id, email: u?.email, resume });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ok: result.ok, db: db.dbEnabled(), result });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled(), result });
 });
 
 /* ============================================================
@@ -1538,7 +1708,7 @@ app.put('/api/network/profile', requireAuth, async (req, res) => {
   payload.name = payload.name || u?.name || 'Member';
   payload.picture = payload.picture || u?.picture || null;
   const result = await db.upsertNetworkProfile({ userId: u?.id, email: u?.email, payload });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
 });
 
 /* Public / recruiter-safe view of a profile (privacy enforced server-side). */
@@ -1565,7 +1735,7 @@ app.get('/api/network/posts', requireAuth, async (req, res) => {
   const posts = await db.listReferralPosts({ type: req.query.type || undefined });
   res.json({ ok: true, posts, db: db.dbEnabled() });
 });
-app.post('/api/network/posts', requireAuth, async (req, res) => {
+app.post('/api/network/posts', requireAuth, validateBody(networkPostSchema), async (req, res) => {
   const u = currentUser(req);
   const body = req.body || {};
   if (!body.type) return res.status(400).json({ ok: false, error: 'type_required' });
@@ -1573,12 +1743,12 @@ app.post('/api/network/posts', requireAuth, async (req, res) => {
     userId: u?.id, email: u?.email, name: u?.name, picture: u?.picture,
     type: String(body.type), fields: body.fields || {},
   });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
 });
 app.delete('/api/network/posts/:id', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const result = await db.deleteReferralPost({ userId: u?.id, email: u?.email, postId: req.params.id });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
 });
 app.post('/api/network/posts/:id/report', requireAuth, async (req, res) => {
   const result = await db.reportReferralPost({ postId: req.params.id });
@@ -1586,7 +1756,7 @@ app.post('/api/network/posts/:id/report', requireAuth, async (req, res) => {
 });
 
 /* Referral requests — anti-spam weekly limit by plan. */
-app.post('/api/network/requests', requireAuth, async (req, res) => {
+app.post('/api/network/requests', requireAuth, validateBody(networkRequestSchema), async (req, res) => {
   const u = currentUser(req);
   const { isAdmin, effectivePlan } = planForReq(req);
   const limit = REFERRAL_WEEKLY_LIMITS[effectivePlan] ?? REFERRAL_WEEKLY_LIMITS.free;
@@ -1599,7 +1769,7 @@ app.post('/api/network/requests', requireAuth, async (req, res) => {
     userId: u?.id, email: u?.email, toUserId: body.toUserId, postId: body.postId,
     kind: body.kind, message: body.message,
   });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, limit, db: db.dbEnabled() });
+  res.status(persistenceStatus(result)).json({ ...result, limit, db: db.dbEnabled() });
 });
 
 /* Recruiter shortlists. */
@@ -1615,7 +1785,71 @@ app.post('/api/network/shortlists', requireAuth, async (req, res) => {
     recruiterUserId: u?.id, recruiterEmail: u?.email,
     candidateUserId: body.candidateUserId, note: body.note,
   });
-  res.status(result.ok || !db.dbEnabled() ? 200 : 500).json({ ...result, db: db.dbEnabled() });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   ADMIN — USER DIRECTORY / TALENT INTELLIGENCE
+   ------------------------------------------------------------
+   Admin-only endpoints behind requireAuth + requireAdmin:
+   - 401 if unauthenticated, 403 if not an admin (enforced server-side
+     from ADMIN_EMAILS / persisted role — the client role is never trusted)
+   - Responses are mapped to safe DTOs (db.adminUserDTO); secrets,
+     OAuth tokens, sessions and raw files are never returned
+   - Listing supports search, filtering, sorting and pagination
+   Recruiters explicitly do NOT get access here — the future recruiter
+   "Talent Directory" uses /api/network/candidates, which only ever
+   returns opted-in (openToRecruiters) profiles.
+   ============================================================ */
+
+// Parse + clamp directory query params (all optional, all safe defaults).
+function parseDirectoryQuery(q = {}) {
+  const filters = {
+    q: String(q.q || '').slice(0, 120),
+    skill: String(q.skill || '').slice(0, 60),
+    speciality: String(q.speciality || '').slice(0, 60),
+    targetRole: String(q.targetRole || '').slice(0, 80),
+    experienceLevel: String(q.experienceLevel || '').slice(0, 40),
+    location: String(q.location || '').slice(0, 80),
+    userType: String(q.userType || '').slice(0, 40),
+    minCompletion: Math.max(0, Math.min(100, Number(q.minCompletion) || 0)),
+    projectStatus: ['completed', 'none'].includes(String(q.projectStatus)) ? String(q.projectStatus) : '',
+    recruiterVisible: q.recruiterVisible === 'true' || q.recruiterVisible === true,
+    activity: ['active', 'inactive'].includes(String(q.activity)) ? String(q.activity) : '',
+  };
+  const sort = ['xp', 'active', 'completion', 'projects', 'created', 'name'].includes(String(q.sort)) ? String(q.sort) : 'xp';
+  const page = Math.max(1, Number(q.page) || 1);
+  const pageSize = Math.max(1, Math.min(100, Number(q.pageSize) || 24));
+  return { filters, sort, page, pageSize };
+}
+
+app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  const { filters, sort, page, pageSize } = parseDirectoryQuery(req.query || {});
+  const result = await db.adminListUsers({ filters, sort, page, pageSize, adminEmailSet: access.adminEmailSet() });
+  res.json(result);
+});
+
+app.get('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.adminGetUserDetail({ id: req.params.id, adminEmailSet: access.adminEmailSet() });
+  const code = result.ok ? 200 : (result.reason === 'not_found' ? 404 : result.reason === 'bad_request' ? 400 : 200);
+  res.status(code).json(result);
+});
+
+app.patch('/api/admin/users/:id/visibility', requireAuth, requireAdmin, async (req, res) => {
+  const recruiterVisible = req.body?.recruiterVisible === true || req.body?.recruiterVisible === 'true';
+  const result = await db.adminSetVisibility({ id: req.params.id, recruiterVisible });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+app.patch('/api/admin/users/:id/admin-notes', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.adminSetNotes({ id: req.params.id, adminNotes: req.body?.adminNotes });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+app.patch('/api/admin/users/:id/featured', requireAuth, requireAdmin, async (req, res) => {
+  const featuredTalent = req.body?.featuredTalent === true || req.body?.featuredTalent === 'true';
+  const result = await db.adminSetFeatured({ id: req.params.id, featuredTalent });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
 });
 
 /* ============================================================
@@ -1950,7 +2184,7 @@ app.get('/contacts/diagnostics', async (req, res) => {
   res.json(out);
 });
 
-app.post('/contacts/find', async (req, res) => {
+app.post('/contacts/find', contactsLimiter, validateBody(contactsFindSchema), async (req, res) => {
   const ctx = req.body || {};
   ctx.domain = cleanDomain(ctx.domain);
   const diagnostics = [];
@@ -1985,7 +2219,7 @@ app.post('/contacts/find', async (req, res) => {
   }
 });
 
-app.post('/contacts/referrals', async (req, res) => {
+app.post('/contacts/referrals', contactsLimiter, async (req, res) => {
   const ctx = req.body || {};
   ctx.domain = cleanDomain(ctx.domain);
   const diagnostics = [];
@@ -2032,7 +2266,7 @@ app.get('/contacts/providers', (req, res) => {
    Used ONLY for resume analysis, tailoring, cover letters, recruiter
    messages, interview prep and the growth plan. NEVER for job search.
    ============================================================ */
-app.post('/ai/messages', async (req, res) => {
+app.post('/ai/messages', aiLimiter, validateBody(aiMessagesSchema), async (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return res.status(400).json({ error: { message: 'ANTHROPIC_API_KEY is not set on the server. Add it to .env or paste a key in Settings.' } });
   try {
@@ -2044,6 +2278,7 @@ app.post('/ai/messages', async (req, res) => {
     const data = await r.json().catch(() => ({ error: { message: 'Bad upstream response' } }));
     res.status(r.status).json(data);
   } catch (err) {
+    logger.error('AI proxy failed', { message: err.message });
     res.status(502).json({ error: { message: err.message || 'AI proxy failed' } });
   }
 });
@@ -2064,15 +2299,15 @@ app.get('/support/faqs', (req, res) => {
   });
 });
 
-app.post('/support/chat', async (req, res) => {
+app.post('/support/chat', supportChatLimiter, validateBody(supportChatSchema), async (req, res) => {
   try {
     const message = String((req.body && req.body.message) || '').trim().slice(0, 1000);
     if (!message) return res.status(400).json({ error: 'empty_message' });
 
-    const { best, score, related } = matchFaq(message);
+    const { best, confident, related } = matchFaq(message);
 
     // Strong, confident FAQ hit → answer directly from the knowledge base.
-    if (best && score >= 2) {
+    if (best && confident) {
       return res.json({
         source: 'faq',
         reply: best.a,
@@ -2131,7 +2366,7 @@ app.post('/support/chat', async (req, res) => {
   }
 });
 
-app.post('/support/tickets', async (req, res) => {
+app.post('/support/tickets', ticketLimiter, validateBody(ticketSchema), async (req, res) => {
   try {
     const b = req.body || {};
     const me = currentUser(req);
@@ -2672,7 +2907,7 @@ async function rzpCreateOrder(amount, receipt) {
   return data;
 }
 
-app.post('/api/payments/create-order', requireAuth, async (req, res) => {
+app.post('/api/payments/create-order', requireAuth, validateBody(createOrderSchema), async (req, res) => {
   try {
     if (access.isAdminEmail(req.user && req.user.email)) {
       return res.status(400).json({ ok: false, error: 'admin_full_access', message: 'This account has admin full access. Payment is not required.' });
@@ -2689,7 +2924,7 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/payments/verify', requireAuth, (req, res) => {
+app.post('/api/payments/verify', requireAuth, validateBody(verifyPaymentSchema), (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planId } = req.body || {};
     if (!rzpConfigured()) return res.status(503).json({ ok: false, error: 'gateway_not_configured' });
@@ -2833,14 +3068,14 @@ function psInterview(p = {}) {
   return out;
 }
 
-app.post('/api/projects/generate-roadmap', requireAuth, async (req, res) => {
+app.post('/api/projects/generate-roadmap', requireAuth, generationLimiter, async (req, res) => {
   const input = req.body || {};
   const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.`;
   const ai = parseJSONLoose(await anthropicJSON(prompt, 1800));
   if (ai && ai.title) return res.json({ ok: true, project: ai, generatedBy: 'ai' });
   res.json({ ok: true, project: psFallbackProject(input), generatedBy: 'template' });
 });
-app.post('/api/projects/generate-readme', requireAuth, async (req, res) => {
+app.post('/api/projects/generate-readme', requireAuth, generationLimiter, async (req, res) => {
   const p = (req.body && req.body.project) || {};
   const prompt = `Write a professional GitHub README.md (markdown only, no commentary) for this project: ${JSON.stringify(p).slice(0, 4000)}. Include title, overview, skills, tech stack, architecture, getting started, structure, deployment, testing, demo links.`;
   const ai = await anthropicJSON(prompt, 1600);
@@ -2848,27 +3083,244 @@ app.post('/api/projects/generate-readme', requireAuth, async (req, res) => {
   const skills = (p.skillsCovered || []).map((s) => `- ${s}`).join('\n');
   res.json({ ok: true, generatedBy: 'template', readme: `# ${p.title || 'Project'}\n\n> ${p.problemStatement || ''}\n\n## Overview\n${p.useCase || ''}\n\n## Skills\n${skills}\n\n## Tech stack\n${(p.techStack || []).map((s) => `- ${s}`).join('\n')}\n\n## Architecture\n${p.architecture || ''}\n\n## License\nMIT` });
 });
-app.post('/api/projects/generate-resume-bullets', requireAuth, async (req, res) => {
+app.post('/api/projects/generate-resume-bullets', requireAuth, generationLimiter, async (req, res) => {
   const p = (req.body && req.body.project) || {};
   const prompt = `Return ONLY a JSON array of 4 concise, quantified-where-possible resume bullet strings for this project: ${JSON.stringify(p).slice(0, 3000)}.`;
   const ai = parseJSONLoose(await anthropicJSON(prompt, 700));
   if (Array.isArray(ai) && ai.length) return res.json({ ok: true, bullets: ai.map(String), generatedBy: 'ai' });
   res.json({ ok: true, bullets: psBullets(p), generatedBy: 'template' });
 });
-app.post('/api/projects/generate-linkedin-post', requireAuth, async (req, res) => {
+app.post('/api/projects/generate-linkedin-post', requireAuth, generationLimiter, async (req, res) => {
   const p = (req.body && req.body.project) || {};
   const prompt = `Write a short, engaging first-person LinkedIn post (plain text, with a few emojis and 3 hashtags) announcing this portfolio project: ${JSON.stringify(p).slice(0, 3000)}.`;
   const ai = await anthropicJSON(prompt, 600);
   if (ai && ai.length > 40) return res.json({ ok: true, post: ai, generatedBy: 'ai' });
   res.json({ ok: true, generatedBy: 'template', post: `Just shipped: ${p.title || 'a new project'}\n\n${p.useCase || ''}\n\nStack: ${(p.techStack || []).slice(0, 6).join(', ')}\n\n#portfolio #buildinpublic #${(p.targetRole || 'tech').replace(/[^a-zA-Z]/g, '')}` });
 });
-app.post('/api/projects/generate-interview-prep', requireAuth, async (req, res) => {
+app.post('/api/projects/generate-interview-prep', requireAuth, generationLimiter, async (req, res) => {
   const p = (req.body && req.body.project) || {};
   const prompt = `Return ONLY a JSON array of 6 objects {"q":"question","a":"model answer"} for an interview about this project: ${JSON.stringify(p).slice(0, 3000)}.`;
   const ai = parseJSONLoose(await anthropicJSON(prompt, 1400));
   if (Array.isArray(ai) && ai.length) return res.json({ ok: true, questions: ai, generatedBy: 'ai' });
   res.json({ ok: true, questions: psInterview(p), generatedBy: 'template' });
 });
+
+/* ============================================================
+   PROJECT CREATOR  —  Product Building Operating System
+   Discovery, Validation, Blueprint, Roadmap and IP-readiness.
+   Each endpoint tries Anthropic (key stays server-side) and falls
+   back to deterministic generation so the UI always works.
+   ============================================================ */
+const CREATOR_TYPES = ['Career Project', 'Portfolio Project', 'Startup Experiment', 'SaaS MVP', 'Hackathon Project', 'Open Source Tool'];
+const CREATOR_CATEGORIES = ['Best Career Fit', 'Best Quick Win', 'Best Portfolio Impact', 'Best Startup Potential', 'Best Beginner-Friendly'];
+
+function clampScore(n, lo = 0, hi = 100) { n = Math.round(Number(n) || 0); return Math.max(lo, Math.min(hi, n)); }
+function confidenceFor(score) { return score >= 80 ? 'High' : score >= 60 ? 'Medium' : 'Low'; }
+
+// Deterministic discovery — always returns 5 ranked, well-formed recommendations.
+function creatorDiscoverFallback(ctx = {}) {
+  const role = ctx.targetRole || 'Software Engineer';
+  const level = ctx.difficulty || 'Intermediate';
+  const missing = (ctx.missingSkills || []).filter(Boolean);
+  const current = (ctx.currentSkills || []).filter(Boolean);
+  const seedSkill = missing[0] || current[0] || 'APIs';
+  const dur = ctx.duration || '2 weeks';
+  const weekly = ctx.weeklyTime || '6–10 hrs';
+  const base = [
+    { type: 'Career Project', category: 'Best Career Fit', difficulty: level, startup: 35, quick: false,
+      title: `${role} proof-of-work platform using ${seedSkill}`,
+      summary: `A deployable ${role}-aligned application that demonstrates ${[seedSkill, missing[1]].filter(Boolean).join(' + ') || 'core production skills'} end-to-end.`,
+      targetUsers: 'Hiring managers and recruiters reviewing your portfolio',
+      skills: Array.from(new Set([seedSkill, ...missing.slice(0, 3), 'REST APIs', 'Testing', 'CI/CD'])).slice(0, 8) },
+    { type: 'Portfolio Project', category: 'Best Quick Win', difficulty: 'Beginner', startup: 20, quick: true,
+      title: `Weekend ${seedSkill} mini-app with live demo`,
+      summary: `A small but polished, fully deployed app you can finish quickly to fill the most visible resume gap.`,
+      targetUsers: 'Recruiters scanning for a working live demo',
+      skills: Array.from(new Set([seedSkill, ...current.slice(0, 2), 'Deployment', 'README'])).slice(0, 6) },
+    { type: 'SaaS MVP', category: 'Best Portfolio Impact', difficulty: 'Advanced', startup: 70, quick: false,
+      title: `Multi-tenant SaaS dashboard for ${role.split(' ')[0] || 'teams'} workflows`,
+      summary: `A production-grade SaaS MVP with auth, billing-ready architecture, analytics and a deployed multi-user demo.`,
+      targetUsers: 'Small teams who need a focused workflow tool',
+      skills: Array.from(new Set([...missing.slice(0, 2), 'Auth', 'Postgres', 'Stripe/Razorpay', 'Multi-tenant', 'Analytics'])).slice(0, 8) },
+    { type: 'Startup Experiment', category: 'Best Startup Potential', difficulty: level, startup: 82, quick: false,
+      title: `AI workflow tool that automates a real ${role.split(' ')[0] || 'industry'} pain point`,
+      summary: `Solve one painful, specific workflow with an AI-assisted product validated against real users — strong startup and proof potential.`,
+      targetUsers: 'Professionals losing time on a manual, repetitive task',
+      skills: Array.from(new Set(['LLM integration', ...missing.slice(0, 2), 'APIs', 'Deployment', 'Analytics'])).slice(0, 8) },
+    { type: 'Open Source Tool', category: 'Best Beginner-Friendly', difficulty: 'Beginner', startup: 30, quick: true,
+      title: `Open-source CLI/library for ${seedSkill}`,
+      summary: `A small, well-documented open-source tool that is approachable to build and shows clean code, tests and docs.`,
+      targetUsers: 'Developers who need a focused utility',
+      skills: Array.from(new Set([seedSkill, ...current.slice(0, 2), 'Testing', 'Docs', 'Packaging'])).slice(0, 6) },
+  ];
+  return base.map((b) => {
+    const stillMissing = missing.filter((s) => !b.skills.map((x) => x.toLowerCase()).includes(String(s).toLowerCase()));
+    const missingCovered = missing.filter((s) => b.skills.map((x) => x.toLowerCase()).includes(String(s).toLowerCase()));
+    return {
+      title: b.title, summary: b.summary, type: b.type, category: b.category,
+      targetUsers: b.targetUsers, targetRoleFit: role,
+      skillsCovered: b.skills, missingSkillsCovered: missingCovered, stillMissingSkills: stillMissing.slice(0, 5),
+      difficulty: b.difficulty, estimatedDuration: dur, weeklyTime: weekly,
+      startupPotential: b.startup, proofPotential: b.quick ? 70 : 88,
+      whyRecommended: missingCovered.length
+        ? `Directly closes ${missingCovered.slice(0, 3).join(', ')} which your target role needs and your current profile lacks.`
+        : `Aligned with ${role} and produces strong, recruiter-visible proof of work.`,
+      sourceSignals: ['target role', missing.length ? 'resume skill gaps' : 'current skills', 'preferred difficulty'].filter(Boolean),
+      expectedProofOutputs: ['Public GitHub repo', 'Live deployed demo', 'README + architecture diagram', b.type.includes('Startup') || b.type.includes('SaaS') ? 'First-users validation notes' : 'Test suite'],
+      resumeImpactPreview: `Adds a quantified bullet: "Built and deployed ${b.title} using ${b.skills.slice(0, 3).join(', ')}."`,
+      recruiterImpactPreview: `Signals hands-on ${b.skills.slice(0, 2).join(' & ')} with a verifiable live demo — stronger than a self-reported skill list.`,
+    };
+  });
+}
+
+app.post('/api/creator/discover', requireAuth, generationLimiter, async (req, res) => {
+  const ctx = req.body || {};
+  const prompt = `You are a senior career + startup mentor. Recommend EXACTLY 5 distinct project/product ideas for this person. Return ONLY a JSON array (no prose). Each object MUST have keys: title, summary (one line), type (one of ${JSON.stringify(CREATOR_TYPES)}), category (one of ${JSON.stringify(CREATOR_CATEGORIES)} — use each category once), targetUsers, targetRoleFit, skillsCovered (array), missingSkillsCovered (array), stillMissingSkills (array), difficulty (Beginner|Intermediate|Advanced), estimatedDuration, weeklyTime, startupPotential (0-100 int), proofPotential (0-100 int), whyRecommended, sourceSignals (array), expectedProofOutputs (array), resumeImpactPreview, recruiterImpactPreview. Context: role="${ctx.targetRole || ''}", level="${ctx.difficulty || ''}", year/sem="${ctx.yearSem || ''}", branch="${ctx.branch || ''}", currentSkills=${JSON.stringify((ctx.currentSkills || []).slice(0, 20))}, missingSkills=${JSON.stringify((ctx.missingSkills || []).slice(0, 20))}, weeklyTime="${ctx.weeklyTime || ''}", preferredType="${ctx.preferredType || ''}", preferredDuration="${ctx.duration || ''}", startFrom="${ctx.startFrom || ''}", customIdea="""${(ctx.customIdea || '').slice(0, 600)}""", savedJob="""${(ctx.savedJob || '').slice(0, 600)}""". Make ideas specific and non-generic (avoid plain CRUD); prefer AI workflows, real users, deployment, analytics or domain depth.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2600));
+  let recs = Array.isArray(ai) ? ai.filter((r) => r && r.title) : null;
+  if (!recs || !recs.length) recs = creatorDiscoverFallback(ctx);
+  // normalise score fields
+  recs = recs.slice(0, 5).map((r) => ({
+    ...r,
+    startupPotential: clampScore(r.startupPotential),
+    proofPotential: clampScore(r.proofPotential ?? 70),
+  }));
+  res.json({ ok: true, recommendations: recs, generatedBy: ai ? 'ai' : 'template' });
+});
+
+function creatorValidateFallback(idea = {}) {
+  const title = idea.title || 'this project';
+  const generic = /todo|crud|blog|notes app|to-do|simple/i.test(`${title} ${idea.summary || ''}`);
+  return {
+    problemSeverity: generic ? 'Low–medium: the core problem is common and already well served.' : 'Medium–high: a specific, repeated pain point with weak existing solutions.',
+    targetUsers: idea.targetUsers || 'Early adopters who feel the problem weekly.',
+    userPainPoints: ['Wastes time on a manual/repetitive task', 'Existing tools are too generic or too expensive', 'No single place to do the whole workflow'],
+    existingAlternatives: ['Spreadsheets / manual process', 'A generic horizontal SaaS', 'An enterprise tool that is overkill'],
+    whyAlternativesWeak: ['Not tailored to this exact workflow', 'Poor UX for the specific user', 'Too costly or heavy for the target user'],
+    marketJobRelevance: `Demonstrates skills employers hiring for ${idea.targetRoleFit || 'this role'} actively screen for.`,
+    mvpFeasibility: 'Feasible as a focused MVP within the estimated duration if scope stays on one core workflow.',
+    buildDifficulty: idea.difficulty || 'Intermediate',
+    monetization: ['Subscription for power users', 'Usage-based pricing', 'Free portfolio tier + paid teams tier'],
+    careerValue: 'High — produces a deployable, defensible proof-of-work artifact.',
+    startupPotential: clampScore(idea.startupPotential ?? 50),
+    risks: ['Scope creep beyond the core workflow', 'Low differentiation if AI/real-user depth is skipped', 'Distribution: reaching the first users'],
+    assumptions: ['Users will switch from their current manual process', 'The core workflow is painful enough to pay for', 'You can reach 10 target users to test'],
+    validationQuestions: ['What do you do today to solve this?', 'How much time/money does it cost you weekly?', 'What would make you switch tools?', 'Would you pay for this? How much?'],
+    firstTenUsersStrategy: ['Personally onboard 10 people who have the problem', 'Post in 2–3 niche communities', 'Offer free setup in exchange for feedback'],
+    successMetrics: ['10 activated users', 'Core task completed by 50%+ of signups', 'A deployed demo with real usage', '1 testimonial / case study'],
+    genericWarning: generic ? 'This looks like a common CRUD app. Add an AI workflow, real users, deployment, analytics, or a domain-specific problem to make it stronger.' : '',
+    score: {
+      problemClarity: generic ? 12 : 16, userNeed: generic ? 10 : 16, feasibility: 15,
+      differentiation: generic ? 8 : 15, careerValue: 16, startupPotential: clampScore((idea.startupPotential ?? 50) / 100 * 12, 0, 12), proofPotential: clampScore((idea.proofPotential ?? 70) / 100 * 13, 0, 13),
+    },
+  };
+}
+
+app.post('/api/creator/validate', requireAuth, generationLimiter, async (req, res) => {
+  const idea = (req.body && req.body.idea) || {};
+  const prompt = `You are a startup + career validation mentor. Validate this project/product idea and return ONLY JSON (no prose) with keys: problemSeverity, targetUsers, userPainPoints (array), existingAlternatives (array), whyAlternativesWeak (array), marketJobRelevance, mvpFeasibility, buildDifficulty, monetization (array), careerValue, startupPotential (0-100 int), risks (array), assumptions (array), validationQuestions (array), firstTenUsersStrategy (array), successMetrics (array), genericWarning (string, empty if not generic), score (object with int fields: problemClarity 0-20, userNeed 0-20, feasibility 0-15, differentiation 0-15, careerValue 0-10, startupPotential 0-12, proofPotential 0-13). Idea: ${JSON.stringify(idea).slice(0, 2500)}. If it is a generic CRUD/todo/blog app, set genericWarning advising to add AI workflow, real users, deployment, analytics or domain depth.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2000));
+  const report = (ai && ai.score) ? ai : creatorValidateFallback(idea);
+  res.json({ ok: true, report, generatedBy: (ai && ai.score) ? 'ai' : 'template' });
+});
+
+function creatorBlueprintFallback(p = {}) {
+  const skills = (p.skillsCovered || p.skills || []).slice(0, 8);
+  return {
+    productVision: `${p.title || 'The product'} helps ${p.targetUsers || 'its users'} solve a real workflow problem with a focused, deployable tool.`,
+    positioning: `For ${p.targetUsers || 'target users'} who struggle with the core problem, unlike generic alternatives, this is purpose-built and fast to adopt.`,
+    problemStatement: p.problemStatement || p.summary || 'A specific, repeated workflow problem that current tools handle poorly.',
+    personas: ['Primary user who performs the core task', 'Admin who manages the workspace', 'Viewer/stakeholder who consumes results'],
+    userJourneys: ['Sign up → set up workspace → complete core task → see result', 'Return → review history → take next action'],
+    mvpScope: ['Auth + workspace', 'The single core workflow end-to-end', 'Persistence + basic dashboard', 'Deployed public demo'],
+    advancedFeatures: ['Role-based access', 'Analytics + insights', 'Integrations / API', 'Billing-ready multi-tenant'],
+    featurePrioritization: [{ feature: 'Core workflow', priority: 'P0' }, { feature: 'Auth', priority: 'P0' }, { feature: 'Dashboard', priority: 'P1' }, { feature: 'Analytics', priority: 'P2' }],
+    nonFunctional: ['Performance (p95 budget)', 'Security (auth, validation, secrets)', 'Reliability + error handling', 'Observability', 'Accessibility'],
+    securityRequirements: ['Hash passwords (bcrypt)', 'Validate all input', 'Authz on every protected route', 'Secrets in env vars, never in repo', 'Rate limiting on auth'],
+    techStack: p.techStack || ['React', 'TypeScript', 'Node.js', 'Express', 'PostgreSQL', 'Docker'],
+    systemArchitecture: p.architecture || 'Client → API → services → database, with auth middleware, CI/CD and a public deployment.',
+    databaseSchema: p.databaseSchema || ['users(id, email, password_hash, role, created_at)', 'workspaces(id, owner_id FK, name)', 'items(id, workspace_id FK, payload jsonb, created_at)'],
+    apiDesign: ['POST /api/auth/register', 'POST /api/auth/login', 'GET /api/items', 'POST /api/items'],
+    uiScreens: ['Landing', 'Auth', 'Dashboard', 'Core workflow', 'Settings'],
+    folderStructure: p.repoStructure || 'client/\n  src/\nserver/\n  routes/\n  services/\n.github/workflows/ci.yml\ndocker-compose.yml\nREADME.md',
+    integrations: ['Auth provider (optional)', 'One external API', 'Payments (Stripe/Razorpay) if monetised'],
+    deploymentArchitecture: ['Containerise client + API', 'Managed Postgres', 'CI/CD on main', 'Frontend on Vercel, API on Render/Railway'],
+    testingStrategy: ['Unit tests for services', 'API integration tests', 'One E2E user journey'],
+    analytics: ['Activation (completed core task)', 'Retention (returning users)', 'Error rate', 'Latency p95'],
+    launchChecklist: ['Live demo works in incognito', 'README with setup + screenshots', 'Architecture diagram', 'Resume bullets + recruiter summary', 'Announcement post drafted'],
+  };
+}
+
+app.post('/api/creator/blueprint', requireAuth, generationLimiter, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `You are a senior product engineer. Produce a product blueprint as ONLY JSON (no prose) with keys: productVision, positioning, problemStatement, personas (array), userJourneys (array), mvpScope (array), advancedFeatures (array), featurePrioritization (array of {feature, priority}), nonFunctional (array), securityRequirements (array), techStack (array), systemArchitecture (string), databaseSchema (array of strings), apiDesign (array of strings), uiScreens (array), folderStructure (string), integrations (array), deploymentArchitecture (array), testingStrategy (array), analytics (array), launchChecklist (array). Project: ${JSON.stringify({ title: p.title, summary: p.summary, type: p.type, targetUsers: p.targetUsers, skills: p.skillsCovered || p.skills, targetRole: p.targetRole || p.targetRoleFit }).slice(0, 2500)}.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2600));
+  const blueprint = (ai && ai.productVision) ? ai : creatorBlueprintFallback(p);
+  res.json({ ok: true, blueprint, generatedBy: (ai && ai.productVision) ? 'ai' : 'template' });
+});
+
+function creatorIpFallback(p = {}) {
+  const title = p.title || 'the invention';
+  const skills = (p.skillsCovered || p.skills || []).slice(0, 6);
+  const novel = /ai|ml|llm|algorithm|optimi|real-time|distributed|pipeline|model/i.test(`${title} ${(skills).join(' ')} ${p.summary || ''}`);
+  const score = {
+    novelTechnicalProblem: novel ? 15 : 9,
+    uniqueTechnicalSolution: novel ? 18 : 12,
+    priorArtDifference: novel ? 14 : 9,
+    implementationDepth: 11,
+    industrialUsefulness: 8,
+    documentationReadiness: 6,
+  };
+  const total = Object.values(score).reduce((a, b) => a + b, 0);
+  let classification = 'Portfolio Project';
+  if (total >= 75) classification = 'Patent Review Recommended';
+  else if (total >= 60) classification = 'Research/Innovation Candidate';
+  else if (total >= 45) classification = 'Startup MVP';
+  return {
+    inventionSummary: `${title}: a system that addresses a specific technical problem using ${skills.slice(0, 3).join(', ') || 'a novel approach'}.`,
+    technicalProblem: 'Existing approaches are manual, slow, or generic for this specific workflow.',
+    technicalSolution: `A method/system combining ${skills.slice(0, 3).join(', ') || 'the core components'} to automate and improve the workflow.`,
+    noveltyPoints: ['Specific combination of components for this workflow', 'Automation of a previously manual step', 'Domain-specific data/heuristics'],
+    inventiveStepHypothesis: 'The combination is non-obvious if it produces a measurable improvement not achievable by simply combining known tools.',
+    industrialUse: 'Applicable in the target industry as a deployable product/service.',
+    priorArtKeywords: Array.from(new Set([...(skills.slice(0, 3)), 'automation', 'system', 'method', (p.type || 'software')])).slice(0, 8),
+    comparableSolutions: ['Search Google Patents + Espacenet for the core method', 'Review top 3 commercial alternatives', 'Check open-source projects in the space'],
+    systemDiagramsChecklist: ['System architecture diagram', 'Data flow diagram', 'Sequence diagram for the core method', 'Component interaction diagram'],
+    provisionalSpecOutline: ['Title', 'Field of invention', 'Background / problem', 'Summary', 'Detailed description', 'Drawings', 'Claims (draft)', 'Abstract'],
+    claimPreparationNotes: ['Draft one independent claim for the core method', 'Add dependent claims for key variations', 'Keep claims tied to a concrete technical effect'],
+    documentationChecklist: ['Dated invention log', 'Architecture + flow diagrams', 'Working prototype / demo', 'Test results / metrics', 'Prior-art notes'],
+    score,
+    patentReadinessScore: total,
+    classification,
+    risks: ['Software/abstract-idea subject-matter limits in some jurisdictions', 'Possible prior art — search before filing', 'Public disclosure before filing can affect rights'],
+  };
+}
+
+app.post('/api/creator/ip', requireAuth, generationLimiter, async (req, res) => {
+  const p = (req.body && req.body.project) || {};
+  const prompt = `You are an IP-readiness assistant (NOT a lawyer). Return ONLY JSON (no prose) with keys: inventionSummary, technicalProblem, technicalSolution, noveltyPoints (array), inventiveStepHypothesis, industrialUse, priorArtKeywords (array), comparableSolutions (array), systemDiagramsChecklist (array), provisionalSpecOutline (array), claimPreparationNotes (array), documentationChecklist (array), score (object ints: novelTechnicalProblem 0-20, uniqueTechnicalSolution 0-25, priorArtDifference 0-20, implementationDepth 0-15, industrialUsefulness 0-10, documentationReadiness 0-10), patentReadinessScore (int 0-100 = sum of score), classification (one of "Portfolio Project","Startup MVP","Research/Innovation Candidate","Patent Review Recommended"), risks (array). Do not claim patentability. Project: ${JSON.stringify({ title: p.title, summary: p.summary, type: p.type, skills: p.skillsCovered || p.skills, problem: p.problemStatement }).slice(0, 2500)}.`;
+  const ai = parseJSONLoose(await anthropicJSON(prompt, 2200));
+  const report = (ai && ai.score && typeof ai.patentReadinessScore !== 'undefined') ? ai : creatorIpFallback(p);
+  res.json({ ok: true, report, generatedBy: (ai && ai.score) ? 'ai' : 'template' });
+});
+
+/* Optional external trend sources — best-effort, never blocks the UI. */
+app.get('/api/creator/trends', requireAuth, async (req, res) => {
+  const out = { github: [], productHunt: [], sources: { github: false, productHunt: !!process.env.PRODUCTHUNT_TOKEN } };
+  try {
+    const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    const r = await fetch(`https://api.github.com/search/repositories?q=created:%3E${since}&sort=stars&order=desc&per_page=6`, {
+      headers: { 'User-Agent': 'career-autopilot', Accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      out.github = (d.items || []).slice(0, 6).map((it) => ({ name: it.full_name, description: it.description || '', stars: it.stargazers_count, url: it.html_url, language: it.language || '' }));
+      out.sources.github = true;
+    }
+  } catch {}
+  res.json({ ok: true, ...out });
+});
+
 
 /* ============================================================
    PART 1 — GITHUB PUBLIC REPO ANALYSIS  (no OAuth required)
@@ -2925,7 +3377,7 @@ function detectFilesFromRoot(entries = []) {
   };
 }
 
-app.post('/api/projects/analyze-github', requireAuth, async (req, res) => {
+app.post('/api/projects/analyze-github', requireAuth, generationLimiter, async (req, res) => {
   const { repoUrl, expectedSkills = [], expectedTechStack = [] } = req.body || {};
   const ref = parseRepoRef(repoUrl);
   if (!ref) return res.status(400).json({ ok: false, success: false, error: 'bad_url', message: 'Could not read that GitHub repo URL. Use https://github.com/user/repo, github.com/user/repo or user/repo.' });
@@ -3060,7 +3512,7 @@ app.post('/api/projects/analyze-github', requireAuth, async (req, res) => {
 /* ============================================================
    PART 2 — LIVE DEPLOYMENT LINK VERIFICATION
    ============================================================ */
-app.post('/api/projects/verify-live-link', requireAuth, async (req, res) => {
+app.post('/api/projects/verify-live-link', requireAuth, generationLimiter, async (req, res) => {
   let { liveUrl } = req.body || {};
   liveUrl = String(liveUrl || '').trim();
   if (liveUrl && !/^https?:\/\//i.test(liveUrl)) liveUrl = 'https://' + liveUrl;
@@ -3109,7 +3561,7 @@ app.post('/api/projects/verify-live-link', requireAuth, async (req, res) => {
    returns a structured layout spec. Falls back to the client analyzer
    (dominant colour + column detection) when AI vision is unavailable.
    ============================================================ */
-app.post('/api/templates/analyze-custom-template', requireAuth, async (req, res) => {
+app.post('/api/templates/analyze-custom-template', requireAuth, generationLimiter, validateBody(templateImageSchema), async (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY;
   const { imageBase64, mime } = req.body || {};
   const data = String(imageBase64 || '').includes(',') ? String(imageBase64).split(',')[1] : imageBase64;
@@ -3137,28 +3589,72 @@ app.post('/api/templates/analyze-custom-template', requireAuth, async (req, res)
   }
 });
 
+/* JSON 404 for unmatched backend routes (so the SPA fallback never swallows a
+   mistyped API path and returns HTML to an API client). */
+app.use(['/jobs', '/auth', '/apply', '/ai', '/api', '/contacts', '/opportunities', '/support', '/dashboard', '/profile'], (req, res) => {
+  res.status(404).json({ error: 'not_found', message: `No such endpoint: ${req.method} ${req.path}` });
+});
+
 /* SPA fallback: keep API/backend routes intact, send UI for normal browser paths. */
 app.get(/^\/(?!jobs|auth|apply|ai|api|health|contacts|opportunities|support|dashboard).*/, (req, res) => {
   res.sendFile(UI_INDEX);
 });
 
+/* ------------------------------------------------------------------
+   CENTRALIZED ERROR HANDLER (must be last). Logs full diagnostics
+   server-side; returns a safe, generic message to the client and
+   NEVER leaks stack traces or secrets in production.
+   ------------------------------------------------------------------ */
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  logger.error('Unhandled request error', {
+    method: req.method,
+    path: req.path,
+    status,
+    message: err.message,
+    stack: config.IS_PROD ? undefined : err.stack,
+  });
+  if (res.headersSent) return;
+  res.status(status >= 400 && status < 600 ? status : 500).json({
+    error: 'server_error',
+    message: config.IS_PROD
+      ? 'Something went wrong on our end. Please try again.'
+      : err.message || 'Internal server error',
+  });
+});
+
 const port = process.env.PORT || 3000;
 
-/* Local run uses app.listen. Vercel imports the Express app as a serverless handler. */
-if (!process.env.VERCEL) {
+/* Local run uses app.listen. Vercel imports the Express app as a serverless
+   handler; the test suite imports it and binds its own ephemeral port. */
+if (!process.env.VERCEL && config.NODE_ENV !== 'test') {
   if (db.dbEnabled()) {
     db.connectDB()
-      .then(() => console.log('  • MongoDB: connected'))
-      .catch((e) => console.log(`  • MongoDB: connection FAILED (${e.message}) — running session-only`));
+      .then(() => logger.info('MongoDB connected'))
+      .catch((e) => {
+        // In production, a configured-but-unreachable database is fatal: the app
+        // persists users/sessions/dashboards in Mongo and must not silently run
+        // without persistence. In development we degrade to session-only.
+        if (config.IS_PROD) {
+          logger.error('MongoDB connection failed in production — refusing to start.', { message: e.message });
+          // eslint-disable-next-line no-process-exit
+          process.exit(1);
+        }
+        logger.error('MongoDB connection failed — running session-only (dev)', { message: e.message });
+      });
   }
   app.listen(port, () => {
-    console.log(`Career Autopilot running on http://localhost:${port}`);
-    console.log(`  • Frontend served from this origin`);
-    console.log(`  • Database: ${db.dbEnabled() ? 'MongoDB (MONGODB_URI set)' : 'OFF (session/cookie only — set MONGODB_URI to persist users & tickets)'}`);
-    console.log(`  • Support: FAQ + chatbot + tickets enabled`);
-    console.log(`  • Job sources: ${SOURCES.map(s => s.name).join(', ')} (structured, verified — no AI-generated jobs)`);
-    console.log(`  • AI proxy: ${process.env.ANTHROPIC_API_KEY ? 'enabled' : 'OFF (set ANTHROPIC_API_KEY)'} — used for resume/tailoring/interview only`);
-    console.log(`  • Google sign-in: ${googleEnabled() ? 'enabled' : 'OFF (set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET)'}${allowDevLogin() ? '  |  demo sign-in: ON' : ''}`);
+    logger.info(`Career Autopilot running on http://localhost:${port}`, {
+      env: config.NODE_ENV,
+      database: db.dbEnabled() ? 'mongodb' : 'off',
+      ai: !!process.env.ANTHROPIC_API_KEY,
+      google: googleEnabled(),
+      devLogin: allowDevLogin(),
+      corsAllowlist: config.ALLOWED_ORIGINS.length ? config.ALLOWED_ORIGINS : ['(same-origin only)'],
+      csp: config.ENABLE_CSP,
+      jobSources: SOURCES.map((s) => s.name),
+    });
   });
 }
 

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Rocket, Wand2, Sparkles, FileText, PenLine, UploadCloud, Github, Globe,
   CheckCircle2, Circle, Plus, Trash2, Copy, Check, ListChecks, Layers,
   Target, Gauge, Clock, Boxes, AlertTriangle, X, Image as ImageIcon, BookOpen,
-  GitBranch, ShieldCheck, Network, RefreshCw, ServerCog, Database, Workflow,
+  GitBranch, ShieldCheck, Network, RefreshCw, ServerCog, Database, Workflow, ChevronDown,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
-import { Button, Badge, Modal, EmptyState, Input, Field, Spinner } from '../components/ui/kit.jsx';
+import { Button, Badge, Modal, EmptyState, Input, Field, Skeleton } from '../components/ui/kit.jsx';
 import { ROLE_GROUPS, ALL_ROLES } from '../lib/roles.js';
 import { getStoredResume, saveStoredResume, getResumeSearchRole } from '../lib/resumeStore.js';
 import {
@@ -60,123 +61,200 @@ function Chips({ items, tone = 'cyan' }) {
 }
 
 /* ---------------- Generated project result ---------------- */
+function MilestoneCard({ index, phase, tasks, last, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const list = tasks || [];
+  return (
+    <div className="relative pl-9 sm:pl-12">
+      {/* timeline rail */}
+      <span className="absolute left-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full bg-aurora-cta text-[12px] font-semibold text-white shadow-glow sm:left-3">{index + 1}</span>
+      {!last && <span className="absolute left-[1.37rem] top-9 h-[calc(100%-1.25rem)] w-px bg-white/10 sm:left-[1.62rem]" />}
+      <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-ink-950/55">
+        <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03]">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-aurora-cyan">Phase {index + 1}</p>
+            <p className="truncate font-display text-[15px] font-semibold text-white">{phase}</p>
+          </div>
+          <span className="shrink-0 text-[11px] text-slate-500">{list.length} task{list.length === 1 ? '' : 's'}</span>
+          <ChevronDown size={16} className={`shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+              <ul className="space-y-2 border-t border-white/8 px-4 py-3">
+                {list.map((t, k) => (
+                  <li key={k} className="flex items-start gap-2.5 text-[13px] leading-relaxed text-slate-300">
+                    <Circle size={7} className="mt-1.5 shrink-0 fill-aurora-cyan/40 text-aurora-cyan" />
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function RoadmapTimeline({ steps }) {
+  if (!steps?.length) return <EmptyState icon={Workflow} title="No roadmap phases" hint="This project has no generated phases yet." />;
+  return (
+    <div className="pt-1">
+      {steps.map((ph, i) => (
+        <MilestoneCard key={i} index={i} phase={ph.phase} tasks={ph.tasks} last={i === steps.length - 1} defaultOpen={i === 0} />
+      ))}
+    </div>
+  );
+}
+
+function GenerateSkeleton() {
+  return (
+    <div className="gradient-border overflow-hidden">
+      <div className="space-y-3 border-b border-white/10 p-5 sm:p-6">
+        <Skeleton className="h-5 w-24 rounded-full" />
+        <Skeleton className="h-8 w-2/3 rounded-xl" />
+        <div className="flex gap-2"><Skeleton className="h-6 w-28 rounded-full" /><Skeleton className="h-6 w-24 rounded-full" /></div>
+      </div>
+      <div className="space-y-3 p-5 sm:p-6">
+        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}
+      </div>
+    </div>
+  );
+}
+
 function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
   const p = project;
+  const [tab, setTab] = useState('overview');
+  const TABS = [
+    ['overview', 'Overview', Layers],
+    ['roadmap', 'Roadmap', Workflow],
+    ['stack', 'Tech Stack', Boxes],
+    ['github', 'GitHub Plan', Github],
+    ['resume', 'Resume Points', FileText],
+  ];
   return (
-    <SectionCard
-      title="Generated project"
-      action={<div className="flex items-center gap-2"><Badge tone={p.generatedBy === 'ai' ? 'violet' : 'cyan'}>{p.generatedBy === 'ai' ? 'AI-tailored' : 'Template'}</Badge><Badge tone="mint">{p.type}</Badge></div>}
-    >
-      <div className="space-y-4">
-        <div>
-          <h3 className="font-display text-xl font-semibold text-white">{p.title}</h3>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Badge tone="violet"><Target size={11} /> {p.targetRole}</Badge>
-            <Badge tone="amber"><Gauge size={11} /> {p.difficulty}</Badge>
-            <Badge tone="cyan"><Clock size={11} /> {p.duration}</Badge>
+    <div className="gradient-border overflow-hidden">
+      {/* header — always-visible actions (preserved) */}
+      <div className="border-b border-white/10 p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Badge tone={p.generatedBy === 'ai' ? 'violet' : 'cyan'}>{p.generatedBy === 'ai' ? 'AI-tailored' : 'Template'}</Badge>
+              <Badge tone="mint">{p.type}</Badge>
+            </div>
+            <h2 className="font-display text-2xl font-semibold text-white">{p.title}</h2>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge tone="violet"><Target size={11} /> {p.targetRole}</Badge>
+              <Badge tone="amber"><Gauge size={11} /> {p.difficulty}</Badge>
+              <Badge tone="cyan"><Clock size={11} /> {p.duration}</Badge>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onSave}><UploadCloud size={15} /> Save as workspace</Button>
+            <Button variant="soft" onClick={onAddBullets}><FileText size={15} /> Add bullets to resume</Button>
+            <Button variant="soft" onClick={onOpenEditor}><PenLine size={15} /> Open Resume Editor</Button>
           </div>
         </div>
+      </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Problem</div>
-            <p className="text-[13px] leading-relaxed text-slate-300">{p.problemStatement}</p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Real-world use case</div>
-            <p className="text-[13px] leading-relaxed text-slate-300">{p.useCase}</p>
-          </div>
-        </div>
+      {/* tabs — horizontally scrollable on mobile */}
+      <div className="flex gap-1 overflow-x-auto border-b border-white/10 px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {TABS.map(([id, label, Icon]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${tab === id ? 'bg-aurora-violet/20 text-white ring-1 ring-aurora-violet/40' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </div>
 
-        <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Skills covered</div>
-          <Chips items={p.skillsCovered} />
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Recommended tech stack</div>
-            <Chips items={p.techStack} tone="violet" />
-          </div>
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Architecture</div>
-            <p className="text-[13px] leading-relaxed text-slate-300">{p.architecture}</p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Step-by-step roadmap</div>
-          <ol className="space-y-2">
-            {p.steps.map((ph, i) => (
-              <li key={i} className="text-[13px] text-slate-300">
-                <span className="font-medium text-white">{i + 1}. {ph.phase}</span>
-                <ul className="ml-4 mt-1 list-disc space-y-0.5 text-slate-400 marker:text-aurora-cyan">
-                  {ph.tasks.map((t, j) => <li key={j}>{t}</li>)}
+      {/* tab body — full width */}
+      <div className="p-5 sm:p-6">
+        {tab === 'overview' && (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Panel title="Problem"><p className="text-[13px] leading-relaxed text-slate-300">{p.problemStatement}</p></Panel>
+              <Panel title="Real-world use case"><p className="text-[13px] leading-relaxed text-slate-300">{p.useCase}</p></Panel>
+            </div>
+            <Panel title="Skills covered"><Chips items={p.skillsCovered} /></Panel>
+            {p.industry?.businessContext?.coreWorkflows?.length > 0 && (
+              <Panel title="Core workflows">
+                <ul className="grid gap-1.5 text-[13px] text-slate-300 sm:grid-cols-2">
+                  {p.industry.businessContext.coreWorkflows.map((w, i) => (
+                    <li key={i} className="flex items-start gap-2"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-aurora-mint" /><span>{w}</span></li>
+                  ))}
                 </ul>
-              </li>
-            ))}
-          </ol>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Repo structure</div>
-            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre>
-          </div>
-          <div className="space-y-3">
-            <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Deployment plan</div>
-              <ul className="list-disc space-y-0.5 pl-4 text-[12px] text-slate-400 marker:text-aurora-mint">{p.deploymentPlan.map((s, i) => <li key={i}>{s}</li>)}</ul>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Testing plan</div>
-              <ul className="list-disc space-y-0.5 pl-4 text-[12px] text-slate-400 marker:text-amber-glow">{p.testingPlan.map((s, i) => <li key={i}>{s}</li>)}</ul>
-            </div>
-          </div>
-        </div>
-
-        {p.databaseSchema && (
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Database schema</div>
-            <ul className="list-disc space-y-0.5 pl-4 font-mono text-[11px] text-slate-400">{p.databaseSchema.map((s, i) => <li key={i}>{s}</li>)}</ul>
+              </Panel>
+            )}
+            {p.industry?.overview && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <Panel title="Who should build this"><p className="text-[13px] leading-relaxed text-slate-300">{p.industry.overview.whoShouldBuild}</p></Panel>
+                <Panel title="Expected outcome"><p className="text-[13px] leading-relaxed text-slate-300">{p.industry.overview.expectedOutcome}</p></Panel>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-          <div className="mb-2 flex items-center justify-between"><div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Resume bullet points</div><CopyBtn text={p.resumeBullets.map((b) => '• ' + b).join('\n')} /></div>
-          <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-300 marker:text-aurora-violet">{p.resumeBullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-2 flex items-center justify-between"><div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">LinkedIn post</div><CopyBtn text={p.linkedinPost} /></div>
-            <pre className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-300">{p.linkedinPost}</pre>
+        {tab === 'roadmap' && (
+          <div>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="font-display text-base font-semibold text-white">Step-by-step roadmap</h3>
+              <Badge tone="cyan">{p.steps?.length || 0} phases</Badge>
+            </div>
+            <RoadmapTimeline steps={p.steps} />
           </div>
-          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Interview Q&A</div>
-            <div className="space-y-2">
-              {p.interviewQuestions.slice(0, 5).map((qa, i) => (
-                <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
-                  <summary className="cursor-pointer font-medium text-slate-200">{qa.q}</summary>
-                  <p className="mt-1 text-slate-400">{qa.a}</p>
-                </details>
-              ))}
+        )}
+
+        {tab === 'stack' && (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Panel title="Recommended tech stack"><Chips items={p.techStack} tone="violet" /></Panel>
+              <Panel title="Architecture"><p className="text-[13px] leading-relaxed text-slate-300">{p.architecture}</p></Panel>
+            </div>
+            <Panel title="Repo structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre></Panel>
+            {p.databaseSchema?.length > 0 && (
+              <Panel title="Database schema"><ul className="list-disc space-y-0.5 pl-4 font-mono text-[11px] text-slate-400">{p.databaseSchema.map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
+            )}
+            <div className="grid gap-3 md:grid-cols-2">
+              <Panel title="Deployment plan"><ul className="list-disc space-y-0.5 pl-4 text-[12px] text-slate-400 marker:text-aurora-mint">{(p.deploymentPlan || []).map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
+              <Panel title="Testing plan"><ul className="list-disc space-y-0.5 pl-4 text-[12px] text-slate-400 marker:text-amber-glow">{(p.testingPlan || []).map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
-          <div className="mb-2 flex items-center justify-between"><div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">GitHub README</div><CopyBtn text={p.readme} label="Copy README" /></div>
-          <pre className="max-h-52 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.readme}</pre>
-        </div>
+        {tab === 'github' && (
+          <div className="space-y-4">
+            <Panel title="GitHub README" action={<CopyBtn text={p.readme} label="Copy README" />}>
+              <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.readme}</pre>
+            </Panel>
+            <Panel title="Repo structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre></Panel>
+          </div>
+        )}
 
-        <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
-          <Button onClick={onSave}><UploadCloud size={15} /> Save as workspace</Button>
-          <Button variant="soft" onClick={onAddBullets}><FileText size={15} /> Add bullets to resume</Button>
-          <Button variant="soft" onClick={onOpenEditor}><PenLine size={15} /> Open Resume Editor</Button>
-        </div>
+        {tab === 'resume' && (
+          <div className="space-y-4">
+            <Panel title="Resume bullet points" action={<CopyBtn text={(p.resumeBullets || []).map((b) => '\u2022 ' + b).join('\n')} />}>
+              <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-300 marker:text-aurora-violet">{(p.resumeBullets || []).map((b, i) => <li key={i}>{b}</li>)}</ul>
+            </Panel>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Panel title="LinkedIn post" action={<CopyBtn text={p.linkedinPost} />}>
+                <pre className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-300">{p.linkedinPost}</pre>
+              </Panel>
+              <Panel title="Interview Q&A">
+                <div className="space-y-2">
+                  {(p.interviewQuestions || []).slice(0, 5).map((qa, i) => (
+                    <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
+                      <summary className="cursor-pointer font-medium text-slate-200">{qa.q}</summary>
+                      <p className="mt-1 text-slate-400">{qa.a}</p>
+                    </details>
+                  ))}
+                </div>
+              </Panel>
+            </div>
+          </div>
+        )}
       </div>
-    </SectionCard>
+    </div>
   );
 }
 
@@ -779,9 +857,7 @@ export default function ProjectStudio({ go }) {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.25fr]">
-        {/* form */}
-        <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
           <SectionCard title="Project setup">
             <div className="space-y-3">
               <Field label="Target role">
@@ -824,18 +900,26 @@ export default function ProjectStudio({ go }) {
           </SectionCard>
         </div>
 
-        {/* result / placeholder */}
-        <div className="space-y-4">
-          {status === 'loading' && <SectionCard title="Generating"><div className="flex flex-col items-center gap-3 py-16"><Spinner /><p className="text-sm text-muted">Designing a project around your skills…</p></div></SectionCard>}
-          {status === 'idle' && !project && (
-            <SectionCard title="Your project">
-              <EmptyState icon={Rocket} title="No project yet" hint="Set your role, level, duration and type, then generate a tailored project roadmap with resume bullets, a README, a LinkedIn post and interview prep." />
-            </SectionCard>
-          )}
-          {project && status === 'done' && (
-            <ProjectResult project={project} seed={seed} onSave={saveWorkspace} onAddBullets={addBullets} onOpenEditor={() => go?.('editor')} />
-          )}
-        </div>
+      {/* generated result — full width */}
+      <div className="mt-6">
+        {status === 'loading' && <GenerateSkeleton />}
+        {status === 'error' && (
+          <div className="gradient-border p-6">
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-glow/12 text-amber-glow ring-1 ring-amber-glow/25"><AlertTriangle size={22} /></span>
+              <p className="text-sm text-slate-300">We couldn't generate your project roadmap. Please try again.</p>
+              <Button variant="outline" size="sm" onClick={generate}><RefreshCw size={15} /> Retry</Button>
+            </div>
+          </div>
+        )}
+        {status === 'idle' && !project && (
+          <div className="gradient-border p-8 sm:p-10">
+            <EmptyState icon={Rocket} title="Generate your first portfolio project" hint="Set your target role, level, duration and type above, then generate a full roadmap with milestones, tech stack, a README, resume bullets, a LinkedIn post and interview prep — all in one full-width workspace." />
+          </div>
+        )}
+        {project && status === 'done' && (
+          <ProjectResult project={project} seed={seed} onSave={saveWorkspace} onAddBullets={addBullets} onOpenEditor={() => go?.('editor')} />
+        )}
       </div>
 
       {/* saved workspaces */}

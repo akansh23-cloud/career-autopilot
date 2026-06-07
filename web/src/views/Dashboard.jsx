@@ -3,7 +3,7 @@ import {
   FileText, Briefcase, Send, MessageSquare, ArrowUpRight, Sparkles,
   Target, KanbanSquare, Trophy, Plus, Activity as ActivityIcon, AlertTriangle, RefreshCw,
 } from 'lucide-react';
-import { PageIntro, StatCard, SectionCard, BarChart } from './common.jsx';
+import { PageIntro, StatCard, SectionCard, BarChart, NextBestAction } from './common.jsx';
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui/kit.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { Dashboard as DashboardApi } from '../lib/api.js';
@@ -96,13 +96,22 @@ export default function Dashboard({ go }) {
   const resumeScore = base.resumeScore ?? localResume.analysis?.score ?? localResume.analysis?.ats ?? null;
   const s = { ...base, resumeScore };
   const demo = !!data?.demo;
-  const funnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0 };
+  const funnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 };
   const weekly = s.weekly || { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [0, 0, 0, 0, 0, 0, 0] };
   const activity = [...(s.activity || [])];
   if (localResume.analysis && !activity.some((a) => /resume/i.test(a.text || ''))) activity.unshift({ text: `Resume analyzed${localResume.targetRole ? ` for ${localResume.targetRole}` : ''} — score ${resumeScore || 'ready'}`, when: 'Saved locally', tone: 'cyan' });
   if (projects.length && !activity.some((a) => /project/i.test(a.text || ''))) activity.unshift({ text: `${projects.length} project workspace${projects.length === 1 ? '' : 's'} active with ${career.total} Career XP`, when: 'Saved locally', tone: 'violet' });
   const matches = (s.matches && s.matches.length ? s.matches : (localJobs.jobs || []).slice(0, 5));
   const funnelEmpty = !Object.values(funnel).some((v) => v > 0);
+
+  // One focal next-best-action, derived from existing signals (no new data).
+  const nba = (resumeScore == null)
+    ? { title: 'Start with your resume', description: 'Upload and analyze your resume to unlock your ATS score and personalized job matches.', primary: { label: 'Analyze my resume', icon: FileText, onClick: () => go('resume') } }
+    : projects.length === 0
+    ? { title: 'Turn your gaps into proof', description: 'Build one guided proof-of-work project to strengthen the exact skills your target roles ask for.', primary: { label: 'Start a project', icon: Sparkles, onClick: () => go('projectstudio') } }
+    : badges.length === 0
+    ? { title: 'Earn your first verified badge', description: 'Finish your project tasks and connect a GitHub repo or live demo to turn work into verified proof.', primary: { label: 'Open project workspace', icon: Sparkles, onClick: () => go('projectstudio') } }
+    : { title: 'Publish your strongest project', description: 'Add your best verified project to the public sandbox so recruiters can discover your proof of work.', primary: { label: 'Publish to sandbox', icon: Sparkles, onClick: () => go('sandbox') } };
 
   return (
     <>
@@ -114,8 +123,20 @@ export default function Dashboard({ go }) {
         </div>
       )}
 
+      <NextBestAction
+        title={nba.title}
+        description={nba.description}
+        primary={nba.primary}
+        secondary={[
+          { label: 'Find jobs', icon: Briefcase, onClick: () => go('jobs') },
+          { label: 'Track applications', icon: KanbanSquare, onClick: () => go('tracker') },
+        ]}
+        score={resumeScore}
+        scoreLabel="ATS"
+      />
+
       {/* ---- Stat cards (user-specific; empty for a new user) ---- */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {s.resumeScore == null ? (
           <StatCard i={0} icon={FileText} tone="cyan" label="Resume score" value="—"
             hint="Upload your resume to get your first ATS score" onClick={() => go('resume')} />
@@ -133,8 +154,8 @@ export default function Dashboard({ go }) {
           onClick={!s.outreachSent ? () => go('contacts') : undefined} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <SectionCard title="Project progress" className="lg:col-span-2" action={<Badge tone="violet">Proof-of-work</Badge>}>
+      <div className="mt-4">
+        <SectionCard title="Project progress" action={<Badge tone="violet">Proof-of-work</Badge>}>
           {projects.length === 0 ? (
             <EmptyState icon={Trophy} title="No project workspace yet" hint="Create a guided project to start earning verified skill XP and badges." action={<Button size="sm" onClick={() => go('projectstudio')}>Create project</Button>} />
           ) : (
@@ -144,12 +165,6 @@ export default function Dashboard({ go }) {
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Top skill</p><p className="mt-1 truncate font-display text-2xl text-white">{skills[0]?.skillName || '—'}</p><p className="text-[11px] text-slate-500">{skills[0] ? `${skills[0].xp} XP · ${skills[0].level}` : 'Add project evidence'}</p></div>
             </div>
           )}
-        </SectionCard>
-        <SectionCard title="Next best action">
-          <div className="space-y-3 text-sm text-slate-300">
-            <p>{resumeScore == null ? 'Upload and analyze your resume first.' : projects.length === 0 ? 'Turn your resume gaps into one guided proof-of-work project.' : badges.length === 0 ? 'Complete tasks and connect GitHub/live demo to earn your first verified badge.' : 'Publish your strongest verified project to the sandbox.'}</p>
-            <Button size="sm" variant="soft" onClick={() => go(projects.length ? 'projectstudio' : 'resume')}>{projects.length ? 'Open project workspace' : 'Start with resume'}</Button>
-          </div>
         </SectionCard>
       </div>
 
@@ -164,8 +179,8 @@ export default function Dashboard({ go }) {
           ) : (
             <>
               <BarChart data={weekly.values} labels={weekly.labels} />
-              <div className="mt-4 grid grid-cols-4 gap-3 border-t border-white/8 pt-4">
-                {[['Saved', funnel.saved], ['Applied', funnel.applied], ['Interview', funnel.interview], ['Offer', funnel.offer]].map(([l, v]) => (
+              <div className="mt-4 grid grid-cols-5 gap-3 border-t border-white/8 pt-4">
+                {[['Saved', funnel.saved], ['Applied', funnel.applied], ['Interview', funnel.interview], ['Offer', funnel.offer], ['Rejected', funnel.rejected || 0]].map(([l, v]) => (
                   <div key={l}>
                     <div className="font-display text-xl text-white">{v}</div>
                     <div className="text-[11px] text-slate-500">{l}</div>

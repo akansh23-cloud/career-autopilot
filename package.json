@@ -13,29 +13,44 @@
     "build": "vite build",
     "start": "node server.js",
     "preview": "npm run build && node server.js",
-    "vercel-build": "vite build"
+    "vercel-build": "vite build",
+    "test": "NODE_ENV=test ALLOW_DEV_LOGIN=1 JOB_FETCH_TIMEOUT=1500 JOB_VERIFY_TIMEOUT=1500 JOB_SEARCH_BUDGET=2500 node --test --test-concurrency=1 test/*.test.js",
+    "test:e2e": "playwright test",
+    "lint": "eslint server.js db.js access.js paymentsStore.js support-kb.js \"web/src/**/*.{js,jsx}\"",
+    "typecheck": "echo \"No TypeScript in this project — skipping typecheck.\"",
+    "audit:ci": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^7.4.1",
     "express-session": "^1.18.0",
+    "helmet": "^8.0.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
-    "mammoth": "^1.8.0",
-    "mongoose": "^8.9.5",
-    "pdfjs-dist": "^4.7.76"
+    "mammoth": "^1.12.0",
+    "mongoose": "^8.24.0",
+    "pdfjs-dist": "^4.7.76",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
+    "eslint": "^9.17.0",
     "framer-motion": "^11.15.0",
+    "globals": "^15.14.0",
     "lucide-react": "^0.469.0",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.17",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "@playwright/test": "^1.49.1"
+  },
+  "overrides": {
+    "tar": "^7.5.16",
+    "@mapbox/node-pre-gyp": "^2.0.3"
   }
 }

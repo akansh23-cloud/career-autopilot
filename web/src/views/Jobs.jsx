@@ -9,7 +9,7 @@ import { saveStudioSeed } from '../lib/projectStore.js';
 import { inferType } from '../lib/projectGen.js';
 import { canUse, useMeter, canTrack, promptUpgrade } from '../lib/plan.js';
 
-const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d']];
+const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d'], ['Latest', 'latest']];
 const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
 const EDITOR_KEY = 'careerAutopilot.editor.lastTailor.v1';
 const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
@@ -224,7 +224,9 @@ function JobCard({ j, saved, onSave, onAction }) {
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 truncate font-display text-lg font-semibold text-white md:text-xl">{j.title}</h3>
           <Badge tone="mint">✓ Open</Badge>
-          {j.postedDate && <Badge tone="cyan">{j.postedDate}</Badge>}
+          {j.postedDate
+            ? <Badge tone="cyan"><Clock size={11}/> {j.postedDate}</Badge>
+            : <Badge tone="amber" title="The source did not provide a posting date; this job is not treated as fresh."><Clock size={11}/> Date unavailable</Badge>}
           {j.source && <Badge>{j.source}</Badge>}
         </div>
         <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Building2 size={14}/> {j.company || 'Company not listed'}</p>
@@ -255,15 +257,15 @@ function JobCard({ j, saved, onSave, onAction }) {
 
     <div className="mt-3 flex flex-wrap gap-2">
       <Button size="sm" onClick={() => onAction('tailor', j)}><Sparkles size={14}/> Tailor & Apply</Button>
+      <Button size="sm" variant="soft" onClick={() => onAction('details', j)}><Eye size={14}/> Details</Button>
       <Button size="sm" variant="soft" onClick={() => onAction('checklist', j)}><ClipboardCheck size={14}/> Checklist</Button>
       <Button size="sm" variant="soft" onClick={() => onAction('interview', j)}><Hammer size={14}/> Prep</Button>
       <Button size="sm" variant="soft" onClick={() => onAction('buildproject', j)}><Rocket size={14}/> Build project for gaps</Button>
-      {j.url && <a href={j.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><ExternalLink size={14}/> Posting</Button></a>}
+      {j.url && <a href={j.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><ExternalLink size={14}/> Apply</Button></a>}
       <button onClick={() => onSave(j)} className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-medium ${saved ? 'border-amber-glow/40 bg-amber-glow/10 text-amber-glow' : 'border-white/10 bg-white/[0.04] text-slate-300'}`}><Bookmark size={14} fill={saved ? 'currentColor' : 'none'}/> {saved ? 'Saved' : 'Save'}</button>
     </div>
 
     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
-      <Badge>🔎 recruiters: 0</Badge><Badge>🤝 referrals: 0</Badge><Badge>✉ Not contacted</Badge>
       <Button size="sm" variant="soft" onClick={() => onAction('contacts', j)}><Users size={14}/> Hiring contact</Button>
       <Button size="sm" variant="soft" onClick={() => onAction('referrals', j)}><Users size={14}/> Referral</Button>
       <Button size="sm" variant="soft" onClick={() => onAction('linkedin', j)}><Linkedin size={14}/> LinkedIn</Button>
@@ -288,6 +290,7 @@ export default function JobsView({ go }) {
   const [tailorJob, setTailorJob] = useState(null);
   const [people, setPeople] = useState({ open: false, title: '', status: 'idle', contacts: [], err: '', note: '', job: null, draft: '', copied: false });
   const [mini, setMini] = useState({ open: false, title: '', body: '', job: null });
+  const [buildConfirm, setBuildConfirm] = useState(null); // { job, gaps } — guided hand-off confirmation
 
   const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, saved, ...patch });
   const enrichedJobs = useMemo(() => {
@@ -332,7 +335,28 @@ export default function JobsView({ go }) {
   };
   const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
-  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'buildproject') { const gaps = (j._missing || []).slice(0, 12); saveStudioSeed({ job: { title: j.title, company: j.company }, missingSkills: gaps, type: inferType(gaps, j.title) }); go?.('projectstudio'); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { if (!canTrack(trackedCount())) { promptUpgrade('Free plan tracks up to 20 jobs. Upgrade for unlimited tracking.', 'pro'); return; } addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
+  const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'buildproject') { const ej = enrichJob(j, getStoredResume()); setBuildConfirm({ job: ej, gaps: (ej._missing || []).slice(0, 12) }); return; } if (type === 'details') { const ej = enrichJob(j, getStoredResume()); const body = [
+      ej.title ? `Role: ${ej.title}` : '',
+      `Company: ${ej.company || 'Not listed'}`,
+      `Location: ${ej.location || 'Not listed'}${ej.mode ? ` (${ej.mode})` : ''}`,
+      `Source: ${ej.source || 'Unknown'}`,
+      `Posted: ${ej.postedDate || 'Date unavailable (not treated as fresh)'}`,
+      ej.salary ? `Salary: ${ej.salary}` : '',
+      ej.url ? `Apply: ${ej.url}` : 'Apply link: not provided by source',
+      (ej._missing && ej._missing.length) ? `\nSkill gaps to address: ${ej._missing.join(', ')}` : '',
+      `\n— Full description —\n${ej.summary || 'No description text was provided by the source. Open the posting to read the full description.'}`,
+    ].filter(Boolean).join('\n'); setMini({ open: true, title: 'Job details', body, job: ej }); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { if (!canTrack(trackedCount())) { promptUpgrade('Free plan tracks up to 20 jobs. Upgrade for unlimited tracking.', 'pro'); return; } addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
+
+  // #5 — Build Project for Gaps: confirm first, then seed the guided studio with
+  // THIS job's context and gaps. We do not silently jump into a generic workspace.
+  const confirmBuildProject = () => {
+    if (!buildConfirm?.job) return;
+    const j = buildConfirm.job;
+    const gaps = buildConfirm.gaps || [];
+    saveStudioSeed({ job: { title: j.title, company: j.company }, missingSkills: gaps, type: inferType(gaps, j.title) });
+    setBuildConfirm(null);
+    go?.('projectstudio');
+  };
 
   return <>
     <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />
@@ -342,8 +366,23 @@ export default function JobsView({ go }) {
     {state.status === 'error' && <EmptyState icon={Briefcase} title="Search failed" hint={state.err} action={<Button size="sm" onClick={run}>Retry</Button>} />}
     {state.status === 'idle' && <EmptyState icon={Search} title="Search for your next role" hint="Analyze your resume first for best matching, or manually search a role here." />}
     {state.status === 'done' && state.jobs.length === 0 && <EmptyState icon={Briefcase} title="No jobs found" hint="Try a broader role, clear the location, or widen the time window." />}
-    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} fresh jobs</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
+    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {fresh === 'latest' ? 'jobs' : 'jobs within window'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
     <TailorModal open={!!tailorJob} job={tailorJob} go={go} onClose={()=>setTailorJob(null)} />
+    <Modal open={!!buildConfirm} onClose={()=>setBuildConfirm(null)} title="Build a project for these gaps" width="max-w-xl">
+      {buildConfirm && <div className="space-y-4">
+        <p className="text-sm text-muted">This opens the guided Project Studio pre-filled with the context from <span className="font-medium text-white">{buildConfirm.job.title}</span>{buildConfirm.job.company ? <> at <span className="font-medium text-white">{buildConfirm.job.company}</span></> : null}. Nothing is created until you generate and save a project there.</p>
+        <div className="rounded-2xl border border-white/10 bg-ink-950/60 p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Skill gaps to target</div>
+          {buildConfirm.gaps.length
+            ? <div className="flex flex-wrap gap-1.5">{buildConfirm.gaps.map((g) => <Badge key={g} tone="rose">{g}</Badge>)}</div>
+            : <p className="text-sm text-slate-400">No specific gaps detected from your resume — the studio will suggest a project from the role instead.</p>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={confirmBuildProject}><Rocket size={15}/> Continue to guided studio</Button>
+          <Button variant="soft" onClick={()=>setBuildConfirm(null)}><X size={15}/> Cancel</Button>
+        </div>
+      </div>}
+    </Modal>
     <Modal open={mini.open} onClose={()=>setMini((m)=>({...m,open:false}))} title={mini.title} width="max-w-2xl"><pre className="whitespace-pre-wrap rounded-xl border border-white/10 bg-ink-950/70 p-4 text-sm leading-relaxed text-slate-200">{mini.body}</pre><div className="mt-4 flex gap-2"><Button onClick={()=>setTailorJob(enrichJob(mini.job, getStoredResume()))}><Sparkles size={14}/> Tailor package</Button>{mini.job?.url && <a href={mini.job.url} target="_blank" rel="noreferrer"><Button variant="soft"><ExternalLink size={14}/> Open posting</Button></a>}</div></Modal>
     <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-36 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Try again or add Hunter/PDL/Apollo keys for verified contacts.'} />}{people.status === 'done' && people.contacts.length > 0 && <>{people.note && <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-snug text-slate-400">{people.note}</p>}<div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><ContactCard key={i} c={c} onDraft={makeDraft} />)}</div></>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
   </>;

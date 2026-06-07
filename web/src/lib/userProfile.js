@@ -1,4 +1,5 @@
 // User role + onboarding profile.
+import { csrfHeaders } from './csrf.js';
 // Local cache is scoped by authenticated user; canonical cross-device state is
 // stored by backend /api/user/profile when MongoDB is configured.
 
@@ -35,15 +36,10 @@ export const ONBOARDING_CHOICES = [
 function read() {
   if (typeof window === 'undefined') return null;
   try {
+    // Read ONLY the user-scoped key. Never read the legacy unscoped key for a
+    // signed-in user — canonical profile is rehydrated from the server on login.
     const scoped = window.localStorage.getItem(key());
-    if (scoped) return JSON.parse(scoped);
-    // one-time migration from old global key for the currently signed-in user
-    const legacy = window.localStorage.getItem(BASE_KEY);
-    if (legacy && currentUserKey !== 'guest') {
-      window.localStorage.setItem(key(), legacy);
-      return JSON.parse(legacy);
-    }
-    return null;
+    return scoped ? JSON.parse(scoped) : null;
   } catch { return null; }
 }
 function write(v) {
@@ -56,7 +52,7 @@ function write(v) {
 async function saveProfileToServer(profile) {
   try {
     await fetch('/api/user/profile', {
-      method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', credentials: 'include', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ profile }),
     });
   } catch { /* local cache still works */ }

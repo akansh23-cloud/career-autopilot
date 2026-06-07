@@ -1,5 +1,39 @@
 # Career Autopilot
 
+## Production readiness (v7 hardening)
+
+This release hardens the app for real users. Highlights:
+
+- **Dependencies:** `npm audit` is clean (0 vulnerabilities). Run `npm run audit:ci` as a CI gate.
+- **Persistence:** MongoDB is **required in production** — the server fails fast on missing `MONGODB_URI`/`SESSION_SECRET` instead of silently running without persistence. Persistence writes return **503** in production when the DB is unavailable (never a misleading 200).
+- **User data isolation:** all data is scoped to the authenticated user server-side; the unscoped `localStorage` fallback that could leak data across users on a shared browser has been removed, and the client cache is cleared on logout / user change.
+- **Auth:** identity is derived from a verified signed cookie/session (never a client-supplied id); protected routes return 401/403.
+- **Abuse protection:** per-user/IP rate limits on auth, AI, job search, contacts, support, and generation routes.
+- **Transport:** Helmet security headers + strict CSP, `X-Powered-By` off, strict credentialed-CORS allowlist, and **CSRF** double-submit protection for cookie-authenticated mutations.
+- **Validation & errors:** `zod` body validation, a 2 MB JSON cap, a centralized error handler that never leaks stack traces, and structured logging with secret redaction.
+- **Performance:** job search has shorter per-source timeouts, an overall budget, and a short result cache; the frontend bundle is code-split (main chunk ~1.15 MB → ~0.5 MB).
+- **Tests:** `npm test` (integration + unit), `npm run lint`, `npm run build`, `npm run typecheck`.
+
+Setup & operations docs: **`ENVIRONMENT.md`**, **`DEPLOYMENT.md`**, **`SECURITY.md`**, **`TESTING.md`**. Start from `.env.example`.
+
+### Quick production start
+```bash
+npm install
+npm run build
+NODE_ENV=production \
+SESSION_SECRET="$(openssl rand -hex 32)" \
+MONGODB_URI="<your-mongodb-uri>" \
+FRONTEND_ORIGIN="https://your-domain" \
+npm start
+```
+
+### Remaining risks (track before public launch)
+- **Session store** is in-memory (identity survives via the signed cookie, but OAuth *flow state* does not across instances). Back sessions with `connect-mongo` or move OAuth state to a signed cookie for multi-instance/serverless reliability.
+- **Live load test** (k6/Artillery + Playwright at 100/250/500 VUs) against staging with real MongoDB/AI/job/payment credentials is still recommended.
+- **Heavy parser libs** (mammoth ~500 KB) are already dynamically imported; further route-level lazy-loading can shave first paint on slow mobile networks.
+
+---
+
 ## Vercel deployment fix
 
 This version includes `vercel.json`, an explicit `/` route, SPA fallback, and `export default app` so Vercel can serve the frontend instead of showing `Cannot GET /`.
@@ -146,6 +180,20 @@ Open **http://localhost:3000**. The backend automatically serves the built `dist
 | GET | `/auth/status` | Connected providers + profile. |
 | POST | `/auth/:provider/logout` | Disconnect a provider. |
 | POST | `/apply/:provider/submit` | Manual-only by default (202); add approved API logic here. |
+| GET | `/api/admin/users` | **Admin only.** Paginated User Directory / Talent Intelligence. Query: `q, skill, speciality, targetRole, experienceLevel, location, userType, minCompletion, projectStatus, recruiterVisible, activity, sort, page, pageSize`. Returns `{ ok, users:[safeDTO], total, page, pageSize, totalPages, stats }`. |
+| GET | `/api/admin/users/:id` | **Admin only.** Detailed safe view: profile DTO + grouped skills + safe project list + job stats + recent activity. |
+| PATCH | `/api/admin/users/:id/visibility` | **Admin only.** Body `{ recruiterVisible }`. Toggles the user's recruiter opt-in (`NetworkProfile.openToRecruiters`). |
+| PATCH | `/api/admin/users/:id/admin-notes` | **Admin only.** Body `{ adminNotes }`. Internal admin-only note (≤4000 chars). |
+| PATCH | `/api/admin/users/:id/featured` | **Admin only.** Body `{ featuredTalent }`. Marks/unmarks featured talent. |
+
+### Admin User Directory / Talent Intelligence
+
+A dedicated admin-only screen (sidebar → **Admin → User Directory**, deep-link `#/admin/users`) listing every account with XP, speciality, skills, target role, completed projects, profile completion, visibility status, account type and last-active date. Supports search, multi-field filtering (incl. by skill — DevOps, Kubernetes, React, Java, AI/ML, Cloud…), sorting and pagination, plus a per-user detail drawer.
+
+- **Authorization is server-side only.** Every `/api/admin/*` route runs `requireAuth` then `requireAdmin`; admin status is resolved from `ADMIN_EMAILS` or a persisted `User.role === 'admin'` — the client role is never trusted. Unauthenticated → `401`, authenticated non-admin (including recruiters) → `403`. The sidebar item and command-palette entry are hidden for non-admins, and the page itself renders **Access Denied** if opened directly.
+- **No data leakage.** Responses are mapped through `adminUserDTO()`, which only ever emits safe fields — never `googleId`, OAuth/access/refresh tokens, sessions, passwords, raw resume files or API keys. Adding a field to a schema does not auto-expose it.
+- **Privacy-first recruiter visibility.** Recruiter visibility reuses the existing `NetworkProfile.openToRecruiters` opt-in (default **private**). The future recruiter-facing Talent Directory should consume `/api/network/candidates`, which only returns opted-in profiles — recruiters never get the admin directory.
+- **Scaling note.** `adminListUsers` hydrates up to `ADMIN_DIRECTORY_FETCH_CAP` (2000) user docs, then filters/sorts/paginates in memory (skill data lives in a Mixed `metrics` field, so an in-memory pass is simplest and the filter/sort/paginate logic is pure + unit-tested). Past that size, move to an indexed aggregation pipeline.
 
 ### Example: verify a URL
 ```bash
