@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ShieldCheck, Target, Rocket, Award, Github, Globe, TrendingUp, User, Linkedin,
   Link2, Copy, Eye, Check, Flame, Briefcase, MapPin, Lock, Sparkles, Star,
@@ -18,6 +18,7 @@ import {
   adoptionSuggestions, fetchPublicProfile, requestCareerProfileEditor,
   consumePendingProfileEditor, PROFILE_EDITOR_EVENT,
 } from '../lib/network.js';
+import GithubIntegrationPanel from '../components/proof/GithubIntegrationPanel.jsx';
 
 const VISIBILITY_OPTIONS = [
   { id: 'private', label: 'Private', hint: 'Hidden from everyone but you.' },
@@ -141,6 +142,8 @@ export default function CareerProfile({ go, publicUserId }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [, force] = useState(0);
+  const githubPanelRef = useRef(null);
+  const scrollToGithub = () => githubPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Deep-link from "Add your GitHub" etc.: open the editor focused on links.
   useEffect(() => {
@@ -208,7 +211,7 @@ export default function CareerProfile({ go, publicUserId }) {
           <Button size="sm" variant="soft" onClick={() => setPreviewOpen(true)}><Eye size={14} /> Preview recruiter view</Button>
           <Button size="sm" variant="soft" onClick={() => setEditOpen(true)}><Sparkles size={14} /> Update availability</Button>
           <Button size="sm" variant="soft" onClick={() => setEditOpen(true)}><Linkedin size={14} /> Connect LinkedIn</Button>
-          <Button size="sm" variant="soft" onClick={() => setEditOpen(true)}><Github size={14} /> Connect GitHub</Button>
+          <Button size="sm" variant="soft" onClick={scrollToGithub}><Github size={14} /> Connect GitHub</Button>
         </div>
       </SectionCard>
 
@@ -217,6 +220,13 @@ export default function CareerProfile({ go, publicUserId }) {
         <StatCard i={1} icon={Award} tone="mint" label="Verified badges" value={String(m.verifiedBadges)} />
         <StatCard i={2} icon={ShieldCheck} tone="cyan" label="Trust score" value={String(me.trustScore)} hint={me.trustLevel} />
         <StatCard i={3} icon={Flame} tone="amber" label="Mission streak" value={`${m.missionStreak}w`} />
+      </div>
+
+      <div className="mt-4" ref={githubPanelRef}>
+        <GithubIntegrationPanel
+          projects={projects}
+          onProofChanged={() => { setProjects(getProjects()); force((n) => n + 1); }}
+        />
       </div>
 
       {suggestions.length > 0 && (

@@ -87,6 +87,7 @@ const CSRF_COOKIE = 'ca_csrf';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CSRF_EXEMPT_PATHS = new Set([
   '/api/payments/webhook', // verified by Razorpay HMAC signature, not cookies
+  '/api/integrations/github/webhook', // verified by GitHub HMAC signature, not cookies
   '/auth/dev-login', // pre-auth bootstrap (no session yet)
   '/auth/logout', // clearing state; safe and must always succeed
 ]);
@@ -218,6 +219,15 @@ export const generationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: Number(process.env.RATE_GENERATION_PER_HOUR || 80),
   handler: limitHandler('Generation limit reached for this hour. Please try again later.'),
+});
+
+/* GitHub integration: protects sync + repo analysis (each call hits the GitHub
+   API and mints an installation token), so it gets its own tighter ceiling. */
+export const githubLimiter = rateLimit({
+  ...base,
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.RATE_GITHUB_PER_HOUR || 60),
+  handler: limitHandler('GitHub sync/analyze limit reached for this hour. Please try again later.'),
 });
 
 /* A gentle global ceiling to blunt brute scraping without touching normal use. */

@@ -33,7 +33,7 @@ import { getUserPatentMemory, buildGenerationContext, suggestNextActions } from 
 import {
   corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
   authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
-  supportChatLimiter, ticketLimiter, generationLimiter, globalLimiter,
+  supportChatLimiter, ticketLimiter, generationLimiter, globalLimiter, githubLimiter,
 } from './security.js';
 import {
   validateBody, supportChatSchema, ticketSchema, userStatePatchSchema,
@@ -44,7 +44,9 @@ import {
   marketplaceListingSchema, collaborationApplySchema, listingReviewSchema,
   architectureSchema, patentAssessSchema, patentRecordSchema, appPackageSchema,
   patentIdeaGenerateSchema, patentIdeaPatchSchema, priorArtRecordSchema, patentFeedbackSchema,
+  githubLinkProjectSchema, githubVisibilitySchema, githubAnalyzeSchema, githubImportProjectSchema,
 } from './validation.js';
+import * as ghEngine from './server/utils/githubIntegrationEngine.js';
 
 dotenv.config();
 
@@ -71,6 +73,8 @@ app.use(corsMiddleware);
 
 /* Raw body ONLY for the Razorpay webhook (HMAC verification needs the exact bytes). */
 app.use('/api/payments/webhook', express.raw({ type: '*/*' }));
+/* Raw body ONLY for the GitHub App webhook (HMAC verification needs exact bytes). */
+app.use('/api/integrations/github/webhook', express.raw({ type: '*/*' }));
 app.use(express.json({ limit: '5mb' }));
 
 /* Persistent session store: when MongoDB is configured we store sessions there
@@ -2634,6 +2638,13 @@ app.put('/api/network/profile', requireAuth, async (req, res) => {
 app.get('/api/network/profile/:userId', requireAuth, async (req, res) => {
   const u = currentUser(req);
   const result = await db.getNetworkProfile({ viewerUserId: u?.id, targetUserId: req.params.userId });
+  // Attach opt-in GitHub proof (private repos only ever surface a safe summary).
+  if (result?.ok && !result.private) {
+    try {
+      const ghProof = await db.githubPublicProof({ targetUserId: req.params.userId, filterFn: ghEngine.filterPrivateRepoDataForPublicView });
+      if (ghProof && (ghProof.handle || ghProof.repos.length)) result.githubProof = ghProof;
+    } catch { /* GitHub proof is best-effort */ }
+  }
   res.json({ ...result, db: db.dbEnabled() });
 });
 
@@ -4473,6 +4484,367 @@ app.post('/api/projects/verify-live-link', requireAuth, generationLimiter, async
     res.json({ ok: true, success: true, reachable: false, statusCode: 0, finalUrl: parsed.toString(), responseTimeMs: Date.now() - started, checkedAt: new Date().toISOString(), warnings: ['Verification failed unexpectedly. Needs manual review.'] });
   }
 });
+
+
+/* ============================================================================
+   GITHUB INTEGRATION  (Career Proof Profile)  —  /api/integrations/github
+   ----------------------------------------------------------------------------
+   Layer 1: OAuth identity connection (minimal scopes read:user user:email).
+   Layer 2: GitHub App selected-repository verification (read-only, short-lived
+            installation tokens minted server-side).
+
+   Security invariants (see SECURITY.md / githubIntegrationEngine.js):
+     - Tokens / private key are NEVER returned to the client or logged.
+     - OAuth access tokens are encrypted at rest (AES-256-GCM).
+     - Installation tokens are minted per-request and never persisted.
+     - Repo ownership + installation ownership are verified before any repo op.
+     - Private repo data is private by default; only an opt-in safe summary can
+       ever surface publicly.
+   ============================================================================ */
+
+/* Build the front-end return URL for OAuth/app redirects (Career Profile). */
+function githubReturnTo(req, params = {}) {
+  const base = process.env.FRONTEND_ORIGIN || `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
+  // Land on the Career Profile GitHub section.
+  return buildReturn(`${base.replace(/\/$/, '')}/#/career-profile`, { gh_return: '1', ...params });
+}
+
+/* Capability probe — UI uses this to show "not configured" states cleanly.
+   NEVER returns secrets. */
+app.get('/api/integrations/github/config', requireAuth, (req, res) => {
+  res.json({
+    ok: true,
+    oauthEnabled: ghEngine.githubOAuthEnabled(),
+    appEnabled: ghEngine.githubAppEnabled(),
+    appName: ghEngine.githubAppConfig().appName || '',
+    encryptionConfigured: ghEngine.encryptionConfigured(),
+    db: db.dbEnabled(),
+  });
+});
+
+/* ---- Layer 1: OAuth identity connection ---- */
+app.get('/api/integrations/github/connect', requireAuth, (req, res) => {
+  if (!ghEngine.githubOAuthEnabled()) {
+    return res.redirect(githubReturnTo(req, { gh_error: 'oauth_not_configured' }));
+  }
+  const cfg = ghEngine.githubOAuthConfig();
+  const state = randomState();
+  req.session.githubOAuth = { state, at: Date.now() };
+  const url = new URL('https://github.com/login/oauth/authorize');
+  url.searchParams.set('client_id', cfg.clientId);
+  url.searchParams.set('redirect_uri', cfg.callbackUrl);
+  url.searchParams.set('scope', cfg.scopes); // read:user user:email — NO repo scope
+  url.searchParams.set('state', state);
+  url.searchParams.set('allow_signup', 'false');
+  req.session.save(() => res.redirect(url.toString()));
+});
+
+app.get('/api/integrations/github/callback', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const saved = req.session.githubOAuth || {};
+  delete req.session.githubOAuth;
+  try {
+    if (!ghEngine.githubOAuthEnabled()) return res.redirect(githubReturnTo(req, { gh_error: 'oauth_not_configured' }));
+    if (req.query.error) return res.redirect(githubReturnTo(req, { gh_error: 'denied' }));
+    if (!req.query.code) return res.redirect(githubReturnTo(req, { gh_error: 'missing_code' }));
+    if (!saved.state || saved.state !== req.query.state) return res.redirect(githubReturnTo(req, { gh_error: 'bad_state' }));
+
+    const { accessToken, tokenType, scope } = await ghEngine.exchangeOAuthCode(req.query.code);
+    const { user: ghUser, stats } = await ghEngine.fetchOAuthProfileAndStats(accessToken);
+    let email = null;
+    try { const e = await ghEngine.fetchPrimaryEmail(accessToken); if (e) email = e; } catch { /* optional */ }
+    const profile = { ...ghUser, primaryEmail: email };
+
+    // Encrypt the token at rest (never store plaintext, never return it).
+    let encryptedAccessToken = '';
+    try { encryptedAccessToken = ghEngine.encryptToken(accessToken); } catch { encryptedAccessToken = ''; }
+
+    await db.saveGithubConnection({ userId: u?.id, email: u?.email, profile, stats, encryptedAccessToken, tokenScope: scope, tokenType });
+    // Backward compatibility: keep githubUrl / network links in sync.
+    await syncGithubUrlForUser(u, ghUser.url);
+    await db.logGithubAudit({ userId: u?.id, email: u?.email, action: 'connected', detail: { handle: ghUser.handle } });
+
+    return res.redirect(githubReturnTo(req, { gh_connected: '1' }));
+  } catch (err) {
+    return res.redirect(githubReturnTo(req, { gh_error: err.code || 'oauth_failed' }));
+  }
+});
+
+app.get('/api/integrations/github/status', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const raw = await db.getGithubConnectionRaw({ userId: u?.id, email: u?.email });
+  const installations = await db.listGithubInstallations({ userId: u?.id, email: u?.email });
+  const summary = await db.githubSummary({ userId: u?.id, email: u?.email });
+  // Career Proof Score contribution from GitHub evidence (bounded, never inflates).
+  const contribution = ghEngine.githubProofContribution({
+    identityConnected: summary.connected,
+    appInstalled: summary.appInstalled > 0,
+    analyzedRepos: summary.analyzedRepos || [],
+  });
+  res.json({
+    ok: true,
+    oauthEnabled: ghEngine.githubOAuthEnabled(),
+    appEnabled: ghEngine.githubAppEnabled(),
+    appName: ghEngine.githubAppConfig().appName || '',
+    // githubConnectionDTO NEVER includes tokens.
+    connection: raw ? db.githubConnectionDTO(raw) : null,
+    installations,
+    summary: { ...summary, analyzedRepos: undefined, careerProofContribution: contribution.publicContribution, careerProofContributionPrivate: contribution.privateContribution },
+    db: db.dbEnabled(),
+  });
+});
+
+app.post('/api/integrations/github/sync', requireAuth, githubLimiter, async (req, res) => {
+  const u = currentUser(req);
+  const raw = await db.getGithubConnectionRaw({ userId: u?.id, email: u?.email });
+  if (!raw || raw.status === 'disconnected') return res.status(400).json({ ok: false, error: 'not_connected' });
+  const token = ghEngine.decryptToken(raw.encryptedAccessToken);
+  if (!token) return res.status(400).json({ ok: false, error: 'token_unavailable', message: 'Reconnect GitHub to refresh.' });
+  try {
+    const { user: ghUser, stats } = await ghEngine.fetchOAuthProfileAndStats(token);
+    const profile = { ...ghUser };
+    const result = await db.updateGithubStats({ userId: u?.id, email: u?.email, profile, stats, status: 'connected' });
+    await syncGithubUrlForUser(u, ghUser.url);
+    res.json({ ok: true, connection: result.connection });
+  } catch (err) {
+    // Do NOT wipe previous good data on a failed sync — just record the failure.
+    await db.updateGithubStats({ userId: u?.id, email: u?.email, status: 'sync_failed', error: err.code || 'sync_failed' });
+    res.json({ ok: false, error: err.code || 'sync_failed', message: 'GitHub sync failed; previous data preserved.' });
+  }
+});
+
+app.delete('/api/integrations/github', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.disconnectGithubConnection({ userId: u?.id, email: u?.email });
+  await db.logGithubAudit({ userId: u?.id, email: u?.email, action: 'disconnected' });
+  // Manual GitHub URL fallback is preserved unless the client asks to clear it.
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+/* ---- Layer 2: GitHub App installation ---- */
+app.get('/api/integrations/github/app/install', requireAuth, (req, res) => {
+  const cfg = ghEngine.githubAppConfig();
+  if (!ghEngine.githubAppEnabled()) {
+    return res.redirect(githubReturnTo(req, { gh_error: 'app_not_configured' }));
+  }
+  const state = randomState();
+  req.session.githubAppInstall = { state, at: Date.now() };
+  // GitHub's installation page lets the user pick "Only selected repositories"
+  // (public and/or private). The state is echoed back on the callback.
+  const url = new URL(`https://github.com/apps/${encodeURIComponent(cfg.appName)}/installations/new`);
+  url.searchParams.set('state', state);
+  req.session.save(() => res.redirect(url.toString()));
+});
+
+app.get('/api/integrations/github/app/callback', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const saved = req.session.githubAppInstall || {};
+  delete req.session.githubAppInstall;
+  try {
+    if (!ghEngine.githubAppEnabled()) return res.redirect(githubReturnTo(req, { gh_error: 'app_not_configured' }));
+    const installationId = req.query.installation_id;
+    const setupAction = req.query.setup_action; // install | update | request
+    if (!installationId) return res.redirect(githubReturnTo(req, { gh_error: 'install_cancelled' }));
+    // State is best-effort (GitHub does not always round-trip it on first install).
+    if (saved.state && req.query.state && saved.state !== req.query.state) {
+      return res.redirect(githubReturnTo(req, { gh_error: 'bad_state' }));
+    }
+    const meta = await ghEngine.fetchInstallationMeta(installationId);
+    await db.saveGithubInstallation({ userId: u?.id, email: u?.email, meta });
+    // Fetch accessible repos for this installation + cache them.
+    try {
+      const repos = await ghEngine.fetchInstallationRepositories(installationId);
+      await db.syncGithubRepositories({ userId: u?.id, email: u?.email, installationId, repos });
+    } catch { /* repo sync is best-effort; user can re-sync from the UI */ }
+    await db.logGithubAudit({ userId: u?.id, email: u?.email, action: 'app_installed', detail: { installationId: String(installationId), setupAction: setupAction || '' } });
+    return res.redirect(githubReturnTo(req, { gh_app: '1' }));
+  } catch (err) {
+    return res.redirect(githubReturnTo(req, { gh_error: err.code || 'install_failed' }));
+  }
+});
+
+app.post('/api/integrations/github/app/sync-repos', requireAuth, githubLimiter, async (req, res) => {
+  const u = currentUser(req);
+  const installations = await db.listGithubInstallations({ userId: u?.id, email: u?.email });
+  const active = installations.filter((i) => i.status === 'active');
+  if (!active.length) return res.status(400).json({ ok: false, error: 'no_installation' });
+  let lastResult = null;
+  for (const inst of active) {
+    try {
+      const repos = await ghEngine.fetchInstallationRepositories(inst.installationId);
+      lastResult = await db.syncGithubRepositories({ userId: u?.id, email: u?.email, installationId: inst.installationId, repos });
+    } catch (err) {
+      // Installation may have been removed on GitHub's side.
+      if (err.code === 'not_found' || err.status === 404) {
+        await db.disconnectInstallation({ userId: u?.id, email: u?.email, installationId: inst.installationId });
+      }
+    }
+  }
+  const repositories = await db.listGithubRepositories({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, repositories, db: db.dbEnabled() });
+});
+
+app.get('/api/integrations/github/repositories', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const repositories = await db.listGithubRepositories({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, repositories, db: db.dbEnabled() });
+});
+
+/* Analyze a single accessible repository. Verifies ownership + installation,
+   mints a short-lived selected-repo installation token, inspects only safe
+   proof files, and stores the analysis. Private repos require explicit
+   confirmation and stay private by default. */
+app.post('/api/integrations/github/repositories/:repoId/analyze', requireAuth, githubLimiter, validateBody(githubAnalyzeSchema), async (req, res) => {
+  const u = currentUser(req);
+  const owned = await db.getOwnedRepository({ userId: u?.id, email: u?.email, repoId: req.params.repoId });
+  if (!owned || !owned.repo) return res.status(404).json({ ok: false, error: 'repo_not_found' });
+  const { repo, installation } = owned;
+  if (!repo.accessible) return res.status(400).json({ ok: false, error: 'repo_inaccessible', message: 'This repository is no longer accessible to the installation.' });
+  if (!installation || installation.status !== 'active') return res.status(400).json({ ok: false, error: 'installation_inactive', message: 'The GitHub App installation is not active. Reconnect to analyze.' });
+  if (repo.private && !req.body.confirmPrivate) {
+    return res.status(400).json({ ok: false, error: 'confirm_private_required', message: 'Confirm before analyzing a private repository. The analysis stays private by default.' });
+  }
+  try {
+    const normalized = {
+      githubRepoId: repo.githubRepoId, fullName: repo.fullName, owner: repo.owner, name: repo.name,
+      private: repo.private, defaultBranch: repo.defaultBranch, pushedAt: repo.pushedAt,
+      archived: repo.archived, language: repo.language, linkedProjectId: repo.linkedProjectId,
+    };
+    const fetched = await ghEngine.fetchSafeRepoFiles(normalized, installation.installationId);
+    const analysis = ghEngine.buildRepoAnalysis(normalized, fetched);
+    analysis.installationId = installation.installationId;
+    const verificationSummary = ghEngine.generateRepoVerificationSummary(analysis);
+    const publicSafeSummary = ghEngine.generatePublicSafeRepoSummary(analysis);
+    const saved = await db.saveRepoAnalysis({ userId: u?.id, email: u?.email, repoId: repo.githubRepoId, analysis, verificationSummary, publicSafeSummary });
+    await db.logGithubAudit({ userId: u?.id, email: u?.email, action: repo.private ? 'private_repo_analyzed' : 'repo_analyzed', detail: { repoId: repo.githubRepoId, score: analysis.score, visibility: analysis.visibility } });
+    res.json({
+      ok: true,
+      repo: saved.repo,
+      analysis: {
+        score: analysis.score, level: analysis.level, status: analysis.status,
+        visibility: analysis.visibility, detectedStack: analysis.detectedStack,
+        detectedSkills: analysis.detectedSkills, evidence: analysis.evidence,
+        missing: analysis.missing, recommendations: analysis.recommendations,
+        structure: analysis.structure, filesInspected: analysis.filesInspected,
+        truncated: analysis.truncated, verificationSummary,
+        skillEvidence: ghEngine.mapRepoEvidenceToSkills(analysis),
+      },
+    });
+  } catch (err) {
+    if (err.code === 'missing_default_branch') return res.json({ ok: false, error: 'missing_default_branch', message: 'Repository has no default branch / is empty.' });
+    if (err.code === 'rate_limited') return res.json({ ok: false, error: 'rate_limited', message: 'GitHub rate limit hit. Try again shortly.' });
+    if (err.code === 'installation_token_failed') return res.json({ ok: false, error: 'installation_token_failed', message: 'Could not mint an installation token. Reconnect the GitHub App.' });
+    logger.warn('github analyze failed', { code: err.code });
+    res.json({ ok: false, error: err.code || 'analyze_failed', message: 'Repository analysis failed. Try again later.' });
+  }
+});
+
+app.post('/api/integrations/github/repositories/:repoId/link-project', requireAuth, validateBody(githubLinkProjectSchema), async (req, res) => {
+  const u = currentUser(req);
+  const owned = await db.getOwnedRepository({ userId: u?.id, email: u?.email, repoId: req.params.repoId });
+  if (!owned || !owned.repo) return res.status(404).json({ ok: false, error: 'repo_not_found' });
+  const result = await db.linkRepoToProject({ userId: u?.id, email: u?.email, repoId: req.params.repoId, projectId: req.body.projectId });
+  await db.logGithubAudit({ userId: u?.id, email: u?.email, action: 'repo_linked', detail: { repoId: req.params.repoId, projectId: req.body.projectId } });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+/* Create a linked project-proof draft from a repo analysis. Returns a draft the
+   client can save into Project Studio (kept simple + safe). */
+app.post('/api/integrations/github/repositories/:repoId/import-project', requireAuth, validateBody(githubImportProjectSchema), async (req, res) => {
+  const u = currentUser(req);
+  const owned = await db.getOwnedRepository({ userId: u?.id, email: u?.email, repoId: req.params.repoId });
+  if (!owned || !owned.repo) return res.status(404).json({ ok: false, error: 'repo_not_found' });
+  const { repo } = owned;
+  const latest = await db.getLatestRepoAnalysis({ userId: u?.id, email: u?.email, repoId: req.params.repoId });
+  if (!latest) return res.status(400).json({ ok: false, error: 'not_analyzed', message: 'Analyze the repository first.' });
+  // Draft is private-safe: for private repos we do NOT expose the repo URL.
+  const draft = {
+    title: req.body.title || repo.name || 'GitHub project',
+    type: 'software',
+    source: 'github_import',
+    githubVerified: true,
+    githubRepoId: repo.githubRepoId,
+    githubUrl: repo.private ? '' : repo.htmlUrl,
+    techStack: latest.detectedStack || [],
+    skillsCovered: (latest.detectedSkills || []).slice(0, 16),
+    proofScoreHint: latest.score || 0,
+    visibility: repo.private ? 'private' : 'public',
+    evidence: latest.evidence || [],
+  };
+  res.json({ ok: true, draft });
+});
+
+app.patch('/api/integrations/github/repositories/:repoId/visibility', requireAuth, validateBody(githubVisibilitySchema), async (req, res) => {
+  const u = currentUser(req);
+  const owned = await db.getOwnedRepository({ userId: u?.id, email: u?.email, repoId: req.params.repoId });
+  if (!owned || !owned.repo) return res.status(404).json({ ok: false, error: 'repo_not_found' });
+  const result = await db.setRepoVisibility({
+    userId: u?.id, email: u?.email, repoId: req.params.repoId,
+    publicProofVisible: req.body.publicProofVisible,
+    privateProofSummaryVisible: req.body.privateProofSummaryVisible,
+  });
+  await db.logGithubAudit({ userId: u?.id, email: u?.email, action: 'visibility_changed', detail: { repoId: req.params.repoId, publicProofVisible: req.body.publicProofVisible, privateProofSummaryVisible: req.body.privateProofSummaryVisible } });
+  res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+app.delete('/api/integrations/github/app/installations/:installationId', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.disconnectInstallation({ userId: u?.id, email: u?.email, installationId: req.params.installationId });
+  await db.logGithubAudit({ userId: u?.id, email: u?.email, action: 'app_disconnected', detail: { installationId: req.params.installationId } });
+  const appName = ghEngine.githubAppConfig().appName || '';
+  res.status(persistenceStatus(result)).json({
+    ...result,
+    db: db.dbEnabled(),
+    // Direct the user to fully revoke on GitHub if they want to remove access.
+    revokeUrl: appName ? `https://github.com/settings/installations` : '',
+    message: 'Installation disconnected locally. To fully revoke access, uninstall the app from GitHub settings.',
+  });
+});
+
+/* ---- Webhook (raw body, HMAC-verified). Handles install/repo lifecycle. ---- */
+app.post('/api/integrations/github/webhook', async (req, res) => {
+  const cfg = ghEngine.githubAppConfig();
+  const secret = cfg.webhookSecret;
+  if (!secret) return res.status(200).json({ ok: true, ignored: 'webhook_not_configured' });
+  const sig = req.get('X-Hub-Signature-256') || '';
+  const bodyBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(bodyBuf).digest('hex');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ ok: false, error: 'invalid_signature' });
+  }
+  let payload = {};
+  try { payload = JSON.parse(bodyBuf.toString('utf8') || '{}'); } catch { payload = {}; }
+  const event = req.get('X-GitHub-Event') || '';
+  try {
+    const installationId = payload.installation?.id ? String(payload.installation.id) : '';
+    if (event === 'installation') {
+      if (payload.action === 'deleted') await db.setInstallationStatus({ installationId, status: 'disconnected' });
+      else if (payload.action === 'suspend') await db.setInstallationStatus({ installationId, status: 'suspended', suspendedAt: new Date() });
+      else if (payload.action === 'unsuspend') await db.setInstallationStatus({ installationId, status: 'active', suspendedAt: null });
+    } else if (event === 'installation_repositories' && installationId) {
+      // A repo was added/removed from the selection — re-sync that installation.
+      try {
+        const repos = await ghEngine.fetchInstallationRepositories(installationId);
+        // We don't have userId in the webhook; map via the installation row.
+        const inst = await db.GithubInstallation.findOne({ installationId }).lean();
+        if (inst) await db.syncGithubRepositories({ userId: String(inst.userId), installationId, repos });
+      } catch { /* best-effort */ }
+    }
+  } catch (e) {
+    logger.warn('github webhook handling failed', { event, message: e.message });
+  }
+  res.json({ ok: true });
+});
+
+/* Backward-compat helper: keep the canonical githubUrl (NetworkProfile
+   links.github) in sync when GitHub identity connects/syncs. Manual URLs are
+   preserved; OAuth simply points the link at the real html_url. */
+async function syncGithubUrlForUser(u, githubUrl) {
+  if (!u || !githubUrl) return;
+  try { await db.syncNetworkGithubLink({ userId: u.id, email: u.email, githubUrl }); } catch { /* non-fatal */ }
+}
 
 /* ============================================================
    CUSTOM TEMPLATE ANALYSIS  (vision)

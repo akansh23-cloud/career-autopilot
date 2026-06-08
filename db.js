@@ -1184,6 +1184,636 @@ export const ReferralPost = mongoose.models.ReferralPost || mongoose.model('Refe
 export const ReferralRequest = mongoose.models.ReferralRequest || mongoose.model('ReferralRequest', referralRequestSchema);
 export const Shortlist = mongoose.models.Shortlist || mongoose.model('Shortlist', shortlistSchema);
 
+/* ============================================================
+   GITHUB INTEGRATION  (Career Proof Profile)
+   ------------------------------------------------------------
+   Four collections, all scoped by userId:
+     - GithubConnection    : one per user — OAuth identity, ENCRYPTED token.
+     - GithubInstallation  : GitHub App installations (selected-repo access).
+     - GithubRepository    : per-user cache of accessible repos + analysis state.
+     - GithubRepoAnalysis  : full analysis records (proof evidence).
+
+   Security properties:
+     - The encrypted OAuth token + the raw installation id are NEVER part of any
+       public DTO. githubConnectionDTO() / githubRepoDTO() are the ONLY shapes
+       that leave the server, and they never carry tokens.
+     - Private repo analysis is private by default; a public-safe summary is only
+       exposed when the owner explicitly opts in (publicProofVisible /
+       privateProofSummaryVisible).
+     - All reads degrade to safe empty results when the DB is off.
+   ============================================================ */
+const githubConnectionSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    providerUserId: { type: String, default: '' },
+    handle: { type: String, default: '' },
+    url: { type: String, default: '' },
+    avatarUrl: { type: String, default: '' },
+    encryptedAccessToken: { type: String, default: '' }, // AES-256-GCM, never returned to client
+    tokenScope: { type: String, default: '' },
+    tokenType: { type: String, default: 'bearer' },
+    status: { type: String, default: 'connected', enum: ['connected', 'sync_failed', 'disconnected'] },
+    publicVisible: { type: Boolean, default: true },
+    profile: { type: mongoose.Schema.Types.Mixed, default: {} },
+    stats: { type: mongoose.Schema.Types.Mixed, default: {} },
+    error: { type: String, default: '' },
+    connectedAt: { type: Date, default: Date.now },
+    lastSyncedAt: { type: Date, default: null },
+    revokedAt: { type: Date, default: null },
+  },
+  { timestamps: true, minimize: false }
+);
+
+const githubInstallationSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    installationId: { type: String, required: true, index: true },
+    accountLogin: { type: String, default: '' },
+    accountId: { type: String, default: '' },
+    accountType: { type: String, default: '' },
+    repositorySelection: { type: String, default: 'selected' },
+    permissions: { type: mongoose.Schema.Types.Mixed, default: {} },
+    status: { type: String, default: 'active', enum: ['active', 'suspended', 'disconnected'] },
+    installedAt: { type: Date, default: Date.now },
+    suspendedAt: { type: Date, default: null },
+  },
+  { timestamps: true, minimize: false }
+);
+githubInstallationSchema.index({ userId: 1, installationId: 1 }, { unique: true });
+
+const githubRepositorySchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    installationId: { type: String, default: '', index: true },
+    githubRepoId: { type: String, default: '', index: true },
+    owner: { type: String, default: '' },
+    name: { type: String, default: '' },
+    fullName: { type: String, default: '' },
+    private: { type: Boolean, default: false },
+    htmlUrl: { type: String, default: '' },
+    defaultBranch: { type: String, default: 'main' },
+    language: { type: String, default: '' },
+    topics: { type: [String], default: [] },
+    description: { type: String, default: '' },
+    fork: { type: Boolean, default: false },
+    archived: { type: Boolean, default: false },
+    stargazersCount: { type: Number, default: 0 },
+    forksCount: { type: Number, default: 0 },
+    pushedAt: { type: Date, default: null },
+    repoUpdatedAt: { type: Date, default: null },
+    accessible: { type: Boolean, default: true },
+    selectedForVerification: { type: Boolean, default: false },
+    publicProofVisible: { type: Boolean, default: false },
+    privateProofSummaryVisible: { type: Boolean, default: false },
+    lastAnalyzedAt: { type: Date, default: null },
+    analysisStatus: { type: String, default: 'none', enum: ['none', 'partial', 'complete', 'error'] },
+    proofScore: { type: Number, default: 0 },
+    proofLevel: { type: String, default: '' },
+    detectedSkills: { type: [String], default: [] },
+    evidence: { type: mongoose.Schema.Types.Mixed, default: [] },
+    linkedProjectId: { type: String, default: '' },
+  },
+  { timestamps: true, minimize: false }
+);
+githubRepositorySchema.index({ userId: 1, githubRepoId: 1 }, { unique: true });
+
+const githubRepoAnalysisSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    githubRepoId: { type: String, default: '', index: true },
+    installationId: { type: String, default: '' },
+    projectId: { type: String, default: '' },
+    repoFullName: { type: String, default: '' },
+    visibility: { type: String, default: 'public' },
+    analyzedAt: { type: Date, default: Date.now },
+    status: { type: String, default: 'complete' },
+    score: { type: Number, default: 0 },
+    detectedStack: { type: [String], default: [] },
+    detectedSkills: { type: [String], default: [] },
+    evidence: { type: mongoose.Schema.Types.Mixed, default: [] },
+    filesInspected: { type: Number, default: 0 },
+    commitSignals: { type: mongoose.Schema.Types.Mixed, default: {} },
+    qualitySignals: { type: mongoose.Schema.Types.Mixed, default: {} },
+    securityWarnings: { type: [String], default: [] },
+    verificationSummary: { type: String, default: '' },
+    publicSafeSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
+    analysisErrors: { type: [String], default: [] },
+  },
+  { timestamps: true, minimize: false }
+);
+githubRepoAnalysisSchema.index({ userId: 1, githubRepoId: 1 });
+
+export const GithubConnection = mongoose.models.GithubConnection || mongoose.model('GithubConnection', githubConnectionSchema);
+export const GithubInstallation = mongoose.models.GithubInstallation || mongoose.model('GithubInstallation', githubInstallationSchema);
+export const GithubRepository = mongoose.models.GithubRepository || mongoose.model('GithubRepository', githubRepositorySchema);
+export const GithubRepoAnalysis = mongoose.models.GithubRepoAnalysis || mongoose.model('GithubRepoAnalysis', githubRepoAnalysisSchema);
+
+const githubAuditSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    action: { type: String, default: '' },
+    detail: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true }
+);
+export const GithubAudit = mongoose.models.GithubAudit || mongoose.model('GithubAudit', githubAuditSchema);
+
+export async function logGithubAudit({ userId, email, action, detail = {} }) {
+  if (!URI) return;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return;
+    await GithubAudit.create({ userId: uid, action: String(action || '').slice(0, 60), detail });
+  } catch { /* audit is best-effort, never blocks the request */ }
+}
+
+export async function listGithubAudit({ userId, email, limit = 30 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const rows = await GithubAudit.find({ userId: uid }).sort({ createdAt: -1 }).limit(limit).lean();
+    return rows.map((r) => ({ action: r.action, detail: r.detail || {}, at: r.createdAt }));
+  } catch { return []; }
+}
+
+export function githubConnectionDTO(doc) {
+  if (!doc) return null;
+  return {
+    connected: doc.status === 'connected',
+    status: doc.status,
+    handle: doc.handle || '',
+    url: doc.url || '',
+    avatarUrl: doc.avatarUrl || '',
+    providerUserId: doc.providerUserId || '',
+    publicVisible: !!doc.publicVisible,
+    profile: doc.profile || {},
+    stats: doc.stats || {},
+    connectionType: 'oauth',
+    syncSupported: true,
+    lastSyncedAt: doc.lastSyncedAt || null,
+    connectedAt: doc.connectedAt || null,
+    error: doc.status === 'sync_failed' ? (doc.error || 'sync_failed') : '',
+  };
+}
+
+export function githubRepoDTO(doc, { isOwner = true } = {}) {
+  if (!doc) return null;
+  const base = {
+    repoId: doc.githubRepoId,
+    fullName: doc.private && !isOwner ? null : doc.fullName,
+    name: doc.private && !isOwner ? null : doc.name,
+    owner: doc.owner,
+    private: !!doc.private,
+    language: doc.language || '',
+    topics: doc.topics || [],
+    description: doc.private && !isOwner ? '' : (doc.description || ''),
+    archived: !!doc.archived,
+    fork: !!doc.fork,
+    htmlUrl: doc.private ? '' : (doc.htmlUrl || ''),
+    defaultBranch: doc.defaultBranch || 'main',
+    pushedAt: doc.pushedAt || null,
+    accessible: doc.accessible !== false,
+    selectedForVerification: !!doc.selectedForVerification,
+    analysisStatus: doc.analysisStatus || 'none',
+    proofScore: doc.proofScore || 0,
+    proofLevel: doc.proofLevel || '',
+    detectedSkills: doc.detectedSkills || [],
+    evidence: Array.isArray(doc.evidence) ? doc.evidence : [],
+    linkedProjectId: doc.linkedProjectId || '',
+    lastAnalyzedAt: doc.lastAnalyzedAt || null,
+    publicProofVisible: !!doc.publicProofVisible,
+    privateProofSummaryVisible: !!doc.privateProofSummaryVisible,
+  };
+  if (isOwner) {
+    base.fullName = doc.fullName;
+    base.name = doc.name;
+    base.description = doc.description || '';
+    base.htmlUrl = doc.htmlUrl || '';
+  }
+  return base;
+}
+
+/* ---- CONNECTION ---- */
+export async function getGithubConnectionRaw({ userId, email }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    return await GithubConnection.findOne({ userId: uid }).lean();
+  } catch { return null; }
+}
+
+export async function saveGithubConnection({ userId, email, profile = {}, stats = {}, encryptedAccessToken, tokenScope, tokenType }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const set = {
+      email: cleanEmail(email),
+      providerUserId: profile.providerUserId || '',
+      handle: profile.handle || '',
+      url: profile.url || '',
+      avatarUrl: profile.avatarUrl || '',
+      status: 'connected',
+      profile, stats,
+      tokenScope: tokenScope || '',
+      tokenType: tokenType || 'bearer',
+      lastSyncedAt: new Date(),
+      revokedAt: null,
+      error: '',
+    };
+    if (encryptedAccessToken != null) set.encryptedAccessToken = encryptedAccessToken;
+    await GithubConnection.updateOne({ userId: uid }, { $set: set, $setOnInsert: { connectedAt: new Date() } }, { upsert: true });
+    const doc = await GithubConnection.findOne({ userId: uid }).lean();
+    return { ok: true, connection: githubConnectionDTO(doc) };
+  } catch (err) {
+    console.error('[db] saveGithubConnection failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function updateGithubStats({ userId, email, profile, stats, status = 'connected', error = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const set = { status };
+    if (status === 'connected') {
+      if (profile) set.profile = profile;
+      if (stats) set.stats = stats;
+      set.lastSyncedAt = new Date();
+      set.error = '';
+      if (profile?.handle) set.handle = profile.handle;
+      if (profile?.url) set.url = profile.url;
+      if (profile?.avatarUrl) set.avatarUrl = profile.avatarUrl;
+    } else {
+      set.error = String(error || 'sync_failed').slice(0, 200);
+    }
+    const r = await GithubConnection.updateOne({ userId: uid }, { $set: set });
+    if (!r.matchedCount) return { ok: false, reason: 'not_connected' };
+    const doc = await GithubConnection.findOne({ userId: uid }).lean();
+    return { ok: true, connection: githubConnectionDTO(doc) };
+  } catch (err) {
+    console.error('[db] updateGithubStats failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function disconnectGithubConnection({ userId, email }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    await GithubConnection.updateOne(
+      { userId: uid },
+      { $set: { status: 'disconnected', encryptedAccessToken: '', stats: {}, revokedAt: new Date() } }
+    );
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] disconnectGithubConnection failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* ---- INSTALLATIONS ---- */
+export async function saveGithubInstallation({ userId, email, meta = {} }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const set = {
+      email: cleanEmail(email),
+      accountLogin: meta.accountLogin || '',
+      accountId: meta.accountId || '',
+      accountType: meta.accountType || '',
+      repositorySelection: meta.repositorySelection || 'selected',
+      permissions: meta.permissions || {},
+      status: meta.suspendedAt ? 'suspended' : 'active',
+      suspendedAt: meta.suspendedAt || null,
+    };
+    await GithubInstallation.updateOne(
+      { userId: uid, installationId: String(meta.installationId) },
+      { $set: set, $setOnInsert: { installedAt: new Date(), installationId: String(meta.installationId) } },
+      { upsert: true }
+    );
+    const doc = await GithubInstallation.findOne({ userId: uid, installationId: String(meta.installationId) }).lean();
+    return { ok: true, installation: { installationId: doc.installationId, accountLogin: doc.accountLogin, accountType: doc.accountType, repositorySelection: doc.repositorySelection, status: doc.status } };
+  } catch (err) {
+    console.error('[db] saveGithubInstallation failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listGithubInstallations({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await GithubInstallation.find({ userId: uid }).lean();
+    return docs.map((d) => ({ installationId: d.installationId, accountLogin: d.accountLogin, accountType: d.accountType, repositorySelection: d.repositorySelection, status: d.status, installedAt: d.installedAt }));
+  } catch { return []; }
+}
+
+export async function getOwnedInstallation({ userId, email, installationId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    return await GithubInstallation.findOne({ userId: uid, installationId: String(installationId) }).lean();
+  } catch { return null; }
+}
+
+export async function setInstallationStatus({ installationId, status, suspendedAt = null }) {
+  if (!URI) return { ok: false };
+  try {
+    await connectDB();
+    const set = { status };
+    if (suspendedAt !== undefined) set.suspendedAt = suspendedAt;
+    await GithubInstallation.updateMany({ installationId: String(installationId) }, { $set: set });
+    if (status === 'disconnected') {
+      await GithubRepository.updateMany({ installationId: String(installationId) }, { $set: { accessible: false } });
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] setInstallationStatus failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+export async function disconnectInstallation({ userId, email, installationId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await GithubInstallation.updateOne({ userId: uid, installationId: String(installationId) }, { $set: { status: 'disconnected' } });
+    if (!r.matchedCount) return { ok: false, reason: 'not_found' };
+    await GithubRepository.updateMany({ userId: uid, installationId: String(installationId) }, { $set: { accessible: false } });
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] disconnectInstallation failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* ---- REPOSITORIES ---- */
+export async function syncGithubRepositories({ userId, email, installationId, repos = [] }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const seen = new Set();
+    for (const r of repos) {
+      if (!r.githubRepoId) continue;
+      seen.add(String(r.githubRepoId));
+      await GithubRepository.updateOne(
+        { userId: uid, githubRepoId: String(r.githubRepoId) },
+        {
+          $set: {
+            installationId: String(installationId),
+            owner: r.owner, name: r.name, fullName: r.fullName, private: !!r.private,
+            htmlUrl: r.htmlUrl, defaultBranch: r.defaultBranch, language: r.language || '',
+            topics: r.topics || [], description: r.description || '', fork: !!r.fork, archived: !!r.archived,
+            stargazersCount: r.stargazersCount || 0, forksCount: r.forksCount || 0,
+            pushedAt: r.pushedAt ? new Date(r.pushedAt) : null,
+            repoUpdatedAt: r.repoUpdatedAt ? new Date(r.repoUpdatedAt) : null,
+            accessible: true,
+          },
+          $setOnInsert: { email: cleanEmail(email), githubRepoId: String(r.githubRepoId), selectedForVerification: false },
+        },
+        { upsert: true }
+      );
+    }
+    if (seen.size) {
+      await GithubRepository.updateMany(
+        { userId: uid, installationId: String(installationId), githubRepoId: { $nin: [...seen] } },
+        { $set: { accessible: false } }
+      );
+    }
+    const docs = await GithubRepository.find({ userId: uid }).sort({ pushedAt: -1 }).lean();
+    return { ok: true, repositories: docs.map((d) => githubRepoDTO(d, { isOwner: true })) };
+  } catch (err) {
+    console.error('[db] syncGithubRepositories failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listGithubRepositories({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await GithubRepository.find({ userId: uid }).sort({ pushedAt: -1 }).lean();
+    return docs.map((d) => githubRepoDTO(d, { isOwner: true }));
+  } catch { return []; }
+}
+
+export async function getOwnedRepository({ userId, email, repoId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const repo = await GithubRepository.findOne({ userId: uid, githubRepoId: String(repoId) }).lean();
+    if (!repo) return null;
+    const inst = await GithubInstallation.findOne({ userId: uid, installationId: repo.installationId }).lean();
+    return { repo, installation: inst };
+  } catch { return null; }
+}
+
+export async function saveRepoAnalysis({ userId, email, repoId, analysis = {}, verificationSummary = '', publicSafeSummary = {} }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    await GithubRepoAnalysis.create({
+      userId: uid, githubRepoId: String(repoId), installationId: analysis.installationId || '',
+      repoFullName: analysis.repoFullName || '', visibility: analysis.visibility || 'public',
+      analyzedAt: new Date(), status: analysis.status || 'complete', score: analysis.score || 0,
+      detectedStack: analysis.detectedStack || [], detectedSkills: analysis.detectedSkills || [],
+      evidence: analysis.evidence || [], filesInspected: analysis.filesInspected || 0,
+      commitSignals: analysis.commitSignals || {}, qualitySignals: analysis.qualitySignals || {},
+      securityWarnings: analysis.securityWarnings || [], verificationSummary,
+      publicSafeSummary, analysisErrors: analysis.analysisErrors || [],
+    });
+    await GithubRepository.updateOne(
+      { userId: uid, githubRepoId: String(repoId) },
+      { $set: {
+        analysisStatus: analysis.status || 'complete',
+        proofScore: analysis.score || 0,
+        proofLevel: analysis.level || '',
+        detectedSkills: analysis.detectedSkills || [],
+        evidence: analysis.evidence || [],
+        selectedForVerification: true,
+        lastAnalyzedAt: new Date(),
+      } }
+    );
+    const doc = await GithubRepository.findOne({ userId: uid, githubRepoId: String(repoId) }).lean();
+    return { ok: true, repo: githubRepoDTO(doc, { isOwner: true }) };
+  } catch (err) {
+    console.error('[db] saveRepoAnalysis failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function getLatestRepoAnalysis({ userId, email, repoId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const d = await GithubRepoAnalysis.findOne({ userId: uid, githubRepoId: String(repoId) }).sort({ analyzedAt: -1 }).lean();
+    return d ? { ...d, id: String(d._id) } : null;
+  } catch { return null; }
+}
+
+export async function setRepoVisibility({ userId, email, repoId, publicProofVisible, privateProofSummaryVisible }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const repo = await GithubRepository.findOne({ userId: uid, githubRepoId: String(repoId) });
+    if (!repo) return { ok: false, reason: 'not_found' };
+    if (typeof publicProofVisible === 'boolean') {
+      repo.publicProofVisible = repo.private ? false : publicProofVisible;
+    }
+    if (typeof privateProofSummaryVisible === 'boolean') {
+      repo.privateProofSummaryVisible = repo.private ? privateProofSummaryVisible : false;
+    }
+    await repo.save();
+    return { ok: true, repo: githubRepoDTO(repo.toObject(), { isOwner: true }) };
+  } catch (err) {
+    console.error('[db] setRepoVisibility failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function linkRepoToProject({ userId, email, repoId, projectId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await GithubRepository.updateOne(
+      { userId: uid, githubRepoId: String(repoId) },
+      { $set: { linkedProjectId: String(projectId || '') } }
+    );
+    if (!r.matchedCount) return { ok: false, reason: 'not_found' };
+    await GithubRepoAnalysis.updateMany({ userId: uid, githubRepoId: String(repoId) }, { $set: { projectId: String(projectId || '') } });
+    const doc = await GithubRepository.findOne({ userId: uid, githubRepoId: String(repoId) }).lean();
+    return { ok: true, repo: githubRepoDTO(doc, { isOwner: true }) };
+  } catch (err) {
+    console.error('[db] linkRepoToProject failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function githubSummary({ userId, email }) {
+  const empty = { connected: false, connectionType: 'none', appInstalled: 0, repositoriesAccessible: 0, repositoriesAnalyzed: 0, privateReposAnalyzed: 0, evidenceSkills: 0, analyzedRepos: [] };
+  if (!URI) return empty;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return empty;
+    const [conn, installs, repos] = await Promise.all([
+      GithubConnection.findOne({ userId: uid }).lean(),
+      GithubInstallation.find({ userId: uid, status: 'active' }).lean(),
+      GithubRepository.find({ userId: uid }).lean(),
+    ]);
+    const accessible = repos.filter((r) => r.accessible !== false);
+    const analyzed = accessible.filter((r) => r.analysisStatus === 'complete' || r.analysisStatus === 'partial');
+    const skillSet = new Set(analyzed.flatMap((r) => r.detectedSkills || []));
+    return {
+      connected: !!(conn && conn.status === 'connected'),
+      connectionType: conn && conn.status === 'connected' ? 'oauth' : 'none',
+      handle: conn?.handle || '',
+      appInstalled: installs.length,
+      repositoriesAccessible: accessible.length,
+      privateReposAccessible: accessible.filter((r) => r.private).length,
+      publicReposAccessible: accessible.filter((r) => !r.private).length,
+      repositoriesAnalyzed: analyzed.length,
+      privateReposAnalyzed: analyzed.filter((r) => r.private).length,
+      evidenceSkills: skillSet.size,
+      analyzedRepos: analyzed.map((r) => ({ score: r.proofScore || 0, visibility: r.private ? 'private' : 'public', detectedSkills: r.detectedSkills || [] })),
+    };
+  } catch (err) {
+    console.error('[db] githubSummary failed:', err.message);
+    return empty;
+  }
+}
+
+/* Backward-compat: mirror the OAuth GitHub html_url into the NetworkProfile
+   links.github so existing UI that reads links.github keeps working. Never
+   clobbers a non-empty manual link with an empty value. */
+export async function syncNetworkGithubLink({ userId, email, githubUrl }) {
+  if (!URI || !githubUrl) return { ok: false };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false };
+    const np = await NetworkProfile.findOne({ userId: uid });
+    if (!np) return { ok: false, reason: 'no_network_profile' };
+    const links = { ...(np.links || {}) };
+    links.github = githubUrl;
+    np.links = links;
+    await np.save();
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] syncNetworkGithubLink failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+export async function githubPublicProof({ targetUserId, targetEmail, filterFn }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId: targetUserId, email: targetEmail });
+    if (!uid) return null;
+    const conn = await GithubConnection.findOne({ userId: uid }).lean();
+    const repos = await GithubRepository.find({ userId: uid, accessible: { $ne: false } }).lean();
+    const out = { handle: '', publicStats: null, repos: [] };
+    if (conn && conn.status === 'connected' && conn.publicVisible) {
+      out.handle = conn.handle || '';
+      out.publicStats = {
+        publicRepoCount: conn.stats?.publicRepoCount || 0,
+        followers: conn.stats?.followers || 0,
+        topLanguages: (conn.stats?.topLanguages || []).slice(0, 5),
+      };
+    }
+    for (const r of repos) {
+      if (r.analysisStatus !== 'complete' && r.analysisStatus !== 'partial') continue;
+      const analysis = await GithubRepoAnalysis.findOne({ userId: uid, githubRepoId: r.githubRepoId }).sort({ analyzedAt: -1 }).lean();
+      if (!analysis) continue;
+      const safe = typeof filterFn === 'function'
+        ? filterFn(analysis, { publicProofVisible: r.publicProofVisible, privateProofSummaryVisible: r.privateProofSummaryVisible, htmlUrl: r.private ? '' : r.htmlUrl })
+        : null;
+      if (safe) out.repos.push(safe);
+    }
+    return out;
+  } catch (err) {
+    console.error('[db] githubPublicProof failed:', err.message);
+    return null;
+  }
+}
+
+
 /* ---- trust score (objective inputs only, recomputed server-side) ---- */
 export function computeTrust(metrics = {}, engagement = {}, completeness = 0) {
   let s = 0;

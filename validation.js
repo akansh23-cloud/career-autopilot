@@ -341,4 +341,24 @@ export const templateImageSchema = z.object({
   mime: z.enum(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']).optional().default('image/png'),
 });
 
+/* ---- GitHub integration (Career Proof Profile) ---- */
+export const githubLinkProjectSchema = z.object({
+  projectId: shortText(80).min(1, 'A project id is required.'),
+});
+export const githubVisibilitySchema = z.object({
+  publicProofVisible: z.boolean().optional(),
+  privateProofSummaryVisible: z.boolean().optional(),
+  confirmPrivate: z.boolean().optional(),
+}).refine(
+  (v) => v.publicProofVisible !== undefined || v.privateProofSummaryVisible !== undefined,
+  { message: 'Provide at least one visibility flag.' }
+);
+export const githubAnalyzeSchema = z.object({
+  // Confirmation gate for analyzing a private repo (UX safety).
+  confirmPrivate: z.boolean().optional().default(false),
+}).passthrough();
+export const githubImportProjectSchema = z.object({
+  title: shortText(200).optional(),
+}).passthrough();
+
 export { email, url };
