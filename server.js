@@ -47,6 +47,7 @@ import {
   githubLinkProjectSchema, githubVisibilitySchema, githubAnalyzeSchema, githubImportProjectSchema,
 } from './validation.js';
 import * as ghEngine from './server/utils/githubIntegrationEngine.js';
+import { createProblemIntelligenceRouter } from './server/routes/problemIntelligenceRoutes.js';
 
 dotenv.config();
 
@@ -1371,6 +1372,15 @@ function persistenceStatus(result) {
   if (db.dbEnabled()) return result && result.ok ? 200 : 500;
   return config.IS_PROD ? 503 : 200;
 }
+
+app.use('/api/problem-intelligence', createProblemIntelligenceRouter({
+  db,
+  requireAuth,
+  generationLimiter,
+  currentUser,
+  persistenceStatus,
+  verifyProjectSubmission,
+}));
 
 app.get('/auth/google/start', (req, res) => {
   if (!googleEnabled()) return res.redirect(buildReturn(req.query.returnTo || '/', { login: 'unavailable' }));
