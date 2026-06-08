@@ -5,17 +5,18 @@ import {
 } from 'lucide-react';
 import { PageIntro, SectionCard, StatCard, NextBestAction } from './common.jsx';
 import { Badge, Button, EmptyState } from '../components/ui/kit.jsx';
-import { ScoreRing, XpBar, BadgePill, BadgeModal, nextStepFor } from '../components/proof/ProofViews.jsx';
+import { ScoreRing, XpBar, BadgeModal, VerifiedBadgePanel, nextStepFor } from '../components/proof/ProofViews.jsx';
 import Dashboard from './Dashboard.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getProjects, getPublishedProjects, proofScoreBreakdown } from '../lib/projectStore.js';
 import { deriveSkillXP, careerXP } from '../lib/xp.js';
 import { deriveBadges } from '../lib/badges.js';
+import { classifyBadges } from '../lib/skillBadges.js';
 import { roleConsistency, buildCandidates } from '../lib/roleFit.js';
 import { getAccessForUser } from '../lib/access.js';
 import { getProfile, ROLE_LABELS } from '../lib/userProfile.js';
 import { getWeeklyMissions, setMissionDone, missionStats } from '../lib/missions.js';
-import { assembleMyProfile, adoptionSuggestions } from '../lib/network.js';
+import { assembleMyProfile, adoptionSuggestions, requestCareerProfileEditor } from '../lib/network.js';
 import { BadgeCheck, Medal, Handshake } from 'lucide-react';
 
 function useProjectsLive() {
@@ -118,13 +119,13 @@ function ProfileAdoptionPanel({ go }) {
         </div>
         <div className="space-y-2">
           {suggestions.length ? suggestions.map((s, i) => (
-            <button key={i} onClick={() => go(s.cta)} className="lift flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-left text-[13px] text-slate-200 hover:border-white/20">
+            <button key={i} onClick={() => { go(s.cta); if (s.editor) requestCareerProfileEditor(s.editor); }} className="lift flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-left text-[13px] text-slate-200 hover:border-white/20">
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Sparkles size={14} /></span>
               <span className="flex-1">{s.text}</span>
               <ArrowRight size={14} className="text-slate-600" />
             </button>
           )) : (
-            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 px-3 py-2.5 text-[13px] text-[#A7F2DD]">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
+            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 px-3 py-2.5 text-[13px] text-[#A7F2CE]">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
           )}
         </div>
       </div>
@@ -149,6 +150,7 @@ function StudentDashboard({ go }) {
 
   const skillXP = useMemo(() => deriveSkillXP(projects), [projects]);
   const badges = useMemo(() => deriveBadges(projects, access), [projects, access]);
+  const verifiedBadges = useMemo(() => classifyBadges(badges).verified, [badges]);
   const career = useMemo(() => careerXP(projects), [projects]);
   const published = projects.filter((p) => p.published);
   const avgProof = projects.length ? Math.round(projects.reduce((s, p) => s + proofScoreBreakdown(p).score, 0) / projects.length) : 0;
@@ -180,8 +182,8 @@ function StudentDashboard({ go }) {
       />
 
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard i={0} icon={TrendingUp} tone="violet" label="Career XP" value={String(career.total)} hint={career.next ? `${career.toNext} XP to ${career.next}` : 'Max level'} onClick={() => go('profile')} />
-        <StatCard i={1} icon={Award} tone="mint" label="Verified badges" value={String(badges.length)} onClick={() => go('profile')} />
+        <StatCard i={0} icon={TrendingUp} tone="violet" label="Career XP" value={String(career.total)} hint={career.next ? `${career.toNext} XP to ${career.next}` : 'Max level'} onClick={() => go('careerprofile')} />
+        <StatCard i={1} icon={Award} tone="mint" label="Verified badges" value={String(verifiedBadges.length)} onClick={() => go('skillsxp')} />
         <StatCard i={2} icon={Rocket} tone="cyan" label="Published" value={String(published.length)} hint={!published.length ? 'Publish your first project' : undefined} onClick={() => go('sandbox')} />
         <StatCard i={3} icon={Target} tone="amber" label="Avg proof" value={projects.length ? String(avgProof) : '—'} hint={!projects.length ? 'Build a project' : undefined} />
       </div>
@@ -205,7 +207,7 @@ function StudentDashboard({ go }) {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Top skill XP" action={<button onClick={() => go('profile')} className="text-xs text-aurora-cyan hover:underline">View all</button>}>
+        <SectionCard title="Top skill XP" action={<button onClick={() => go('skillsxp')} className="text-xs text-aurora-cyan hover:underline">View all</button>}>
           {skillXP.length ? (
             <div className="space-y-2.5">
               {skillXP.slice(0, 4).map((s) => <XpBar key={s.skillName} skill={s} />)}
@@ -216,19 +218,15 @@ function StudentDashboard({ go }) {
           )}
         </SectionCard>
 
-        <SectionCard title="Verified badges" action={<button onClick={() => go('profile')} className="text-xs text-aurora-cyan hover:underline">Profile</button>}>
-          {badges.length ? (
-            <div className="flex flex-wrap gap-2">{badges.slice(0, 12).map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={setBadgeOpen} />)}</div>
-          ) : (
-            <EmptyState icon={Award} title="No badges yet" hint="Add a GitHub repo, a live demo and complete the checklist to earn evidence-based badges." />
-          )}
+        <SectionCard title="Verified skill badges" action={<button onClick={() => go('careerprofile')} className="text-xs text-aurora-cyan hover:underline">Career Profile</button>}>
+          <VerifiedBadgePanel badges={badges} onOpen={setBadgeOpen} onViewAll={() => go('skillsxp')} limit={16} />
         </SectionCard>
       </div>
 
       <div className="mt-4">
         <SectionCard title="Next steps">
           <div className="grid gap-2.5 sm:grid-cols-2">
-            {[[Rocket, 'Generate a project roadmap', 'projectstudio'], [KanbanSquare, 'Track applications', 'tracker'], [Briefcase, 'Find matching jobs', 'jobs'], [Award, 'View your profile', 'profile']].map(([Icon, label, id]) => (
+            {[[Rocket, 'Generate a project roadmap', 'projectstudio'], [KanbanSquare, 'Track applications', 'tracker'], [Briefcase, 'Find matching jobs', 'jobs'], [Award, 'View your Career Profile', 'careerprofile']].map(([Icon, label, id]) => (
               <button key={id} onClick={() => go(id)} className="lift flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-slate-200 hover:border-white/20">
                 <span className="grid h-8 w-8 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={16} /></span>
                 {label}<ArrowRight size={15} className="ml-auto text-slate-600" />

@@ -6,6 +6,7 @@ import { Jobs, Contacts, AI } from '../lib/api.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
 import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume, getStoredJobResults, saveStoredJobResults, saveSelectedJob } from '../lib/resumeStore.js';
 import { saveStudioSeed } from '../lib/projectStore.js';
+import { saveJobToTracker, getTrackedCount, getTrackerBoard, findCard, trackerJobIdentity } from '../lib/trackerStore.js';
 import { inferType } from '../lib/projectGen.js';
 import { canUse, useMeter, canTrack, promptUpgrade } from '../lib/plan.js';
 
@@ -14,27 +15,6 @@ const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
 const EDITOR_KEY = 'careerAutopilot.editor.lastTailor.v1';
 const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
 const ROLE_OPTIONS = Object.values(ROLE_GROUPS).flat();
-
-const TRACKER_KEY = 'careerAutopilot.trackerBoard.v1';
-function trackedCount() {
-  try {
-    const board = JSON.parse(localStorage.getItem(TRACKER_KEY) || '{}');
-    return Object.values(board).flat().length;
-  } catch { return 0; }
-}
-function addJobToTracker(j) {
-  try {
-    const empty = { saved: [], applied: [], interview: [], offer: [] };
-    const board = JSON.parse(localStorage.getItem(TRACKER_KEY) || JSON.stringify(empty));
-    const id = keyForJob(j);
-    const exists = Object.values(board).flat().some((x) => String(x.id) === String(id));
-    if (!exists) {
-      board.saved = [{ id, role: j.title || 'Role', company: j.company || '', url: j.url || '', source: j.source || '', addedAt: new Date().toISOString() }, ...(board.saved || [])];
-      localStorage.setItem(TRACKER_KEY, JSON.stringify(board));
-      window.dispatchEvent(new Event('career-tracker-updated'));
-    }
-  } catch {}
-}
 
 function safeRead(key, fallback = {}) { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } }
 function safeWrite(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
@@ -291,6 +271,23 @@ export default function JobsView({ go }) {
   const [people, setPeople] = useState({ open: false, title: '', status: 'idle', contacts: [], err: '', note: '', job: null, draft: '', copied: false });
   const [mini, setMini] = useState({ open: false, title: '', body: '', job: null });
   const [buildConfirm, setBuildConfirm] = useState(null); // { job, gaps } — guided hand-off confirmation
+  const [toast, setToast] = useState('');
+
+  const flash = (msg) => { setToast(msg); window.clearTimeout(flash._t); flash._t = window.setTimeout(() => setToast(''), 1800); };
+
+  // Single path used by both the bookmark marker and the "Track" button so the
+  // job always lands in the shared tracker (Saved column), deduped, with plan
+  // gating applied only when it would create a NEW card.
+  const addToTracker = (j) => {
+    const exists = !!findCard(getTrackerBoard(), trackerJobIdentity(j));
+    if (!exists && !canTrack(getTrackedCount())) {
+      promptUpgrade('Free plan tracks up to 20 jobs. Upgrade for unlimited tracking.', 'pro');
+      return { status: 'gated' };
+    }
+    const res = saveJobToTracker(j);
+    flash(res.status === 'duplicate' ? 'Already in tracker' : 'Saved to tracker');
+    return res;
+  };
 
   const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, saved, ...patch });
   const enrichedJobs = useMemo(() => {
@@ -316,7 +313,17 @@ export default function JobsView({ go }) {
 
   useEffect(() => { const queued = consumeQueuedResumeJobSearch(); if (queued?.role) { setResumeHint(true); run(null, { role: queued.role }); } }, []);
   useEffect(() => { const onResumeUpdate = () => { const r = getStoredResume(); setResumeHint(Boolean(r.text)); if (!role && (r.targetRole || getResumeSearchRole())) setRole(r.targetRole || getResumeSearchRole()); }; window.addEventListener('career-resume-updated', onResumeUpdate); return () => window.removeEventListener('career-resume-updated', onResumeUpdate); }, [role]);
-  const toggleSave = (j) => { const k = keyForJob(j); const next = { ...saved, [k]: !saved[k] }; setSaved(next); saveStoredJobResults({ ...getStoredJobResults(), saved: next }); };
+  const toggleSave = (j) => {
+    const k = keyForJob(j);
+    const wasSaved = !!saved[k];
+    const next = { ...saved, [k]: !wasSaved };
+    setSaved(next);
+    saveStoredJobResults({ ...getStoredJobResults(), saved: next });
+    // Bookmarking a job adds it to the tracker's Saved column (deduped). We keep
+    // the visual bookmark independent of removal — jobs are removed from the
+    // Tracker view, not by un-bookmarking, so a card is never lost by accident.
+    if (!wasSaved) addToTracker(j);
+  };
 
   const openPeople = async (type, j, opts = {}) => {
     if (!canUse('contacts')) { promptUpgrade('You’ve used all your contact searches this month. Upgrade for more.', 'pro'); return; }
@@ -345,7 +352,7 @@ export default function JobsView({ go }) {
       ej.url ? `Apply: ${ej.url}` : 'Apply link: not provided by source',
       (ej._missing && ej._missing.length) ? `\nSkill gaps to address: ${ej._missing.join(', ')}` : '',
       `\n— Full description —\n${ej.summary || 'No description text was provided by the source. Open the posting to read the full description.'}`,
-    ].filter(Boolean).join('\n'); setMini({ open: true, title: 'Job details', body, job: ej }); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { if (!canTrack(trackedCount())) { promptUpgrade('Free plan tracks up to 20 jobs. Upgrade for unlimited tracking.', 'pro'); return; } addJobToTracker(j); go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
+    ].filter(Boolean).join('\n'); setMini({ open: true, title: 'Job details', body, job: ej }); return; } if (type === 'outreach') { openPeople('contacts', j, { autoDraft: true }); return; } if (type === 'contacts' || type === 'referrals' || type === 'linkedin') { openPeople(type, j); return; } if (type === 'track') { const r = addToTracker(j); if (r.status !== 'gated') go?.('tracker'); return; } const body = type === 'checklist' ? ['Verify posting is still open', 'Generate tailored package', 'Download PDF/DOCX resume', 'Copy recruiter or LinkedIn note', 'Submit manually on official job site', 'Add to tracker', 'Set follow-up after 3 days'].map((x,i)=>`${i+1}. ${x}`).join('\n') : type === 'interview' ? `Interview prep for ${j.title}\n\nFocus areas:\n• ${[...(j.requiredSkills || []), ...j._missing || []].slice(0,6).join('\n• ')}\n\nPrepare STAR stories for ownership, production issue handling, CI/CD, cloud, security and collaboration.` : `Generate outreach from the Tailor & Apply kit or use Find hiring contact first.`; setMini({ open: true, title: type === 'checklist' ? 'Apply checklist' : type === 'interview' ? 'Interview prep' : 'Outreach', body, job: j }); };
 
   // #5 — Build Project for Gaps: confirm first, then seed the guided studio with
   // THIS job's context and gaps. We do not silently jump into a generic workspace.
@@ -385,5 +392,10 @@ export default function JobsView({ go }) {
     </Modal>
     <Modal open={mini.open} onClose={()=>setMini((m)=>({...m,open:false}))} title={mini.title} width="max-w-2xl"><pre className="whitespace-pre-wrap rounded-xl border border-white/10 bg-ink-950/70 p-4 text-sm leading-relaxed text-slate-200">{mini.body}</pre><div className="mt-4 flex gap-2"><Button onClick={()=>setTailorJob(enrichJob(mini.job, getStoredResume()))}><Sparkles size={14}/> Tailor package</Button>{mini.job?.url && <a href={mini.job.url} target="_blank" rel="noreferrer"><Button variant="soft"><ExternalLink size={14}/> Open posting</Button></a>}</div></Modal>
     <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-36 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Try again or add Hunter/PDL/Apollo keys for verified contacts.'} />}{people.status === 'done' && people.contacts.length > 0 && <>{people.note && <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-snug text-slate-400">{people.note}</p>}<div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><ContactCard key={i} c={c} onDraft={makeDraft} />)}</div></>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
+    {toast && (
+      <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-aurora-mint/30 bg-ink-900/95 px-4 py-2.5 text-sm font-medium text-[#A7F2CE] shadow-lift backdrop-blur" role="status">
+        {toast}
+      </div>
+    )}
   </>;
 }

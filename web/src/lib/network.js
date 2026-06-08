@@ -480,16 +480,36 @@ export async function fetchPublicProfile(userId) {
 /* ---------------- Adoption suggestions (Part 10) ---------------- */
 export function adoptionSuggestions(profile = assembleMyProfile()) {
   const m = profile.metrics; const out = [];
-  if (!profile.links.github) out.push({ text: 'Add your GitHub to become eligible for Top GitHub Verified Projects.', cta: 'profile' });
+  if (!profile.links.github) out.push({ text: 'Add your GitHub to become eligible for Top GitHub Verified Projects.', cta: 'careerprofile', editor: 'links' });
   if (!m.hasLiveVerified && m.publishedCount > 0) out.push({ text: 'Verify a live demo to earn the Deployment Verified badge.', cta: 'sandbox' });
   if (profile.completeness < 100) {
     const missing = [];
     if (!profile.links.linkedin) missing.push('LinkedIn');
     if (!profile.links.github) missing.push('GitHub');
     if (profile.visibility === 'private') missing.push('a public visibility setting');
-    out.push({ text: `Your profile is ${profile.completeness}% complete${missing.length ? `. Add ${missing.join(' + ')} to appear in recruiter search.` : '.'}`, cta: 'profile' });
+    out.push({ text: `Your profile is ${profile.completeness}% complete${missing.length ? `. Add ${missing.join(' + ')} to appear in recruiter search.` : '.'}`, cta: 'careerprofile', editor: 'links' });
   }
   if (m.publishedCount === 0) out.push({ text: 'Publish your first verified project to enter the leaderboards.', cta: 'sandbox' });
   if (!m.hasInterview && m.publishedCount > 0) out.push({ text: 'Add interview prep to a project to reach Top Interview Ready Profiles.', cta: 'projectstudio' });
   return out.slice(0, 4);
+}
+
+/* ---------------- Career Profile editor deep-link intent ----------------
+   Navigation in this app is state-based (no URL router), so a CTA like
+   "Add your GitHub" both navigates to the Career Profile view AND asks it to
+   open the edit panel on the links section. We stash the requested section and
+   fire an event; the freshly-mounted view consumes it on mount, and an already
+   mounted view reacts to the event. This is the equivalent of /career-profile?section=links. */
+export const PROFILE_EDITOR_EVENT = 'career-open-profile-editor';
+let pendingProfileEditorSection = null;
+export function requestCareerProfileEditor(section = 'links') {
+  pendingProfileEditorSection = section || 'links';
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PROFILE_EDITOR_EVENT, { detail: { section: pendingProfileEditorSection } }));
+  }
+}
+export function consumePendingProfileEditor() {
+  const s = pendingProfileEditorSection;
+  pendingProfileEditorSection = null;
+  return s;
 }

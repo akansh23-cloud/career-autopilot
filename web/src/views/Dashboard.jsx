@@ -11,7 +11,9 @@ import { getStoredResume, getStoredJobResults } from '../lib/resumeStore.js';
 import { getProjects } from '../lib/projectStore.js';
 import { careerXP, topSkills } from '../lib/xp.js';
 import { deriveBadges } from '../lib/badges.js';
+import { classifyBadges } from '../lib/skillBadges.js';
 import { getAccessForUser } from '../lib/access.js';
+import { useTracker } from '../hooks/useTracker.js';
 
 const TONE_BG = {
   cyan: 'bg-aurora-cyan', violet: 'bg-aurora-violet', mint: 'bg-aurora-mint', amber: 'bg-amber-glow',
@@ -29,6 +31,8 @@ export default function Dashboard({ go }) {
   const { user } = useAuth();
   const [data, setData] = useState(null);     // { summary, demo }
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
+  // Shared tracker source of truth — the funnel below reflects this live.
+  const { funnel: trackerFunnel, total: trackedTotal } = useTracker();
 
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -93,16 +97,23 @@ export default function Dashboard({ go }) {
   const career = careerXP(projects);
   const skills = topSkills(projects, 3);
   const badges = deriveBadges(projects, access);
+  const verifiedBadges = classifyBadges(badges).verified;
   const resumeScore = base.resumeScore ?? localResume.analysis?.score ?? localResume.analysis?.ats ?? null;
   const s = { ...base, resumeScore };
   const demo = !!data?.demo;
-  const funnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 };
+  const serverFunnel = s.funnel || { saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0 };
+  // The Application Funnel reads the SAME tracker the user edits. When the
+  // tracker has any jobs, it is authoritative; otherwise we fall back to the
+  // server summary (demo accounts, or DB-backed applications).
+  const funnel = trackedTotal > 0
+    ? { saved: trackerFunnel.saved, applied: trackerFunnel.applied, interview: trackerFunnel.interview, offer: trackerFunnel.offer, rejected: serverFunnel.rejected || 0 }
+    : serverFunnel;
   const weekly = s.weekly || { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [0, 0, 0, 0, 0, 0, 0] };
   const activity = [...(s.activity || [])];
   if (localResume.analysis && !activity.some((a) => /resume/i.test(a.text || ''))) activity.unshift({ text: `Resume analyzed${localResume.targetRole ? ` for ${localResume.targetRole}` : ''} — score ${resumeScore || 'ready'}`, when: 'Saved locally', tone: 'cyan' });
   if (projects.length && !activity.some((a) => /project/i.test(a.text || ''))) activity.unshift({ text: `${projects.length} project workspace${projects.length === 1 ? '' : 's'} active with ${career.total} Career XP`, when: 'Saved locally', tone: 'violet' });
   const matches = (s.matches && s.matches.length ? s.matches : (localJobs.jobs || []).slice(0, 5));
-  const funnelEmpty = !Object.values(funnel).some((v) => v > 0);
+  const funnelEmpty = trackedTotal === 0 && !Object.values(serverFunnel).some((v) => v > 0);
 
   // One focal next-best-action, derived from existing signals (no new data).
   const nba = (resumeScore == null)
@@ -155,13 +166,13 @@ export default function Dashboard({ go }) {
       </div>
 
       <div className="mt-4">
-        <SectionCard title="Project progress" action={<Badge tone="violet">Proof-of-work</Badge>}>
+        <SectionCard title="Career Proof Progress" action={<Badge tone="violet">Proof-of-work</Badge>}>
           {projects.length === 0 ? (
             <EmptyState icon={Trophy} title="No project workspace yet" hint="Create a guided project to start earning verified skill XP and badges." action={<Button size="sm" onClick={() => go('projectstudio')}>Create project</Button>} />
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Career XP</p><p className="mt-1 font-display text-2xl text-white">{career.total}</p><p className="text-[11px] text-slate-500">{career.level}</p></div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Verified badges</p><p className="mt-1 font-display text-2xl text-white">{badges.length}</p><p className="text-[11px] text-slate-500">Proof-based skills</p></div>
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Verified badges</p><p className="mt-1 font-display text-2xl text-white">{verifiedBadges.length}</p><p className="text-[11px] text-slate-500">Proof-based skills</p></div>
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Top skill</p><p className="mt-1 truncate font-display text-2xl text-white">{skills[0]?.skillName || '—'}</p><p className="text-[11px] text-slate-500">{skills[0] ? `${skills[0].xp} XP · ${skills[0].level}` : 'Add project evidence'}</p></div>
             </div>
           )}

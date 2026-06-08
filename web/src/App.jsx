@@ -15,10 +15,10 @@ import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectSto
 import { setMissionUser } from './lib/missions.js';
 import { setNetworkUser, hydrateNetworkFromServer } from './lib/network.js';
 import { setCreatorUser, hydrateCreatorFromServer } from './lib/projectCreator.js';
+import { setTrackerStoreUser, hydrateTrackerFromServer } from './lib/trackerStore.js';
 
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
-import Profile from './views/Profile.jsx';
 import Resume from './views/Resume.jsx';
 import Editor from './views/Editor.jsx';
 import JobsView from './views/Jobs.jsx';
@@ -36,11 +36,17 @@ import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
 import ProjectCreator from './views/ProjectCreator.jsx';
 import AdminUsers from './views/AdminUsers.jsx';
+import SkillsXp from './views/SkillsXp.jsx';
+import MarketplaceView from './views/Marketplace.jsx';
+import InspirationsView from './views/Inspirations.jsx';
+import ArchitectureView from './views/ArchitectureView.jsx';
+import PatentEngine from './views/PatentEngine.jsx';
+import ApplicationsView from './views/ApplicationsView.jsx';
+import ReadinessView from './views/ReadinessView.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
   careerprofile: CareerProfile,
-  profile: Profile,
   projectcreator: ProjectCreator,
   resume: Resume,
   editor: Editor,
@@ -57,6 +63,13 @@ const VIEWS = {
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
+  skillsxp: SkillsXp,
+  marketplace: MarketplaceView,
+  inspirations: InspirationsView,
+  architecture: ArchitectureView,
+  patents: PatentEngine,
+  applications: ApplicationsView,
+  readiness: ReadinessView,
 };
 
 function Splash() {
@@ -127,6 +140,7 @@ export default function App() {
       setMissionUser(null);
       setNetworkUser(null);
       setCreatorUser(null);
+      setTrackerStoreUser(null);
       setWorkspaceReady(false);
       return () => { live = false; };
     }
@@ -141,8 +155,9 @@ export default function App() {
     setMissionUser(user);
     setNetworkUser(user);
     setCreatorUser(user);
+    setTrackerStoreUser(user);
     syncPlanFromServer();
-    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer(), hydrateCreatorFromServer()])
+    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer(), hydrateCreatorFromServer(), hydrateTrackerFromServer()])
       .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });
     return () => { live = false; };
   }, [user]);
@@ -188,6 +203,10 @@ export default function App() {
   // stale ids are ignored (instead of silently rendering the dashboard or a
   // blank page), so internal links can never land on the wrong workspace.
   const navigate = (id) => {
+    // Canonical Career Profile route. The old standalone "Profile" view was a
+    // duplicate of Career Profile, so any legacy link/CTA pointing at it now
+    // redirects here instead of crashing or opening a second profile page.
+    if (id === 'profile') id = 'careerprofile';
     if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) setActive(id);
     else if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
   };

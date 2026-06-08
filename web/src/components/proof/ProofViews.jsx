@@ -1,6 +1,8 @@
-import { Award, Github, Globe, X, CheckCircle2, Circle, Lock } from 'lucide-react';
-import { Badge, Button, Modal } from '../ui/kit.jsx';
+import { useState } from 'react';
+import { Award, Github, Globe, X, CheckCircle2, Circle, Lock, ChevronDown, ChevronRight, Sprout } from 'lucide-react';
+import { Badge, Button, Modal, EmptyState } from '../ui/kit.jsx';
 import { badgeTone } from '../../lib/badges.js';
+import { classifyBadges } from '../../lib/skillBadges.js';
 import { levelFor, nextStepFor, SKILL_STATE_LABELS, SKILL_STATE_TONES } from '../../lib/xp.js';
 import { statusTone } from '../../lib/projectStatus.js';
 import { layoutGraph } from '../../lib/architecture.js';
@@ -114,6 +116,62 @@ export function BadgePill({ badge, onClick }) {
       <span className="text-slate-400">· {badge.level}</span>
       <span className="font-mono text-[10px] text-aurora-cyan">{badge.confidence}%</span>
     </button>
+  );
+}
+
+/* Shared "Verified skill badges" presentation used by the dashboard and the
+   Career Profile. Shows only STRONG badges (proof >= 80 or a verified status),
+   capped to a tidy count, with low-confidence "practiced" skills tucked into a
+   collapsed-by-default "Developing skills" disclosure and a "View all skills"
+   link to the full Skills & XP breakdown. This is what keeps the dashboard from
+   ever rendering 70–100 noisy chips. */
+export function VerifiedBadgePanel({ badges = [], onOpen, onViewAll, limit = 16 }) {
+  const [showDeveloping, setShowDeveloping] = useState(false);
+  const { verified, developing } = classifyBadges(badges);
+  const shown = verified.slice(0, limit);
+
+  if (!verified.length && !developing.length) {
+    return (
+      <EmptyState
+        icon={Award}
+        title="No verified skills yet"
+        hint="Submit a project with GitHub/live demo proof to earn verified badges."
+        action={onViewAll ? <Button size="sm" variant="soft" onClick={onViewAll}>View all skills</Button> : undefined}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {shown.length ? (
+        <div className="flex flex-wrap gap-2">{shown.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={onOpen} />)}</div>
+      ) : (
+        <p className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-[13px] text-slate-400">
+          No verified badges yet — your developing skills are below. Add GitHub/live-demo proof to a project to verify them.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        {onViewAll && (
+          <button onClick={onViewAll} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] text-aurora-cyan transition hover:border-white/25">
+            View all skills{verified.length ? ` (${verified.length})` : ''}
+          </button>
+        )}
+        {developing.length > 0 && (
+          <button onClick={() => setShowDeveloping((v) => !v)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] text-slate-300 transition hover:border-white/25">
+            {showDeveloping ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <Sprout size={12} className="text-slate-400" /> Developing skills ({developing.length})
+          </button>
+        )}
+      </div>
+
+      {showDeveloping && developing.length > 0 && (
+        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">Developing skills · lower-confidence, not yet verified</p>
+          <div className="flex flex-wrap gap-2">{developing.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={onOpen} />)}</div>
+        </div>
+      )}
+    </div>
   );
 }
 

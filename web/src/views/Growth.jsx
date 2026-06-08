@@ -2,18 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { TrendingUp, Target, Eye, MessageSquare, Award, Briefcase } from 'lucide-react';
 import { PageIntro, StatCard, SectionCard, BarChart } from './common.jsx';
 import { Badge, EmptyState, Button } from '../components/ui/kit.jsx';
+import { getTrackerBoard, TRACKER_EVENT } from '../lib/trackerStore.js';
 
-const TRACKER_KEY = 'careerAutopilot.trackerBoard.v1';
 const JOB_RESULTS_KEY = 'careerAutopilot.jobResults.v1';
 const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
 const emptyBoard = { saved: [], applied: [], interview: [], offer: [] };
 function readJSON(k, f) { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(f)); } catch { return f; } }
-function readBoard() { return { ...emptyBoard, ...readJSON(TRACKER_KEY, emptyBoard) }; }
+function readBoard() { return { ...emptyBoard, ...getTrackerBoard() }; }
 function weekLabel(d) { const x = new Date(d || Date.now()); const n = Math.ceil((((x - new Date(x.getFullYear(),0,1)) / 86400000) + new Date(x.getFullYear(),0,1).getDay()+1)/7); return `W${n}`; }
 
 export default function Growth({ go }) {
   const [tick, setTick] = useState(0);
-  useEffect(() => { const h = () => setTick((x) => x + 1); window.addEventListener('career-tracker-updated', h); window.addEventListener('storage', h); return () => { window.removeEventListener('career-tracker-updated', h); window.removeEventListener('storage', h); }; }, []);
+  useEffect(() => { const h = () => setTick((x) => x + 1); window.addEventListener(TRACKER_EVENT, h); window.addEventListener('storage', h); return () => { window.removeEventListener(TRACKER_EVENT, h); window.removeEventListener('storage', h); }; }, []);
 
   const data = useMemo(() => {
     const board = readBoard();
