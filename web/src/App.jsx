@@ -36,6 +36,13 @@ import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
 import ProjectCreator from './views/ProjectCreator.jsx';
 import AdminUsers from './views/AdminUsers.jsx';
+import SkillsXp from './views/SkillsXp.jsx';
+import MarketplaceView from './views/Marketplace.jsx';
+import InspirationsView from './views/Inspirations.jsx';
+import ArchitectureView from './views/ArchitectureView.jsx';
+import PatentEngine from './views/PatentEngine.jsx';
+import ApplicationsView from './views/ApplicationsView.jsx';
+import ReadinessView from './views/ReadinessView.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -57,6 +64,13 @@ const VIEWS = {
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
+  skillsxp: SkillsXp,
+  marketplace: MarketplaceView,
+  inspirations: InspirationsView,
+  architecture: ArchitectureView,
+  patents: PatentEngine,
+  applications: ApplicationsView,
+  readiness: ReadinessView,
 };
 
 function Splash() {

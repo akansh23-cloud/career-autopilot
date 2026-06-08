@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
   Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake, Wand2,
-  LifeBuoy,
+  LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import CommandPalette from './CommandPalette.jsx';
@@ -48,6 +48,13 @@ export const NAV = [
   { id: 'careerprofile', label: 'Career Profile', icon: BadgeCheck },
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'projectcreator', label: 'Project Creator', icon: Wand2 },
+  { id: 'marketplace', label: 'Project Marketplace', icon: Store },
+  { id: 'inspirations', label: 'Live Inspirations', icon: Lightbulb },
+  { id: 'architecture', label: 'Architecture Generator', icon: Boxes },
+  { id: 'patents', label: 'Patent Engine', icon: ScrollText },
+  { id: 'applications', label: 'Application Package', icon: FileStack },
+  { id: 'readiness', label: 'Readiness', icon: Gauge },
+  { id: 'skillsxp', label: 'Skills & XP', icon: Award },
   { id: 'resume', label: 'Resume', icon: FileText },
   { id: 'editor', label: 'Editor', icon: PenLine },
   { id: 'jobs', label: 'Jobs', icon: Briefcase },
@@ -66,24 +73,28 @@ export const NAV = [
 ];
 
 const ROLE_NAV = {
-  student: ['dash', 'careerprofile', 'projectcreator', 'projectstudio', 'partners', 'sandbox', 'leaderboards', 'referralexchange', 'resume', 'editor', 'opportunities', 'tracker', 'growth', 'settings'],
-  professional: ['dash', 'careerprofile', 'projectcreator', 'resume', 'editor', 'jobs', 'contacts', 'referralexchange', 'leaderboards', 'tracker', 'sandbox', 'opportunities', 'growth', 'settings'],
-  recruiter: ['dash', 'recruiter', 'leaderboards', 'careerprofile', 'sandbox', 'settings'],
+  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'patents', 'careerprofile', 'profile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'patents', 'careerprofile', 'profile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  recruiter: ['dash', 'recruiter', 'readiness', 'marketplace', 'careerprofile', 'leaderboards', 'sandbox', 'settings'],
 };
 
 // Journey groups -> top-level website menus. Short labels keep the bar clean.
+// Top-level information architecture (spec L). Every existing view id is kept;
+// they are regrouped into clean menus. Patents gets its own top-level entry;
+// Profile/XP consolidates identity + verified skills + readiness.
 const NAV_GROUPS = [
   { label: 'Overview', short: 'Home', ids: ['dash'] },
-  { label: 'Career', short: 'Career', ids: ['careerprofile', 'profile'] },
-  { label: 'Resume Studio', short: 'Résumé', ids: ['resume', 'editor'] },
-  { label: 'Job Hunt', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts'] },
-  { label: 'Projects', short: 'Projects', ids: ['projectstudio', 'projectcreator', 'sandbox', 'partners'] },
-  { label: 'Community', short: 'Community', ids: ['leaderboards', 'referralexchange', 'opportunities'] },
-  { label: 'Growth', short: 'Growth', ids: ['growth'] },
+  { label: 'Resume OS', short: 'Résumé', ids: ['resume', 'editor'] },
+  { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
+  { label: 'Applications', short: 'Apply', ids: ['applications'] },
+  { label: 'Project Marketplace', short: 'Projects', ids: ['marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners'] },
+  { label: 'Patent Engine', short: 'Patents', ids: ['patents'] },
+  { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'profile', 'skillsxp', 'readiness'] },
+  { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
   { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },
   { label: 'Admin', short: 'Admin', ids: ['adminusers'] },
 ];
-const MORE_IDS = ['settings'];
+const MORE_IDS = ['growth', 'settings'];
 
 function groupsForRole(role) {
   const order = ROLE_NAV[role];

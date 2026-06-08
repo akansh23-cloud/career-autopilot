@@ -107,6 +107,57 @@ const activitySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/* ---- Full deterministic resume analysis (one document per unique
+   resumeHash + targetRole + scoringVersion, per user). This is the cache
+   that guarantees the same resume + role + version always returns the same
+   score. We store the entire breakdown, not just the headline number. */
+const resumeAnalysisSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    fileName: { type: String, trim: true, default: '' },
+    targetRole: { type: String, trim: true, default: 'General' },
+    score: { type: Number, default: 0 },
+    ats: { type: Number, default: 0 },
+    impact: { type: Number, default: 0 },
+    clarity: { type: Number, default: 0 },
+    breakdown: { type: mongoose.Schema.Types.Mixed, default: {} },
+    matchedKeywords: { type: [String], default: [] },
+    missingKeywords: { type: [String], default: [] },
+    summary: { type: String, default: '' },
+    strengths: { type: [String], default: [] },
+    improvements: { type: [String], default: [] },
+    recommendedRole: { type: String, trim: true, default: '' },
+    resumeHash: { type: String, index: true, required: true },
+    scoringVersion: { type: String, default: '', index: true },
+  },
+  { timestamps: true } // createdAt + updatedAt
+);
+// One cached analysis per (user, resume content, role, scoring version).
+resumeAnalysisSchema.index({ userId: 1, resumeHash: 1, targetRole: 1, scoringVersion: 1 }, { unique: true });
+
+/* ---- Saved resume versions (base / role-specific / job-specific) ---- */
+const resumeVersionSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    title: { type: String, trim: true, default: 'Untitled version' },
+    kind: { type: String, default: 'base', enum: ['base', 'role', 'job'] },
+    targetRole: { type: String, trim: true, default: '' },
+    jobId: { type: String, trim: true, default: '' },
+    jobDescription: { type: String, default: '' },
+    resumeText: { type: String, default: '' },
+    structuredResume: { type: mongoose.Schema.Types.Mixed, default: {} },
+    resumeScore: { type: Number, default: null },
+    jobFitScore: { type: Number, default: null },
+    matchedKeywords: { type: [String], default: [] },
+    missingKeywords: { type: [String], default: [] },
+    changeLog: { type: [String], default: [] },
+    fabricationRisks: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  },
+  { timestamps: true }
+);
+
 
 const userStateSchema = new mongoose.Schema(
   {
@@ -122,9 +173,255 @@ const userStateSchema = new mongoose.Schema(
   { timestamps: true, minimize: false }
 );
 
+/* ---- Verified Skills + XP ----
+   SkillXp: one row per (user, skill). verifiedXp only ever increases via
+   verified project submissions; pendingXp tracks unverified claims. Users
+   cannot edit verifiedXp directly — only the verification flow / admin can. */
+const skillXpSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    skillName: { type: String, trim: true, lowercase: true, required: true },
+    verifiedXp: { type: Number, default: 0 },
+    pendingXp: { type: Number, default: 0 },
+    rejectedXp: { type: Number, default: 0 },
+    level: { type: String, default: 'Beginner' },
+    verifiedProjectIds: { type: [String], default: [] },
+    pendingProjectIds: { type: [String], default: [] },
+    // Audit of (projectId|skill) pairs already counted, to prevent duplicates.
+    countedKeys: { type: [String], default: [] },
+  },
+  { timestamps: true }
+);
+skillXpSchema.index({ userId: 1, skillName: 1 }, { unique: true });
+
+const projectSubmissionSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    title: { type: String, trim: true, default: '' },
+    description: { type: String, default: '' },
+    roleInProject: { type: String, default: '' },
+    technologies: { type: [String], default: [] },
+    githubUrl: { type: String, default: '' },
+    liveDemoUrl: { type: String, default: '' },
+    proofUrls: { type: [String], default: [] },
+    certificateUrl: { type: String, default: '' },
+    startDate: { type: String, default: '' },
+    endDate: { type: String, default: '' },
+    complexityLevel: { type: String, default: 'intermediate' },
+    contributionType: { type: String, default: '' },
+    outcome: { type: String, default: '' },
+    claimedSkills: { type: [String], default: [] },
+    // Verification outputs (backend-owned).
+    verificationStatus: { type: String, default: 'pending', enum: ['pending', 'verified', 'rejected', 'needs_review'] },
+    verifiedSkills: { type: [String], default: [] },
+    pendingSkills: { type: [String], default: [] },
+    rejectedSkills: { type: [String], default: [] },
+    xpAwarded: { type: Number, default: 0 },
+    xpPending: { type: Number, default: 0 },
+    skillXpBreakdown: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    verificationNotes: { type: [String], default: [] },
+    githubAnalysis: { type: mongoose.Schema.Types.Mixed, default: null },
+    liveLinkCheck: { type: mongoose.Schema.Types.Mixed, default: null },
+  },
+  { timestamps: true }
+);
+
+/* ---- Project Marketplace ----
+   A MarketplaceListing optionally links to a ProjectSubmission (projectId).
+   Idea/roadmap listings have no project. marketplaceScore + verificationStatus
+   are backend-owned and recomputed server-side; the client never sets them. */
+const marketplaceListingSchema = new mongoose.Schema(
+  {
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    ownerEmail: { type: String, lowercase: true, trim: true, index: true },
+    ownerName: { type: String, trim: true, default: '' },
+    projectId: { type: String, default: '', index: true },
+    listingType: { type: String, default: 'project_idea', index: true },
+    title: { type: String, trim: true, default: '' },
+    summary: { type: String, default: '' },
+    description: { type: String, default: '' },
+    problemStatement: { type: String, default: '' },
+    category: { type: String, trim: true, default: '', index: true },
+    tags: { type: [String], default: [] },
+    targetRole: { type: String, trim: true, default: '', index: true },
+    difficulty: { type: String, trim: true, default: 'Intermediate' },
+    duration: { type: String, trim: true, default: '' },
+    techStack: { type: [String], default: [] },
+    claimedSkills: { type: [String], default: [] },
+    verifiedSkills: { type: [String], default: [] },
+    githubUrl: { type: String, default: '' },
+    liveDemoUrl: { type: String, default: '' },
+    proofUrls: { type: [String], default: [] },
+    architecture: { type: mongoose.Schema.Types.Mixed, default: null },
+    milestones: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    resumeBullets: { type: [String], default: [] },
+    openRoles: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    status: { type: String, default: 'published', enum: ['draft', 'published', 'archived'], index: true },
+    visibility: { type: String, default: 'public', enum: ['public', 'unlisted', 'private'] },
+    verificationStatus: { type: String, default: 'none' },
+    moderationStatus: { type: String, default: 'pending', enum: ['pending', 'approved', 'flagged', 'hidden'], index: true },
+    isFeatured: { type: Boolean, default: false, index: true },
+    isRecruiterReady: { type: Boolean, default: false, index: true },
+    viewCount: { type: Number, default: 0 },
+    saveCount: { type: Number, default: 0 },
+    cloneCount: { type: Number, default: 0 },
+    cloneCompletedCount: { type: Number, default: 0 },
+    applicationCount: { type: Number, default: 0 },
+    shortlistCount: { type: Number, default: 0 },
+    reportCount: { type: Number, default: 0 },
+    marketplaceScore: { type: Number, default: 0, index: true },
+    marketplaceScoreParts: { type: mongoose.Schema.Types.Mixed, default: {} },
+    publishedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true }
+);
+
+const savedListingSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    listingId: { type: String, required: true, index: true },
+  },
+  { timestamps: true }
+);
+savedListingSchema.index({ userId: 1, listingId: 1 }, { unique: true });
+
+const collaborationApplicationSchema = new mongoose.Schema(
+  {
+    listingId: { type: String, required: true, index: true },
+    applicantId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    applicantEmail: { type: String, lowercase: true, trim: true },
+    applicantName: { type: String, default: '' },
+    roleApplied: { type: String, default: '' },
+    message: { type: String, default: '' },
+    status: { type: String, default: 'applied', enum: ['applied', 'accepted', 'declined'] },
+  },
+  { timestamps: true }
+);
+
+const projectCloneSchema = new mongoose.Schema(
+  {
+    listingId: { type: String, required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    completed: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+projectCloneSchema.index({ listingId: 1, userId: 1 }, { unique: true });
+
+const projectReviewSchema = new mongoose.Schema(
+  {
+    listingId: { type: String, required: true, index: true },
+    reviewerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    reviewerName: { type: String, default: '' },
+    rating: { type: Number, default: 0 },
+    comment: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const projectEngagementSchema = new mongoose.Schema(
+  {
+    listingId: { type: String, required: true, index: true },
+    actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    kind: { type: String, default: 'view', enum: ['view', 'shortlist', 'contact', 'report'] },
+  },
+  { timestamps: true }
+);
+
+/* ---- Live Inspiration Engine ----
+   Cached, ranked inspirations from external sources (or seed fallback).
+   Scores are backend-computed by the inspiration engine. */
+const inspirationSchema = new mongoose.Schema(
+  {
+    source: { type: String, index: true },
+    sourceId: { type: String, index: true },
+    sourceUrl: { type: String, default: '' },
+    sourceTitle: { type: String, default: '' },
+    sourceDescription: { type: String, default: '' },
+    title: { type: String, default: '' },
+    summary: { type: String, default: '' },
+    problemStatement: { type: String, default: '' },
+    buildableProjectIdea: { type: String, default: '' },
+    businessAngle: { type: String, default: '' },
+    targetRoles: { type: [String], default: [] },
+    suggestedSkills: { type: [String], default: [] },
+    difficulty: { type: String, default: 'Intermediate' },
+    estimatedDuration: { type: String, default: '' },
+    category: { type: String, default: 'General', index: true },
+    tags: { type: [String], default: [] },
+    freshnessScore: { type: Number, default: 0 },
+    trendScore: { type: Number, default: 0 },
+    buildabilityScore: { type: Number, default: 0 },
+    resumeImpactScore: { type: Number, default: 0 },
+    marketplaceScore: { type: Number, default: 0, index: true },
+    status: { type: String, default: 'active', enum: ['active', 'featured', 'hidden'], index: true },
+    fetchedAt: { type: Date, default: Date.now },
+    rawPayload: { type: mongoose.Schema.Types.Mixed, default: null },
+  },
+  { timestamps: true }
+);
+inspirationSchema.index({ source: 1, sourceId: 1 }, { unique: true });
+
+/* ---- Patent Engine ---- */
+const patentRecordSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    projectId: { type: String, default: '', index: true },
+    patentTitle: { type: String, default: '' },
+    inventors: { type: [String], default: [] },
+    assignee: { type: String, default: '' },
+    jurisdiction: { type: String, default: '' },
+    applicationNumber: { type: String, default: '' },
+    publicationNumber: { type: String, default: '' },
+    grantNumber: { type: String, default: '' },
+    filingDate: { type: String, default: '' },
+    publicationDate: { type: String, default: '' },
+    grantDate: { type: String, default: '' },
+    status: { type: String, default: 'idea_identified', index: true },
+    attorney: { type: String, default: '' },
+    notes: { type: String, default: '' },
+    // Assessment + disclosure snapshots (backend-computed).
+    readinessScore: { type: Number, default: null },
+    readinessBreakdown: { type: mongoose.Schema.Types.Mixed, default: {} },
+    classification: { type: String, default: '' },
+    priorArt: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    disclosure: { type: mongoose.Schema.Types.Mixed, default: null },
+    deadlines: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    badge: { type: String, default: 'not_assessed' },
+  },
+  { timestamps: true }
+);
+
+const projectRoadmapSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    inspirationId: { type: String, default: '' },
+    title: { type: String, default: '' },
+    problemStatement: { type: String, default: '' },
+    targetRole: { type: String, default: '' },
+    difficulty: { type: String, default: 'Intermediate' },
+    techStack: { type: [String], default: [] },
+    architecturePreview: { type: String, default: '' },
+    milestones: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    skillOutcomes: { type: [String], default: [] },
+    proofRequirements: { type: [String], default: [] },
+    verificationChecklist: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    resumeBullets: { type: [String], default: [] },
+    interviewTalkingPoints: { type: [String], default: [] },
+    suggestedSkills: { type: [String], default: [] },
+    category: { type: String, default: 'General' },
+    estimatedDuration: { type: String, default: '' },
+    status: { type: String, default: 'roadmap_created' },
+  },
+  { timestamps: true }
+);
+
 /* avoid OverwriteModelError on hot-reload / warm starts */
-export const User = mongoose.models.User || mongoose.model('User', userSchema);
-export const SupportTicket =
+export const User = mongoose.models.User || mongoose.model('User', userSchema);export const SupportTicket =
   mongoose.models.SupportTicket || mongoose.model('SupportTicket', ticketSchema);
 export const Resume = mongoose.models.Resume || mongoose.model('Resume', resumeSchema);
 export const Application =
@@ -132,6 +429,19 @@ export const Application =
 export const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
 export const Activity = mongoose.models.Activity || mongoose.model('Activity', activitySchema);
 export const UserState = mongoose.models.UserState || mongoose.model('UserState', userStateSchema);
+export const ResumeAnalysis = mongoose.models.ResumeAnalysis || mongoose.model('ResumeAnalysis', resumeAnalysisSchema);
+export const ResumeVersion = mongoose.models.ResumeVersion || mongoose.model('ResumeVersion', resumeVersionSchema);
+export const SkillXp = mongoose.models.SkillXp || mongoose.model('SkillXp', skillXpSchema);
+export const ProjectSubmission = mongoose.models.ProjectSubmission || mongoose.model('ProjectSubmission', projectSubmissionSchema);
+export const MarketplaceListing = mongoose.models.MarketplaceListing || mongoose.model('MarketplaceListing', marketplaceListingSchema);
+export const SavedListing = mongoose.models.SavedListing || mongoose.model('SavedListing', savedListingSchema);
+export const CollaborationApplication = mongoose.models.CollaborationApplication || mongoose.model('CollaborationApplication', collaborationApplicationSchema);
+export const ProjectClone = mongoose.models.ProjectClone || mongoose.model('ProjectClone', projectCloneSchema);
+export const ProjectReview = mongoose.models.ProjectReview || mongoose.model('ProjectReview', projectReviewSchema);
+export const ProjectEngagement = mongoose.models.ProjectEngagement || mongoose.model('ProjectEngagement', projectEngagementSchema);
+export const Inspiration = mongoose.models.Inspiration || mongoose.model('Inspiration', inspirationSchema);
+export const ProjectRoadmap = mongoose.models.ProjectRoadmap || mongoose.model('ProjectRoadmap', projectRoadmapSchema);
+export const PatentRecord = mongoose.models.PatentRecord || mongoose.model('PatentRecord', patentRecordSchema);
 
 /* ---- public shape (only safe fields ever leave the server) ---- */
 export function publicUser(doc) {
@@ -298,6 +608,301 @@ export async function saveResumeSnapshot({ userId, email, resume }) {
     console.error('[db] saveResumeSnapshot failed:', err.message);
     return { ok: false, reason: 'db_error', error: err.message };
   }
+}
+
+/* Look up an existing deterministic analysis by its content hash. This is the
+   cache hit that makes "same resume + same role + same version => same score"
+   true across uploads and devices. Returns null when the DB is off or no
+   matching analysis exists. */
+export async function findResumeAnalysis({ userId, email, resumeHash, targetRole, scoringVersion }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !resumeHash) return null;
+    const doc = await ResumeAnalysis.findOne({
+      userId: uid,
+      resumeHash,
+      targetRole: targetRole || 'General',
+      scoringVersion: scoringVersion || '',
+    }).lean();
+    if (!doc) return null;
+    return {
+      score: doc.score, ats: doc.ats, impact: doc.impact, clarity: doc.clarity,
+      breakdown: doc.breakdown || {},
+      matchedKeywords: doc.matchedKeywords || [],
+      missingKeywords: doc.missingKeywords || [],
+      summary: doc.summary || '',
+      strengths: doc.strengths || [],
+      improvements: doc.improvements || [],
+      recommendedRole: doc.recommendedRole || '',
+      fileName: doc.fileName || '',
+      targetRole: doc.targetRole || 'General',
+      resumeHash: doc.resumeHash,
+      scoringVersion: doc.scoringVersion || '',
+      createdAt: doc.createdAt || null,
+    };
+  } catch (err) {
+    console.error('[db] findResumeAnalysis failed:', err.message);
+    return null;
+  }
+}
+
+/* Persist a full deterministic analysis (idempotent on the unique hash key).
+   Also keeps the legacy Resume/Activity rows + UserState.resume snapshot in
+   sync so dashboards and the rest of the app keep working unchanged. */
+export async function saveResumeAnalysis({ userId, email, analysis }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const a = analysis || {};
+    const targetRole = a.targetRole || 'General';
+    const score = Math.max(0, Math.min(100, Math.round(Number(a.score) || 0)));
+    const doc = {
+      userId: uid, email: cleanEmail(email),
+      fileName: a.fileName || '', targetRole, score,
+      ats: Math.round(Number(a.ats) || 0),
+      impact: Math.round(Number(a.impact) || 0),
+      clarity: Math.round(Number(a.clarity) || 0),
+      breakdown: a.breakdown || {},
+      matchedKeywords: Array.isArray(a.matchedKeywords) ? a.matchedKeywords.slice(0, 60) : [],
+      missingKeywords: Array.isArray(a.missingKeywords) ? a.missingKeywords.slice(0, 60) : [],
+      summary: String(a.summary || '').slice(0, 1000),
+      strengths: Array.isArray(a.strengths) ? a.strengths.slice(0, 20) : [],
+      improvements: Array.isArray(a.improvements) ? a.improvements.slice(0, 20) : [],
+      recommendedRole: a.recommendedRole || '',
+      resumeHash: a.resumeHash || '',
+      scoringVersion: a.scoringVersion || '',
+    };
+    await ResumeAnalysis.updateOne(
+      { userId: uid, resumeHash: doc.resumeHash, targetRole, scoringVersion: doc.scoringVersion },
+      { $set: doc },
+      { upsert: true }
+    );
+    // Keep legacy dashboard signals in sync (best-effort, non-fatal).
+    try {
+      await Resume.create({ userId: uid, fileName: doc.fileName, score, delta: null });
+      await Activity.create({ userId: uid, text: `Analyzed resume${targetRole ? ` for ${targetRole}` : ''} — score ${score}/100`, tone: score >= 75 ? 'mint' : 'cyan' });
+    } catch { /* legacy rows are non-critical */ }
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] saveResumeAnalysis failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* ---- Resume version manager ---- */
+export async function listResumeVersions({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await ResumeVersion.find({ userId: uid }).sort({ updatedAt: -1 }).limit(100).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) {
+    console.error('[db] listResumeVersions failed:', err.message);
+    return [];
+  }
+}
+
+export async function saveResumeVersion({ userId, email, version }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const v = version || {};
+    const doc = {
+      userId: uid, email: cleanEmail(email),
+      title: String(v.title || 'Untitled version').slice(0, 160),
+      kind: ['base', 'role', 'job'].includes(v.kind) ? v.kind : 'base',
+      targetRole: v.targetRole || '', jobId: v.jobId || '', jobDescription: String(v.jobDescription || '').slice(0, 40000),
+      resumeText: String(v.resumeText || '').slice(0, 60000),
+      structuredResume: v.structuredResume || {},
+      resumeScore: v.resumeScore == null ? null : Math.round(Number(v.resumeScore)),
+      jobFitScore: v.jobFitScore == null ? null : Math.round(Number(v.jobFitScore)),
+      matchedKeywords: Array.isArray(v.matchedKeywords) ? v.matchedKeywords.slice(0, 200) : [],
+      missingKeywords: Array.isArray(v.missingKeywords) ? v.missingKeywords.slice(0, 200) : [],
+      changeLog: Array.isArray(v.changeLog) ? v.changeLog.slice(0, 200) : [],
+      fabricationRisks: Array.isArray(v.fabricationRisks) ? v.fabricationRisks.slice(0, 100) : [],
+    };
+    if (isObjectId(v.id)) {
+      await ResumeVersion.updateOne({ _id: v.id, userId: uid }, { $set: doc });
+      return { ok: true, version: { ...doc, id: v.id } };
+    }
+    const created = await ResumeVersion.create(doc);
+    return { ok: true, version: { ...doc, id: String(created._id) } };
+  } catch (err) {
+    console.error('[db] saveResumeVersion failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function deleteResumeVersion({ userId, email, id }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  if (!isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await ResumeVersion.deleteOne({ _id: id, userId: uid });
+    return { ok: r.deletedCount > 0, reason: r.deletedCount ? undefined : 'not_found' };
+  } catch (err) {
+    console.error('[db] deleteResumeVersion failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* ---- Verified Skills + XP ----
+   Applies a verification result to the user's per-skill XP ledger.
+   Duplicate-safe: each (projectId|skill) pair is counted at most once for
+   verified XP. levelForXp is supplied by the caller (engine owns thresholds). */
+export async function applySkillVerification({ userId, email, projectId, result, levelForXp }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const em = cleanEmail(email);
+    const pid = String(projectId || '');
+    const breakdown = Array.isArray(result?.skillXpBreakdown) ? result.skillXpBreakdown : [];
+
+    for (const row of breakdown) {
+      const skillName = String(row.skill || '').toLowerCase().trim();
+      if (!skillName) continue;
+      const key = `${pid}|${skillName}`;
+      const doc = await SkillXp.findOne({ userId: uid, skillName });
+      const existing = doc || new SkillXp({ userId: uid, email: em, skillName });
+      // Duplicate guard: never double-count the same project+skill.
+      if (existing.countedKeys?.includes(key)) continue;
+
+      if (row.status === 'verified') {
+        existing.verifiedXp += Number(row.xp) || 0;
+        if (pid && !existing.verifiedProjectIds.includes(pid)) existing.verifiedProjectIds.push(pid);
+        existing.pendingProjectIds = existing.pendingProjectIds.filter((p) => p !== pid);
+      } else if (row.status === 'pending') {
+        existing.pendingXp += Number(row.xp) || 0;
+        if (pid && !existing.pendingProjectIds.includes(pid)) existing.pendingProjectIds.push(pid);
+      } else if (row.status === 'rejected') {
+        existing.rejectedXp += Number(row.xp) || 0;
+      }
+      existing.countedKeys = Array.from(new Set([...(existing.countedKeys || []), key]));
+      existing.level = typeof levelForXp === 'function' ? levelForXp(existing.verifiedXp) : existing.level;
+      existing.email = em;
+      await existing.save();
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] applySkillVerification failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function saveProjectSubmission({ userId, email, submission, result }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const s = submission || {}; const r = result || {};
+    const doc = {
+      userId: uid, email: cleanEmail(email),
+      title: String(s.title || '').slice(0, 200),
+      description: String(s.description || '').slice(0, 8000),
+      roleInProject: String(s.roleInProject || '').slice(0, 200),
+      technologies: Array.isArray(s.technologies) ? s.technologies.slice(0, 60) : [],
+      githubUrl: String(s.githubUrl || '').slice(0, 500),
+      liveDemoUrl: String(s.liveDemoUrl || '').slice(0, 500),
+      proofUrls: Array.isArray(s.proofUrls) ? s.proofUrls.slice(0, 20) : [],
+      certificateUrl: String(s.certificateUrl || '').slice(0, 500),
+      startDate: String(s.startDate || ''), endDate: String(s.endDate || ''),
+      complexityLevel: String(s.complexityLevel || 'intermediate'),
+      contributionType: String(s.contributionType || '').slice(0, 200),
+      outcome: String(s.outcome || '').slice(0, 4000),
+      claimedSkills: Array.isArray(s.claimedSkills) ? s.claimedSkills.slice(0, 60) : [],
+      verificationStatus: r.projectVerificationStatus || 'pending',
+      verifiedSkills: r.verifiedSkills || [], pendingSkills: r.pendingSkills || [], rejectedSkills: r.rejectedSkills || [],
+      xpAwarded: r.xpAwarded || 0, xpPending: r.xpPending || 0,
+      skillXpBreakdown: r.skillXpBreakdown || [], verificationNotes: r.verificationNotes || [],
+      githubAnalysis: s.githubAnalysis || null, liveLinkCheck: s.liveLinkCheck || null,
+    };
+    if (isObjectId(s.id)) {
+      await ProjectSubmission.updateOne({ _id: s.id, userId: uid }, { $set: doc });
+      return { ok: true, id: s.id };
+    }
+    const created = await ProjectSubmission.create(doc);
+    return { ok: true, id: String(created._id) };
+  } catch (err) {
+    console.error('[db] saveProjectSubmission failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listProjectSubmissions({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await ProjectSubmission.find({ userId: uid }).sort({ updatedAt: -1 }).limit(200).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) {
+    console.error('[db] listProjectSubmissions failed:', err.message);
+    return [];
+  }
+}
+
+export async function getProjectSubmission({ userId, email, id }) {
+  if (!URI || !isObjectId(id)) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const d = await ProjectSubmission.findOne({ _id: id, userId: uid }).lean();
+    return d ? { ...d, id: String(d._id) } : null;
+  } catch (err) {
+    console.error('[db] getProjectSubmission failed:', err.message);
+    return null;
+  }
+}
+
+/* Per-skill XP summary. verifiedOnly=true returns only skills with verified XP
+   (used by resume/job/recruiter/placement features — pending never counts). */
+export async function getSkillXpSummary({ userId, email, verifiedOnly = false }) {
+  const empty = { totalVerifiedXp: 0, totalPendingXp: 0, totalRejectedXp: 0, skills: [], verifiedSkills: [] };
+  if (!URI) return empty;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return empty;
+    const rows = await SkillXp.find({ userId: uid }).sort({ verifiedXp: -1 }).lean();
+    let tv = 0, tp = 0, tr = 0;
+    const skills = rows.map((r) => {
+      tv += r.verifiedXp || 0; tp += r.pendingXp || 0; tr += r.rejectedXp || 0;
+      return {
+        skillName: r.skillName, verifiedXp: r.verifiedXp || 0, pendingXp: r.pendingXp || 0, rejectedXp: r.rejectedXp || 0,
+        level: r.level || 'Beginner',
+        verifiedProjectIds: r.verifiedProjectIds || [], pendingProjectIds: r.pendingProjectIds || [],
+        lastUpdated: r.updatedAt || null,
+      };
+    });
+    const verifiedSkills = skills.filter((s) => s.verifiedXp > 0).map((s) => s.skillName);
+    const out = { totalVerifiedXp: tv, totalPendingXp: tp, totalRejectedXp: tr, skills, verifiedSkills };
+    if (verifiedOnly) out.skills = skills.filter((s) => s.verifiedXp > 0);
+    return out;
+  } catch (err) {
+    console.error('[db] getSkillXpSummary failed:', err.message);
+    return empty;
+  }
+}
+
+/* Verified skills only — the canonical list downstream features may count. */
+export async function getVerifiedSkills({ userId, email }) {
+  const s = await getSkillXpSummary({ userId, email });
+  return s.verifiedSkills || [];
 }
 
 /* The canonical "new user" dashboard shape: every metric zeroed, every list empty.
@@ -1090,5 +1695,546 @@ export async function adminSetFeatured({ id, featuredTalent }) {
   } catch (err) {
     console.error('[db] adminSetFeatured failed:', err.message);
     return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* ============================================================
+   PROJECT MARKETPLACE
+   ------------------------------------------------------------
+   marketplaceScore + verificationStatus are recomputed server-side via the
+   marketplace engine (passed in as computeScore) so the client can never set
+   ranking. Owner credibility is read from the verified-skill XP ledger.
+   ============================================================ */
+async function ownerCredibility(uid) {
+  try {
+    const rows = await SkillXp.find({ userId: uid }).select('verifiedXp verifiedProjectIds').lean();
+    const xp = rows.reduce((s, r) => s + (r.verifiedXp || 0), 0);
+    const projects = new Set(rows.flatMap((r) => r.verifiedProjectIds || [])).size;
+    return { ownerVerifiedXp: xp, ownerVerifiedProjects: projects };
+  } catch { return { ownerVerifiedXp: 0, ownerVerifiedProjects: 0 }; }
+}
+
+export async function createMarketplaceListing({ userId, email, name, listing, computeScore }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const l = listing || {};
+    // If linked to a project submission the user owns, inherit verification + proof.
+    let verificationStatus = 'none', verifiedSkills = [], githubUrl = l.githubUrl || '', liveDemoUrl = l.liveDemoUrl || '', proofUrls = l.proofUrls || [];
+    if (isObjectId(l.projectId)) {
+      const proj = await ProjectSubmission.findOne({ _id: l.projectId, userId: uid }).lean();
+      if (proj) {
+        verificationStatus = proj.verificationStatus || 'none';
+        verifiedSkills = proj.verifiedSkills || [];
+        githubUrl = githubUrl || proj.githubUrl || '';
+        liveDemoUrl = liveDemoUrl || proj.liveDemoUrl || '';
+        proofUrls = proofUrls.length ? proofUrls : (proj.proofUrls || []);
+      }
+    }
+    const cred = await ownerCredibility(uid);
+    const base = {
+      ownerId: uid, ownerEmail: cleanEmail(email), ownerName: name || '',
+      projectId: isObjectId(l.projectId) ? String(l.projectId) : '',
+      listingType: String(l.listingType || 'project_idea'),
+      title: String(l.title || '').slice(0, 200), summary: String(l.summary || '').slice(0, 600),
+      description: String(l.description || '').slice(0, 8000), problemStatement: String(l.problemStatement || '').slice(0, 4000),
+      category: String(l.category || '').slice(0, 80), tags: (l.tags || []).slice(0, 40),
+      targetRole: String(l.targetRole || '').slice(0, 120), difficulty: String(l.difficulty || 'Intermediate'),
+      duration: String(l.duration || ''), techStack: (l.techStack || []).slice(0, 40),
+      claimedSkills: (l.claimedSkills || []).slice(0, 60), verifiedSkills,
+      githubUrl, liveDemoUrl, proofUrls,
+      architecture: l.architecture || null, milestones: (l.milestones || []).slice(0, 40),
+      resumeBullets: (l.resumeBullets || []).slice(0, 20), openRoles: (l.openRoles || []).slice(0, 20),
+      status: 'published', visibility: ['public', 'unlisted', 'private'].includes(l.visibility) ? l.visibility : 'public',
+      verificationStatus, moderationStatus: 'pending',
+      isRecruiterReady: l.listingType === 'recruiter_ready' || verificationStatus === 'verified',
+      publishedAt: new Date(),
+    };
+    const scoreInput = { ...base, ...cred };
+    const { score, parts } = typeof computeScore === 'function' ? computeScore(scoreInput, {}) : { score: 0, parts: {} };
+    base.marketplaceScore = score; base.marketplaceScoreParts = parts;
+    const created = await MarketplaceListing.create(base);
+    return { ok: true, id: String(created._id), listing: { ...base, id: String(created._id) } };
+  } catch (err) {
+    console.error('[db] createMarketplaceListing failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listMarketplaceListings({ filters = {}, viewer = {}, computeScore }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const q = { status: 'published', moderationStatus: { $ne: 'hidden' } };
+    if (filters.listingType) q.listingType = filters.listingType;
+    if (filters.category) q.category = filters.category;
+    if (filters.targetRole) q.targetRole = filters.targetRole;
+    if (filters.difficulty) q.difficulty = filters.difficulty;
+    if (filters.verificationStatus) q.verificationStatus = filters.verificationStatus;
+    if (filters.recruiterReady) q.isRecruiterReady = true;
+    if (filters.featured) q.isFeatured = true;
+    if (filters.hasGithub) q.githubUrl = { $ne: '' };
+    if (filters.hasLiveDemo) q.liveDemoUrl = { $ne: '' };
+    if (filters.ownerId && isObjectId(filters.ownerId)) q.ownerId = new mongoose.Types.ObjectId(filters.ownerId);
+    if (filters.skill) q.tags = { $in: [String(filters.skill).toLowerCase()] };
+    let docs = await MarketplaceListing.find(q).limit(300).lean();
+    // Recompute marketplaceScore against THIS viewer (role relevance is viewer-specific).
+    if (typeof computeScore === 'function') {
+      docs = docs.map((d) => {
+        const { score, parts } = computeScore(d, viewer);
+        return { ...d, id: String(d._id), marketplaceScore: score, marketplaceScoreParts: parts, _proof: parts.proof || 0 };
+      });
+    } else {
+      docs = docs.map((d) => ({ ...d, id: String(d._id) }));
+    }
+    return docs;
+  } catch (err) {
+    console.error('[db] listMarketplaceListings failed:', err.message);
+    return [];
+  }
+}
+
+export async function getMarketplaceListing({ id, incrementView = false }) {
+  if (!URI || !isObjectId(id)) return null;
+  try {
+    await connectDB();
+    if (incrementView) await MarketplaceListing.updateOne({ _id: id }, { $inc: { viewCount: 1 } });
+    const d = await MarketplaceListing.findById(id).lean();
+    return d ? { ...d, id: String(d._id) } : null;
+  } catch (err) {
+    console.error('[db] getMarketplaceListing failed:', err.message);
+    return null;
+  }
+}
+
+export async function deleteMarketplaceListing({ userId, email, id }) {
+  if (!URI || !isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await MarketplaceListing.deleteOne({ _id: id, ownerId: uid });
+    return { ok: r.deletedCount > 0, reason: r.deletedCount ? undefined : 'not_found' };
+  } catch (err) {
+    console.error('[db] deleteMarketplaceListing failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function toggleSavedListing({ userId, email, listingId }) {
+  if (!URI || !isObjectId(listingId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const existing = await SavedListing.findOne({ userId: uid, listingId });
+    if (existing) {
+      await SavedListing.deleteOne({ _id: existing._id });
+      await MarketplaceListing.updateOne({ _id: listingId }, { $inc: { saveCount: -1 } });
+      return { ok: true, saved: false };
+    }
+    await SavedListing.create({ userId: uid, listingId });
+    await MarketplaceListing.updateOne({ _id: listingId }, { $inc: { saveCount: 1 } });
+    return { ok: true, saved: true };
+  } catch (err) {
+    console.error('[db] toggleSavedListing failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listSavedListings({ userId, email, computeScore, viewer = {} }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const saved = await SavedListing.find({ userId: uid }).lean();
+    const ids = saved.map((s) => s.listingId).filter(isObjectId).map((i) => new mongoose.Types.ObjectId(i));
+    if (!ids.length) return [];
+    let docs = await MarketplaceListing.find({ _id: { $in: ids } }).lean();
+    docs = docs.map((d) => {
+      const r = typeof computeScore === 'function' ? computeScore(d, viewer) : { score: d.marketplaceScore, parts: {} };
+      return { ...d, id: String(d._id), marketplaceScore: r.score, saved: true };
+    });
+    return docs;
+  } catch (err) {
+    console.error('[db] listSavedListings failed:', err.message);
+    return [];
+  }
+}
+
+export async function cloneListing({ userId, email, listingId }) {
+  if (!URI || !isObjectId(listingId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const existing = await ProjectClone.findOne({ listingId, userId: uid });
+    if (!existing) {
+      await ProjectClone.create({ listingId, userId: uid });
+      await MarketplaceListing.updateOne({ _id: listingId }, { $inc: { cloneCount: 1 } });
+    }
+    const listing = await MarketplaceListing.findById(listingId).lean();
+    return { ok: true, roadmap: listing ? { title: listing.title, problemStatement: listing.problemStatement, techStack: listing.techStack, milestones: listing.milestones, targetRole: listing.targetRole, difficulty: listing.difficulty } : null };
+  } catch (err) {
+    console.error('[db] cloneListing failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function applyToCollaborate({ userId, email, name, listingId, roleApplied, message }) {
+  if (!URI || !isObjectId(listingId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    await CollaborationApplication.create({ listingId, applicantId: uid, applicantEmail: cleanEmail(email), applicantName: name || '', roleApplied: String(roleApplied || '').slice(0, 120), message: String(message || '').slice(0, 2000) });
+    await MarketplaceListing.updateOne({ _id: listingId }, { $inc: { applicationCount: 1 } });
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] applyToCollaborate failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function reviewListing({ userId, email, name, listingId, rating, comment }) {
+  if (!URI || !isObjectId(listingId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    await ProjectReview.create({ listingId, reviewerId: uid, reviewerName: name || '', rating: Math.max(0, Math.min(5, Math.round(Number(rating) || 0))), comment: String(comment || '').slice(0, 2000) });
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] reviewListing failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listReviews({ listingId }) {
+  if (!URI || !isObjectId(listingId)) return [];
+  try {
+    await connectDB();
+    const docs = await ProjectReview.find({ listingId }).sort({ createdAt: -1 }).limit(50).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch { return []; }
+}
+
+export async function recordEngagement({ userId, email, listingId, kind }) {
+  if (!URI || !isObjectId(listingId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    await ProjectEngagement.create({ listingId, actorId: uid || null, kind: ['view', 'shortlist', 'contact', 'report'].includes(kind) ? kind : 'view' });
+    const inc = {};
+    if (kind === 'shortlist') inc.shortlistCount = 1;
+    else if (kind === 'report') inc.reportCount = 1;
+    if (Object.keys(inc).length) await MarketplaceListing.updateOne({ _id: listingId }, { $inc: inc });
+    if (kind === 'report') {
+      const doc = await MarketplaceListing.findById(listingId).select('reportCount').lean();
+      if (doc && doc.reportCount >= 3) await MarketplaceListing.updateOne({ _id: listingId }, { $set: { moderationStatus: 'flagged' } });
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('[db] recordEngagement failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* Admin moderation: feature / hide / approve a listing. */
+export async function adminModerateListing({ id, action }) {
+  if (!URI || !isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const set = {};
+    if (action === 'feature') set.isFeatured = true;
+    else if (action === 'unfeature') set.isFeatured = false;
+    else if (action === 'hide') set.moderationStatus = 'hidden';
+    else if (action === 'approve') set.moderationStatus = 'approved';
+    else return { ok: false, reason: 'bad_action' };
+    const r = await MarketplaceListing.updateOne({ _id: id }, { $set: set });
+    return { ok: r.matchedCount > 0, reason: r.matchedCount ? undefined : 'not_found', applied: set };
+  } catch (err) {
+    console.error('[db] adminModerateListing failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+/* ============================================================
+   LIVE INSPIRATION ENGINE
+   ------------------------------------------------------------
+   Cache freshly-built inspirations (upsert by source+sourceId), read them
+   back ranked, and persist "Build this" roadmaps. Scores come from the
+   engine; the client never sets them.
+   ============================================================ */
+export async function cacheInspirations({ inspirations = [] }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    for (const it of inspirations) {
+      await Inspiration.updateOne(
+        { source: it.source, sourceId: it.sourceId },
+        { $set: { ...it, fetchedAt: new Date(), status: 'active' } },
+        { upsert: true }
+      );
+    }
+    return { ok: true, count: inspirations.length };
+  } catch (err) {
+    console.error('[db] cacheInspirations failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listInspirations({ filters = {}, limit = 40 } = {}) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const q = { status: { $ne: 'hidden' } };
+    if (filters.category) q.category = filters.category;
+    if (filters.source) q.source = filters.source;
+    if (filters.difficulty) q.difficulty = filters.difficulty;
+    if (filters.featured) q.status = 'featured';
+    const docs = await Inspiration.find(q).sort({ status: -1, marketplaceScore: -1, fetchedAt: -1 }).limit(limit).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) {
+    console.error('[db] listInspirations failed:', err.message);
+    return [];
+  }
+}
+
+export async function getInspiration({ id }) {
+  if (!URI || !isObjectId(id)) return null;
+  try {
+    await connectDB();
+    const d = await Inspiration.findById(id).lean();
+    return d ? { ...d, id: String(d._id) } : null;
+  } catch { return null; }
+}
+
+export async function adminModerateInspiration({ id, action }) {
+  if (!URI || !isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const status = action === 'feature' ? 'featured' : action === 'hide' ? 'hidden' : action === 'unhide' ? 'active' : null;
+    if (!status) return { ok: false, reason: 'bad_action' };
+    const r = await Inspiration.updateOne({ _id: id }, { $set: { status } });
+    return { ok: r.matchedCount > 0, reason: r.matchedCount ? undefined : 'not_found', status };
+  } catch (err) {
+    console.error('[db] adminModerateInspiration failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function saveProjectRoadmap({ userId, email, roadmap, inspirationId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = roadmap || {};
+    const doc = {
+      userId: uid, email: cleanEmail(email), inspirationId: inspirationId || '',
+      title: String(r.title || '').slice(0, 200), problemStatement: String(r.problemStatement || '').slice(0, 4000),
+      targetRole: r.targetRole || '', difficulty: r.difficulty || 'Intermediate',
+      techStack: (r.techStack || []).slice(0, 40), architecturePreview: String(r.architecturePreview || '').slice(0, 2000),
+      milestones: (r.milestones || []).slice(0, 40), skillOutcomes: (r.skillOutcomes || []).slice(0, 20),
+      proofRequirements: (r.proofRequirements || []).slice(0, 20), verificationChecklist: (r.verificationChecklist || []).slice(0, 20),
+      resumeBullets: (r.resumeBullets || []).slice(0, 20), interviewTalkingPoints: (r.interviewTalkingPoints || []).slice(0, 20),
+      suggestedSkills: (r.suggestedSkills || []).slice(0, 40), category: r.category || 'General',
+      estimatedDuration: r.estimatedDuration || '', status: r.status || 'roadmap_created',
+    };
+    const created = await ProjectRoadmap.create(doc);
+    return { ok: true, id: String(created._id), roadmap: { ...doc, id: String(created._id) } };
+  } catch (err) {
+    console.error('[db] saveProjectRoadmap failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listProjectRoadmaps({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await ProjectRoadmap.find({ userId: uid }).sort({ updatedAt: -1 }).limit(100).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) {
+    console.error('[db] listProjectRoadmaps failed:', err.message);
+    return [];
+  }
+}
+
+/* ============================================================
+   PATENT ENGINE
+   ============================================================ */
+export async function savePatentRecord({ userId, email, record }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = record || {};
+    const doc = {
+      userId: uid, email: cleanEmail(email), projectId: r.projectId || '',
+      patentTitle: String(r.patentTitle || r.title || '').slice(0, 200),
+      inventors: (r.inventors || []).slice(0, 20), assignee: String(r.assignee || '').slice(0, 200),
+      jurisdiction: String(r.jurisdiction || '').slice(0, 120),
+      applicationNumber: String(r.applicationNumber || '').slice(0, 80),
+      publicationNumber: String(r.publicationNumber || '').slice(0, 80),
+      grantNumber: String(r.grantNumber || '').slice(0, 80),
+      filingDate: String(r.filingDate || ''), publicationDate: String(r.publicationDate || ''), grantDate: String(r.grantDate || ''),
+      status: r.status || 'idea_identified', attorney: String(r.attorney || '').slice(0, 200),
+      notes: String(r.notes || '').slice(0, 4000),
+      readinessScore: r.readinessScore == null ? null : Math.round(Number(r.readinessScore)),
+      readinessBreakdown: r.readinessBreakdown || {}, classification: r.classification || '',
+      priorArt: (r.priorArt || []).slice(0, 50), disclosure: r.disclosure || null,
+      deadlines: (r.deadlines || []).slice(0, 50), badge: r.badge || 'not_assessed',
+    };
+    if (isObjectId(r.id)) { await PatentRecord.updateOne({ _id: r.id, userId: uid }, { $set: doc }); return { ok: true, id: r.id }; }
+    const created = await PatentRecord.create(doc);
+    return { ok: true, id: String(created._id) };
+  } catch (err) {
+    console.error('[db] savePatentRecord failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listPatentRecords({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await PatentRecord.find({ userId: uid }).sort({ updatedAt: -1 }).limit(200).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) { console.error('[db] listPatentRecords failed:', err.message); return []; }
+}
+
+export async function deletePatentRecord({ userId, email, id }) {
+  if (!URI || !isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await PatentRecord.deleteOne({ _id: id, userId: uid });
+    return { ok: r.deletedCount > 0, reason: r.deletedCount ? undefined : 'not_found' };
+  } catch (err) { console.error('[db] deletePatentRecord failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+/* Dashboard rollups for the Patent Engine. */
+export async function patentDashboard({ userId, email }) {
+  const empty = { totalAssessed: 0, patentReady: 0, disclosuresDrafted: 0, filed: 0, granted: 0, upcomingDeadlines: [], highPriorArtRisk: 0 };
+  if (!URI) return empty;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return empty;
+    const docs = await PatentRecord.find({ userId: uid }).lean();
+    const filedStatuses = ['provisional_filed', 'non_provisional_filed', 'published', 'office_action'];
+    const out = {
+      totalAssessed: docs.filter((d) => d.readinessScore != null).length,
+      patentReady: docs.filter((d) => d.badge === 'patent_ready' || (d.readinessScore || 0) >= 75).length,
+      disclosuresDrafted: docs.filter((d) => d.disclosure || d.status === 'invention_disclosure_drafted').length,
+      filed: docs.filter((d) => filedStatuses.includes(d.status)).length,
+      granted: docs.filter((d) => d.status === 'granted').length,
+      highPriorArtRisk: docs.filter((d) => (d.readinessBreakdown?.priorArtRisk ?? 15) <= 5).length,
+      upcomingDeadlines: docs.flatMap((d) => (d.deadlines || []).map((x) => ({ ...x, patent: d.patentTitle }))).slice(0, 20),
+    };
+    return out;
+  } catch (err) { console.error('[db] patentDashboard failed:', err.message); return empty; }
+}
+
+/* ============================================================
+   READINESS / RECRUITER VIEW  (verified-only aggregates)
+   ------------------------------------------------------------
+   Pulls a user's VERIFIED skill XP + verified project counts so the
+   readiness engine (in the route) can score them. Pending never counts.
+   ============================================================ */
+export async function readinessInputsFor({ userId, email }) {
+  const empty = { verifiedSkills: [], totalVerifiedXp: 0, verifiedProjectCount: 0, recruiterReadyProjectCount: 0, resumeScore: null };
+  if (!URI) return empty;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return empty;
+    const xpRows = await SkillXp.find({ userId: uid }).select('skillName verifiedXp').lean();
+    const verifiedSkills = xpRows.filter((r) => (r.verifiedXp || 0) > 0).map((r) => r.skillName);
+    const totalVerifiedXp = xpRows.reduce((s, r) => s + (r.verifiedXp || 0), 0);
+    const subs = await ProjectSubmission.find({ userId: uid }).select('verificationStatus githubUrl liveDemoUrl').lean();
+    const verifiedProjectCount = subs.filter((s) => s.verificationStatus === 'verified').length;
+    const recruiterReadyProjectCount = subs.filter((s) => s.verificationStatus === 'verified' && (s.githubUrl || s.liveDemoUrl)).length;
+    let resumeScore = null;
+    try {
+      const latest = await ResumeAnalysis.findOne({ userId: uid }).sort({ updatedAt: -1 }).select('score').lean();
+      if (latest) resumeScore = latest.score;
+    } catch { /* optional */ }
+    return { verifiedSkills, totalVerifiedXp, verifiedProjectCount, recruiterReadyProjectCount, resumeScore };
+  } catch (err) {
+    console.error('[db] readinessInputsFor failed:', err.message);
+    return empty;
+  }
+}
+
+/* Recruiter: candidates ranked by verified signals. computeReadiness passed in. */
+export async function recruiterCandidates({ filters = {}, computeReadiness, limit = 50 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    // Candidate pool = users who have at least one verified-XP skill row.
+    const xpRows = await SkillXp.find({ verifiedXp: { $gt: 0 } }).select('userId skillName verifiedXp').lean();
+    const byUser = new Map();
+    for (const r of xpRows) {
+      const k = String(r.userId);
+      if (!byUser.has(k)) byUser.set(k, { skills: [], xp: 0 });
+      const e = byUser.get(k); e.skills.push(r.skillName); e.xp += r.verifiedXp || 0;
+    }
+    const userIds = Array.from(byUser.keys()).map((id) => new mongoose.Types.ObjectId(id));
+    if (!userIds.length) return [];
+    const users = await User.find({ _id: { $in: userIds } }).select('name email targetRole').lean();
+    const subs = await ProjectSubmission.find({ userId: { $in: userIds }, verificationStatus: 'verified' }).select('userId githubUrl liveDemoUrl').lean();
+    const subsByUser = new Map();
+    for (const s of subs) { const k = String(s.userId); if (!subsByUser.has(k)) subsByUser.set(k, []); subsByUser.get(k).push(s); }
+
+    let out = users.map((u) => {
+      const k = String(u._id);
+      const agg = byUser.get(k) || { skills: [], xp: 0 };
+      const us = subsByUser.get(k) || [];
+      const inputs = {
+        verifiedSkills: agg.skills, totalVerifiedXp: agg.xp,
+        verifiedProjectCount: us.length,
+        recruiterReadyProjectCount: us.filter((s) => s.githubUrl || s.liveDemoUrl).length,
+        resumeScore: null,
+      };
+      const r = typeof computeReadiness === 'function' ? computeReadiness(inputs) : { score: 0, category: 'Not Ready' };
+      return {
+        id: k, name: u.name || '', email: u.email || '', targetRole: u.targetRole || '',
+        verifiedSkills: agg.skills, verifiedProjectCount: us.length,
+        readinessScore: r.score, readinessCategory: r.category,
+      };
+    });
+    if (filters.skill) out = out.filter((c) => c.verifiedSkills.some((s) => s.includes(String(filters.skill).toLowerCase())));
+    if (filters.category) out = out.filter((c) => c.readinessCategory === filters.category);
+    if (filters.minScore) out = out.filter((c) => c.readinessScore >= Number(filters.minScore));
+    out.sort((a, b) => b.readinessScore - a.readinessScore);
+    return out.slice(0, limit);
+  } catch (err) {
+    console.error('[db] recruiterCandidates failed:', err.message);
+    return [];
+  }
+}
+
+/* Project verification queue (admin): submissions needing review. */
+export async function verificationQueue({ limit = 100 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const docs = await ProjectSubmission.find({ verificationStatus: { $in: ['pending', 'needs_review'] } }).sort({ updatedAt: -1 }).limit(limit).lean();
+    return docs.map((d) => ({ id: String(d._id), userId: String(d.userId), email: d.email, title: d.title, verificationStatus: d.verificationStatus, claimedSkills: d.claimedSkills, githubUrl: d.githubUrl, liveDemoUrl: d.liveDemoUrl, xpPending: d.xpPending }));
+  } catch (err) {
+    console.error('[db] verificationQueue failed:', err.message);
+    return [];
   }
 }

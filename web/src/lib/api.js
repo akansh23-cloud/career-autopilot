@@ -99,7 +99,86 @@ export const UserState = {
 };
 
 export const ResumeApi = {
+  analyze: ({ resumeText, fileName, targetRole }) =>
+    api.post('/api/resume/analyze', { resumeText, fileName, targetRole }),
+  tailor: ({ resumeText, jobDescription, fileName, targetRole, mode }) =>
+    api.post('/api/resume/tailor', { resumeText, jobDescription, fileName, targetRole, mode }),
+  listVersions: () => api.get('/api/resume/versions'),
+  saveVersion: (version) => api.post('/api/resume/versions', version),
+  deleteVersion: (id) => api.del(`/api/resume/versions/${encodeURIComponent(id)}`),
   saveAnalysis: (resume) => api.post('/api/resume/save-analysis', { resume }),
+};
+
+// Verified Skills + XP. Backend owns verification; pending never counts.
+export const Skills = {
+  submitProject: (submission) => api.post('/api/projects/submit', submission),
+  listSubmissions: () => api.get('/api/projects/submissions'),
+  xp: (verifiedOnly = false) => api.get('/api/skills/xp' + (verifiedOnly ? '?verifiedOnly=1' : '')),
+  verified: () => api.get('/api/skills/verified'),
+};
+
+// Project Marketplace. Ranking, verification + recruiter-ready are backend-owned.
+export const Marketplace = {
+  list: (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== false && v != null));
+    const qs = new URLSearchParams(clean).toString();
+    return api.get('/api/marketplace/listings' + (qs ? `?${qs}` : ''));
+  },
+  get: (id) => api.get(`/api/marketplace/listings/${encodeURIComponent(id)}`),
+  publish: (listing) => api.post('/api/marketplace/listings', listing),
+  remove: (id) => api.del(`/api/marketplace/listings/${encodeURIComponent(id)}`),
+  toggleSave: (id) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/save`, {}),
+  saved: () => api.get('/api/marketplace/saved'),
+  clone: (id) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/clone`, {}),
+  apply: (id, body) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/apply`, body),
+  review: (id, body) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/review`, body),
+  shortlist: (id) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/shortlist`, {}),
+  contact: (id) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/contact`, {}),
+  report: (id) => api.post(`/api/marketplace/listings/${encodeURIComponent(id)}/report`, {}),
+};
+
+// Live Inspiration Engine + Build-this flow. External APIs are backend-only.
+export const Inspirations = {
+  list: (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== false && v != null));
+    const qs = new URLSearchParams(clean).toString();
+    return api.get('/api/inspirations' + (qs ? `?${qs}` : ''));
+  },
+  refresh: () => api.post('/api/inspirations/refresh', {}),
+  build: (id, idea) => api.post(`/api/inspirations/${encodeURIComponent(id || 'custom')}/build`, idea ? { idea } : {}),
+  save: (id, idea) => api.post(`/api/inspirations/${encodeURIComponent(id || 'custom')}/save`, idea ? { idea } : {}),
+  roadmaps: () => api.get('/api/roadmaps'),
+};
+
+// Industry-level Architecture Generator. Score/diagrams/gaps are backend-owned.
+export const Architecture = {
+  generate: (project) => api.post('/api/architecture/generate', project),
+};
+
+// Patent Engine. Readiness/prior-art/disclosure are backend-owned. Not legal advice.
+export const Patents = {
+  assess: (project) => api.post('/api/patent/assess', project),
+  records: () => api.get('/api/patent/records'),
+  save: (record) => api.post('/api/patent/records', record),
+  remove: (id) => api.del(`/api/patent/records/${encodeURIComponent(id)}`),
+  dashboard: () => api.get('/api/patent/dashboard'),
+};
+
+// Application Package Generator. Uses verified skills only; no fake claims.
+export const Applications = {
+  generate: (body) => api.post('/api/applications/package', body),
+};
+
+// Readiness + recruiter/admin (verified-only).
+export const Readiness = {
+  mine: () => api.get('/api/readiness'),
+  candidates: (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null));
+    const qs = new URLSearchParams(clean).toString();
+    return api.get('/api/recruiter/candidates' + (qs ? `?${qs}` : ''));
+  },
+  queue: () => api.get('/api/admin/verification-queue'),
+  overview: () => api.get('/api/admin/readiness-overview'),
 };
 
 // Admin-only User Directory / Talent Intelligence. Every call is gated by

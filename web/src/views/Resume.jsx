@@ -1,17 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { Briefcase, ChevronDown, FileText, Sparkles, AlertTriangle, CheckCircle2, Gauge, Upload, Loader2, X } from 'lucide-react';
+import { Briefcase, ChevronDown, FileText, Sparkles, AlertTriangle, CheckCircle2, Gauge, Upload, Loader2, X, Target, ShieldCheck } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Skeleton, EmptyState, Field } from '../components/ui/kit.jsx';
-import { AI } from '../lib/api.js';
+import ResumeTailor from './ResumeTailor.jsx';
+import { ResumeApi } from '../lib/api.js';
 import { extractResumeText, ACCEPT } from '../lib/resume.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
 import { clearStoredResume, getStoredResume, queueResumeJobSearch, saveResumeAnalysis, saveStoredResume } from '../lib/resumeStore.js';
 
-function extractJSON(text) {
-  if (!text) return null;
-  const m = text.match(/\{[\s\S]*\}/);
-  try { return JSON.parse(m ? m[0] : text); } catch { return null; }
-}
+// Human-readable labels + max points for each deterministic scoring category.
+const BREAKDOWN_LABELS = {
+  atsParseability: ['ATS parseability', 15],
+  contactInfo: ['Contact information', 8],
+  sectionCompleteness: ['Section completeness', 12],
+  roleKeywordMatch: ['Role keyword match', 18],
+  skillsRelevance: ['Skills relevance', 15],
+  experienceRelevance: ['Experience / projects', 15],
+  quantifiedImpact: ['Quantified impact', 10],
+  readability: ['Readability / clarity', 5],
+  antiKeywordStuffing: ['Anti keyword-stuffing', 0],
+};
+const BREAKDOWN_ORDER = ['atsParseability', 'contactInfo', 'sectionCompleteness', 'roleKeywordMatch', 'skillsRelevance', 'experienceRelevance', 'quantifiedImpact', 'readability', 'antiKeywordStuffing'];
 
 function Ring({ value }) {
   const r = 52, c = 2 * Math.PI * r, off = c - (value / 100) * c;
@@ -31,11 +40,37 @@ function Ring({ value }) {
   );
 }
 
+function BreakdownBar({ label, value, max }) {
+  // Penalty rows (max 0) render as a deduction, not a progress bar.
+  if (!max) {
+    if (!value) return null;
+    return (
+      <div className="flex items-center justify-between text-[12px]">
+        <span className="text-slate-300">{label}</span>
+        <span className="tabular-nums text-rose-300">{value}</span>
+      </div>
+    );
+  }
+  const pct = Math.round((value / max) * 100);
+  const tone = pct >= 80 ? '#46E6A6' : pct >= 50 ? '#37D6C4' : '#FFC85A';
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[12px]">
+        <span className="text-slate-300">{label}</span>
+        <span className="tabular-nums text-slate-400">{value}/{max}</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .8s ease' }} />
+      </div>
+    </div>
+  );
+}
+
 export default function Resume({ go }) {
   const stored = getStoredResume();
   const [resume, setResume] = useState(stored.text || '');
   const [role, setRole] = useState(stored.targetRole || '');
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState(stored.analysis ? 'done' : 'idle');
   const [result, setResult] = useState(stored.analysis || null);
   const [err, setErr] = useState('');
   const [fileName, setFileName] = useState(stored.fileName || '');
@@ -72,7 +107,11 @@ export default function Resume({ go }) {
   const findMatchingJobs = () => {
     if (resume.trim().length < 40) { setErr('Upload or paste your resume first.'); return; }
     if (!result) { setErr('Analyze the resume first. Matching jobs unlock after ATS analysis.'); return; }
-    const payload = queueResumeJobSearch(role || result.recommendedRole);
+    // Use the role the resume was actually scored for; fall back to the AI suggestion.
+    const searchRole = result.scoredRole && result.scoredRole !== 'General'
+      ? result.scoredRole
+      : (role || result.recommendedRole);
+    const payload = queueResumeJobSearch(searchRole);
     if (!payload.role) { setErr('Select a target role first so matching jobs can be searched.'); return; }
     saveStoredResume({ text: resume, fileName, targetRole: payload.role, analysis: result });
     go?.('jobs');
@@ -96,32 +135,36 @@ export default function Resume({ go }) {
   const onDrop = (e) => { e.preventDefault(); setDrag(false); ingestFile(e.dataTransfer.files?.[0]); };
   const clearFile = () => { setFileName(''); setResume(''); clearStoredResume(); };
 
+  // The score now comes from the deterministic backend engine — never from the
+  // browser. The frontend only sends text + file name + target role and renders
+  // the response. Same resume + same role always returns the same score.
   const analyze = async () => {
     if (resume.trim().length < 40) { setErr('Paste a bit more of your resume to analyze.'); return; }
     setStatus('loading'); setErr(''); setResult(null);
-    const prompt = `You are an expert ATS resume reviewer. Analyze the resume for the target role "${role || 'general'}".
-Return ONLY valid JSON, no prose, no markdown fences, shape:
-{"score":<0-100 int>,"ats":<0-100>,"impact":<0-100>,"clarity":<0-100>,"recommendedRole":"<best matching job title>","summary":"<one sentence>","strengths":["..."],"improvements":["..."],"missingKeywords":["..."]}
-Resume:
-"""${resume.slice(0, 8000)}"""`;
     try {
-      const d = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] });
-      const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-      const parsed = extractJSON(text);
-      if (!parsed) throw new Error('Could not parse AI response.');
-      if (!role && parsed.recommendedRole) setRole(parsed.recommendedRole);
-      setResult(parsed);
-      saveResumeAnalysis(parsed);
-      if (parsed.recommendedRole && !role) saveStoredResume({ targetRole: parsed.recommendedRole });
+      const data = await ResumeApi.analyze({
+        resumeText: resume,
+        fileName,
+        targetRole: role, // empty => backend scores for "General"; AI never silently changes it
+      });
+      setResult(data);
+      // Persist the analysis snapshot for cross-device hydration. The target
+      // role stored is the one the resume was SCORED for (never the AI's
+      // recommendation), so future scores stay consistent.
+      saveResumeAnalysis(data);
       setStatus('done');
     } catch (e) {
-      setErr(e.message || 'Analysis failed.'); setStatus('error');
+      setErr(e?.message || 'Analysis failed. Please try again.');
+      setStatus('error');
     }
   };
 
+  const scoredRole = result?.scoredRole || result?.targetRole || (role || 'General');
+  const showRecommendation = result?.recommendedRole && result.recommendedRole !== scoredRole;
+
   return (
     <>
-      <PageIntro title="Resume intelligence" sub="Upload a PDF/DOCX or paste your resume to get an ATS-aware score with concrete fixes." />
+      <PageIntro title="Resume intelligence" sub="Upload a PDF/DOCX or paste your resume to get a deterministic ATS score with a full breakdown and concrete fixes." />
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <SectionCard title="Your resume">
@@ -132,7 +175,7 @@ Resume:
                 onChange={(e) => updateRole(e.target.value)}
                 className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50"
               >
-                <option value="">Select a target role…</option>
+                <option value="">General (no specific role)</option>
                 {Object.entries(ROLE_GROUPS).map(([grp, roles]) => (
                   <optgroup key={grp} label={grp}>
                     {roles.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -192,7 +235,7 @@ Resume:
         </SectionCard>
 
         <div className="space-y-4">
-          {status === 'idle' && <EmptyState icon={Gauge} title="Score appears here" hint="Run an analysis to see your ATS score, strengths and fixes." />}
+          {status === 'idle' && <EmptyState icon={Gauge} title="Score appears here" hint="Run an analysis to see your deterministic ATS score, full breakdown, strengths and fixes." />}
           {status === 'error' && <EmptyState icon={AlertTriangle} title="Couldn’t analyze" hint={err} action={<Button size="sm" onClick={analyze}>Retry</Button>} />}
           {status === 'loading' && (
             <SectionCard><div className="flex flex-col items-center gap-4 py-6">
@@ -206,8 +249,22 @@ Resume:
                 <div className="flex flex-col items-center gap-3">
                   <Ring value={Number(result.score) || 0} />
                   <p className="text-center text-sm text-muted">{result.summary}</p>
-                  {result.recommendedRole && <Badge tone="violet">Recommended role: {result.recommendedRole}</Badge>}
-                  <Button className="mt-2" variant="soft" onClick={findMatchingJobs}><Briefcase size={16} /> Find matching jobs</Button>
+
+                  {/* Scored-for vs recommended role — kept distinct so the AI
+                      suggestion never silently changes what was scored. */}
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Badge tone="cyan"><Target size={12} /> Scored for: {scoredRole}</Badge>
+                    {showRecommendation && <Badge tone="violet">Recommended role: {result.recommendedRole}</Badge>}
+                  </div>
+
+                  {result.cached && (
+                    <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint">
+                      <ShieldCheck size={12} /> Consistent result — same resume &amp; role returns the same score.
+                    </p>
+                  )}
+
+                  <Button className="mt-1" variant="soft" onClick={findMatchingJobs}><Briefcase size={16} /> Find matching jobs</Button>
+
                   <div className="grid w-full grid-cols-3 gap-2 border-t border-white/8 pt-3">
                     {[['ATS', result.ats], ['Impact', result.impact], ['Clarity', result.clarity]].map(([l, v]) => (
                       <div key={l} className="text-center">
@@ -218,6 +275,18 @@ Resume:
                   </div>
                 </div>
               </SectionCard>
+
+              {result.breakdown && (
+                <SectionCard title="Score breakdown">
+                  <div className="space-y-3">
+                    {BREAKDOWN_ORDER.filter((k) => result.breakdown[k] != null).map((k) => {
+                      const [label, max] = BREAKDOWN_LABELS[k];
+                      return <BreakdownBar key={k} label={label} value={result.breakdown[k]} max={max} />;
+                    })}
+                  </div>
+                </SectionCard>
+              )}
+
               {result.strengths?.length > 0 && (
                 <SectionCard title="Strengths">
                   <ul className="space-y-2">
@@ -232,6 +301,13 @@ Resume:
                   </ul>
                 </SectionCard>
               )}
+              {result.matchedKeywords?.length > 0 && (
+                <SectionCard title={`Matched keywords (${result.matchedKeywords.length})`}>
+                  <div className="flex flex-wrap gap-2">
+                    {result.matchedKeywords.map((k) => <Badge key={k} tone="mint">{k}</Badge>)}
+                  </div>
+                </SectionCard>
+              )}
               {result.missingKeywords?.length > 0 && (
                 <SectionCard title="Missing keywords">
                   <div className="flex flex-wrap gap-2">
@@ -239,10 +315,30 @@ Resume:
                   </div>
                 </SectionCard>
               )}
+              {result.skillEvidence?.length > 0 && (
+                <SectionCard title="Skill evidence">
+                  <div className="flex flex-wrap gap-2">
+                    {result.skillEvidence.map((e) => (
+                      <Badge key={e.skill} tone={e.evidenced ? 'mint' : 'default'}>
+                        {e.skill}{e.evidenced ? ' • proven' : ' • listed'}
+                      </Badge>
+                    ))}
+                  </div>
+                </SectionCard>
+              )}
             </>
           )}
         </div>
       </div>
+
+      {resume.trim().length >= 40 && (
+        <ResumeTailor
+          resumeText={resume}
+          fileName={fileName}
+          targetRole={scoredRole !== 'General' ? scoredRole : role}
+          resumeScore={result?.score ?? null}
+        />
+      )}
     </>
   );
 }

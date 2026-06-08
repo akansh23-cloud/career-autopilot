@@ -1,0 +1,19 @@
+Career Autopilot v9 — complete project (A-L).
+
+Setup: npm install && npm run build && npm start  (dev: npm run dev)
+Tests: npm test (56 passing) | Lint: npm run lint (0 errors)
+
+Deterministic backend engines (no AI in scoring; AI only enriches prose, never changes a score or invents facts; pending/unverified work never counts):
+  server/utils/resume/*               A  resume score v2 + JD fit + safe tailoring + fabrication checker
+  server/utils/skillVerificationEngine.js  G  verified skills + XP (duplicate-safe)
+  server/utils/marketplaceEngine.js   D  marketplace ranking (owner credibility from verified XP)
+  server/modules/inspirations/*       E/F live inspirations + Build-this roadmap (external APIs backend-only, seed fallback)
+  server/utils/architectureEngine.js  H  industry architecture + Mermaid diagrams + maturity score
+  server/utils/patentEngine.js        I  patent readiness + prior-art + disclosure (NOT legal advice)
+  server/utils/applicationPackageEngine.js  J  full application package (verified data only)
+  server/utils/readinessEngine.js     K  placement readiness + recruiter/admin (verified-only)
+
+New views: Resume, ResumeTailor, SkillsXp, Marketplace, Inspirations, ArchitectureView, PatentEngine, ApplicationsView, ReadinessView.
+Nav (L): consolidated top-level IA — Overview / Resume OS / Job Match / Applications / Project Marketplace / Patent Engine / Profile-XP / Community / Recruiting / Admin (Growth+Settings under More). All legacy view ids preserved; Sandbox.jsx retained for backward compat.
+
+Optional env: MONGODB_URI (persistence; without it runs in local/session mode), ANTHROPIC_API_KEY (prose enrichment only), GITHUB_TOKEN / PRODUCTHUNT_TOKEN (inspiration rate limits; HN+GitHub need no key).
