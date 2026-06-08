@@ -18,6 +18,8 @@ import {
   buildBlueprint, buildAdaptiveRoadmap, roadmapProgress, toggleTask, creatorStatus,
   buildIpReadiness, buildCollabDraft, publishCollabDraft, fetchTrends, deterministicValidation,
   getCreatorState, saveCreatorState, persistProjectStep, getCreatorProjects,
+  PATENT_STAGES, canRegisterPatent, startPatentRegistration, advancePatentStage,
+  recordPatentFiling, recordPriorArtFindings,
 } from '../lib/projectCreator.js';
 import {
   analyzeGithub, applyGithubAnalysis, verifyLiveLink, applyLiveVerification, buildRecruiterSummary,
@@ -243,10 +245,11 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
     setLoading(true);
     const ctx = assembleContext({ targetRole, difficulty, duration, preferredType, startFrom: source, customIdea });
     try {
-      const { recommendations } = await discover(ctx);
+      const salt = (state.discoverSalt || 0) + 1;
+      const { recommendations } = await discover(ctx, { salt });
       useMeter('creatorRecs');
       setRecs(recommendations);
-      const s = saveCreatorState({ recommendations, context: ctx, lastSource: source });
+      const s = saveCreatorState({ recommendations, context: ctx, lastSource: source, discoverSalt: salt });
       setState(s);
     } finally { setLoading(false); }
   };
@@ -509,7 +512,7 @@ function ValidateStep({ selected, isPremium, setStep, pickProject }) {
         title="AI validation suggestions"
         action={<Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={loading || (det && !det.requiredOk)}>{loading ? 'Validating…' : data ? <><RefreshCw size={14} /> Re-run</> : <><Wand2 size={14} /> Get AI suggestions</>}</Button>}
       >
-        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#C2BBFF]">
+        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#FFD49A]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>These are AI-generated <strong>suggestions</strong>, not verified facts. Scores are estimates to guide thinking — treat them as prompts to research, not proof.</span>
         </div>
@@ -819,14 +822,159 @@ function VerifyStep({ selected, user, isPremium, setStep }) {
   );
 }
 
+function Check2({ label, checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2 text-[13px] text-slate-300">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-amber-glow" />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function PatentPipeline({ stageId, onSet }) {
+  const idx = Math.max(0, PATENT_STAGES.findIndex((s) => s.id === stageId));
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {PATENT_STAGES.map((s, i) => (
+        <button key={s.id} onClick={() => onSet(s.id)}
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${i <= idx ? 'border-aurora-mint/40 bg-aurora-mint/12 text-[#A7F2CE]' : 'border-white/12 bg-white/[0.03] text-slate-400 hover:bg-white/8'}`}>
+          {i < idx ? <Check size={10} className="mr-1 inline" /> : null}{s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PatentRegistration({ project, rep, attest, setAttest, onReassess }) {
+  const [dossier, setDossier] = useState(project?.creator?.patent || null);
+  const [appNo, setAppNo] = useState(project?.creator?.patent?.filing?.applicationNumber || '');
+  const [jur, setJur] = useState(project?.creator?.patent?.filing?.jurisdiction || 'India (IPO)');
+  const [route, setRoute] = useState(project?.creator?.patent?.filing?.route || 'Provisional / priority application');
+  useEffect(() => { setDossier(project?.creator?.patent || null); }, [project?.id]);
+
+  const eligible = canRegisterPatent(rep);
+  const gate = rep?.gate || {};
+  const d = dossier?.dossier || rep?.dossier || {};
+
+  const start = () => { const n = startPatentRegistration(project.id, attest); setDossier(n?.creator?.patent || null); };
+  const setStage = (id) => { const n = advancePatentStage(project.id, id); setDossier(n?.creator?.patent || null); };
+  const savePriorArt = () => { const n = recordPriorArtFindings(project.id, d?.priorArt?.findings || [], attest); setDossier(n?.creator?.patent || null); onReassess?.(n?.creator?.patent || null); };
+  const saveFiling = () => { const n = recordPatentFiling(project.id, { applicationNumber: appNo, jurisdiction: jur, route, filedAt: new Date().toISOString() }); setDossier(n?.creator?.patent || null); };
+
+  return (
+    <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Award size={16} className="text-amber-glow" />
+        <p className="text-sm font-semibold text-white">Patent registration</p>
+        <Badge tone={eligible ? 'mint' : 'amber'}>{rep?.verdict || (eligible ? 'Eligible' : 'Not yet eligible')}</Badge>
+        <span className="ml-auto font-mono text-[11px] text-slate-500">criteria-gated · not legal advice</span>
+      </div>
+
+      {/* criteria breakdown */}
+      <div className="mb-3 space-y-1.5">
+        {rep?.criteria && Object.keys(rep.criteria).map((k) => (
+          <div key={k} className="flex items-center gap-3 text-[12px]">
+            <span className="w-52 shrink-0 text-slate-400">{({ technicalCharacter: 'Technical character', novelty: 'Novelty', inventiveStep: 'Inventive step', industrialApplicability: 'Industrial use', enablement: 'Enablement' })[k]}</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/8"><div className={`h-full rounded-full ${rep.criteria[k] >= 55 ? 'bg-aurora-mint' : 'bg-amber-glow'}`} style={{ width: `${rep.criteria[k]}%` }} /></div>
+            <span className="w-10 text-right font-mono text-slate-300">{rep.criteria[k]}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* attestations that drive novelty scoring */}
+      <div className="mb-3 space-y-1.5 rounded-xl border border-white/8 bg-white/[0.02] p-3">
+        <p className="text-[12px] font-medium text-slate-300">Confirm to score novelty accurately:</p>
+        <Check2 label="I completed a prior-art search (patent DBs + products/papers)." checked={attest.priorArtSearched} onChange={(v) => setAttest((a) => ({ ...a, priorArtSearched: v }))} />
+        <Check2 label="I found no close prior art covering my specific mechanism." checked={attest.noCloseArtFound} onChange={(v) => setAttest((a) => ({ ...a, noCloseArtFound: v }))} />
+        <Check2 label="I have NOT publicly disclosed the invention yet (no public repo/demo/post)." checked={!attest.publiclyDisclosed} onChange={(v) => setAttest((a) => ({ ...a, publiclyDisclosed: !v }))} />
+        <Button size="sm" variant="soft" className="mt-1" onClick={onReassess}><RefreshCw size={13} /> Re-assess with these</Button>
+      </div>
+
+      {!eligible ? (
+        <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/8 p-3">
+          <p className="text-[13px] font-medium text-amber-100">Not eligible to register yet.</p>
+          <List items={[...(gate.reasonsBlocking || []), ...(gate.nextActions || [])]} tone="amber" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {!dossier?.stageId ? (
+            <Button size="sm" onClick={start}><BadgeCheck size={14} /> Start patent registration</Button>
+          ) : (
+            <>
+              <div>
+                <p className="mb-1.5 text-[12px] font-medium text-slate-300">Filing pipeline</p>
+                <PatentPipeline stageId={dossier.stageId} onSet={setStage} />
+              </div>
+
+              <Accordion title="1 · Prior-art search plan" icon={Scale} defaultOpen>
+                <p className="mb-1 text-slate-400">Classification hint: <span className="text-slate-200">{d?.priorArt?.classification}</span></p>
+                <p className="mb-1 text-slate-400">Search queries:</p>
+                <List items={d?.priorArt?.queries} />
+                <p className="mb-1 mt-2 text-slate-400">Databases:</p>
+                <ul className="space-y-1">
+                  {(d?.priorArt?.databases || []).map((db) => (
+                    <li key={db.name} className="text-[13px]"><a href={db.url} target="_blank" rel="noreferrer" className="text-aurora-cyan hover:underline">{db.name}</a> <span className="text-slate-500">— {db.note}</span></li>
+                  ))}
+                </ul>
+                <Button size="sm" variant="soft" className="mt-2" onClick={savePriorArt}><Check size={13} /> Mark prior-art done & re-score</Button>
+              </Accordion>
+
+              <Accordion title="2 · Invention disclosure" icon={Lightbulb}>
+                <p className="mb-1 text-slate-400">Field:</p><p className="mb-2">{d?.disclosure?.fieldOfInvention}</p>
+                <p className="mb-1 text-slate-400">Summary of invention:</p><p className="mb-2">{d?.disclosure?.summaryOfInvention}</p>
+                <p className="mb-1 text-slate-400">Technical advantages:</p><List items={d?.disclosure?.advantages} tone="mint" />
+              </Accordion>
+
+              <Accordion title="3 · Provisional specification + claims" icon={FileText}>
+                <p className="mb-1 text-slate-400">Spec outline:</p><List items={d?.provisionalSpecOutline} />
+                <p className="mb-1 mt-2 text-slate-400">Independent claim (skeleton):</p>
+                <pre className="whitespace-pre-wrap rounded-lg border border-white/8 bg-ink-950/60 p-2.5 text-[12px] text-slate-200">{d?.claims?.independent}</pre>
+                <p className="mb-1 mt-2 text-slate-400">Dependent claims:</p><List items={d?.claims?.dependents} />
+                <p className="mt-2 text-[12px] text-amber-100/80">{d?.claims?.note}</p>
+                <p className="mb-1 mt-2 text-slate-400">Drawings checklist:</p><List items={d?.drawings} />
+                <p className="mb-1 mt-2 text-slate-400">Abstract (draft):</p><p className="text-[13px]">{d?.abstract}</p>
+              </Accordion>
+
+              <Accordion title="4 · Filing route & jurisdiction" icon={Globe}>
+                <p className="mb-1 text-slate-400">Routes:</p>
+                <List items={(d?.filing?.routes || []).map((r) => `${r.name} — ${r.when} (${r.note})`)} />
+                <p className="mb-1 mt-2 text-slate-400">Jurisdictions:</p>
+                {(d?.filing?.jurisdictions || []).map((j) => (
+                  <div key={j.id} className="mb-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5 text-[12px]">
+                    <p className="font-medium text-white">{j.name}</p>
+                    <p className="text-slate-400">Forms: {j.forms.join(', ')}</p>
+                    <p className="text-slate-500">{j.timeline} · {j.feeNote}</p>
+                  </div>
+                ))}
+                <p className="mt-1 text-[12px] text-amber-100/80">{d?.filing?.costDisclaimer}</p>
+              </Accordion>
+
+              <Accordion title="5 · Record your filing" icon={BadgeCheck}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Route"><select value={route} onChange={(e) => setRoute(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">{(d?.filing?.routes || []).map((r) => <option key={r.id}>{r.name}</option>)}</select></Field>
+                  <Field label="Jurisdiction"><select value={jur} onChange={(e) => setJur(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">{(d?.filing?.jurisdictions || []).map((j) => <option key={j.id}>{j.name}</option>)}</select></Field>
+                </div>
+                <Field label="Application / priority number"><Input value={appNo} onChange={(e) => setAppNo(e.target.value)} placeholder="e.g. 2026XXXXXXXX" /></Field>
+                <Button size="sm" className="mt-1" onClick={saveFiling}><Check size={14} /> Save filing & mark as Filed</Button>
+                {dossier?.filing?.applicationNumber && <p className="mt-2 text-[12px] text-aurora-mint">Recorded: {dossier.filing.applicationNumber} · {dossier.filing.jurisdiction}</p>}
+              </Accordion>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IpModal({ open, onClose, project, isPremium }) {
   const [loading, setLoading] = useState(false);
-  const [rep, setRep] = useState(project?.creator?.ipReadiness || null);
-  useEffect(() => { setRep(project?.creator?.ipReadiness || null); }, [project?.id, open]);
+  const [rep, setRep] = useState(project?.creator?.ipReadiness || project?.creator?.patent || null);
+  const [attest, setAttest] = useState({ priorArtSearched: false, noCloseArtFound: false, publiclyDisclosed: false });
+  useEffect(() => { setRep(project?.creator?.ipReadiness || project?.creator?.patent || null); }, [project?.id, open]);
 
   const run = async () => {
     setLoading(true);
-    try { const { report } = await buildIpReadiness(project); persistProjectStep(project.id, { ipReadiness: report }); setRep(report); }
+    try { const { report } = await buildIpReadiness(project, attest); persistProjectStep(project.id, { ipReadiness: report }); setRep(report); }
     finally { setLoading(false); }
   };
 
@@ -835,8 +983,8 @@ function IpModal({ open, onClose, project, isPremium }) {
       <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/8 px-3 py-2.5 text-[12px] leading-relaxed text-amber-100">{IP_DISCLAIMER}</div>
       {!isPremium ? (
         <div className="mt-4"><EmptyState icon={Lock} title="Premium feature" hint="IP readiness analysis and draft preparation are available on the Premium plan." action={<Button size="sm" onClick={() => { promptUpgrade('IP Readiness Studio is a Premium feature.', 'premium'); onClose(); }}>Upgrade to Premium</Button>} /></div>
-      ) : loading ? <Loading msg="Preparing IP readiness…" /> : !rep ? (
-        <div className="mt-4"><Button onClick={run}><Wand2 size={15} /> Generate IP readiness report</Button></div>
+      ) : loading ? <Loading msg="Assessing patentability…" /> : !rep ? (
+        <div className="mt-4"><Button onClick={run}><Wand2 size={15} /> Assess patentability</Button></div>
       ) : (
         <div className="mt-4 space-y-3">
           <div className="flex items-center gap-4">
@@ -846,9 +994,12 @@ function IpModal({ open, onClose, project, isPremium }) {
           <Accordion title="Invention summary & problem" icon={Lightbulb} defaultOpen><p className="mb-2">{rep.inventionSummary}</p><p className="mb-1 text-slate-400">Technical problem:</p><p className="mb-2">{rep.technicalProblem}</p><p className="mb-1 text-slate-400">Technical solution:</p><p>{rep.technicalSolution}</p></Accordion>
           <Accordion title="Novelty & inventive step" icon={Sparkles}><p className="mb-1 text-slate-400">Novelty points:</p><List items={rep.noveltyPoints} /><p className="mt-2"><span className="text-slate-400">Inventive step: </span>{rep.inventiveStepHypothesis}</p><p className="mt-1"><span className="text-slate-400">Industrial use: </span>{rep.industrialUse}</p></Accordion>
           <Accordion title="Prior-art research" icon={Scale}><p className="mb-1 text-slate-400">Keywords:</p><div className="flex flex-wrap gap-1.5">{(rep.priorArtKeywords || []).map((k, i) => <Badge key={i} tone="cyan">{k}</Badge>)}</div><p className="mb-1 mt-2 text-slate-400">Comparables to research:</p><List items={rep.comparableSolutions} /></Accordion>
-          <Accordion title="Draft preparation" icon={FileText}><p className="mb-1 text-slate-400">Diagrams checklist:</p><List items={rep.systemDiagramsChecklist} /><p className="mb-1 mt-2 text-slate-400">Provisional spec outline:</p><List items={rep.provisionalSpecOutline} /><p className="mb-1 mt-2 text-slate-400">Claim notes:</p><List items={rep.claimPreparationNotes} /><p className="mb-1 mt-2 text-slate-400">Documentation:</p><List items={rep.documentationChecklist} /></Accordion>
           <Accordion title="Risks & warnings" icon={AlertTriangle}><List items={rep.risks} tone="amber" /></Accordion>
-          <Button variant="soft" size="sm" onClick={run}><RefreshCw size={13} /> Re-run</Button>
+
+          {/* criteria-gated, end-to-end patent registration workflow */}
+          <PatentRegistration project={project} rep={rep} attest={attest} setAttest={setAttest} onReassess={run} />
+
+          <Button variant="soft" size="sm" onClick={run}><RefreshCw size={13} /> Re-assess</Button>
         </div>
       )}
     </Modal>

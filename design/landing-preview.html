@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Career Autopilot — Where Talent Meets Opportunity</title>
+<meta name="description" content="Career Autopilot helps fresh graduates land their first job with proof, lets employers hire verified talent faster, and gives colleges a live view of campus placements." />
+
+<!-- Same type stack as the app: Clash Display (display) + Satoshi (body) -->
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700,500&f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet" />
+
+<style>
+/* ============================================================
+   DESIGN TOKENS — mirrored 1:1 from the app (web/src/index.css
+   + tailwind.config.js) so the landing is visually identical to
+   every in-app screen: dark "ink" base, aurora violet/cyan/mint,
+   gradient-border glass, btn-primary CTA, amber only as a small
+   status accent.
+   ============================================================ */
+:root{
+  --ink-950:#070912; --ink-900:#0B0F1C; --ink-850:#0F1322; --ink-800:#141A2C; --ink-700:#1B2236;
+  --text:#E7EAF3; --muted:#8A92A8; --slate-300:#C3CADB; --slate-400:#9AA3B8; --slate-500:#6B7488;
+  --violet:#7C6CFF; --indigo:#5B6BFF; --cyan:#3DD6F5; --mint:#52E6C2; --amber:#FFB454;
+  --line:rgba(255,255,255,.08);
+
+  --grad-cta:linear-gradient(110deg,#7C6CFF 0%,#5B6BFF 45%,#3DD6F5 100%);
+  --grad-text:linear-gradient(110deg,#C7CFFF 0%,#7C6CFF 35%,#3DD6F5 72%,#52E6C2 100%);
+  --grad-border:linear-gradient(140deg,rgba(124,108,255,.55),rgba(61,214,245,.25) 40%,rgba(255,255,255,.04) 70%);
+
+  --r:1.25rem; --r-sm:.85rem; --r-lg:1.6rem;
+  --shadow-glow:0 0 0 1px rgba(124,108,255,.18),0 18px 50px -12px rgba(124,108,255,.35);
+  --shadow-lift:0 30px 70px -30px rgba(0,0,0,.9);
+  --maxw:1200px;
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scrollbar-gutter:stable;-webkit-text-size-adjust:100%}
+body{
+  font-family:"Satoshi",ui-sans-serif,system-ui,sans-serif;
+  background:var(--ink-950);
+  color:var(--text);
+  line-height:1.55;overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  font-feature-settings:'ss01' on,'cv01' on;
+}
+h1,h2,h3,h4,.font-display{font-family:"Clash Display",sans-serif;letter-spacing:-.02em}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+::selection{background:rgba(124,108,255,.35);color:#fff}
+
+/* scrollbar — same as app */
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:linear-gradient(#2a3350,#1a2138);border:3px solid var(--ink-950);border-radius:999px}
+*{scrollbar-width:thin;scrollbar-color:#2a3350 transparent}
+
+/* ============================================================ ATMOSPHERE (mirrors Atmosphere.jsx) */
+.atmosphere{position:fixed;inset:0;z-index:-10;overflow:hidden;pointer-events:none}
+.atmosphere .base{position:absolute;inset:0;background:var(--ink-950)}
+.glow-blob{position:absolute;filter:blur(80px);border-radius:999px;will-change:transform}
+.b1{left:-160px;top:-160px;width:520px;height:520px;background:rgba(124,108,255,.40);animation:drift1 18s ease-in-out infinite}
+.b2{right:-10%;top:-5%;width:460px;height:460px;background:rgba(61,214,245,.30);animation:drift2 22s ease-in-out infinite}
+.b3{bottom:-15%;left:33%;width:480px;height:480px;background:rgba(82,230,194,.20);animation:drift3 26s ease-in-out infinite}
+@keyframes drift1{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,40px)}}
+@keyframes drift2{0%,100%{transform:translate(0,0)}50%{transform:translate(-50px,50px)}}
+@keyframes drift3{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,-30px)}}
+.bg-grid{position:absolute;inset:0;opacity:.7;
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:56px 56px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,#000 35%,transparent 75%);
+  mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,#000 35%,transparent 75%)}
+.noise{position:absolute;inset:0;opacity:.025;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E")}
+.fade-b{position:absolute;inset:0;background:linear-gradient(to bottom,transparent,rgba(7,9,18,.3),var(--ink-950))}
+
+.wrap{max-width:var(--maxw);margin-inline:auto;padding-inline:clamp(20px,4vw,40px);position:relative;z-index:2}
+
+/* ============================================================ SHARED COMPONENTS (mirrored from kit) */
+.gradient-border{position:relative;border-radius:var(--r);background:linear-gradient(180deg,rgba(20,26,44,.95),rgba(11,15,28,.95)) padding-box}
+.gradient-border::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:var(--grad-border);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.glass{background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));backdrop-filter:blur(14px);border:1px solid var(--line)}
+.lift{transition:transform .35s var(--ease),box-shadow .35s,border-color .35s}
+.lift:hover{transform:translateY(-4px)}
+.text-aurora{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+.btn{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:15px;border:none;cursor:pointer;color:var(--text);
+  border-radius:13px;padding:13px 22px;transition:transform .3s var(--ease),box-shadow .3s var(--ease),filter .3s,border-color .3s}
+.btn svg{width:17px;height:17px}
+.btn-primary{background-image:var(--grad-cta);color:#fff;box-shadow:0 10px 30px -10px rgba(91,107,255,.7),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn-primary:hover{transform:translateY(-2px);filter:brightness(1.1)}
+.btn-ghost{background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--text)}
+.btn-ghost:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.25)}
+.btn-sm{padding:9px 16px;font-size:14px;border-radius:11px}
+
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;letter-spacing:.02em;
+  padding:5px 11px;border-radius:100px;border:1px solid}
+.badge.mint{background:rgba(82,230,194,.12);color:#A7F2DD;border-color:rgba(82,230,194,.3)}
+.badge.violet{background:rgba(124,108,255,.12);color:#C2BBFF;border-color:rgba(124,108,255,.3)}
+.badge.cyan{background:rgba(61,214,245,.12);color:#A6ECFB;border-color:rgba(61,214,245,.3)}
+.badge.amber{background:rgba(255,180,84,.12);color:#FFD9A0;border-color:rgba(255,180,84,.3)}
+
+/* ============================================================ NAV */
+header.nav{position:fixed;top:0;left:0;right:0;z-index:50}
+.nav-inner{display:flex;align-items:center;gap:16px;margin-top:12px;padding:10px 12px 10px 16px;
+  border-radius:var(--r);border:1px solid var(--line);background:rgba(11,15,28,.6);backdrop-filter:blur(18px);transition:all .4s var(--ease)}
+.nav.scrolled .nav-inner{background:rgba(11,15,28,.85);box-shadow:var(--shadow-lift)}
+.brand{display:flex;align-items:center;gap:10px;font-family:"Clash Display";font-weight:600;font-size:17px;letter-spacing:-.02em;color:#fff}
+.logo{width:36px;height:36px;border-radius:11px;background-image:var(--grad-cta);display:grid;place-items:center;
+  box-shadow:var(--shadow-glow);position:relative;overflow:hidden}
+.logo svg{width:18px;height:18px}
+.logo::after{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-120%);animation:sheen 5s var(--ease) infinite}
+@keyframes sheen{0%,70%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
+.nav-links{display:flex;gap:2px;margin-left:6px}
+.nav-links a{padding:8px 13px;border-radius:10px;font-size:14px;color:rgba(195,202,219,.8);transition:.25s}
+.nav-links a:hover{color:#fff;background:rgba(255,255,255,.05)}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.menu-toggle{display:none;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:11px;width:42px;height:42px;cursor:pointer}
+.menu-toggle span{display:block;width:18px;height:2px;background:var(--text);margin:4px auto;border-radius:2px}
+
+/* ============================================================ HERO */
+.hero{position:relative;padding:clamp(110px,14vw,160px) 0 clamp(60px,8vw,90px)}
+.hero-grid{display:grid;grid-template-columns:1.04fr .96fr;gap:clamp(30px,4vw,56px);align-items:center}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;letter-spacing:.03em;
+  color:#C2BBFF;background:rgba(124,108,255,.1);border:1px solid rgba(124,108,255,.3);padding:7px 14px;border-radius:100px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--grad-cta);box-shadow:0 0 0 4px rgba(124,108,255,.16)}
+h1.head{font-family:"Clash Display";font-weight:600;line-height:.98;font-size:clamp(42px,6.2vw,82px);margin:22px 0 0;color:#fff}
+.grad{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent;background-size:200% 100%;animation:flow 8s linear infinite}
+@keyframes flow{to{background-position:200% center}}
+.sub{font-size:clamp(16px,1.3vw,18.5px);color:var(--muted);max-width:520px;margin-top:24px;line-height:1.65}
+.cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:32px;align-items:center}
+.cta-note{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}
+.cta-note svg{width:15px;height:15px;color:var(--mint)}
+.stats{display:flex;gap:clamp(20px,4vw,52px);margin-top:46px;padding-top:30px;border-top:1px solid var(--line)}
+.stat .num{font-family:"Clash Display";font-weight:600;font-size:clamp(26px,3vw,38px);line-height:1}
+.stat .num span{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat .lbl{font-size:13px;color:var(--muted);margin-top:7px}
+
+.visual{position:relative;aspect-ratio:1/1.02;min-height:420px}
+.visual .halo{position:absolute;inset:8% 6%;border-radius:38% 62% 56% 44%/50% 44% 56% 50%;
+  background:conic-gradient(from 200deg,rgba(124,108,255,.55),rgba(91,107,255,.5),rgba(61,214,245,.5),rgba(82,230,194,.45),rgba(124,108,255,.55));
+  filter:blur(34px);opacity:.85;animation:morph 16s ease-in-out infinite}
+@keyframes morph{0%,100%{border-radius:38% 62% 56% 44%/50% 44% 56% 50%;transform:rotate(0)}50%{border-radius:58% 42% 40% 60%/46% 58% 42% 54%;transform:rotate(8deg)}}
+.visual .ring{position:absolute;inset:3%;border-radius:50%;border:1px dashed rgba(255,255,255,.12);animation:spin 38s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#net{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+.fcard{position:absolute;z-index:3;border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-lift);display:flex;align-items:center;gap:11px;
+  background:linear-gradient(180deg,rgba(20,26,44,.92),rgba(11,15,28,.92));border:1px solid var(--line);backdrop-filter:blur(10px);animation:bob 6s ease-in-out infinite}
+.fcard .ico{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:none;color:#fff}
+.fcard .t{font-weight:700;font-size:13px;line-height:1.1;color:#fff}
+.fcard .s{font-size:11px;color:var(--muted);margin-top:2px}
+.fc1{top:6%;left:-4%;animation-delay:0s}.fc2{top:42%;right:-7%;animation-delay:-2s}.fc3{bottom:5%;left:5%;animation-delay:-4s}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+.mini-ring{width:32px;height:32px;flex:none}.mini-ring circle{fill:none;stroke-width:5}
+
+/* ============================================================ MARQUEE */
+.marquee{border-block:1px solid var(--line);background:rgba(255,255,255,.02);overflow:hidden;padding:16px 0}
+.marquee .track{display:flex;gap:54px;width:max-content;animation:scrollx 28s linear infinite;align-items:center}
+.marquee:hover .track{animation-play-state:paused}
+.marquee span{font-family:"Clash Display";font-weight:500;font-size:18px;color:var(--slate-400);opacity:.6;white-space:nowrap}
+@keyframes scrollx{to{transform:translateX(-50%)}}
+
+/* ============================================================ SECTIONS */
+section{position:relative;z-index:2;padding:clamp(60px,8vw,104px) 0}
+.sec-head{max-width:660px;margin-bottom:clamp(34px,4vw,54px)}
+.kicker{font-size:12.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#C2BBFF}
+.sec-head h2{font-weight:600;line-height:1.02;font-size:clamp(30px,4vw,50px);margin-top:13px;color:#fff}
+.sec-head p{color:var(--muted);font-size:clamp(15px,1.2vw,17px);margin-top:15px;max-width:560px}
+
+.aud-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.aud{position:relative;border-radius:var(--r-lg);padding:28px 24px;overflow:hidden}
+.aud .ico{width:52px;height:52px;border-radius:15px;display:grid;place-items:center;color:#fff;margin-bottom:18px;box-shadow:var(--shadow-glow)}
+.aud h3{font-weight:600;font-size:22px;color:#fff}
+.aud p{color:var(--muted);font-size:14px;margin-top:9px}
+.aud ul{list-style:none;margin-top:16px;display:grid;gap:9px}
+.aud li{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--slate-300)}
+.aud li svg{width:16px;height:16px;color:var(--mint);flex:none}
+.aud .more{display:inline-flex;align-items:center;gap:7px;margin-top:18px;font-weight:700;font-size:14px;color:#C2BBFF;transition:gap .3s}
+.aud:hover .more{gap:12px}
+
+.bento{display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:minmax(150px,auto);gap:16px}
+.cell{border-radius:var(--r-lg);padding:24px;position:relative;overflow:hidden}
+.cell h3{font-weight:600;font-size:20px;color:#fff;margin-top:14px}
+.cell p{color:var(--muted);font-size:14px;margin-top:9px}
+.cell .ico{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;color:#fff}
+.c-sm{grid-column:span 2}.c-mid{grid-column:span 3}
+.cell.feat{grid-column:span 4;grid-row:span 2}
+.cell.feat::after{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  background:radial-gradient(140% 120% at 100% 0%,rgba(61,214,245,.30),transparent 55%),radial-gradient(120% 120% at 0% 100%,rgba(124,108,255,.34),transparent 60%)}
+.cell.feat h3{font-size:28px}.cell.feat p{font-size:15px;max-width:420px}
+.cell.feat .chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}
+.cell.feat .chip{font-size:12px;font-weight:600;padding:6px 12px;border-radius:100px;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--slate-300)}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;position:relative}
+.steps::before{content:"";position:absolute;top:34px;left:14%;right:14%;height:1px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.18) 0 8px,transparent 8px 16px)}
+.step .n{width:68px;height:68px;border-radius:20px;display:grid;place-items:center;font-family:"Clash Display";font-weight:600;font-size:25px;
+  background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:18px;position:relative;z-index:1}
+.step .n.gb{background:linear-gradient(180deg,rgba(20,26,44,.95),rgba(11,15,28,.95))}
+.step h3{font-weight:600;font-size:20px;color:#fff}
+.step p{color:var(--muted);font-size:14px;margin-top:8px;max-width:320px}
+
+.band{border-radius:var(--r-lg);padding:clamp(40px,5vw,60px);position:relative;overflow:hidden}
+.band::after{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  background:radial-gradient(120% 140% at 0% 0%,rgba(124,108,255,.42),transparent 55%),radial-gradient(120% 140% at 100% 100%,rgba(61,214,245,.34),transparent 55%)}
+.band .b-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;text-align:center}
+.band .num{font-family:"Clash Display";font-weight:600;font-size:clamp(34px,4vw,50px);line-height:1;color:#fff}
+.band .num span{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
+.band .lbl{color:var(--muted);font-size:13.5px;margin-top:9px}
+
+.quote{max-width:860px;margin-inline:auto;text-align:center}
+.quote .mark{font-family:"Clash Display";font-size:74px;line-height:.4;color:rgba(124,108,255,.45);display:block;margin-bottom:8px}
+.quote p{font-family:"Clash Display";font-weight:500;font-size:clamp(22px,2.6vw,33px);line-height:1.3;color:#fff}
+.quote .who{display:flex;align-items:center;justify-content:center;gap:13px;margin-top:28px}
+.quote .av{width:48px;height:48px;border-radius:50%;background-image:var(--grad-cta);display:grid;place-items:center;color:#fff;font-weight:700}
+.quote .who b{font-weight:700;color:#fff}.quote .who small{display:block;color:var(--muted);font-weight:500}
+
+.final{text-align:center}
+.final .box{border-radius:var(--r-lg);padding:clamp(46px,6vw,78px);position:relative;overflow:hidden}
+.final .box::after{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  background:radial-gradient(120% 130% at 50% 0%,rgba(124,108,255,.4),transparent 60%),radial-gradient(120% 130% at 50% 100%,rgba(61,214,245,.28),transparent 60%)}
+.final h2{font-weight:600;font-size:clamp(30px,4.4vw,52px);line-height:1.02;color:#fff}
+.final p{color:var(--muted);max-width:520px;margin:16px auto 0;font-size:16px}
+.final .cta-row{justify-content:center}
+
+footer{border-top:1px solid var(--line);padding:52px 0 38px;position:relative;z-index:2}
+.foot-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:30px}
+.foot-grid p{color:var(--muted);font-size:14px;max-width:300px;margin-top:14px}
+.foot-grid h4{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--slate-300);margin-bottom:14px}
+.foot-grid a{display:block;color:var(--muted);font-size:14px;padding:5px 0;transition:.25s}
+.foot-grid a:hover{color:#C2BBFF;transform:translateX(3px)}
+.foot-bot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-top:44px;padding-top:24px;border-top:1px solid var(--line);color:var(--slate-500);font-size:13px}
+
+/* reveal */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
+.reveal.in{opacity:1;transform:none}
+[data-delay="1"]{transition-delay:.08s}[data-delay="2"]{transition-delay:.16s}[data-delay="3"]{transition-delay:.24s}[data-delay="4"]{transition-delay:.32s}
+
+/* responsive */
+@media(max-width:980px){
+  .hero-grid{grid-template-columns:1fr;gap:46px}
+  .visual{max-width:460px;margin-inline:auto;width:100%}
+  .bento{grid-template-columns:repeat(4,1fr)}.cell.feat,.c-mid{grid-column:span 4}.c-sm{grid-column:span 2}
+  .foot-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:760px){
+  .nav-links,.nav-right .ghost,.nav-right .btn-ghost{display:none}
+  .menu-toggle{display:block}
+  .aud-grid,.steps{grid-template-columns:1fr}.steps::before{display:none}
+  .band .b-grid{grid-template-columns:1fr 1fr;gap:24px}
+  .stats{flex-wrap:wrap;gap:24px}
+  .bento{grid-template-columns:1fr 1fr}.cell.feat,.c-mid{grid-column:span 2}.c-sm{grid-column:span 1}
+  .mobile-menu.open{display:flex}
+}
+.mobile-menu{display:none;position:fixed;inset:0;z-index:60;background:rgba(7,9,18,.97);backdrop-filter:blur(10px);flex-direction:column;padding:88px 26px 26px;gap:4px}
+.mobile-menu a{font-family:"Clash Display";font-weight:500;font-size:25px;padding:12px 0;border-bottom:1px solid var(--line);color:#fff}
+.mobile-menu .btn{margin-top:18px;justify-content:center}
+.mm-close{position:absolute;top:22px;right:22px;width:44px;height:44px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03);color:#fff;cursor:pointer;font-size:20px}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}.reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<div class="atmosphere">
+  <div class="base"></div>
+  <div class="glow-blob b1"></div><div class="glow-blob b2"></div><div class="glow-blob b3"></div>
+  <div class="bg-grid"></div><div class="noise"></div><div class="fade-b"></div>
+</div>
+
+<!-- NAV -->
+<header class="nav" id="nav">
+  <div class="wrap">
+    <div class="nav-inner">
+      <a class="brand" href="#top">
+        <span class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="#fff"/></svg></span>
+        Career&nbsp;Autopilot
+      </a>
+      <nav class="nav-links">
+        <a href="#audiences">Students</a><a href="#audiences">Employers</a><a href="#audiences">Universities</a>
+        <a href="#features">Platform</a><a href="#how">How it works</a>
+      </nav>
+      <div class="nav-right">
+        <a class="btn btn-ghost btn-sm ghost" href="#">Sign in</a>
+        <a class="btn btn-primary btn-sm" href="#">Get started
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="menu-toggle" id="menuBtn" aria-label="Open menu"><span></span><span></span><span></span></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="mobile-menu" id="mobileMenu">
+  <button class="mm-close" id="mmClose" aria-label="Close menu">✕</button>
+  <a href="#audiences">Students</a><a href="#audiences">Employers</a><a href="#audiences">Universities</a>
+  <a href="#features">Platform</a><a href="#how">How it works</a>
+  <a class="btn btn-primary" href="#">Get started</a>
+</div>
+
+<main id="top">
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow reveal"><span class="dot"></span>Talent intelligence platform</span>
+      <h1 class="head reveal" data-delay="1">Where <span class="grad">Talent</span><br>Meets Opportunity</h1>
+      <p class="sub reveal" data-delay="2">
+        Career Autopilot helps fresh graduates land their first job with proof,
+        lets employers hire verified talent faster, and gives colleges a live
+        view of every campus placement — all in one intelligent workspace.
+      </p>
+      <div class="cta-row reveal" data-delay="3">
+        <a class="btn btn-primary magnetic" href="#">Get started — it's free
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+        <span class="cta-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          No credit card needed
+        </span>
+      </div>
+      <div class="stats reveal" data-delay="4">
+        <div class="stat"><div class="num" data-count="50000" data-suffix="+"><span>0</span></div><div class="lbl">Verified student profiles</div></div>
+        <div class="stat"><div class="num" data-count="1200" data-suffix="+"><span>0</span></div><div class="lbl">Hiring partners</div></div>
+        <div class="stat"><div class="num" data-count="120" data-suffix="+"><span>0</span></div><div class="lbl">Campus placement cells</div></div>
+      </div>
+    </div>
+
+    <div class="visual reveal" data-delay="2">
+      <div class="halo"></div><div class="ring"></div>
+      <canvas id="net"></canvas>
+      <div class="fcard fc1">
+        <span class="ico" style="background-image:var(--grad-cta)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.2"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div><div class="t">Profile verified</div><div class="s">Proof-of-work confirmed</div></div>
+      </div>
+      <div class="fcard fc2">
+        <svg class="mini-ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" stroke="rgba(255,255,255,.1)"/><circle cx="18" cy="18" r="15" stroke="url(#mg)" stroke-linecap="round" stroke-dasharray="94" stroke-dashoffset="6" transform="rotate(-90 18 18)"/><defs><linearGradient id="mg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C6CFF"/><stop offset="1" stop-color="#3DD6F5"/></linearGradient></defs></svg>
+        <div><div class="t">96% match</div><div class="s">Cloud Engineer · Pune</div></div>
+      </div>
+      <div class="fcard fc3">
+        <span class="ico" style="background:rgba(255,180,84,.18);border:1px solid rgba(255,180,84,.3)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#FFB454" stroke-width="2.2"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 17l-6.3 4.4L8 14 2 9.4h7.6L12 2z" stroke-linejoin="round"/></svg></span>
+        <div><div class="t">Offer received 🎉</div><div class="s">Hired in 18 days</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="marquee">
+  <div class="track">
+    <span>Verified Jobs</span><span>•</span><span>AI Resume Tailoring</span><span>•</span><span>Proof-of-Work Projects</span><span>•</span><span>Campus Placements</span><span>•</span><span>Talent Intelligence</span><span>•</span><span>Opportunity Arena</span><span>•</span>
+    <span>Verified Jobs</span><span>•</span><span>AI Resume Tailoring</span><span>•</span><span>Proof-of-Work Projects</span><span>•</span><span>Campus Placements</span><span>•</span><span>Talent Intelligence</span><span>•</span><span>Opportunity Arena</span><span>•</span>
+  </div>
+</div>
+
+<!-- AUDIENCES -->
+<section id="audiences">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">One platform · three journeys</span>
+      <h2>Built for everyone in the hiring loop</h2>
+      <p>Students, employers and colleges work from the same source of verified truth — no spreadsheets, no fake listings, no guesswork.</p>
+    </div>
+    <div class="aud-grid">
+      <article class="aud gradient-border lift reveal">
+        <span class="ico" style="background-image:var(--grad-cta)"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="#fff" stroke-width="2"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5" stroke-linecap="round"/></svg></span>
+        <h3>Students</h3>
+        <p>Turn coursework into proof. Build a portfolio recruiters actually trust.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>AI resume tailoring & ATS scoring</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Verified-only job matches</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Proof-of-work project studio</li>
+        </ul>
+        <span class="more">For students <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </article>
+      <article class="aud gradient-border lift reveal" data-delay="1">
+        <span class="ico" style="background:linear-gradient(120deg,#3DD6F5,#52E6C2)"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="#06121A" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2" stroke-linecap="round"/></svg></span>
+        <h3>Employers</h3>
+        <p>Hire from a pool of proven candidates — evidence, not just resumes.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Talent intelligence search</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Skill-verified shortlists</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Faster, fairer screening</li>
+        </ul>
+        <span class="more">For employers <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </article>
+      <article class="aud gradient-border lift reveal" data-delay="2">
+        <span class="ico" style="background:linear-gradient(120deg,#FFB454,#FF9F1C)"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="#2a1a00" stroke-width="2"><path d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Universities</h3>
+        <p>Give placement cells a real-time, data-driven view of readiness.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Live placement analytics</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Cohort readiness tracking</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Recruiter relationship hub</li>
+        </ul>
+        <span class="more">For universities <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">The platform</span>
+      <h2>Everything between “graduate” and “hired”</h2>
+      <p>A connected toolkit that turns effort into evidence, and evidence into offers.</p>
+    </div>
+    <div class="bento">
+      <div class="cell feat gradient-border reveal">
+        <span class="ico glass"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z" stroke-linejoin="round"/></svg></span>
+        <h3>AI Resume Studio</h3>
+        <p>Upload once. Get a tailored, ATS-optimized resume for every role, with a live score and the exact keywords you're missing.</p>
+        <div class="chips"><span class="chip">ATS scoring</span><span class="chip">Role tailoring</span><span class="chip">Cover letters</span><span class="chip">Interview prep</span></div>
+      </div>
+      <div class="cell c-sm gradient-border lift reveal" data-delay="1">
+        <span class="ico" style="background:linear-gradient(120deg,#7C6CFF,#5B6BFF)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4" stroke-linecap="round"/></svg></span>
+        <h3>Verified jobs</h3><p>Real, live listings only — every URL checked, no AI ghosts.</p>
+      </div>
+      <div class="cell c-sm gradient-border lift reveal" data-delay="2">
+        <span class="ico" style="background:linear-gradient(120deg,#3DD6F5,#52E6C2)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#06121A" stroke-width="2"><path d="M12 2l3 6 6 .9-4.5 4.3 1 6L12 17l-5.5 2.2 1-6L3 8.9 9 8l3-6z" stroke-linejoin="round"/></svg></span>
+        <h3>Proof-of-work XP</h3><p>Earn skill XP from shipped projects — verifiable, not self-reported.</p>
+      </div>
+      <div class="cell c-mid gradient-border lift reveal" data-delay="1">
+        <span class="ico" style="background:linear-gradient(120deg,#FFB454,#FF9F1C)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#2a1a00" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM22 21v-2a4 4 0 00-3-3.9M16 3.1A4 4 0 0116 11" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Talent Intelligence</h3><p>Recruiters & placement teams search verified candidates by real, demonstrated skills.</p>
+      </div>
+      <div class="cell c-mid gradient-border lift reveal" data-delay="2">
+        <span class="ico" style="background:linear-gradient(120deg,#7C6CFF,#3DD6F5)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2"><path d="M3 3v18h18" stroke-linecap="round"/><path d="M7 15l4-5 3 3 5-7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Opportunity Arena</h3><p>Hackathons, contests and challenges that turn into portfolio-grade proof.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="kicker">How it works</span><h2>From profile to offer in three steps</h2></div>
+    <div class="steps">
+      <div class="step reveal"><div class="n gb">01</div><h3>Build your proof</h3><p>Import your resume and ship real projects. Career Autopilot turns them into verified skill evidence and XP.</p></div>
+      <div class="step reveal" data-delay="1"><div class="n gb">02</div><h3>Get matched</h3><p>Our engine matches you to verified, live roles and tailors your resume to each one automatically.</p></div>
+      <div class="step reveal" data-delay="2"><div class="n gb">03</div><h3>Get hired</h3><p>Recruiters discover you through proof — not keywords — and reach out through a safe, consent-first flow.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- METRICS -->
+<section>
+  <div class="wrap">
+    <div class="band gradient-border reveal">
+      <div class="b-grid">
+        <div><div class="num" data-count="3" data-suffix="x"><span>0</span></div><div class="lbl">Faster time-to-first-offer</div></div>
+        <div><div class="num" data-count="92" data-suffix="%"><span>0</span></div><div class="lbl">Profiles backed by real proof</div></div>
+        <div><div class="num" data-count="18" data-suffix=" days"><span>0</span></div><div class="lbl">Median hire timeline</div></div>
+        <div><div class="num" data-count="40" data-suffix="%"><span>0</span></div><div class="lbl">Less recruiter screening time</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIAL -->
+<section>
+  <div class="wrap">
+    <div class="quote reveal">
+      <span class="mark">“</span>
+      <p>I stopped sending 200 applications into the void. With verified proof on my profile, recruiters came to <span class="grad">me</span> — and I signed my first offer in under three weeks.</p>
+      <div class="who"><span class="av">AK</span><div style="text-align:left"><b>Ananya K.</b><small>Final-year CS student, now Cloud Engineer</small></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final">
+  <div class="wrap">
+    <div class="box gradient-border reveal">
+      <h2>Your career, on autopilot.</h2>
+      <p>Join thousands of students, employers and colleges where talent finally meets opportunity — with proof.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary magnetic" href="#">Get started free
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="#">Talk to sales</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="#top"><span class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="#fff"/></svg></span>Career Autopilot</a>
+        <p>Where talent meets opportunity. Verified profiles, real jobs, and intelligent matching for the next generation of hires.</p>
+      </div>
+      <div><h4>Product</h4><a href="#">Resume Studio</a><a href="#">Verified Jobs</a><a href="#">Project Studio</a><a href="#">Talent Intelligence</a></div>
+      <div><h4>For</h4><a href="#">Students</a><a href="#">Employers</a><a href="#">Universities</a><a href="#">Recruiters</a></div>
+      <div><h4>Company</h4><a href="#">About</a><a href="#">Security</a><a href="#">Blog</a><a href="#">Contact sales</a></div>
+    </div>
+    <div class="foot-bot"><span>© 2026 Career Autopilot. Crafted for the talent of tomorrow.</span><span>Privacy · Terms · Security</span></div>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var nav = document.getElementById('nav');
+  function onScroll(){ nav.classList.toggle('scrolled', window.scrollY > 24); }
+  window.addEventListener('scroll', onScroll, {passive:true}); onScroll();
+
+  var mm = document.getElementById('mobileMenu');
+  document.getElementById('menuBtn').addEventListener('click', function(){ mm.classList.add('open'); });
+  document.getElementById('mmClose').addEventListener('click', function(){ mm.classList.remove('open'); });
+  mm.querySelectorAll('a').forEach(function(a){ a.addEventListener('click', function(){ mm.classList.remove('open'); }); });
+
+  var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }); },{threshold:.14,rootMargin:'0px 0px -8% 0px'});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+
+  function fmt(target,n){ if(target>=10000) return Math.round(n).toLocaleString('en-IN'); if(Number.isInteger(target)) return Math.round(n).toString(); return n.toFixed(0); }
+  function animateCount(el){
+    var target=parseFloat(el.getAttribute('data-count')), suffix=el.getAttribute('data-suffix')||'', span=el.querySelector('span'), dur=1400, start=performance.now();
+    if(reduce){ el.innerHTML='<span>'+fmt(target,target)+'</span>'+suffix; return; }
+    function tick(now){ var p=Math.min(1,(now-start)/dur), e=1-Math.pow(1-p,3); span.textContent=fmt(target,target*e); if(p<1)requestAnimationFrame(tick); else el.innerHTML='<span>'+fmt(target,target)+'</span>'+suffix; }
+    requestAnimationFrame(tick);
+  }
+  var cio=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ animateCount(e.target); cio.unobserve(e.target);} }); },{threshold:.6});
+  document.querySelectorAll('[data-count]').forEach(function(el){ el.innerHTML='<span>0</span>'+(el.getAttribute('data-suffix')||''); cio.observe(el); });
+
+  if(!reduce && matchMedia('(pointer:fine)').matches){
+    document.querySelectorAll('.magnetic').forEach(function(b){
+      b.addEventListener('mousemove', function(e){ var r=b.getBoundingClientRect(); b.style.transform='translate('+((e.clientX-r.left-r.width/2)*.18)+'px,'+((e.clientY-r.top-r.height/2)*.28-2)+'px)'; });
+      b.addEventListener('mouseleave', function(){ b.style.transform=''; });
+    });
+    var visual=document.querySelector('.visual');
+    if(visual){
+      visual.addEventListener('mousemove', function(e){ var r=visual.getBoundingClientRect(),dx=(e.clientX-r.left-r.width/2)/r.width,dy=(e.clientY-r.top-r.height/2)/r.height;
+        visual.querySelectorAll('.fcard').forEach(function(c,i){ var k=(i+1)*7; c.style.transform='translate('+(dx*k)+'px,'+(dy*k)+'px)'; }); });
+      visual.addEventListener('mouseleave', function(){ visual.querySelectorAll('.fcard').forEach(function(c){ c.style.transform=''; }); });
+    }
+  }
+
+  /* ---- three.js "talent network" sphere — recolored to the aurora palette ---- */
+  var canvas=document.getElementById('net');
+  if(!canvas || typeof THREE==='undefined') return;
+  var renderer; try{ renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true}); }catch(err){ canvas.style.display='none'; return; }
+  renderer.setClearColor(0x000000,0); renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  var scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(50,1,0.1,100); camera.position.z=5.2;
+  var group=new THREE.Group(); scene.add(group);
+
+  var N=92,R=2.05,pts=[];
+  for(var i=0;i<N;i++){ var y=1-(i/(N-1))*2, rad=Math.sqrt(1-y*y), th=i*Math.PI*(3-Math.sqrt(5)); pts.push(new THREE.Vector3(Math.cos(th)*rad*R,y*R,Math.sin(th)*rad*R)); }
+  var cA=new THREE.Color(0x7C6CFF), cB=new THREE.Color(0x3DD6F5), cC=new THREE.Color(0x52E6C2);
+  function grad(t){ return t<0.5? cA.clone().lerp(cB,t*2) : cB.clone().lerp(cC,(t-0.5)*2); }
+  var nPos=new Float32Array(N*3), nCol=new Float32Array(N*3);
+  for(var j=0;j<N;j++){ nPos[j*3]=pts[j].x;nPos[j*3+1]=pts[j].y;nPos[j*3+2]=pts[j].z; var c=grad((pts[j].y/R+1)/2); nCol[j*3]=c.r;nCol[j*3+1]=c.g;nCol[j*3+2]=c.b; }
+  var nGeo=new THREE.BufferGeometry(); nGeo.setAttribute('position',new THREE.BufferAttribute(nPos,3)); nGeo.setAttribute('color',new THREE.BufferAttribute(nCol,3));
+  group.add(new THREE.Points(nGeo,new THREE.PointsMaterial({size:0.13,vertexColors:true,transparent:true,opacity:.98,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true})));
+
+  var lp=[],lc=[],maxD=1.05;
+  for(var a=0;a<N;a++)for(var b=a+1;b<N;b++){ if(pts[a].distanceTo(pts[b])<maxD){ lp.push(pts[a].x,pts[a].y,pts[a].z,pts[b].x,pts[b].y,pts[b].z); var ca=grad((pts[a].y/R+1)/2),cb=grad((pts[b].y/R+1)/2); lc.push(ca.r,ca.g,ca.b,cb.r,cb.g,cb.b);} }
+  var lGeo=new THREE.BufferGeometry(); lGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(lp),3)); lGeo.setAttribute('color',new THREE.BufferAttribute(new Float32Array(lc),3));
+  group.add(new THREE.LineSegments(lGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.26,blending:THREE.AdditiveBlending,depthWrite:false})));
+
+  var SP=4,sGeo=new THREE.BufferGeometry(),sPos=new Float32Array(SP*3); sGeo.setAttribute('position',new THREE.BufferAttribute(sPos,3));
+  group.add(new THREE.Points(sGeo,new THREE.PointsMaterial({size:0.28,color:0xFFB454,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false})));
+
+  function resize(){ var r=canvas.getBoundingClientRect(),w=r.width||420,h=r.height||420; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+  resize(); window.addEventListener('resize',resize);
+
+  var mx=0,my=0,tx=0,ty=0;
+  if(matchMedia('(pointer:fine)').matches) window.addEventListener('mousemove',function(e){ tx=e.clientX/window.innerWidth-0.5; ty=e.clientY/window.innerHeight-0.5; });
+  group.rotation.x=0.35; var running=true,t0=performance.now();
+  function frame(now){ if(!running)return; var el=(now-t0)/1000;
+    group.rotation.y+=0.0016; mx+=(tx-mx)*0.04; my+=(ty-my)*0.04; group.rotation.x=0.35+my*0.5; group.rotation.z=mx*0.18;
+    var sp=sGeo.attributes.position.array; for(var k=0;k<SP;k++){ var ang=el*0.6+k*(Math.PI*2/SP),rr=2.45; sp[k*3]=Math.cos(ang)*rr; sp[k*3+1]=Math.sin(ang*1.3)*1.4; sp[k*3+2]=Math.sin(ang)*rr; }
+    sGeo.attributes.position.needsUpdate=true; renderer.render(scene,camera); requestAnimationFrame(frame);
+  }
+  if(reduce){ renderer.render(scene,camera); }
+  else{ requestAnimationFrame(frame);
+    new IntersectionObserver(function(en){ en.forEach(function(e){ if(e.isIntersecting && !running){ running=true; requestAnimationFrame(frame);} else if(!e.isIntersecting){ running=false; } }); },{threshold:0}).observe(canvas);
+  }
+})();
+</script>
+</body>
+</html>

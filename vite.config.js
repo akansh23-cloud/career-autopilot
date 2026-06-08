@@ -26,6 +26,9 @@ export default defineConfig({
         // that use them.
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
+          // three is ONLY dynamically imported (landing hero); keep it in its own
+          // async chunk so it never weighs down the initial app bundle.
+          if (id.includes('node_modules/three')) return 'vendor-three';
           if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
           if (id.includes('mammoth')) return 'vendor-mammoth';
           if (id.includes('jspdf')) return 'vendor-jspdf';

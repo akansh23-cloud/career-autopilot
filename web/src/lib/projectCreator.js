@@ -18,6 +18,8 @@ import { getStoredResume, getSelectedJob } from './resumeStore.js';
 import { saveProject, getProject, uid, savePartnerRequest, findDuplicateProject } from './projectStore.js';
 import { calculateProjectStatus } from './projectStatus.js';
 import { proofBreakdown } from './proofScore.js';
+import { generateIdeas, bucketIdeas } from './ideaEngine.js';
+import { assessPatentability, canRegisterPatent as _canRegister, PATENT_STAGES, PATENT_DISCLAIMER } from './patentEngine.js';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                          */
@@ -193,18 +195,25 @@ export const FIT_LABELS = {
 /* ------------------------------------------------------------------ */
 /* Part 2 — Discovery                                                  */
 /* ------------------------------------------------------------------ */
-export async function discover(ctx = {}) {
-  let recs;
-  let generatedBy = 'template';
+export async function discover(ctx = {}, opts = {}) {
+  // 1) OUR engine is the authoritative source — it always produces concrete,
+  //    personalized, ranked ideas offline (no AI prompt required).
+  const engineIdeas = generateIdeas(ctx, { count: opts.count || 9, salt: opts.salt != null ? opts.salt : 0 });
+  let recs = [...engineIdeas];
+  let generatedBy = 'engine';
+  // 2) Optional AI augmentation: ADD any novel server ideas; never replace ours.
   try {
     const r = await api.post('/api/creator/discover', ctx);
-    if (r && r.ok && Array.isArray(r.recommendations) && r.recommendations.length) { recs = r.recommendations; generatedBy = r.generatedBy || 'ai'; }
+    if (r && r.ok && Array.isArray(r.recommendations) && r.recommendations.length) {
+      const have = new Set(recs.map((x) => String(x.title || '').toLowerCase()));
+      const extra = r.recommendations.filter((x) => x && x.title && !have.has(String(x.title).toLowerCase()));
+      if (extra.length) { recs = [...recs, ...extra]; generatedBy = 'engine+ai'; }
+    }
   } catch {}
-  if (!recs) recs = [];
-  // attach transparent fit score + ensure each category appears once where possible
+  // transparent fit score, rank, then bucket into the UI's category sections
   const withFit = recs.map((rec) => ({ ...rec, id: rec.id || uid('rec'), fit: projectFitScore(rec, ctx) }));
   withFit.sort((a, b) => b.fit.score - a.fit.score);
-  return { recommendations: withFit, generatedBy };
+  return { recommendations: bucketIdeas(withFit), generatedBy };
 }
 
 export async function fetchTrends() {
@@ -263,11 +272,39 @@ export const VAL_LABELS = { problemClarity: 'Problem clarity', userNeed: 'User n
 export function validationTotal(score = {}) {
   return Math.min(100, Object.keys(VAL_WEIGHTS).reduce((s, k) => s + Math.min(VAL_WEIGHTS[k], Number(score[k] || 0)), 0));
 }
+function deterministicValidationReport(idea = {}) {
+  const skills = idea.skillsCovered || idea.skills || [];
+  const startup = Number(idea.startupPotential ?? 50);
+  const proof = Number(idea.proofPotential ?? 72);
+  const hasProblem = String(idea.summary || idea.problemStatement || '').trim().length >= 20;
+  const score = {
+    problemClarity: hasProblem ? 17 : 9,
+    userNeed: idea.targetUsers ? 16 : 11,
+    feasibility: skills.length ? 13 : 9,
+    differentiation: idea.novelty?.inventiveAngle ? 13 : 9,
+    careerValue: 8,
+    startupPotential: Math.round((startup / 100) * 12),
+    proofPotential: Math.round((proof / 100) * 13),
+  };
+  return {
+    problemSeverity: startup >= 70 ? 'High — users actively feel this pain.' : 'Medium — a real but not yet urgent pain.',
+    targetUsers: idea.targetUsers || 'Users who experience the stated problem',
+    userPainPoints: [idea.problem || idea.summary || 'Manual, error-prone current workflow', 'No single tool that closes the loop', 'Time and money lost to the status quo'],
+    existingAlternatives: ['Spreadsheets / manual process', 'Generic horizontal tools not built for this niche', 'Point solutions that solve only part of it'],
+    whyAlternativesWeak: ['Not tailored to the specific workflow', 'No automation of the key step', idea.novelty?.inventiveAngle ? `None offer ${idea.novelty.inventiveAngle}` : 'Poor fit for the target users'],
+    firstTenUsersStrategy: ['Hand-recruit 10 users from the exact niche', 'Offer to set it up for them personally', 'Iterate weekly on their feedback'],
+    differentiator: idea.novelty?.inventiveAngle || 'A focused, automated workflow for one underserved niche',
+    score,
+  };
+}
 export async function validateIdea(idea = {}) {
-  let report;
-  let generatedBy = 'template';
-  try { const r = await api.post('/api/creator/validate', { idea }); if (r && r.ok && r.report) { report = r.report; generatedBy = r.generatedBy || 'ai'; } } catch {}
-  if (!report) report = {};
+  const base = deterministicValidationReport(idea);
+  let report = base;
+  let generatedBy = 'engine';
+  try {
+    const r = await api.post('/api/creator/validate', { idea });
+    if (r && r.ok && r.report) { report = { ...base, ...r.report, score: { ...base.score, ...(r.report.score || {}) } }; generatedBy = r.generatedBy || 'ai'; }
+  } catch {}
   const total = validationTotal(report.score || {});
   return { report, total, generatedBy };
 }
@@ -330,11 +367,31 @@ export function deterministicValidation(project = {}) {
 /* ------------------------------------------------------------------ */
 /* Part 5 — Blueprint (reuses buildProject industry detail + mermaid)  */
 /* ------------------------------------------------------------------ */
+function deterministicBlueprint(project = {}) {
+  const ind = project.industry || {};
+  const feat = ind.features || {};
+  return {
+    mvpScope: (feat.mustHave || []).slice(0, 5),
+    outOfScope: (feat.advanced || []).slice(0, 3),
+    personas: ind.businessContext?.personas || [project.creator?.targetUsers || 'Primary user'],
+    coreWorkflows: ind.businessContext?.coreWorkflows || ['Onboard', 'Perform the core task', 'Review results'],
+    techStack: project.techStack || [],
+    architecture: project.architecture || '',
+    architectureDiagram: project.architectureDiagram || '',
+    dataModel: ind.dataModel || project.databaseSchema || [],
+    apiDesign: ind.apiDesign || [],
+    nonFunctional: feat.nonFunctional || [],
+    milestones: ind.milestones || [],
+    launchChecklist: ['Deploy to a public URL', 'Write the README with screenshots', 'Add basic analytics', 'Recruit the first 10 users', 'Collect feedback and iterate'],
+    successMetrics: ['Core task completion rate', 'Time saved vs the manual process', 'Weekly active users'],
+  };
+}
 export async function buildBlueprint(project = {}) {
-  let blueprint;
-  let generatedBy = 'template';
-  try { const r = await api.post('/api/creator/blueprint', { project }); if (r && r.ok && r.blueprint) { blueprint = r.blueprint; generatedBy = r.generatedBy || 'ai'; } } catch {}
-  return { blueprint: blueprint || {}, generatedBy };
+  const base = deterministicBlueprint(project);
+  let blueprint = base;
+  let generatedBy = 'engine';
+  try { const r = await api.post('/api/creator/blueprint', { project }); if (r && r.ok && r.blueprint) { blueprint = { ...base, ...r.blueprint }; generatedBy = r.generatedBy || 'ai'; } } catch {}
+  return { blueprint, generatedBy };
 }
 
 /* ------------------------------------------------------------------ */
@@ -414,13 +471,64 @@ export function creatorStatus(project = {}) {
 /* ------------------------------------------------------------------ */
 /* Part 8 — IP / Patent readiness                                      */
 /* ------------------------------------------------------------------ */
-export const IP_DISCLAIMER = 'This tool provides educational IP-readiness guidance and draft preparation support. It does not provide legal advice and does not guarantee patentability or patent grant. Consult a registered patent agent/attorney before filing.';
-export async function buildIpReadiness(project = {}) {
-  let report;
-  let generatedBy = 'template';
-  try { const r = await api.post('/api/creator/ip', { project }); if (r && r.ok && r.report) { report = r.report; generatedBy = r.generatedBy || 'ai'; } } catch {}
-  return { report: report || {}, generatedBy };
+export const IP_DISCLAIMER = PATENT_DISCLAIMER;
+export { PATENT_STAGES, PATENT_DISCLAIMER };
+
+// Deterministic patentability assessment (our own engine). `attest` carries the
+// user's prior-art/disclosure confirmations. AI, if present, only augments.
+export async function buildIpReadiness(project = {}, attest = {}) {
+  const base = assessPatentability(project, attest);
+  let report = base;
+  let generatedBy = 'engine';
+  try { const r = await api.post('/api/creator/ip', { project }); if (r && r.ok && r.report) { report = { ...base, ...r.report }; generatedBy = r.generatedBy || 'ai'; } } catch {}
+  return { report, generatedBy };
 }
+
+/* ---- Guided patent registration workflow (criteria-gated, end-to-end) ---- */
+export function canRegisterPatent(report) { return _canRegister(report); }
+
+// Begin a patent dossier for a project once it passes the eligibility gate.
+export function startPatentRegistration(projectId, attest = {}) {
+  const p = getProject(projectId);
+  if (!p) return null;
+  const report = assessPatentability(p, attest);
+  const prev = p.creator?.patent || {};
+  const patent = { ...report, stageId: prev.stageId && prev.stageId !== 'assessed' ? prev.stageId : 'assessed', startedAt: prev.startedAt || new Date().toISOString(), filing: prev.filing || {} };
+  return persistProjectStep(projectId, { patent, ipReadiness: report });
+}
+// Move the dossier along its pipeline (Assessed → … → Granted).
+export function advancePatentStage(projectId, toStageId) {
+  const p = getProject(projectId);
+  if (!p) return null;
+  const valid = PATENT_STAGES.some((s) => s.id === toStageId);
+  if (!valid) return p;
+  const patent = { ...(p.creator?.patent || {}), stageId: toStageId, updatedAt: new Date().toISOString() };
+  return persistProjectStep(projectId, { patent });
+}
+// Record real filing details (application number, jurisdiction, route, date).
+export function recordPatentFiling(projectId, filing = {}) {
+  const p = getProject(projectId);
+  if (!p) return null;
+  const cur = p.creator?.patent || {};
+  const patent = {
+    ...cur,
+    filing: { ...(cur.filing || {}), ...filing },
+    stageId: filing.applicationNumber ? 'filed' : (cur.stageId || 'provisional'),
+    updatedAt: new Date().toISOString(),
+  };
+  return persistProjectStep(projectId, { patent });
+}
+// Persist the user's prior-art findings and re-score (novelty depends on these).
+export function recordPriorArtFindings(projectId, findings = [], attest = {}) {
+  const p = getProject(projectId);
+  if (!p) return null;
+  const report = assessPatentability(p, attest);
+  const cur = p.creator?.patent || {};
+  if (report.dossier && report.dossier.priorArt) report.dossier.priorArt.findings = findings;
+  const patent = { ...cur, ...report, stageId: cur.stageId === 'assessed' || !cur.stageId ? 'priorart' : cur.stageId, updatedAt: new Date().toISOString() };
+  return persistProjectStep(projectId, { patent, ipReadiness: report });
+}
+export function getPatentDossier(project = {}) { return project?.creator?.patent || null; }
 
 /* ------------------------------------------------------------------ */
 /* Part 9 — Collaboration post draft (maps to Partner board shape)     */

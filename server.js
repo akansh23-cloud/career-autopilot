@@ -14,6 +14,17 @@ import { logger } from './logger.js';
 import { maxFreshDaysFromQuery, passesFreshness } from './freshness.js';
 import { createMongooseSessionStore } from './sessionStore.js';
 import {
+  scoreResume, normalizeResumeText, normalizeRole, hashResume as computeResumeHash,
+  SCORING_VERSION, buildFeedback, parseJD, computeJobFit, tailorResume, checkFabrication,
+} from './server/utils/resume/index.js';
+import { verifyProjectSubmission, levelForXp } from './server/utils/skillVerificationEngine.js';
+import { computeMarketplaceScore, sortComparator, LISTING_TYPES, LISTING_CTAS } from './server/utils/marketplaceEngine.js';
+import { buildInspirations, generateProjectBlueprint } from './server/modules/inspirations/index.js';
+import { generateArchitecture, ARCH_LEVELS } from './server/utils/architectureEngine.js';
+import { assessPatentReadiness, priorArtKeywords, inventionDisclosureDraft, PATENT_STATUSES, PATENT_DISCLAIMER } from './server/utils/patentEngine.js';
+import { generateApplicationPackage } from './server/utils/applicationPackageEngine.js';
+import { computeReadiness, READINESS_CATEGORIES } from './server/utils/readinessEngine.js';
+import {
   corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
   authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
   supportChatLimiter, ticketLimiter, generationLimiter, globalLimiter,
@@ -22,6 +33,10 @@ import {
   validateBody, supportChatSchema, ticketSchema, userStatePatchSchema,
   userProfileSchema, contactsFindSchema, createOrderSchema, verifyPaymentSchema,
   networkPostSchema, networkRequestSchema, aiMessagesSchema, templateImageSchema,
+  resumeAnalyzeSchema, resumeTailorSchema, resumeVersionSchema,
+  projectSubmissionSchema, adminVerifySchema,
+  marketplaceListingSchema, collaborationApplySchema, listingReviewSchema,
+  architectureSchema, patentAssessSchema, patentRecordSchema, appPackageSchema,
 } from './validation.js';
 
 dotenv.config();
@@ -1681,6 +1696,679 @@ app.post('/api/resume/save-analysis', requireAuth, async (req, res) => {
   const resume = req.body?.resume || req.body || {};
   const result = await db.saveResumeSnapshot({ userId: u?.id, email: u?.email, resume });
   res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+/* ============================================================
+   DETERMINISTIC RESUME ANALYSIS
+   ------------------------------------------------------------
+   The SCORE is computed entirely by server/utils/resume/scoringEngine.js
+   (no LLM). The AI is used ONLY to explain the already-final score and to
+   write summary/strengths/improvements — it is explicitly told NOT to change
+   the number. Same resumeText + targetRole + scoringVersion always yields the
+   same score, and a per-user content hash caches the result so a re-upload
+   returns the identical analysis.
+   ============================================================ */
+async function aiResumeFeedback({ resumeText, scoredRole, deterministic }) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+  const sys =
+    'You are an expert ATS resume reviewer. The final score has ALREADY been calculated by the system. ' +
+    'Do NOT change, recompute, or contradict it. Only EXPLAIN it and give concrete, actionable suggestions. ' +
+    'Return ONLY valid JSON (no prose, no markdown fences) with shape: ' +
+    '{"summary":"<one sentence referencing the given score>","strengths":["..."],"improvements":["..."],"missingKeywordNotes":["short note per missing keyword on where to add it"]}.';
+  const user =
+    `TARGET ROLE: ${scoredRole}\n` +
+    `FINAL SCORE (do not change): ${deterministic.score}/100\n` +
+    `SUB-SCORES: ATS ${deterministic.ats}, Impact ${deterministic.impact}, Clarity ${deterministic.clarity}\n` +
+    `BREAKDOWN: ${JSON.stringify(deterministic.breakdown)}\n` +
+    `MATCHED KEYWORDS: ${JSON.stringify(deterministic.matchedKeywords.slice(0, 30))}\n` +
+    `MISSING KEYWORDS: ${JSON.stringify(deterministic.missingKeywords.slice(0, 20))}\n` +
+    `RESUME:\n"""${String(resumeText).slice(0, 8000)}"""`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1100,
+        temperature: 0, // determinism for the explanation too
+        system: sys,
+        messages: [{ role: 'user', content: user }],
+      }),
+    });
+    if (!r.ok) return null;
+    const data = await r.json().catch(() => null);
+    const text = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const parsed = parseJSONLoose(text);
+    if (!parsed) return null;
+    return {
+      summary: typeof parsed.summary === 'string' ? parsed.summary.slice(0, 1000) : '',
+      strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String).slice(0, 12) : [],
+      improvements: Array.isArray(parsed.improvements) ? parsed.improvements.map(String).slice(0, 12) : [],
+      missingKeywordNotes: Array.isArray(parsed.missingKeywordNotes) ? parsed.missingKeywordNotes.map(String).slice(0, 20) : [],
+    };
+  } catch { return null; }
+}
+
+/* Deterministic, no-AI fallback feedback so the endpoint NEVER fails just
+   because AI is unavailable. */
+function fallbackResumeFeedback(d, scoredRole) {
+  return { ...buildFeedback(d, scoredRole), missingKeywordNotes: [] };
+}
+
+app.post('/api/resume/analyze', requireAuth, aiLimiter, validateBody(resumeAnalyzeSchema), async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const { resumeText, fileName } = req.body || {};
+    const targetRole = normalizeRole(req.body?.targetRole); // empty -> "General"; never silently uses AI's role
+
+    if (!resumeText || String(resumeText).trim().length < 40) {
+      return res.status(400).json({ error: 'resume_too_short', message: 'Please provide more resume text to analyze (at least a few lines).' });
+    }
+
+    const normalized = normalizeResumeText(resumeText);
+    const hash = computeResumeHash(normalized, targetRole, SCORING_VERSION);
+
+    // 1) Cache hit -> return the identical stored analysis (same score, always).
+    const cached = await db.findResumeAnalysis({
+      userId: u?.id, email: u?.email, resumeHash: hash, targetRole, scoringVersion: SCORING_VERSION,
+    });
+    if (cached) {
+      return res.json({ ...cached, scoredRole: targetRole, cached: true, scoringVersion: SCORING_VERSION });
+    }
+
+    // 2) Deterministic scoring (the source of truth for the number).
+    const d = scoreResume({ resumeText, targetRole });
+
+    // 3) AI explanation only (temperature 0). Falls back to deterministic prose
+    //    if AI is unavailable — the score is NEVER blocked by AI failure.
+    let feedback = await aiResumeFeedback({ resumeText, scoredRole: targetRole, deterministic: d });
+    let feedbackSource = 'ai';
+    if (!feedback || (!feedback.summary && !feedback.strengths.length && !feedback.improvements.length)) {
+      feedback = fallbackResumeFeedback(d, targetRole);
+      feedbackSource = 'deterministic';
+    }
+
+    const analysis = {
+      score: d.score,
+      ats: d.ats,
+      impact: d.impact,
+      clarity: d.clarity,
+      breakdown: d.breakdown,
+      matchedKeywords: d.matchedKeywords,
+      missingKeywords: d.missingKeywords,
+      skillEvidence: d.skillEvidence || [],
+      summary: feedback.summary || `Scored ${d.score}/100 for ${targetRole}.`,
+      strengths: feedback.strengths || [],
+      improvements: feedback.improvements || [],
+      missingKeywordNotes: feedback.missingKeywordNotes || [],
+      recommendedRole: d.recommendedRole,   // SUGGESTION ONLY — never re-scores
+      scoredRole: targetRole,
+      fileName: fileName || '',
+      targetRole,
+      resumeHash: hash,
+      scoringVersion: SCORING_VERSION,
+      experienceLevel: d.experienceLevel,
+      feedbackSource,
+      cached: false,
+    };
+
+    // 4) Persist the full breakdown (best-effort; analysis is still returned
+    //    even if the DB is off or the write fails).
+    await db.saveResumeAnalysis({ userId: u?.id, email: u?.email, analysis });
+
+    res.json({ ...analysis, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Resume analyze failed', { message: err.message });
+    res.status(500).json({ error: 'analyze_failed', message: 'Could not analyze the resume. Please try again.' });
+  }
+});
+
+/* ============================================================
+   RESUME-TO-JD FIT + SAFE TAILORING
+   ------------------------------------------------------------
+   Deterministic JD parse + Job Fit Score (separate from the resume-quality
+   score) + fact-preserving tailoring. The tailoring engine NEVER fabricates
+   experience; missing skills are returned as review suggestions, and a
+   fabrication checker diffs original vs tailored facts and flags any new,
+   unsupported claims.
+   ============================================================ */
+app.post('/api/resume/tailor', requireAuth, aiLimiter, validateBody(resumeTailorSchema), async (req, res) => {
+  try {
+    const { resumeText, jobDescription, fileName } = req.body || {};
+    const targetRole = normalizeRole(req.body?.targetRole);
+    const mode = ['conservative', 'balanced', 'aggressive'].includes(req.body?.mode) ? req.body.mode : 'balanced';
+
+    if (!resumeText || String(resumeText).trim().length < 40) {
+      return res.status(400).json({ error: 'resume_too_short', message: 'Please provide more resume text to tailor.' });
+    }
+    if (!jobDescription || String(jobDescription).trim().length < 30) {
+      return res.status(400).json({ error: 'jd_too_short', message: 'Please paste a fuller job description to tailor against.' });
+    }
+
+    const jd = parseJD({ jobDescription, targetRole });
+    const fitBefore = computeJobFit({ resumeText, jd });
+    const tailored = tailorResume({ resumeText, jd, targetRole, mode });
+    const fitAfter = computeJobFit({ resumeText: tailored.tailoredResume.text, jd });
+    const fabrication = checkFabrication({ originalResume: resumeText, tailoredResume: tailored.tailoredResume.text });
+
+    res.json({
+      jd,
+      tailoredResume: tailored.tailoredResume,
+      jobFitScoreBefore: fitBefore.score,
+      jobFitScoreAfter: fitAfter.score,
+      jobFitBreakdownBefore: fitBefore.breakdown,
+      jobFitBreakdownAfter: fitAfter.breakdown,
+      keywordsAdded: tailored.keywordsAdded,
+      keywordsMissing: tailored.keywordsMissing,
+      changeLog: tailored.changeLog,
+      safeChanges: tailored.safeChanges,
+      needsReview: tailored.needsReview,
+      fabricationRisks: fabrication.risks,
+      fabricationSafe: fabrication.safe,
+      integrityScore: fabrication.integrityScore,
+      mode,
+      fileName: fileName || '',
+      targetRole,
+      scoringVersion: SCORING_VERSION,
+      db: db.dbEnabled(),
+    });
+  } catch (err) {
+    logger.error('Resume tailor failed', { message: err.message });
+    res.status(500).json({ error: 'tailor_failed', message: 'Could not tailor the resume. Please try again.' });
+  }
+});
+
+/* ============================================================
+   RESUME VERSION MANAGER
+   ------------------------------------------------------------
+   Base / role-specific / job-specific resume versions, each storing its
+   score, job-fit score, keywords and change log. Backend-owned; the client
+   only displays what it returns.
+   ============================================================ */
+app.get('/api/resume/versions', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const versions = await db.listResumeVersions({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, versions, db: db.dbEnabled() });
+});
+
+app.post('/api/resume/versions', requireAuth, validateBody(resumeVersionSchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.saveResumeVersion({ userId: u?.id, email: u?.email, version: req.body || {} });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, version: result.version || null, db: db.dbEnabled(), result });
+});
+
+app.delete('/api/resume/versions/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deleteResumeVersion({ userId: u?.id, email: u?.email, id: req.params.id });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+/* ============================================================
+   VERIFIED SKILLS + XP
+   ------------------------------------------------------------
+   Selecting/building a project grants NOTHING. A project must be
+   SUBMITTED with proof; the deterministic skillVerificationEngine then
+   decides which skills are verified vs pending and how much XP is earned.
+   verifiedXp only ever increases for verified skills, duplicate-safe per
+   (projectId|skill). Pending skills/XP never count toward resume, job
+   match, recruiter shortlist or placement readiness — enforced server-side.
+   ============================================================ */
+
+/* Submit a project for verification (preview if DB is off). */
+app.post('/api/projects/submit', requireAuth, generationLimiter, validateBody(projectSubmissionSchema), async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const submission = req.body || {};
+    const result = verifyProjectSubmission(submission); // deterministic, no AI
+
+    // Persist submission + apply XP to the per-skill ledger (duplicate-safe).
+    let id = null;
+    if (db.dbEnabled()) {
+      const saved = await db.saveProjectSubmission({ userId: u?.id, email: u?.email, submission, result });
+      id = saved.id || null;
+      if (saved.ok) {
+        await db.applySkillVerification({ userId: u?.id, email: u?.email, projectId: id, result, levelForXp });
+      }
+    }
+    res.json({ ok: true, id, ...result, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Project submit failed', { message: err.message });
+    res.status(500).json({ error: 'submit_failed', message: 'Could not submit the project. Please try again.' });
+  }
+});
+
+/* List my submissions. */
+app.get('/api/projects/submissions', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const submissions = await db.listProjectSubmissions({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, submissions, db: db.dbEnabled() });
+});
+
+/* My skill-XP summary (expandable UI source). verifiedOnly=1 -> only counted skills. */
+app.get('/api/skills/xp', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const verifiedOnly = String(req.query.verifiedOnly || '') === '1';
+  const summary = await db.getSkillXpSummary({ userId: u?.id, email: u?.email, verifiedOnly });
+  res.json({ ok: true, ...summary, db: db.dbEnabled() });
+});
+
+/* Canonical verified-skills list other features may count. */
+app.get('/api/skills/verified', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const verifiedSkills = await db.getVerifiedSkills({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, verifiedSkills, db: db.dbEnabled() });
+});
+
+/* Admin manual review: re-verify a submission with a forced decision. */
+app.post('/api/admin/projects/:id/verify', requireAuth, requireAdmin, validateBody(adminVerifySchema), async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const sub = await db.getProjectSubmission({ userId: req.query.userId || u?.id, email: req.query.email, id: req.params.id })
+      || await db.getProjectSubmission({ userId: u?.id, email: u?.email, id: req.params.id });
+    if (!sub) return res.status(404).json({ error: 'not_found', message: 'Submission not found.' });
+    const result = verifyProjectSubmission(sub, req.body || {});
+    await db.saveProjectSubmission({ userId: sub.userId, email: sub.email, submission: { ...sub, id: req.params.id }, result });
+    await db.applySkillVerification({ userId: sub.userId, email: sub.email, projectId: req.params.id, result, levelForXp });
+    res.json({ ok: true, id: req.params.id, ...result, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Admin verify failed', { message: err.message });
+    res.status(500).json({ error: 'verify_failed', message: 'Could not apply verification.' });
+  }
+});
+
+/* ============================================================
+   PROJECT MARKETPLACE
+   ------------------------------------------------------------
+   Backend-owned marketplaceScore + verificationStatus. Idea listings and
+   published-proof listings coexist (filter by listingType). Verified-skill
+   XP feeds owner credibility and recruiter-ready status. Ranking is computed
+   server-side per viewer; the client only displays + filters.
+   ============================================================ */
+
+/* Viewer context for role-relevance ranking (target role + verified skills). */
+async function marketplaceViewer(req) {
+  const u = currentUser(req);
+  if (!u) return {};
+  let targetRole = '';
+  let verifiedSkills = [];
+  try {
+    const state = await db.getUserState({ userId: u.id, email: u.email });
+    targetRole = state?.resume?.targetRole || state?.profile?.targetRole || '';
+    verifiedSkills = await db.getVerifiedSkills({ userId: u.id, email: u.email });
+  } catch { /* best-effort */ }
+  return { targetRole, verifiedSkills };
+}
+
+const ctaFor = (type) => LISTING_CTAS[type] || ['save', 'report'];
+
+/* List/browse marketplace listings with filters + sort. */
+app.get('/api/marketplace/listings', requireAuth, async (req, res) => {
+  try {
+    const q = req.query || {};
+    const filters = {
+      listingType: q.listingType || '', category: q.category || '', targetRole: q.targetRole || '',
+      difficulty: q.difficulty || '', verificationStatus: q.verificationStatus || '',
+      recruiterReady: q.recruiterReady === '1', featured: q.featured === '1',
+      hasGithub: q.hasGithub === '1', hasLiveDemo: q.hasLiveDemo === '1',
+      skill: q.skill || '', ownerId: q.mine === '1' ? currentUser(req)?.id : (q.ownerId || ''),
+    };
+    const viewer = await marketplaceViewer(req);
+    let listings = await db.listMarketplaceListings({ filters, viewer, computeScore: computeMarketplaceScore });
+    const sort = String(q.sort || 'trending');
+    listings.sort(sortComparator(sort));
+    listings = listings.map((l) => ({ ...l, ctas: ctaFor(l.listingType) }));
+    res.json({ ok: true, listings, listingTypes: LISTING_TYPES, sort, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Marketplace list failed', { message: err.message });
+    res.status(500).json({ error: 'marketplace_failed', message: 'Could not load the marketplace.', listings: [] });
+  }
+});
+
+/* Publish a listing. */
+app.post('/api/marketplace/listings', requireAuth, generationLimiter, validateBody(marketplaceListingSchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.createMarketplaceListing({ userId: u?.id, email: u?.email, name: u?.name, listing: req.body, computeScore: computeMarketplaceScore });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, id: result.id || null, listing: result.listing || null, db: db.dbEnabled(), result });
+});
+
+/* Listing detail (increments view). */
+app.get('/api/marketplace/listings/:id', requireAuth, async (req, res) => {
+  const listing = await db.getMarketplaceListing({ id: req.params.id, incrementView: true });
+  if (!listing) return res.status(404).json({ error: 'not_found', message: 'Listing not found.' });
+  const viewer = await marketplaceViewer(req);
+  const { score, parts } = computeMarketplaceScore(listing, viewer);
+  const reviews = await db.listReviews({ listingId: req.params.id });
+  res.json({ ok: true, listing: { ...listing, marketplaceScore: score, marketplaceScoreParts: parts, ctas: ctaFor(listing.listingType) }, reviews, db: db.dbEnabled() });
+});
+
+app.delete('/api/marketplace/listings/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deleteMarketplaceListing({ userId: u?.id, email: u?.email, id: req.params.id });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+/* Save / unsave. */
+app.post('/api/marketplace/listings/:id/save', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.toggleSavedListing({ userId: u?.id, email: u?.email, listingId: req.params.id });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, saved: result.saved, db: db.dbEnabled() });
+});
+
+app.get('/api/marketplace/saved', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const viewer = await marketplaceViewer(req);
+  const listings = await db.listSavedListings({ userId: u?.id, email: u?.email, viewer, computeScore: computeMarketplaceScore });
+  res.json({ ok: true, listings: listings.map((l) => ({ ...l, ctas: ctaFor(l.listingType) })), db: db.dbEnabled() });
+});
+
+/* Clone a roadmap. */
+app.post('/api/marketplace/listings/:id/clone', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.cloneListing({ userId: u?.id, email: u?.email, listingId: req.params.id });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, roadmap: result.roadmap || null, db: db.dbEnabled() });
+});
+
+/* Apply to collaborate. */
+app.post('/api/marketplace/listings/:id/apply', requireAuth, validateBody(collaborationApplySchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.applyToCollaborate({ userId: u?.id, email: u?.email, name: u?.name, listingId: req.params.id, roleApplied: req.body?.roleApplied, message: req.body?.message });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled() });
+});
+
+/* Mentor review. */
+app.post('/api/marketplace/listings/:id/review', requireAuth, validateBody(listingReviewSchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.reviewListing({ userId: u?.id, email: u?.email, name: u?.name, listingId: req.params.id, rating: req.body?.rating, comment: req.body?.comment });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled() });
+});
+
+/* Engagement: shortlist (recruiter) / contact / report. */
+app.post('/api/marketplace/listings/:id/:kind(shortlist|contact|report)', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.recordEngagement({ userId: u?.id, email: u?.email, listingId: req.params.id, kind: req.params.kind });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled() });
+});
+
+/* Admin moderation. */
+app.post('/api/admin/marketplace/:id/:action(feature|unfeature|hide|approve)', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.adminModerateListing({ id: req.params.id, action: req.params.action });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, applied: result.applied || null, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   LIVE INSPIRATION ENGINE  (backend-powered; external APIs never hit
+   the frontend). Cached in DB when available, plus a short in-memory TTL
+   cache so repeated reads don't re-fetch. Falls back to seed ideas.
+   ============================================================ */
+const INSPIRATION_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+let _inspirationCache = { at: 0, data: null };
+
+async function getInspirationsFresh({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && _inspirationCache.data && (now - _inspirationCache.at) < INSPIRATION_TTL_MS) {
+    return { ..._inspirationCache.data, cached: true };
+  }
+  const built = await buildInspirations({ limit: 30 });
+  _inspirationCache = { at: now, data: built };
+  if (db.dbEnabled()) { try { await db.cacheInspirations({ inspirations: built.inspirations }); } catch { /* best-effort */ } }
+  return { ...built, cached: false };
+}
+
+app.get('/api/inspirations', requireAuth, async (req, res) => {
+  try {
+    const filters = { category: req.query.category || '', source: req.query.source || '', difficulty: req.query.difficulty || '', featured: req.query.featured === '1' };
+    // Prefer DB-cached rows when present; otherwise build fresh (TTL cached).
+    let inspirations = [];
+    let meta = {};
+    if (db.dbEnabled()) {
+      inspirations = await db.listInspirations({ filters, limit: 40 });
+      if (!inspirations.length) {
+        const fresh = await getInspirationsFresh();
+        inspirations = fresh.inspirations; meta = { sources: fresh.sources, usedFallback: fresh.usedFallback };
+      }
+    } else {
+      const fresh = await getInspirationsFresh();
+      inspirations = fresh.inspirations.filter((i) =>
+        (!filters.category || i.category === filters.category) &&
+        (!filters.source || i.source === filters.source) &&
+        (!filters.difficulty || i.difficulty === filters.difficulty));
+      meta = { sources: fresh.sources, usedFallback: fresh.usedFallback };
+    }
+    res.json({ ok: true, inspirations, ...meta, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Inspirations list failed', { message: err.message });
+    res.status(500).json({ error: 'inspirations_failed', message: 'Could not load inspirations.', inspirations: [] });
+  }
+});
+
+app.post('/api/inspirations/refresh', requireAuth, generationLimiter, async (req, res) => {
+  try {
+    const fresh = await getInspirationsFresh({ force: true });
+    res.json({ ok: true, inspirations: fresh.inspirations, sources: fresh.sources, usedFallback: fresh.usedFallback, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Inspirations refresh failed', { message: err.message });
+    res.status(500).json({ error: 'refresh_failed', message: 'Could not refresh inspirations.' });
+  }
+});
+
+/* "Build this": turn an inspiration (by id, or a posted idea) into a roadmap. */
+app.post('/api/inspirations/:id/build', requireAuth, generationLimiter, async (req, res) => {
+  try {
+    const u = currentUser(req);
+    let idea = null;
+    const id = req.params.id;
+    if (db.dbEnabled() && id && id !== 'custom') idea = await db.getInspiration({ id });
+    if (!idea) {
+      // Fall back to the in-memory cache or the posted idea body.
+      const cached = (_inspirationCache.data?.inspirations || []).find((i) => i.id === id || i.sourceId === id);
+      idea = cached || req.body?.idea || req.body || {};
+    }
+    const roadmap = generateProjectBlueprint(idea);
+    let savedId = null;
+    if (db.dbEnabled()) {
+      const saved = await db.saveProjectRoadmap({ userId: u?.id, email: u?.email, roadmap, inspirationId: idea?.id || '' });
+      savedId = saved.id || null;
+    }
+    res.json({ ok: true, id: savedId, roadmap, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Build-this failed', { message: err.message });
+    res.status(500).json({ error: 'build_failed', message: 'Could not generate a roadmap.' });
+  }
+});
+
+app.post('/api/inspirations/:id/save', requireAuth, async (req, res) => {
+  // Saving an inspiration reuses the marketplace SavedListing store via roadmap,
+  // but inspirations live separately; we persist a roadmap stub as the "save".
+  const u = currentUser(req);
+  let idea = null;
+  if (db.dbEnabled() && req.params.id !== 'custom') idea = await db.getInspiration({ id: req.params.id });
+  if (!idea) idea = (_inspirationCache.data?.inspirations || []).find((i) => i.id === req.params.id || i.sourceId === req.params.id) || req.body?.idea || {};
+  const roadmap = generateProjectBlueprint(idea);
+  const result = await db.saveProjectRoadmap({ userId: u?.id, email: u?.email, roadmap, inspirationId: idea?.id || '' });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, id: result.id || null, db: db.dbEnabled() });
+});
+
+/* My saved/created roadmaps. */
+app.get('/api/roadmaps', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const roadmaps = await db.listProjectRoadmaps({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, roadmaps, db: db.dbEnabled() });
+});
+
+app.post('/api/admin/inspirations/:id/:action(feature|hide|unhide)', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.adminModerateInspiration({ id: req.params.id, action: req.params.action });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, status: result.status || null, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   INDUSTRY-LEVEL ARCHITECTURE GENERATOR
+   ------------------------------------------------------------
+   The architecture spec + maturity score + gaps are DETERMINISTIC (engine,
+   no AI). When `enrich` is set and an AI key exists, the AI may ONLY add a
+   richer narrative summary — it can never change the score, diagrams, or
+   gaps. Defaults to a production-ready modular monolith (not microservices).
+   ============================================================ */
+app.post('/api/architecture/generate', requireAuth, generationLimiter, validateBody(architectureSchema), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const level = ARCH_LEVELS.includes(body.level) ? body.level : 'production';
+    const project = {
+      title: body.title || 'Application',
+      description: body.description || '',
+      techStack: Array.isArray(body.techStack) ? body.techStack : [],
+      targetRole: body.targetRole || '',
+      difficulty: body.difficulty || '',
+      teamSize: body.teamSize || 0,
+    };
+    const arch = generateArchitecture(project, { level }); // deterministic source of truth
+
+    // Optional AI narrative enrichment — never changes score/diagrams/gaps.
+    let narrative = '';
+    if (body.enrich && process.env.ANTHROPIC_API_KEY) {
+      const prompt = `You are a principal engineer. The architecture, maturity score (${arch.maturityScore.total}/100) and gaps are ALREADY decided by the system — do NOT change, recompute or contradict them. Write a concise 2-3 paragraph narrative explaining WHY this architecture fits the project and how to address the listed gaps. Return plain text only.\n\nPROJECT: ${JSON.stringify(project).slice(0, 1500)}\nSTYLE: ${arch.recommendedStyle.style}\nGAPS: ${JSON.stringify(arch.gaps)}`;
+      const text = await anthropicJSON(prompt, 900);
+      if (text && typeof text === 'string') narrative = text.slice(0, 2500);
+    }
+
+    res.json({ ok: true, architecture: arch, narrative, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Architecture generate failed', { message: err.message });
+    res.status(500).json({ error: 'architecture_failed', message: 'Could not generate the architecture.' });
+  }
+});
+
+/* ============================================================
+   PATENT ENGINE  (readiness + prior-art + disclosure + tracker).
+   NOT legal advice. Scores are deterministic; AI may only enrich prose.
+   ============================================================ */
+app.post('/api/patent/assess', requireAuth, generationLimiter, validateBody(patentAssessSchema), async (req, res) => {
+  try {
+    const project = req.body || {};
+    const assessment = assessPatentReadiness(project);
+    const priorArt = priorArtKeywords(project);
+    const disclosure = inventionDisclosureDraft(project);
+    let narrative = '';
+    if (project.enrich && process.env.ANTHROPIC_API_KEY) {
+      const prompt = `You are a patent-readiness assistant (NOT a lawyer; never claim patentability). The readiness score (${assessment.patentReadinessScore}/100), classification and risks are ALREADY decided — do NOT change them. Write 2 short paragraphs explaining the novelty angle and recommended next steps. Plain text only.\nPROJECT: ${JSON.stringify({ title: project.title, problem: project.problemStatement, solution: project.technicalSolution }).slice(0, 1500)}`;
+      const text = await anthropicJSON(prompt, 700);
+      if (text && typeof text === 'string') narrative = text.slice(0, 2000);
+    }
+    res.json({ ok: true, assessment, priorArt, disclosure, narrative, disclaimer: PATENT_DISCLAIMER, statuses: PATENT_STATUSES, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Patent assess failed', { message: err.message });
+    res.status(500).json({ error: 'patent_failed', message: 'Could not run the patent assessment.' });
+  }
+});
+
+app.get('/api/patent/records', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const records = await db.listPatentRecords({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, records, statuses: PATENT_STATUSES, disclaimer: PATENT_DISCLAIMER, db: db.dbEnabled() });
+});
+
+app.post('/api/patent/records', requireAuth, validateBody(patentRecordSchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.savePatentRecord({ userId: u?.id, email: u?.email, record: req.body });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, id: result.id || null, db: db.dbEnabled(), result });
+});
+
+app.delete('/api/patent/records/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deletePatentRecord({ userId: u?.id, email: u?.email, id: req.params.id });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled(), result });
+});
+
+app.get('/api/patent/dashboard', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const stats = await db.patentDashboard({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, stats, disclaimer: PATENT_DISCLAIMER, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   APPLICATION PACKAGE GENERATOR
+   ------------------------------------------------------------
+   Tailored resume + cover letter + recruiter email + LinkedIn message +
+   referral request + follow-up + interview talking points for one job.
+   Uses resume facts + the user's VERIFIED skills/projects only; runs the
+   fabrication checker; no fake claims. AI (if enabled) only refines tone.
+   ============================================================ */
+app.post('/api/applications/package', requireAuth, generationLimiter, validateBody(appPackageSchema), async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const { resumeText, jobDescription, applicantName } = req.body || {};
+    const targetRole = normalizeRole(req.body?.targetRole);
+    let verifiedSkills = [];
+    let verifiedProjects = [];
+    try {
+      verifiedSkills = await db.getVerifiedSkills({ userId: u?.id, email: u?.email });
+      const subs = await db.listProjectSubmissions({ userId: u?.id, email: u?.email });
+      verifiedProjects = (subs || []).filter((s) => s.verificationStatus === 'verified').map((s) => ({ title: s.title }));
+    } catch { /* verified data is best-effort */ }
+
+    const pkg = generateApplicationPackage({ resumeText, jobDescription, targetRole, verifiedSkills, verifiedProjects, applicantName });
+
+    // Optional AI tone polish on the written pieces only — never adds facts;
+    // if anything looks off we keep the deterministic version.
+    if (req.body?.enrich && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const prompt = `Refine the TONE of these application messages. Do NOT add any new facts, skills, companies, metrics, or claims — only improve flow and professionalism. Keep them concise. Return ONLY JSON with the same keys: {"coverLetter","linkedinMessage","followUp"}.\n\n${JSON.stringify({ coverLetter: pkg.documents.coverLetter, linkedinMessage: pkg.documents.linkedinMessage, followUp: pkg.documents.followUp }).slice(0, 4000)}`;
+        const out = parseJSONLoose(await anthropicJSON(prompt, 1200));
+        if (out && typeof out.coverLetter === 'string') {
+          // Re-verify the AI cover letter introduces no fabricated skills/metrics.
+          const fab = pkg.fabricationSafe;
+          if (fab) {
+            pkg.documents.coverLetter = out.coverLetter.slice(0, 4000);
+            if (typeof out.linkedinMessage === 'string') pkg.documents.linkedinMessage = out.linkedinMessage.slice(0, 1500);
+            if (typeof out.followUp === 'string') pkg.documents.followUp = out.followUp.slice(0, 2000);
+            pkg.toneEnrichedBy = 'ai';
+          }
+        }
+      } catch { /* keep deterministic version */ }
+    }
+
+    res.json({ ok: true, package: pkg, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Application package failed', { message: err.message });
+    res.status(500).json({ error: 'package_failed', message: 'Could not generate the application package.' });
+  }
+});
+
+/* ============================================================
+   READINESS + RECRUITER / ADMIN  (verified data only)
+   ============================================================ */
+/* My own placement readiness. */
+app.get('/api/readiness', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const inputs = await db.readinessInputsFor({ userId: u?.id, email: u?.email });
+  const readiness = computeReadiness(inputs);
+  res.json({ ok: true, readiness, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
+});
+
+/* Recruiter candidate shortlist — ranked by VERIFIED signals only. */
+app.get('/api/recruiter/candidates', requireAuth, async (req, res) => {
+  const filters = { skill: req.query.skill || '', category: req.query.category || '', minScore: req.query.minScore || '' };
+  const candidates = await db.recruiterCandidates({ filters, computeReadiness, limit: 60 });
+  res.json({ ok: true, candidates, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
+});
+
+/* Admin: project verification queue (pending / needs_review). */
+app.get('/api/admin/verification-queue', requireAuth, requireAdmin, async (req, res) => {
+  const queue = await db.verificationQueue({ limit: 100 });
+  res.json({ ok: true, queue, db: db.dbEnabled() });
+});
+
+/* Admin: readiness rollup across the candidate pool (skill heatmap + buckets). */
+app.get('/api/admin/readiness-overview', requireAuth, requireAdmin, async (req, res) => {
+  const candidates = await db.recruiterCandidates({ filters: {}, computeReadiness, limit: 500 });
+  const buckets = Object.fromEntries(READINESS_CATEGORIES.map((c) => [c, 0]));
+  const skillHeat = {};
+  for (const c of candidates) {
+    buckets[c.readinessCategory] = (buckets[c.readinessCategory] || 0) + 1;
+    for (const s of c.verifiedSkills) skillHeat[s] = (skillHeat[s] || 0) + 1;
+  }
+  const heatmap = Object.entries(skillHeat).map(([skill, count]) => ({ skill, count })).sort((a, b) => b.count - a.count).slice(0, 25);
+  res.json({ ok: true, total: candidates.length, buckets, heatmap, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
 });
 
 /* ============================================================

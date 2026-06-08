@@ -432,7 +432,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
           <SectionCard
             title="Resume template"
             action={recommendedId && activeRole && tplId !== 'custom'
-              ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#52E6C2" /> Best for {activeRole}</span>
+              ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#46E6A6" /> Best for {activeRole}</span>
               : tplId === 'custom' ? <span className="flex items-center gap-1 text-[11px] text-aurora-violet"><ImagePlus size={10} /> Custom active</span> : null}
           >
             <TemplateGallery
