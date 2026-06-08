@@ -47,6 +47,7 @@ import {
   githubLinkProjectSchema, githubVisibilitySchema, githubAnalyzeSchema, githubImportProjectSchema,
 } from './validation.js';
 import * as ghEngine from './server/utils/githubIntegrationEngine.js';
+import { registerProblemIntelligenceRoutes } from './server/routes/problemIntelligenceRoutes.js';
 
 dotenv.config();
 
@@ -2519,6 +2520,19 @@ app.get('/api/patents/disclosures', requireAuth, async (req, res) => {
   const disclosures = await db.listPatentDisclosures({ userId: u?.id, email: u?.email });
   res.json({ ok: true, disclosures, db: db.dbEnabled() });
 });
+
+/* ============================================================
+   INNOVATION & PATENT INTELLIGENCE OS
+   ------------------------------------------------------------
+   Source-backed problem discovery → clustering → buildable
+   project synthesis → feasibility/cost → IP-readiness (hard
+   caps) → prior-art workspace → disclosure → bridges into the
+   existing Project store and Patent OS. Mounted modularly so
+   server.js stays thin; all routes require auth and are
+   user-scoped. Degrades to a clearly-labelled limited mode when
+   API keys / DB are missing — it never crashes the app.
+   ============================================================ */
+registerProblemIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, persistenceStatus, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR

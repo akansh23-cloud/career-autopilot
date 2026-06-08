@@ -46,6 +46,7 @@ import PatentIdeaWorkspace from './views/patent/PatentIdeaWorkspace.jsx';
 import PatentPortfolio from './views/patent/PatentPortfolio.jsx';
 import PriorArtResearch from './views/patent/PriorArtResearch.jsx';
 import PatentDisclosures from './views/patent/PatentDisclosures.jsx';
+import InnovationOS from './views/innovation/InnovationOS.jsx';
 import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
 
@@ -78,6 +79,7 @@ const VIEWS = {
   patentportfolio: PatentPortfolio,
   priorart: PriorArtResearch,
   patentdisclosures: PatentDisclosures,
+  innovation: InnovationOS,
   applications: ApplicationsView,
   readiness: ReadinessView,
 };

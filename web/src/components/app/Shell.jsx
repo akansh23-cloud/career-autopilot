@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
   Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake, Wand2,
-  LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge,
+  LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge, Sparkles,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import CommandPalette from './CommandPalette.jsx';
@@ -50,6 +50,7 @@ export const NAV = [
   { id: 'marketplace', label: 'Project Marketplace', icon: Store },
   { id: 'inspirations', label: 'Live Inspirations', icon: Lightbulb },
   { id: 'architecture', label: 'Architecture Generator', icon: Boxes },
+  { id: 'innovation', label: 'Innovation OS', icon: Sparkles },
   { id: 'patents', label: 'Patent Dashboard', icon: ScrollText },
   { id: 'patentgenerate', label: 'Generate Ideas', icon: Lightbulb },
   { id: 'patentportfolio', label: 'My Inventions', icon: Store },
@@ -76,8 +77,8 @@ export const NAV = [
 ];
 
 const ROLE_NAV = {
-  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
-  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
   recruiter: ['dash', 'recruiter', 'readiness', 'marketplace', 'careerprofile', 'leaderboards', 'sandbox', 'settings'],
 };
 
@@ -91,7 +92,7 @@ const NAV_GROUPS = [
   { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
   { label: 'Applications', short: 'Apply', ids: ['applications'] },
   { label: 'Project Marketplace', short: 'Projects', ids: ['marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners'] },
-  { label: 'Patent Engine', short: 'Patents', ids: ['patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
+  { label: 'Patent Engine', short: 'Patents', ids: ['innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
   { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'skillsxp', 'readiness'] },
   { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
   { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },
