@@ -40,7 +40,12 @@ import SkillsXp from './views/SkillsXp.jsx';
 import MarketplaceView from './views/Marketplace.jsx';
 import InspirationsView from './views/Inspirations.jsx';
 import ArchitectureView from './views/ArchitectureView.jsx';
-import PatentEngine from './views/PatentEngine.jsx';
+import PatentDashboard from './views/patent/PatentDashboard.jsx';
+import PatentIdeaGenerator from './views/patent/PatentIdeaGenerator.jsx';
+import PatentIdeaWorkspace from './views/patent/PatentIdeaWorkspace.jsx';
+import PatentPortfolio from './views/patent/PatentPortfolio.jsx';
+import PriorArtResearch from './views/patent/PriorArtResearch.jsx';
+import PatentDisclosures from './views/patent/PatentDisclosures.jsx';
 import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
 
@@ -67,7 +72,12 @@ const VIEWS = {
   marketplace: MarketplaceView,
   inspirations: InspirationsView,
   architecture: ArchitectureView,
-  patents: PatentEngine,
+  patents: PatentDashboard,
+  patentgenerate: PatentIdeaGenerator,
+  patentworkspace: PatentIdeaWorkspace,
+  patentportfolio: PatentPortfolio,
+  priorart: PriorArtResearch,
+  patentdisclosures: PatentDisclosures,
   applications: ApplicationsView,
   readiness: ReadinessView,
 };
@@ -105,6 +115,7 @@ export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
   const [active, setActive] = useState('dash');
+  const [viewParams, setViewParams] = useState({});
   const [onboarded, setOnboarded] = useState(!needsOnboarding());
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [publicId, setPublicId] = useState(() => parseProfileHash());
@@ -202,12 +213,15 @@ export default function App() {
   // Guarded navigation: only switch to a real, registered view id. Unknown or
   // stale ids are ignored (instead of silently rendering the dashboard or a
   // blank page), so internal links can never land on the wrong workspace.
-  const navigate = (id) => {
+  const navigate = (id, params = {}) => {
     // Canonical Career Profile route. The old standalone "Profile" view was a
     // duplicate of Career Profile, so any legacy link/CTA pointing at it now
     // redirects here instead of crashing or opening a second profile page.
     if (id === 'profile') id = 'careerprofile';
-    if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) setActive(id);
+    if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) {
+      setActive(id);
+      setViewParams(params && typeof params === 'object' ? params : {});
+    }
     else if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
   };
 
@@ -221,7 +235,7 @@ export default function App() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          <ViewCmp go={navigate} />
+          <ViewCmp go={navigate} {...viewParams} />
         </motion.div>
       </AnimatePresence>
       <PricingModal />

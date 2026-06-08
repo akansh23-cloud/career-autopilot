@@ -395,6 +395,89 @@ const patentRecordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/* ---- Patent OS (invention intelligence) ---- */
+const patentIdeaSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    title: { type: String, default: '' },
+    domain: { type: String, default: '', index: true },
+    targetUser: { type: String, default: '' },
+    problem: { type: String, default: '' },
+    existingSolutions: { type: String, default: '' },
+    proposedSolution: { type: String, default: '' },
+    technicalMechanism: { type: String, default: '' },
+    inputData: { type: String, default: '' },
+    processingLogic: { type: String, default: '' },
+    outputResult: { type: String, default: '' },
+    feedbackLoop: { type: String, default: '' },
+    noveltyAngle: { type: String, default: '' },
+    marketUseCase: { type: String, default: '' },
+    implementationPlan: { type: String, default: '' },
+    tags: { type: [String], default: [] },
+    status: { type: String, default: 'raw_idea', index: true },
+    source: { type: String, default: '' },
+    score: { type: mongoose.Schema.Types.Mixed, default: {} }, // factors+overall+grade+riskLevel
+    riskWarnings: { type: [String], default: [] },
+    strengtheningSuggestions: { type: [String], default: [] },
+    priorArtSearchPlan: { type: mongoose.Schema.Types.Mixed, default: {} },
+    versionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    linkedProjectId: { type: String, default: '' },
+    linkedProjectPlan: { type: mongoose.Schema.Types.Mixed, default: null },
+    disclosureId: { type: String, default: '' },
+    generationWhy: { type: String, default: '' },
+    archived: { type: Boolean, default: false, index: true },
+  },
+  { timestamps: true }
+);
+
+const priorArtRecordSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    ideaId: { type: String, required: true, index: true },
+    source: { type: String, default: '' },
+    title: { type: String, default: '' },
+    link: { type: String, default: '' },
+    summary: { type: String, default: '' },
+    overlap: { type: String, default: '' },
+    differences: { type: String, default: '' },
+    riskLevel: { type: String, default: 'Medium' },
+    notes: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const patentDisclosureSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    ideaId: { type: String, required: true, index: true },
+    payload: { type: mongoose.Schema.Types.Mixed, default: {} }, // full structured disclosure
+    version: { type: Number, default: 1 },
+  },
+  { timestamps: true }
+);
+
+const patentFeedbackSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    ideaId: { type: String, required: true, index: true },
+    feedbackType: { type: String, default: '' },
+    notes: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const patentActivitySchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    ideaId: { type: String, default: '' },
+    type: { type: String, default: '' },
+    message: { type: String, default: '' },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true }
+);
+
 const projectRoadmapSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -442,6 +525,11 @@ export const ProjectEngagement = mongoose.models.ProjectEngagement || mongoose.m
 export const Inspiration = mongoose.models.Inspiration || mongoose.model('Inspiration', inspirationSchema);
 export const ProjectRoadmap = mongoose.models.ProjectRoadmap || mongoose.model('ProjectRoadmap', projectRoadmapSchema);
 export const PatentRecord = mongoose.models.PatentRecord || mongoose.model('PatentRecord', patentRecordSchema);
+export const PatentIdea = mongoose.models.PatentIdea || mongoose.model('PatentIdea', patentIdeaSchema);
+export const PriorArtRecord = mongoose.models.PriorArtRecord || mongoose.model('PriorArtRecord', priorArtRecordSchema);
+export const PatentDisclosure = mongoose.models.PatentDisclosure || mongoose.model('PatentDisclosure', patentDisclosureSchema);
+export const PatentFeedback = mongoose.models.PatentFeedback || mongoose.model('PatentFeedback', patentFeedbackSchema);
+export const PatentActivity = mongoose.models.PatentActivity || mongoose.model('PatentActivity', patentActivitySchema);
 
 /* ---- public shape (only safe fields ever leave the server) ---- */
 export function publicUser(doc) {
@@ -2238,3 +2326,272 @@ export async function verificationQueue({ limit = 100 }) {
     return [];
   }
 }
+
+/* ============================================================
+   PATENT OS  (ideas, prior-art, disclosures, feedback, activity)
+   All scoped to the owning user. Pipeline/dashboard are derived server-side.
+   ============================================================ */
+const PATENT_LOCKED = ['filed', 'published', 'granted']; // delete -> archive only
+
+async function logPatentActivity(uid, ideaId, type, message, metadata = {}) {
+  try { await PatentActivity.create({ userId: uid, ideaId: ideaId || '', type, message, metadata }); } catch { /* non-fatal */ }
+}
+
+export async function createPatentIdeas({ userId, email, ideas = [], generationWhy = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const docs = [];
+    for (const i of ideas) {
+      const score = i.score || (i.scoreSummary ? { overall: i.scoreSummary.overall, grade: i.scoreSummary.grade, riskLevel: i.scoreSummary.riskLevel } : {});
+      const doc = await PatentIdea.create({
+        userId: uid, email: cleanEmail(email),
+        title: String(i.title || '').slice(0, 200), domain: i.domain || '', targetUser: i.targetUser || '',
+        problem: String(i.problem || '').slice(0, 3000), existingSolutions: String(i.existingSolutions || '').slice(0, 3000),
+        proposedSolution: String(i.proposedSolution || '').slice(0, 4000), technicalMechanism: String(i.technicalMechanism || '').slice(0, 4000),
+        inputData: String(i.inputData || '').slice(0, 2000), processingLogic: String(i.processingLogic || '').slice(0, 2000),
+        outputResult: String(i.outputResult || '').slice(0, 2000), feedbackLoop: String(i.feedbackLoop || '').slice(0, 2000),
+        noveltyAngle: String(i.noveltyAngle || '').slice(0, 2000), marketUseCase: String(i.marketUseCase || '').slice(0, 2000),
+        implementationPlan: String(i.implementationPlan || '').slice(0, 2000), tags: (i.tags || []).slice(0, 12),
+        status: 'raw_idea', source: i.source || 'generated', score,
+        riskWarnings: i.riskWarnings || [], strengtheningSuggestions: i.strengtheningSuggestions || [],
+        generationWhy: generationWhy || '',
+        versionHistory: [{ version: 1, at: new Date(), change: 'Idea generated', scoreOverall: score.overall || 0 }],
+      });
+      docs.push({ ...doc.toObject(), id: String(doc._id) });
+      await logPatentActivity(uid, String(doc._id), 'idea_generated', `Idea generated: ${doc.title}`);
+    }
+    return { ok: true, ideas: docs };
+  } catch (err) {
+    console.error('[db] createPatentIdeas failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function listPatentIdeas({ userId, email, filters = {} }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const q = { userId: uid };
+    if (filters.status) q.status = filters.status;
+    if (filters.domain) q.domain = filters.domain;
+    if (filters.archived === true) q.archived = true; else if (filters.archived !== 'all') q.archived = { $ne: true };
+    let docs = await PatentIdea.find(q).sort({ updatedAt: -1 }).limit(300).lean();
+    if (filters.minScore) docs = docs.filter((d) => (d.score?.overall || 0) >= Number(filters.minScore));
+    if (filters.search) {
+      const s = String(filters.search).toLowerCase();
+      docs = docs.filter((d) => `${d.title} ${d.problem} ${(d.tags || []).join(' ')}`.toLowerCase().includes(s));
+    }
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) { console.error('[db] listPatentIdeas failed:', err.message); return []; }
+}
+
+export async function getPatentIdea({ userId, email, id }) {
+  if (!URI || !isObjectId(id)) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const d = await PatentIdea.findOne({ _id: id, userId: uid }).lean();
+    return d ? { ...d, id: String(d._id) } : null;
+  } catch { return null; }
+}
+
+export async function updatePatentIdea({ userId, email, id, patch = {}, versionNote = '' }) {
+  if (!URI || !isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const idea = await PatentIdea.findOne({ _id: id, userId: uid });
+    if (!idea) return { ok: false, reason: 'not_found' };
+    const allowed = ['title', 'domain', 'targetUser', 'problem', 'existingSolutions', 'proposedSolution', 'technicalMechanism', 'inputData', 'processingLogic', 'outputResult', 'feedbackLoop', 'noveltyAngle', 'marketUseCase', 'implementationPlan', 'tags', 'status', 'score', 'riskWarnings', 'strengtheningSuggestions', 'priorArtSearchPlan', 'linkedProjectId', 'linkedProjectPlan', 'disclosureId', 'archived'];
+    for (const k of allowed) if (k in patch) idea[k] = patch[k];
+    if (versionNote) {
+      const v = (idea.versionHistory?.length || 0) + 1;
+      idea.versionHistory = [...(idea.versionHistory || []), { version: v, at: new Date(), change: versionNote, scoreOverall: idea.score?.overall || 0 }];
+    }
+    await idea.save();
+    if (patch.status) await logPatentActivity(uid, id, 'status_changed', `Status → ${patch.status}`);
+    return { ok: true, idea: { ...idea.toObject(), id: String(idea._id) } };
+  } catch (err) { console.error('[db] updatePatentIdea failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function deletePatentIdea({ userId, email, id }) {
+  if (!URI || !isObjectId(id)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const idea = await PatentIdea.findOne({ _id: id, userId: uid });
+    if (!idea) return { ok: false, reason: 'not_found' };
+    if (PATENT_LOCKED.includes(idea.status)) { // filed/published/granted -> archive only
+      idea.archived = true; await idea.save();
+      return { ok: true, archived: true };
+    }
+    await PatentIdea.deleteOne({ _id: id, userId: uid });
+    await logPatentActivity(uid, id, 'idea_deleted', `Idea deleted: ${idea.title}`);
+    return { ok: true, deleted: true };
+  } catch (err) { console.error('[db] deletePatentIdea failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function recordIdeaVersion({ userId, email, id, note, scoreOverall }) {
+  return updatePatentIdea({ userId, email, id, patch: {}, versionNote: note || `Updated (score ${scoreOverall ?? '—'})` });
+}
+
+export async function addPriorArtRecord({ userId, email, ideaId, record }) {
+  if (!URI || !isObjectId(ideaId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const owns = await PatentIdea.exists({ _id: ideaId, userId: uid });
+    if (!owns) return { ok: false, reason: 'not_found' };
+    const r = record || {};
+    const doc = await PriorArtRecord.create({
+      userId: uid, ideaId, source: String(r.source || '').slice(0, 200), title: String(r.title || '').slice(0, 300),
+      link: String(r.link || '').slice(0, 500), summary: String(r.summary || '').slice(0, 2000),
+      overlap: String(r.overlap || '').slice(0, 1000), differences: String(r.differences || '').slice(0, 1000),
+      riskLevel: ['Low', 'Medium', 'High'].includes(r.riskLevel) ? r.riskLevel : 'Medium', notes: String(r.notes || '').slice(0, 1000),
+    });
+    await logPatentActivity(uid, ideaId, 'prior_art_added', `Prior-art added: ${doc.title || doc.source}`);
+    return { ok: true, id: String(doc._id), record: { ...doc.toObject(), id: String(doc._id) } };
+  } catch (err) { console.error('[db] addPriorArtRecord failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function listPriorArtRecords({ userId, email, ideaId }) {
+  if (!URI || !isObjectId(ideaId)) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await PriorArtRecord.find({ userId: uid, ideaId }).sort({ createdAt: -1 }).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch { return []; }
+}
+
+export async function deletePriorArtRecord({ userId, email, recordId }) {
+  if (!URI || !isObjectId(recordId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await PriorArtRecord.deleteOne({ _id: recordId, userId: uid });
+    return { ok: r.deletedCount > 0, reason: r.deletedCount ? undefined : 'not_found' };
+  } catch (err) { return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function savePatentDisclosure({ userId, email, ideaId, payload }) {
+  if (!URI || !isObjectId(ideaId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const idea = await PatentIdea.findOne({ _id: ideaId, userId: uid });
+    if (!idea) return { ok: false, reason: 'not_found' };
+    const prev = await PatentDisclosure.findOne({ userId: uid, ideaId }).sort({ version: -1 });
+    const version = (prev?.version || 0) + 1;
+    const doc = await PatentDisclosure.create({ userId: uid, ideaId, payload, version });
+    idea.disclosureId = String(doc._id);
+    if (idea.status === 'raw_idea' || idea.status === 'shortlisted' || idea.status === 'refining') idea.status = 'disclosure_drafted';
+    await idea.save();
+    await logPatentActivity(uid, ideaId, 'disclosure_generated', `Disclosure v${version} generated`);
+    return { ok: true, id: String(doc._id), version, disclosure: { ...doc.toObject(), id: String(doc._id) } };
+  } catch (err) { console.error('[db] savePatentDisclosure failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function getPatentDisclosure({ userId, email, ideaId }) {
+  if (!URI || !isObjectId(ideaId)) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const d = await PatentDisclosure.findOne({ userId: uid, ideaId }).sort({ version: -1 }).lean();
+    return d ? { ...d, id: String(d._id) } : null;
+  } catch { return null; }
+}
+
+export async function listPatentDisclosures({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await PatentDisclosure.find({ userId: uid }).sort({ updatedAt: -1 }).limit(200).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch { return []; }
+}
+
+export async function recordPatentFeedback({ userId, email, ideaId, feedbackType, notes }) {
+  if (!URI || !isObjectId(ideaId)) return { ok: false, reason: 'bad_request' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const owns = await PatentIdea.exists({ _id: ideaId, userId: uid });
+    if (!owns) return { ok: false, reason: 'not_found' };
+    await PatentFeedback.create({ userId: uid, ideaId, feedbackType: String(feedbackType || '').slice(0, 60), notes: String(notes || '').slice(0, 1000) });
+    await logPatentActivity(uid, ideaId, 'feedback_added', `Feedback: ${feedbackType}`);
+    return { ok: true };
+  } catch (err) { console.error('[db] recordPatentFeedback failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function listPatentFeedback({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await PatentFeedback.find({ userId: uid }).sort({ createdAt: -1 }).limit(500).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id), ideaId: String(d.ideaId) }));
+  } catch { return []; }
+}
+
+export async function listPatentActivity({ userId, email, limit = 30 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await PatentActivity.find({ userId: uid }).sort({ createdAt: -1 }).limit(limit).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch { return []; }
+}
+
+export async function patentOsDashboard({ userId, email }) {
+  const empty = { totals: {}, pipeline: {}, topIdea: null, topDomain: null };
+  if (!URI) return empty;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return empty;
+    const ideas = await PatentIdea.find({ userId: uid, archived: { $ne: true } }).lean();
+    const STATUSES = ['raw_idea', 'shortlisted', 'refining', 'prior_art_review', 'poc_planned', 'disclosure_drafted', 'attorney_ready', 'filed', 'published', 'granted', 'abandoned'];
+    const pipeline = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    const domainCount = {};
+    let top = null;
+    let disclosureReady = 0, underReview = 0, filedReady = 0, strong = 0;
+    for (const i of ideas) {
+      pipeline[i.status] = (pipeline[i.status] || 0) + 1;
+      if (i.domain) domainCount[i.domain] = (domainCount[i.domain] || 0) + 1;
+      const ov = i.score?.overall || 0;
+      if (ov >= 70) strong++;
+      if (i.disclosureId) disclosureReady++;
+      if (i.status === 'prior_art_review') underReview++;
+      if (['attorney_ready', 'filed'].includes(i.status)) filedReady++;
+      if (!top || ov > (top.score?.overall || 0)) top = i;
+    }
+    const topDomain = Object.entries(domainCount).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    return {
+      totals: { totalIdeas: ideas.length, strongCandidates: strong, disclosureReady, underPriorArtReview: underReview, attorneyOrFiled: filedReady },
+      pipeline,
+      topIdea: top ? { id: String(top._id), title: top.title, score: top.score?.overall || 0, grade: top.score?.grade || '' } : null,
+      topDomain,
+    };
+  } catch (err) { console.error('[db] patentOsDashboard failed:', err.message); return empty; }
+}
+

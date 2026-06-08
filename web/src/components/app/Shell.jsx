@@ -50,7 +50,11 @@ export const NAV = [
   { id: 'marketplace', label: 'Project Marketplace', icon: Store },
   { id: 'inspirations', label: 'Live Inspirations', icon: Lightbulb },
   { id: 'architecture', label: 'Architecture Generator', icon: Boxes },
-  { id: 'patents', label: 'Patent Engine', icon: ScrollText },
+  { id: 'patents', label: 'Patent Dashboard', icon: ScrollText },
+  { id: 'patentgenerate', label: 'Generate Ideas', icon: Lightbulb },
+  { id: 'patentportfolio', label: 'My Inventions', icon: Store },
+  { id: 'priorart', label: 'Prior-Art Research', icon: Search },
+  { id: 'patentdisclosures', label: 'Disclosures', icon: FileStack },
   { id: 'applications', label: 'Application Package', icon: FileStack },
   { id: 'readiness', label: 'Readiness', icon: Gauge },
   { id: 'skillsxp', label: 'Skills & XP', icon: Award },
@@ -72,8 +76,8 @@ export const NAV = [
 ];
 
 const ROLE_NAV = {
-  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'patents', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
-  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'patents', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
   recruiter: ['dash', 'recruiter', 'readiness', 'marketplace', 'careerprofile', 'leaderboards', 'sandbox', 'settings'],
 };
 
@@ -87,7 +91,7 @@ const NAV_GROUPS = [
   { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
   { label: 'Applications', short: 'Apply', ids: ['applications'] },
   { label: 'Project Marketplace', short: 'Projects', ids: ['marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners'] },
-  { label: 'Patent Engine', short: 'Patents', ids: ['patents'] },
+  { label: 'Patent Engine', short: 'Patents', ids: ['patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
   { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'skillsxp', 'readiness'] },
   { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
   { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },

@@ -24,6 +24,12 @@ import { generateArchitecture, ARCH_LEVELS } from './server/utils/architectureEn
 import { assessPatentReadiness, priorArtKeywords, inventionDisclosureDraft, PATENT_STATUSES, PATENT_DISCLAIMER } from './server/utils/patentEngine.js';
 import { generateApplicationPackage } from './server/utils/applicationPackageEngine.js';
 import { computeReadiness, READINESS_CATEGORIES } from './server/utils/readinessEngine.js';
+import { scorePatentIdea } from './server/utils/patentScoringEngine.js';
+import { generateIdeasDeterministic, normalizeAIIdea, buildGenerationPrompt } from './server/utils/ideaGenerationEngine.js';
+import { strengthenIdea } from './server/utils/ideaStrengtheningEngine.js';
+import { priorArtPlan } from './server/utils/priorArtEngine.js';
+import { generateDisclosure, convertToProject, PATENT_OS_DISCLAIMER } from './server/utils/disclosureEngine.js';
+import { getUserPatentMemory, buildGenerationContext, suggestNextActions } from './server/utils/patentMemoryEngine.js';
 import {
   corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
   authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
@@ -37,6 +43,7 @@ import {
   projectSubmissionSchema, adminVerifySchema,
   marketplaceListingSchema, collaborationApplySchema, listingReviewSchema,
   architectureSchema, patentAssessSchema, patentRecordSchema, appPackageSchema,
+  patentIdeaGenerateSchema, patentIdeaPatchSchema, priorArtRecordSchema, patentFeedbackSchema,
 } from './validation.js';
 
 dotenv.config();
@@ -2286,6 +2293,230 @@ app.get('/api/patent/dashboard', requireAuth, async (req, res) => {
 });
 
 /* ============================================================
+   PATENT OS  (invention intelligence — NOT legal advice)
+   ------------------------------------------------------------
+   Plural /api/patents/* namespace. Deterministic engines own all scoring;
+   AI (when ANTHROPIC_API_KEY is set) only drafts idea prose and is validated
+   + re-scored before save. Every route is auth-gated and user-isolated.
+   ============================================================ */
+async function patentMemoryFor(u) {
+  const [ideas, feedback] = await Promise.all([
+    db.listPatentIdeas({ userId: u?.id, email: u?.email, filters: { archived: 'all' } }),
+    db.listPatentFeedback({ userId: u?.id, email: u?.email }),
+  ]);
+  return { ideas, feedback, memory: getUserPatentMemory({ ideas, feedback }) };
+}
+
+/* Dashboard: totals + pipeline + recent activity + next actions + memory. */
+app.get('/api/patents/dashboard', requireAuth, async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const [dash, activity, { ideas, memory }] = await Promise.all([
+      db.patentOsDashboard({ userId: u?.id, email: u?.email }),
+      db.listPatentActivity({ userId: u?.id, email: u?.email, limit: 15 }),
+      patentMemoryFor(u),
+    ]);
+    res.json({ ok: true, ...dash, activity, nextActions: suggestNextActions({ ideas }), memory, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Patent OS dashboard failed', { message: err.message });
+    res.status(500).json({ error: 'patent_os_failed', message: 'Could not load the Patent OS dashboard.' });
+  }
+});
+
+/* Generate ideas (AI when available, deterministic fallback otherwise). Saves them. */
+app.post('/api/patents/ideas/generate', requireAuth, generationLimiter, validateBody(patentIdeaGenerateSchema), async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const input = req.body || {};
+    const count = Math.min(10, Math.max(1, input.count || 6));
+    const { memory } = await patentMemoryFor(u);
+    const { context, why } = buildGenerationContext(memory, input.domain);
+
+    let ideas = [];
+    let usedAI = false;
+    if (input.useAI !== false && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const out = parseJSONLoose(await anthropicJSON(buildGenerationPrompt(input, count, context), 3000));
+        const rawList = Array.isArray(out?.ideas) ? out.ideas : [];
+        ideas = rawList.map((r) => normalizeAIIdea(r, input)).filter(Boolean);
+        usedAI = ideas.length > 0;
+      } catch { /* fall through to deterministic */ }
+    }
+    if (!ideas.length) ideas = generateIdeasDeterministic(input, count);
+
+    // Attach full score (factors + suggestions + risks) to each before saving.
+    ideas = ideas.map((i) => {
+      const sc = scorePatentIdea(i);
+      return { ...i, score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded/i.test(r)), strengtheningSuggestions: sc.improvementSuggestions };
+    });
+
+    const saved = await db.createPatentIdeas({ userId: u?.id, email: u?.email, ideas, generationWhy: why });
+    res.status(persistenceStatus(saved)).json({ ok: saved.ok, ideas: saved.ideas || ideas, usedAI, generationWhy: why, source: usedAI ? 'ai' : 'deterministic', disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
+  } catch (err) {
+    logger.error('Patent idea generation failed', { message: err.message });
+    res.status(500).json({ error: 'generate_failed', message: 'Could not generate ideas.' });
+  }
+});
+
+app.get('/api/patents/ideas', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const filters = { status: req.query.status || '', domain: req.query.domain || '', minScore: req.query.minScore || '', search: req.query.search || '', archived: req.query.archived === '1' ? true : (req.query.archived === 'all' ? 'all' : false) };
+  const ideas = await db.listPatentIdeas({ userId: u?.id, email: u?.email, filters });
+  res.json({ ok: true, ideas, db: db.dbEnabled() });
+});
+
+app.get('/api/patents/ideas/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
+  const [priorArt, disclosure] = await Promise.all([
+    db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id }),
+    db.getPatentDisclosure({ userId: u?.id, email: u?.email, ideaId: req.params.id }),
+  ]);
+  res.json({ ok: true, idea, priorArt, disclosure, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
+});
+
+app.patch('/api/patents/ideas/:id', requireAuth, validateBody(patentIdeaPatchSchema), async (req, res) => {
+  const u = currentUser(req);
+  // Re-score if any inventive field changed.
+  let patch = { ...req.body };
+  const inventive = ['title', 'problem', 'proposedSolution', 'technicalMechanism', 'inputData', 'processingLogic', 'outputResult', 'feedbackLoop', 'noveltyAngle', 'marketUseCase'];
+  if (inventive.some((k) => k in patch)) {
+    const current = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+    if (current) {
+      const sc = scorePatentIdea({ ...current, ...patch });
+      patch.score = { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel };
+      patch.strengtheningSuggestions = sc.improvementSuggestions;
+    }
+  }
+  const result = await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch, versionNote: req.body?.status ? '' : 'Edited fields' });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, idea: result.idea || null, db: db.dbEnabled() });
+});
+
+app.delete('/api/patents/ideas/:id', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deletePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, archived: !!result.archived, deleted: !!result.deleted, db: db.dbEnabled() });
+});
+
+/* Strengthen: deterministic upgrade + new version entry. */
+app.post('/api/patents/ideas/:id/strengthen', requireAuth, generationLimiter, async (req, res) => {
+  const u = currentUser(req);
+  const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
+  const priorArt = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
+  const result = strengthenIdea(idea, { priorArtRecords: priorArt });
+  const sc = scorePatentIdea(result.idea, { priorArtRecords: priorArt });
+  const patch = {
+    title: result.idea.title, proposedSolution: result.idea.proposedSolution, technicalMechanism: result.idea.technicalMechanism,
+    inputData: result.idea.inputData, processingLogic: result.idea.processingLogic, outputResult: result.idea.outputResult,
+    feedbackLoop: result.idea.feedbackLoop, noveltyAngle: result.idea.noveltyAngle, marketUseCase: result.idea.marketUseCase,
+    tags: result.idea.tags, status: idea.status === 'raw_idea' ? 'refining' : idea.status,
+    score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel },
+    strengtheningSuggestions: sc.improvementSuggestions,
+  };
+  const saved = await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch, versionNote: `Strengthened: ${result.scoreBefore}→${result.scoreAfter}. ${result.changes.slice(0, 3).join(' ')}` });
+  if (db.dbEnabled()) { try { await db.listPatentActivity; } catch { /* */ } }
+  res.status(persistenceStatus(saved)).json({ ok: saved.ok, idea: saved.idea || null, result, db: db.dbEnabled() });
+});
+
+/* Re-score on demand. */
+app.post('/api/patents/ideas/:id/score', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
+  const priorArt = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
+  const sc = scorePatentIdea(idea, { priorArtRecords: priorArt });
+  await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, strengtheningSuggestions: sc.improvementSuggestions } });
+  res.json({ ok: true, score: sc, db: db.dbEnabled() });
+});
+
+/* Prior-art search plan (suggestions only) — saved onto the idea. */
+app.post('/api/patents/ideas/:id/prior-art-plan', requireAuth, generationLimiter, async (req, res) => {
+  const u = currentUser(req);
+  const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
+  const plan = priorArtPlan(idea);
+  await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { priorArtSearchPlan: plan, status: idea.status === 'raw_idea' || idea.status === 'shortlisted' ? 'prior_art_review' : idea.status } });
+  res.json({ ok: true, plan, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
+});
+
+/* Manual prior-art records. */
+app.post('/api/patents/ideas/:id/prior-art', requireAuth, validateBody(priorArtRecordSchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.addPriorArtRecord({ userId: u?.id, email: u?.email, ideaId: req.params.id, record: req.body });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, id: result.id || null, record: result.record || null, db: db.dbEnabled() });
+});
+
+app.get('/api/patents/ideas/:id/prior-art', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const records = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
+  res.json({ ok: true, records, db: db.dbEnabled() });
+});
+
+app.delete('/api/patents/prior-art/:recordId', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.deletePriorArtRecord({ userId: u?.id, email: u?.email, recordId: req.params.recordId });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled() });
+});
+
+/* Invention disclosure (generate/regenerate, versioned). */
+app.post('/api/patents/ideas/:id/disclosure', requireAuth, generationLimiter, async (req, res) => {
+  const u = currentUser(req);
+  const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
+  const payload = generateDisclosure(idea);
+  const saved = await db.savePatentDisclosure({ userId: u?.id, email: u?.email, ideaId: req.params.id, payload });
+  res.status(persistenceStatus(saved)).json({ ok: saved.ok, version: saved.version || 1, disclosure: payload, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
+});
+
+app.get('/api/patents/ideas/:id/disclosure', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const disclosure = await db.getPatentDisclosure({ userId: u?.id, email: u?.email, ideaId: req.params.id });
+  res.json({ ok: true, disclosure, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
+});
+
+/* Convert idea -> buildable project plan (linked back to the idea). */
+app.post('/api/patents/ideas/:id/convert-to-project', requireAuth, generationLimiter, async (req, res) => {
+  const u = currentUser(req);
+  const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
+  if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
+  const plan = convertToProject(idea);
+  await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { linkedProjectPlan: plan, status: idea.status === 'raw_idea' || idea.status === 'shortlisted' ? 'poc_planned' : idea.status } });
+  res.json({ ok: true, plan, db: db.dbEnabled() });
+});
+
+/* Feedback (drives the self-learning memory). */
+app.post('/api/patents/ideas/:id/feedback', requireAuth, validateBody(patentFeedbackSchema), async (req, res) => {
+  const u = currentUser(req);
+  const result = await db.recordPatentFeedback({ userId: u?.id, email: u?.email, ideaId: req.params.id, feedbackType: req.body?.feedbackType, notes: req.body?.notes });
+  res.status(persistenceStatus(result)).json({ ok: result.ok, db: db.dbEnabled() });
+});
+
+/* Pipeline grouped by status. */
+app.get('/api/patents/pipeline', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const ideas = await db.listPatentIdeas({ userId: u?.id, email: u?.email, filters: {} });
+  const STATUSES = ['raw_idea', 'shortlisted', 'refining', 'prior_art_review', 'poc_planned', 'disclosure_drafted', 'attorney_ready', 'filed', 'published', 'granted', 'abandoned'];
+  const pipeline = Object.fromEntries(STATUSES.map((s) => [s, []]));
+  for (const i of ideas) (pipeline[i.status] || (pipeline[i.status] = [])).push(i);
+  res.json({ ok: true, pipeline, statuses: STATUSES, db: db.dbEnabled() });
+});
+
+app.get('/api/patents/activity', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const activity = await db.listPatentActivity({ userId: u?.id, email: u?.email, limit: 50 });
+  res.json({ ok: true, activity, db: db.dbEnabled() });
+});
+
+/* Disclosures list (for the Disclosures page). */
+app.get('/api/patents/disclosures', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const disclosures = await db.listPatentDisclosures({ userId: u?.id, email: u?.email });
+  res.json({ ok: true, disclosures, db: db.dbEnabled() });
+});
+
+/* ============================================================
    APPLICATION PACKAGE GENERATOR
    ------------------------------------------------------------
    Tailored resume + cover letter + recruiter email + LinkedIn message +
@@ -2346,7 +2577,7 @@ app.get('/api/readiness', requireAuth, async (req, res) => {
 });
 
 /* Recruiter candidate shortlist — ranked by VERIFIED signals only. */
-app.get('/api/recruiter/candidates', requireAuth, async (req, res) => {
+app.get('/api/recruiter/candidates', requireAuth, requireAdmin, async (req, res) => {
   const filters = { skill: req.query.skill || '', category: req.query.category || '', minScore: req.query.minScore || '' };
   const candidates = await db.recruiterCandidates({ filters, computeReadiness, limit: 60 });
   res.json({ ok: true, candidates, categories: READINESS_CATEGORIES, db: db.dbEnabled() });

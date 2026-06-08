@@ -225,6 +225,59 @@ export const architectureSchema = z.object({
   enrich: z.boolean().optional().default(false),
 }).passthrough();
 
+/* ---- Patent OS ---- */
+export const patentIdeaGenerateSchema = z.object({
+  domain: shortText(80).optional().default(''),
+  targetUser: shortText(120).optional().default(''),
+  problem: shortText(4000).optional().default(''),
+  existingSolutions: shortText(4000).optional().default(''),
+  technology: shortText(60).optional().default(''),
+  goal: shortText(120).optional().default(''),
+  count: z.coerce.number().min(1).max(10).optional().default(6),
+  creativity: z.enum(['Conservative', 'Balanced', 'Bold']).optional().default('Balanced'),
+  useAI: z.boolean().optional().default(true),
+}).passthrough();
+
+export const patentIdeaPatchSchema = z.object({
+  title: shortText(200).optional(),
+  domain: shortText(80).optional(),
+  targetUser: shortText(120).optional(),
+  problem: shortText(4000).optional(),
+  existingSolutions: shortText(4000).optional(),
+  proposedSolution: shortText(4000).optional(),
+  technicalMechanism: shortText(4000).optional(),
+  inputData: shortText(2000).optional(),
+  processingLogic: shortText(2000).optional(),
+  outputResult: shortText(2000).optional(),
+  feedbackLoop: shortText(2000).optional(),
+  noveltyAngle: shortText(2000).optional(),
+  marketUseCase: shortText(2000).optional(),
+  implementationPlan: shortText(2000).optional(),
+  tags: z.array(z.string()).max(12).optional(),
+  status: z.enum(['raw_idea', 'shortlisted', 'refining', 'prior_art_review', 'poc_planned', 'disclosure_drafted', 'attorney_ready', 'filed', 'published', 'granted', 'abandoned']).optional(),
+  archived: z.boolean().optional(),
+}).passthrough();
+
+export const patentIdeaSaveSchema = z.object({
+  idea: z.object({}).passthrough(),
+}).passthrough();
+
+export const priorArtRecordSchema = z.object({
+  source: shortText(200).optional().default(''),
+  title: shortText(300).optional().default(''),
+  link: shortText(500).optional().default(''),
+  summary: shortText(2000).optional().default(''),
+  overlap: shortText(1000).optional().default(''),
+  differences: shortText(1000).optional().default(''),
+  riskLevel: z.enum(['Low', 'Medium', 'High']).optional().default('Medium'),
+  notes: shortText(1000).optional().default(''),
+}).passthrough();
+
+export const patentFeedbackSchema = z.object({
+  feedbackType: z.enum(['useful', 'not useful', 'too generic', 'already exists', 'technically weak', 'commercially strong', 'patent-worthy', 'needs refinement']),
+  notes: shortText(1000).optional().default(''),
+}).passthrough();
+
 /* ---- Application Package Generator ---- */
 export const appPackageSchema = z.object({
   resumeText: z.string().trim().min(1, 'Resume text is required.').max(60000),

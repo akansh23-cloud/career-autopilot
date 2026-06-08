@@ -164,6 +164,33 @@ export const Patents = {
   dashboard: () => api.get('/api/patent/dashboard'),
 };
 
+// Patent OS — invention intelligence. All scoring backend-owned. Not legal advice.
+export const PatentOS = {
+  dashboard: () => api.get('/api/patents/dashboard'),
+  generate: (input) => api.post('/api/patents/ideas/generate', input),
+  ideas: (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null));
+    const qs = new URLSearchParams(clean).toString();
+    return api.get('/api/patents/ideas' + (qs ? `?${qs}` : ''));
+  },
+  idea: (id) => api.get(`/api/patents/ideas/${encodeURIComponent(id)}`),
+  patch: (id, patch) => api.patch(`/api/patents/ideas/${encodeURIComponent(id)}`, patch),
+  remove: (id) => api.del(`/api/patents/ideas/${encodeURIComponent(id)}`),
+  strengthen: (id) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/strengthen`, {}),
+  rescore: (id) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/score`, {}),
+  priorArtPlan: (id) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/prior-art-plan`, {}),
+  addPriorArt: (id, record) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/prior-art`, record),
+  priorArt: (id) => api.get(`/api/patents/ideas/${encodeURIComponent(id)}/prior-art`),
+  removePriorArt: (recordId) => api.del(`/api/patents/prior-art/${encodeURIComponent(recordId)}`),
+  disclosure: (id) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/disclosure`, {}),
+  getDisclosure: (id) => api.get(`/api/patents/ideas/${encodeURIComponent(id)}/disclosure`),
+  convert: (id) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/convert-to-project`, {}),
+  feedback: (id, body) => api.post(`/api/patents/ideas/${encodeURIComponent(id)}/feedback`, body),
+  pipeline: () => api.get('/api/patents/pipeline'),
+  activity: () => api.get('/api/patents/activity'),
+  disclosures: () => api.get('/api/patents/disclosures'),
+};
+
 // Application Package Generator. Uses verified skills only; no fake claims.
 export const Applications = {
   generate: (body) => api.post('/api/applications/package', body),

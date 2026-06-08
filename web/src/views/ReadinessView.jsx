@@ -41,16 +41,18 @@ export default function ReadinessView() {
       setLoading(true);
       try {
         const r = await Readiness.mine(); setMine(r.readiness); setCategories(r.categories || []);
-        const cands = await Readiness.candidates(); setCandidates(cands.candidates || []);
         if (isAdmin) {
-          const [ov, q] = await Promise.all([Readiness.overview(), Readiness.queue()]);
-          setOverview(ov); setQueue(q.queue || []);
+          const [ov, q, cands] = await Promise.all([Readiness.overview(), Readiness.queue(), Readiness.candidates()]);
+          setOverview(ov); setQueue(q.queue || []); setCandidates(cands.candidates || []);
+        } else {
+          setCandidates([]); setOverview(null); setQueue([]);
         }
       } catch { /* */ } finally { setLoading(false); }
     })();
   }, [isAdmin]);
 
   const searchCandidates = async () => {
+    if (!isAdmin) return;
     try { const c = await Readiness.candidates({ skill, category }); setCandidates(c.candidates || []); } catch { /* */ }
   };
 
@@ -129,7 +131,7 @@ export default function ReadinessView() {
             </>
           )}
 
-          <SectionCard title="Candidate shortlist" eyebrow="Recruiter">
+          {isAdmin && <SectionCard title="Candidate shortlist" eyebrow="Admin / Recruiter-safe">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[160px]">
                 <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -165,7 +167,7 @@ export default function ReadinessView() {
                 ))}
               </div>
             )}
-          </SectionCard>
+          </SectionCard>}
         </div>
       )}
     </>
