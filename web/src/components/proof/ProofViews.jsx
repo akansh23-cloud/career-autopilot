@@ -16,23 +16,10 @@ export function StatusBadge({ status, size = 'sm' }) {
    and draws a clean dark-themed top-down SVG. No mermaid package required, so
    the build never breaks. */
 export function ArchitectureDiagram({ mermaid, height = 320 }) {
-  if (!mermaid || !String(mermaid).trim()) {
+  if (!mermaid || !mermaid.trim()) {
     return <p className="text-[12px] text-slate-500">No architecture diagram yet — generate one on the Architecture tab.</p>;
   }
-
-  let graph;
-  try {
-    graph = layoutGraph(String(mermaid));
-  } catch (err) {
-    return (
-      <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/10 p-3">
-        <p className="text-[12px] text-amber-100">Unable to render this architecture diagram. The Mermaid text is still available below.</p>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-slate-300">{String(mermaid)}</pre>
-      </div>
-    );
-  }
-
-  const { nodes, edges, layers, maxDepth } = graph;
+  const { nodes, edges, layers, maxDepth } = layoutGraph(mermaid);
   if (!nodes.length) return <p className="text-[12px] text-slate-500">Diagram is empty.</p>;
 
   const W = 640;

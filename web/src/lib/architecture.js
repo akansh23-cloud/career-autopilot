@@ -1,174 +1,92 @@
 // Part 5 — Architecture visualization.
-// Generates and parses simple Mermaid-style diagrams for in-app rendering.
-// This module is deliberately defensive because project data can come from
-// static generators, AI providers, Patent OS conversions, or older localStore
-// records with different shapes.
+// We generate a Mermaid `graph TD` string for every project (portable: copy it
+// into any Mermaid renderer / GitHub markdown). For the in-app diagram we do
+// NOT add a heavy mermaid dependency — instead we parse the simple graph and
+// render a clean dark-themed SVG fallback (see ArchitectureDiagram in
+// ProofViews.jsx). Both share this one source of truth.
 
-const esc = (s = '') => String(s ?? '')
-  .replace(/"/g, "'")
-  .replace(/[\[\]]/g, '')
-  .replace(/\s+/g, ' ')
-  .trim();
+const esc = (s = '') => String(s).replace(/"/g, "'").replace(/[\[\]]/g, '');
 
-const toArray = (value) => {
-  if (Array.isArray(value)) return value.filter((x) => x != null).map(String).filter(Boolean);
-  if (value == null) return [];
-  if (typeof value === 'string') return value.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
-  if (typeof value === 'object') return Object.values(value).flatMap(toArray).filter(Boolean);
-  return [String(value)];
-};
-
-const words = (value, fallback = '') => esc(value || fallback).slice(0, 64) || fallback;
-const nodeLabel = (label, fallback) => words(label, fallback).replace(/[^A-Za-z0-9 /_+.#:-]/g, '');
-
-/* Build a Mermaid graph string from a project, tailored to its actual content.
-   Safe for malformed/partial project objects. */
+/* Build a Mermaid graph string from a project, tailored to its type/stack. */
 export function generateMermaid(project = {}) {
-  const p = project && typeof project === 'object' ? project : {};
-  const type = words(p.type, 'Full Stack');
-  const stackItems = toArray(p.techStack || p.recommendedTechStack || p.skillsCovered || []);
-  const stack = stackItems.join(' ').toLowerCase();
-  const modules = toArray(p.mvpModules || p.modules || p.features?.mustHave || p.checklist?.map?.((c) => c?.label || c) || []);
-  const title = nodeLabel(p.title || p.projectTitle || 'Project', 'Project');
-  const problem = nodeLabel(p.problemStatement || p.problem || p.painPoint || 'User problem', 'User problem');
-  const solution = nodeLabel(p.solution || p.proposedSolution || p.useCase || 'Project solution', 'Project solution');
+  const type = project.type || 'Full Stack';
+  const stack = (project.techStack || []).join(' ').toLowerCase();
+  const frontend = /react|next|vue|angular|svelte|tailwind|vite/.test(stack) ? 'React Frontend'
+    : type === 'Frontend' || type === 'Full Stack' ? 'Web Frontend' : null;
+  const backend = /express|node|fastapi|django|spring|flask|api/.test(stack) || ['Backend', 'Full Stack', 'AI/ML', 'Cloud'].includes(type) ? 'API Service' : null;
+  const db = project.databaseSchema && project.databaseSchema.length
+    ? (/mongo/.test(stack) ? 'MongoDB' : /dynamo/.test(stack) ? 'DynamoDB' : 'PostgreSQL')
+    : (/mongo|postgres|mysql|dynamo|sql|prisma/.test(stack) ? 'Database' : null);
+  const auth = /jwt|auth|oauth|clerk|cognito/.test(stack) ? 'Auth (JWT)' : null;
+  const cloud = /aws|lambda|s3|gcp|azure|render|railway|vercel|netlify/.test(stack) || ['Cloud', 'DevOps'].includes(type) ? 'Cloud / Deploy' : null;
+  const ci = /docker|kubernetes|terraform|github actions|ci\/cd|helm|jenkins/.test(stack) || ['DevOps', 'Cloud'].includes(type) ? 'CI/CD Pipeline' : null;
+  const ext = /stripe|razorpay|openai|anthropic|api gateway|kafka|redis|external/.test(stack) ? 'External API' : null;
 
-  const has = (...patterns) => patterns.some((rx) => rx.test(stack));
-  const frontend = has(/react|next|vue|angular|svelte|tailwind|vite|frontend|ui/) || /Frontend|Full Stack/i.test(type)
-    ? nodeLabel(stackItems.find((s) => /react|next|vue|angular|svelte|frontend|ui/i.test(s)) || 'Frontend UI', 'Frontend UI')
-    : null;
-  const backend = has(/express|node|fastapi|django|spring|flask|api|backend/) || /Backend|Full Stack|AI\/ML|Cloud|DevOps/i.test(type)
-    ? nodeLabel(stackItems.find((s) => /api|node|express|fastapi|backend|spring|django/i.test(s)) || 'Backend API', 'Backend API')
-    : null;
-  const db = toArray(p.databaseSchema || p.dataModel).length || has(/mongo|postgres|mysql|dynamo|sql|prisma|database/)
-    ? nodeLabel(stackItems.find((s) => /mongo|postgres|mysql|dynamo|sql|database/i.test(s)) || 'Database', 'Database')
-    : null;
-  const external = toArray(p.externalApis || p.externalSources || p.sourceCitations).length || has(/openai|anthropic|gemini|stripe|razorpay|github|stack|arxiv|external/)
-    ? nodeLabel(toArray(p.externalApis || p.externalSources || p.sourceCitations)[0] || 'External Sources', 'External Sources')
-    : null;
-  const deploy = has(/aws|lambda|s3|gcp|azure|render|railway|vercel|netlify|docker|kubernetes|terraform|github actions|ci\/cd|helm|jenkins/)
-    ? nodeLabel(stackItems.find((s) => /aws|vercel|render|docker|kubernetes|terraform|github actions|ci\/cd|jenkins/i.test(s)) || 'Deployment / CI', 'Deployment / CI')
-    : null;
-
-  const L = ['graph TD'];
-  L.push(`  User["Target User"]`);
-  L.push(`  Problem["${problem}"]`);
-  L.push(`  Core["${title}"]`);
-  L.push('  User --> Problem');
-  L.push('  Problem --> Core');
-
-  if (frontend) { L.push(`  Frontend["${frontend}"]`); L.push('  Core --> Frontend'); }
-  if (backend) { L.push(`  API["${backend}"]`); L.push(frontend ? '  Frontend --> API' : '  Core --> API'); }
-  const hub = backend ? 'API' : frontend ? 'Frontend' : 'Core';
-  const primaryModules = modules.slice(0, 3);
-  primaryModules.forEach((m, i) => {
-    const id = `Module${i + 1}`;
-    L.push(`  ${id}["${nodeLabel(m, `Module ${i + 1}`)}"]`);
-    L.push(`  ${hub} --> ${id}`);
-  });
-  if (db) { L.push(`  DB[("${db}")]`); L.push(`  ${hub} --> DB`); }
-  if (external) { L.push(`  External["${external}"]`); L.push(`  ${hub} --> External`); }
-  L.push(`  Result["${solution || 'Working MVP / proof'}"]`);
-  if (primaryModules.length) L.push(`  Module${primaryModules.length} --> Result`);
-  else L.push(`  ${hub} --> Result`);
-  if (deploy) { L.push(`  Deploy["${deploy}"]`); L.push('  Result --> Deploy'); }
+  const L = [];
+  L.push('graph TD');
+  L.push(`  User["User"]`);
+  if (frontend) { L.push(`  Frontend["${esc(frontend)}"]`); L.push('  User --> Frontend'); }
+  if (backend) {
+    L.push(`  API["${esc(backend)}"]`);
+    L.push(frontend ? '  Frontend --> API' : '  User --> API');
+  }
+  const hub = backend ? 'API' : frontend ? 'Frontend' : 'User';
+  if (auth) { L.push(`  Auth["${esc(auth)}"]`); L.push(`  ${hub} --> Auth`); }
+  if (db) { L.push(`  DB[("${esc(db)}")]`); L.push(`  ${hub} --> DB`); }
+  if (ext) { L.push(`  Ext["${esc(ext)}"]`); L.push(`  ${hub} --> Ext`); }
+  if (cloud) { L.push(`  Cloud["${esc(cloud)}"]`); L.push(`  ${backend ? 'API' : 'Frontend'} --> Cloud`); }
+  if (ci) { L.push(`  CI["${esc(ci)}"]`); L.push(`  CI --> ${cloud ? 'Cloud' : hub}`); }
+  if (L.length <= 2) { L.push(`  Core["${esc(project.title || 'Application')}"]`); L.push('  User --> Core'); }
   return L.join('\n');
 }
 
-/* Parse a simple Mermaid `graph TD` or `flowchart TD` string into {nodes, edges}.
-   Supports common node shapes and avoids throwing on unsupported Mermaid syntax. */
+/* Parse a simple Mermaid `graph TD` string into { nodes, edges } for the
+   fallback SVG renderer. Supports node shapes ["..."], (("..")), [("..")]. */
 export function parseGraph(mermaid = '') {
   const nodes = new Map();
   const edges = [];
-  const raw = String(mermaid ?? '').slice(0, 12000);
-
   const addNode = (id, label, shape) => {
-    const safeId = String(id || '').trim().replace(/[^A-Za-z0-9_]/g, '_').slice(0, 40);
-    if (!safeId) return null;
-    const safeLabel = String(label || safeId).replace(/<[^>]*>/g, '').replace(/[{}]/g, '').trim().slice(0, 80) || safeId;
-    if (!nodes.has(safeId)) nodes.set(safeId, { id: safeId, label: safeLabel, shape: shape || 'rect' });
-    else if (label) {
-      const n = nodes.get(safeId);
-      n.label = safeLabel;
-      if (shape) n.shape = shape;
-    }
-    return safeId;
+    if (!nodes.has(id)) nodes.set(id, { id, label: label || id, shape: shape || 'rect' });
+    else if (label) { const n = nodes.get(id); n.label = label; if (shape) n.shape = shape; }
   };
+  const nodeRe = /([A-Za-z0-9_]+)(\[\("([^"]*)"\)\]|\(\("([^"]*)"\)\)|\["([^"]*)"\]|\("([^"]*)"\))?/;
+  const shapeOf = (m) => m[3] != null ? 'cyl' : m[4] != null ? 'circle' : m[5] != null ? 'rect' : m[6] != null ? 'round' : 'rect';
+  const labelOf = (m) => m[3] ?? m[4] ?? m[5] ?? m[6] ?? null;
 
-  const parseNode = (rawNode = '') => {
-    let text = String(rawNode || '').trim();
-    text = text.replace(/^[|].*?[|]/, '').replace(/[|].*?[|]$/, '').trim();
-    text = text.replace(/^[\-\.=>\s]+|[\-\.=>\s]+$/g, '').trim();
-    const idMatch = text.match(/^([A-Za-z0-9_]+)/);
-    if (!idMatch) return null;
-    const id = idMatch[1];
-    const rest = text.slice(id.length).trim();
-    let label = null;
-    let shape = 'rect';
-
-    const patterns = [
-      [/^\[\("([^"]*)"\)\]/, 'cyl'],
-      [/^\(\("([^"]*)"\)\)/, 'circle'],
-      [/^\["([^"]*)"\]/, 'rect'],
-      [/^\("([^"]*)"\)/, 'round'],
-      [/^\[\(([^)]*)\)\]/, 'cyl'],
-      [/^\(\(([^)]*)\)\)/, 'circle'],
-      [/^\[([^\]]*)\]/, 'rect'],
-      [/^\(([^)]*)\)/, 'round'],
-    ];
-    for (const [rx, sh] of patterns) {
-      const m = rest.match(rx);
-      if (m) { label = m[1]; shape = sh; break; }
-    }
-    return { id, label, shape };
-  };
-
-  raw.split('\n').slice(0, 200).forEach((lineRaw) => {
-    const line = lineRaw.trim();
-    if (!line || /^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|stateDiagram)\s/i.test(line) || line.startsWith('%%') || line.startsWith('subgraph') || line === 'end') return;
-    const parts = line.split(/-->|---|-.->|==>|--\s*[^-]*\s*-->/).map((p) => p.trim()).filter(Boolean);
-    if (parts.length >= 2) {
-      const left = parseNode(parts[0]);
-      const right = parseNode(parts[parts.length - 1]);
-      const a = left ? addNode(left.id, left.label, left.shape) : null;
-      const b = right ? addNode(right.id, right.label, right.shape) : null;
-      if (a && b && a !== b) edges.push([a, b]);
+  mermaid.split('\n').forEach((raw) => {
+    const line = raw.trim();
+    if (!line || /^graph\s/i.test(line) || line.startsWith('%%')) return;
+    if (line.includes('-->')) {
+      const [l, r] = line.split('-->');
+      const lm = l.trim().match(nodeRe);
+      const rm = r.trim().match(nodeRe);
+      if (lm) addNode(lm[1], labelOf(lm), shapeOf(lm));
+      if (rm) addNode(rm[1], labelOf(rm), shapeOf(rm));
+      if (lm && rm) edges.push([lm[1], rm[1]]);
     } else {
-      const n = parseNode(line);
-      if (n) addNode(n.id, n.label, n.shape);
+      const m = line.match(nodeRe);
+      if (m) addNode(m[1], labelOf(m), shapeOf(m));
     }
   });
-  return { nodes: Array.from(nodes.values()).slice(0, 40), edges: edges.slice(0, 80) };
+  return { nodes: Array.from(nodes.values()), edges };
 }
 
-/* Assign nodes to layers using cycle-safe BFS. Previous versions could hang on
-   feedback-loop diagrams because depth kept increasing through cycles. */
+/* Assign nodes to layers (BFS depth from roots) for a top-down layout. */
 export function layoutGraph(mermaid = '') {
   const { nodes, edges } = parseGraph(mermaid);
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const indeg = Object.fromEntries(nodes.map((n) => [n.id, 0]));
   edges.forEach(([, to]) => { if (indeg[to] != null) indeg[to] += 1; });
-  const adj = {};
-  edges.forEach(([a, b]) => { if (byId[a] && byId[b]) (adj[a] = adj[a] || []).push(b); });
-
   const depth = {};
   const roots = nodes.filter((n) => indeg[n.id] === 0).map((n) => n.id);
-  const start = roots.length ? roots : nodes.slice(0, 1).map((n) => n.id);
-  const queue = [...start];
-  start.forEach((id) => { depth[id] = 0; });
-  const visitedEdges = new Set();
-  let guard = 0;
-  while (queue.length && guard < 500) {
-    guard += 1;
+  const queue = roots.map((id) => { depth[id] = 0; return id; });
+  const adj = {};
+  edges.forEach(([a, b]) => { (adj[a] = adj[a] || []).push(b); });
+  while (queue.length) {
     const cur = queue.shift();
     (adj[cur] || []).forEach((nx) => {
-      const edgeKey = `${cur}->${nx}`;
-      if (visitedEdges.has(edgeKey)) return;
-      visitedEdges.add(edgeKey);
-      if (depth[nx] == null) {
-        depth[nx] = Math.min((depth[cur] || 0) + 1, 8);
-        queue.push(nx);
-      }
+      const d = (depth[cur] || 0) + 1;
+      if (depth[nx] == null || d > depth[nx]) { depth[nx] = d; queue.push(nx); }
     });
   }
   nodes.forEach((n) => { if (depth[n.id] == null) depth[n.id] = 0; });

@@ -5,6 +5,7 @@ import {
   CheckCircle2, Circle, Plus, Trash2, Copy, Check, ListChecks, Layers,
   Target, Gauge, Clock, Boxes, AlertTriangle, X, Image as ImageIcon, BookOpen,
   GitBranch, ShieldCheck, Network, RefreshCw, ServerCog, Database, Workflow, ChevronDown,
+  Lightbulb, HelpCircle,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input, Field, Skeleton } from '../components/ui/kit.jsx';
@@ -31,6 +32,11 @@ import {
 } from '../lib/githubSync.js';
 import { calculateProjectStatus, whyNotVerified } from '../lib/projectStatus.js';
 import { generateMermaid } from '../lib/architecture.js';
+import {
+  WhyBuildPanel, ExplainPanel, BlueprintPanel, DiagramsPanel, FeasibilityPanel,
+  TaskBoardPanel, ProofChecklistPanel, ResumeOutputPanel, SimilarPanel, VerificationPanel,
+  RecommendedProjects,
+} from './ProjectIntelligencePanels.jsx';
 
 /* publish-readiness gate (Part 8) */
 function publishReadiness(p) {
@@ -59,15 +65,6 @@ function Chips({ items, tone = 'cyan' }) {
   if (!items?.length) return <span className="text-xs text-slate-500">—</span>;
   return <div className="flex flex-wrap gap-1.5">{items.map((s, i) => <Badge key={i} tone={tone}>{s}</Badge>)}</div>;
 }
-
-
-const safeArray = (value) => Array.isArray(value) ? value : [];
-const safeObject = (value) => (value && typeof value === 'object' && !Array.isArray(value)) ? value : null;
-const safeText = (value, fallback = '—') => {
-  if (value == null) return fallback;
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-  try { return JSON.stringify(value); } catch { return fallback; }
-};
 
 /* ---------------- Generated project result ---------------- */
 function MilestoneCard({ index, phase, tasks, last, defaultOpen }) {
@@ -365,11 +362,21 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
   const tabs = [
     ['overview', 'Overview', Target],
+    ['whybuild', 'Why Build This', Sparkles],
+    ['explain', 'Explain Project', Lightbulb],
+    ['blueprint', 'Build Blueprint', Boxes],
     ['architecture', 'Architecture', Network],
+    ['diagrams', 'Diagrams', Workflow],
+    ['feasibility', 'Cost & Team', Gauge],
     ['roadmap', 'Roadmap', BookOpen],
     ['tasks', 'Tasks', ListChecks],
+    ['taskboard', 'GitHub Task Board', GitBranch],
+    ['proof', 'Proof Checklist', ShieldCheck],
     ['github', 'GitHub Sync', GitBranch],
     ['verify', 'Verification', ShieldCheck],
+    ['verifypath', 'Verification Path', HelpCircle],
+    ['resumeout', 'Resume Output', FileText],
+    ['similar', 'Similar Projects', Layers],
     ['resume', 'Resume/Interview', FileText],
   ];
 
@@ -388,6 +395,18 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
       <div className="mt-3" />
       <TabBar tabs={tabs} active={tab} onPick={setTab} />
+
+      {tab === 'whybuild' && <WhyBuildPanel project={p} />}
+      {tab === 'explain' && <ExplainPanel project={p} />}
+      {tab === 'blueprint' && <BlueprintPanel project={p} />}
+      {tab === 'diagrams' && <DiagramsPanel project={p} />}
+      {tab === 'feasibility' && <FeasibilityPanel project={p} />}
+      {tab === 'taskboard' && <TaskBoardPanel project={p} />}
+      {tab === 'proof' && <ProofChecklistPanel project={p} />}
+      {tab === 'verifypath' && <VerificationPanel project={p} />}
+      {tab === 'resumeout' && <ResumeOutputPanel project={p} />}
+      {tab === 'similar' && <SimilarPanel project={p} />}
+
 
       {tab === 'overview' && (
         <div className="space-y-3">
@@ -439,42 +458,39 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <ArchitectureDiagram mermaid={p.architectureDiagram || generateMermaid(p)} />
             <details className="mt-2"><summary className="cursor-pointer text-[11px] text-slate-500">View Mermaid source</summary><pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] text-slate-400">{p.architectureDiagram || generateMermaid(p)}</pre></details>
           </Panel>
-          <Panel title="Architecture notes"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{safeText(p.architecture, 'No architecture notes yet.')}</p></Panel>
-          {safeObject(ind.technicalArchitecture) && (
+          <Panel title="Architecture notes"><p className="text-[13px] leading-relaxed text-slate-300">{p.architecture}</p></Panel>
+          {ind.technicalArchitecture && (
             <Panel title="Technical architecture">
               <div className="grid gap-1.5 text-[12px] sm:grid-cols-2">
-                {Object.entries(safeObject(ind.technicalArchitecture)).map(([k, v]) => (
-                  <div key={k} className="flex gap-2"><span className="w-28 shrink-0 capitalize text-slate-500">{k}</span><span className="text-slate-300">{safeText(v)}</span></div>
+                {Object.entries(ind.technicalArchitecture).map(([k, v]) => (
+                  <div key={k} className="flex gap-2"><span className="w-28 shrink-0 capitalize text-slate-500">{k}</span><span className="text-slate-300">{v}</span></div>
                 ))}
               </div>
             </Panel>
           )}
-          {typeof ind.technicalArchitecture === 'string' && (
-            <Panel title="Technical architecture"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{ind.technicalArchitecture}</p></Panel>
-          )}
-          {safeArray(ind.dataModel).length > 0 && (
+          {ind.dataModel && (
             <Panel title="Data model / schema">
               <div className="space-y-2">
-                {safeArray(ind.dataModel).map((m, i) => (
+                {ind.dataModel.map((m, i) => (
                   <div key={i} className="rounded-lg bg-white/[0.03] p-2">
-                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-white"><Database size={12} className="text-aurora-cyan" /> {safeText(m?.name || `Entity ${i + 1}`)}</div>
-                    {safeArray(m?.fields).length > 0 && <ul className="mt-1 list-disc pl-4 font-mono text-[11px] text-slate-400">{safeArray(m.fields).map((f, j) => <li key={j}>{safeText(f)}</li>)}</ul>}
-                    {m?.sample != null && <pre className="mt-1 overflow-x-auto rounded bg-ink-950/70 p-1.5 font-mono text-[10px] text-slate-400">{safeText(m.sample)}</pre>}
+                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-white"><Database size={12} className="text-aurora-cyan" /> {m.name}</div>
+                    <ul className="mt-1 list-disc pl-4 font-mono text-[11px] text-slate-400">{m.fields.map((f, j) => <li key={j}>{f}</li>)}</ul>
+                    <pre className="mt-1 overflow-x-auto rounded bg-ink-950/70 p-1.5 font-mono text-[10px] text-slate-400">{JSON.stringify(m.sample, null, 2)}</pre>
                   </div>
                 ))}
               </div>
             </Panel>
           )}
-          {safeArray(ind.apiDesign).length > 0 && (
+          {ind.apiDesign && (
             <Panel title="API design">
               <div className="space-y-1.5">
-                {safeArray(ind.apiDesign).map((a, i) => (
+                {ind.apiDesign.map((a, i) => (
                   <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
-                    <summary className="cursor-pointer text-slate-200"><span className="font-mono font-semibold text-aurora-cyan">{safeText(a?.method || 'API')}</span> <span className="font-mono">{safeText(a?.endpoint || `/endpoint-${i + 1}`)}</span> — {safeText(a?.purpose || 'Project API')} {a?.auth && <Badge tone="amber">auth</Badge>}</summary>
+                    <summary className="cursor-pointer text-slate-200"><span className="font-mono font-semibold text-aurora-cyan">{a.method}</span> <span className="font-mono">{a.endpoint}</span> — {a.purpose} {a.auth && <Badge tone="amber">auth</Badge>}</summary>
                     <div className="mt-1 space-y-0.5 text-slate-400">
-                      <p><span className="text-slate-500">Request:</span> <code>{safeText(a?.request)}</code></p>
-                      <p><span className="text-slate-500">Response:</span> <code>{safeText(a?.response)}</code></p>
-                      <p><span className="text-slate-500">Validation:</span> {safeText(a?.validation)}</p>
+                      <p><span className="text-slate-500">Request:</span> <code>{a.request}</code></p>
+                      <p><span className="text-slate-500">Response:</span> <code>{a.response}</code></p>
+                      <p><span className="text-slate-500">Validation:</span> {a.validation}</p>
                     </div>
                   </details>
                 ))}
@@ -482,7 +498,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             </Panel>
           )}
           <Panel title="Folder structure">
-            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{safeText(p.repoStructure, 'No folder structure generated yet.')}</pre>
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre>
           </Panel>
         </div>
       )}
@@ -807,18 +823,34 @@ export default function ProjectStudio({ go }) {
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 2600); };
 
-  const generate = async () => {
+  const generate = async (override = null) => {
     setStatus('loading'); setProject(null);
+    const ov = override && typeof override === 'object' && !override.nativeEvent ? override : null;
     const input = {
-      targetRole: role, difficulty: level, duration, type,
-      sourceMissingSkills: useGaps && gaps.length ? gaps : extractSkillsFromJD(jd),
+      targetRole: ov?.targetRole || role, difficulty: ov?.difficulty || level, duration, type,
+      sourceMissingSkills: ov?.sourceMissingSkills || (useGaps && gaps.length ? gaps : extractSkillsFromJD(jd)),
       jd: jd.trim(), resumeText: resume.text || '',
-      sourceJob: seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null),
-      title: seed?.idea?.title || undefined,
-      problemStatement: seed?.idea?.problem || undefined,
+      sourceJob: ov?.sourceJob || (seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null)),
+      title: ov?.title || seed?.idea?.title || undefined,
+      problemStatement: ov?.problemStatement || seed?.idea?.problem || undefined,
     };
     try { const p = await generateRoadmap(input); setProject(p); setStatus('done'); }
     catch { setStatus('error'); }
+  };
+
+  const buildFromRecommendation = (rec) => {
+    if (rec?.targetRole) setRole(rec.targetRole);
+    const diff = (rec?.difficulty || '').toLowerCase();
+    const mapped = diff.includes('begin') ? 'Beginner' : diff.includes('adv') || diff.includes('research') ? 'Advanced' : 'Intermediate';
+    setLevel(mapped);
+    generate({
+      targetRole: rec?.targetRole,
+      difficulty: mapped,
+      title: rec?.title,
+      problemStatement: rec?.problemStatement,
+      sourceMissingSkills: rec?.skillGapsFixed || rec?.skills || [],
+    });
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const saveWorkspace = () => { const saved = saveProject(project); setProjects(getProjects()); flash('Saved to workspaces.'); setOpenWs(saved); };
@@ -932,6 +964,13 @@ export default function ProjectStudio({ go }) {
         {project && status === 'done' && (
           <ProjectResult project={project} seed={seed} onSave={saveWorkspace} onAddBullets={addBullets} onOpenEditor={() => go?.('editor')} />
         )}
+      </div>
+
+      {/* gap-driven recommendations */}
+      <div className="mt-6">
+        <SectionCard title="Gap-driven recommendations" action={<Sparkles size={16} className="text-aurora-violet" />}>
+          <RecommendedProjects onBuild={buildFromRecommendation} />
+        </SectionCard>
       </div>
 
       {/* saved workspaces */}
