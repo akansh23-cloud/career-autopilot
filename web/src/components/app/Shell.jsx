@@ -52,7 +52,7 @@ export const NAV = [
   { id: 'architecture', label: 'Architecture Generator', icon: Boxes },
   { id: 'innovation', label: 'Innovation OS', icon: Sparkles },
   { id: 'patents', label: 'Patent Dashboard', icon: ScrollText },
-  { id: 'patentgenerate', label: 'Generate Ideas', icon: Lightbulb },
+  { id: 'patentgenerate', label: 'Legacy Generator', icon: Lightbulb },
   { id: 'patentportfolio', label: 'My Inventions', icon: Store },
   { id: 'priorart', label: 'Prior-Art Research', icon: Search },
   { id: 'patentdisclosures', label: 'Disclosures', icon: FileStack },

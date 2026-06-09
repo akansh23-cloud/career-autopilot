@@ -13,7 +13,7 @@
    Nothing here throws to the client; failures degrade.
    ============================================================ */
 import { z } from 'zod';
-import { piConfig, resolveActiveProvider, ALLOWED_SOURCES, INNOVATION_STATUSES, PROOF_GATED_STATUSES, INNOVATION_DISCLAIMER } from '../services/problemIntelligence/config.js';
+import { piConfig, resolveActiveProvider, ALL_SOURCES, INNOVATION_STATUSES, PROOF_GATED_STATUSES, INNOVATION_DISCLAIMER } from '../services/problemIntelligence/config.js';
 import { ingestSignals } from '../services/problemIntelligence/ingestionService.js';
 import { extractPainPoints } from '../services/problemIntelligence/extractionService.js';
 import { clusterSignals } from '../services/problemIntelligence/clusteringService.js';
@@ -24,6 +24,12 @@ import { estimateFeasibilityAndCost } from '../services/problemIntelligence/feas
 import { computeIPReadiness, ipNarrative } from '../services/problemIntelligence/ipReadinessService.js';
 import { normalizePriorArtRecord } from '../services/problemIntelligence/priorArtWorkspaceService.js';
 import { assembleDisclosure, toProjectPayload, toPatentIdeaPayload } from '../services/problemIntelligence/patentBridgeService.js';
+import { simplifyProject } from '../services/problemIntelligence/simplifiedExplainerService.js';
+import { validateIndiaCRI } from '../services/problemIntelligence/indiaCriValidatorService.js';
+import { priorArtSearchPlan, claimDirections, evidenceChecklist, scoreEvidence, disclosureRiskCheck, diagramPlan, experimentPlan } from '../services/problemIntelligence/patentWorkflowService.js';
+import { retrieveSimilar } from '../services/innovationMemory/retrievalService.js';
+import { detectDuplicates } from '../services/innovationMemory/duplicateDetectionService.js';
+import { ingestDiscovery, ingestProject } from '../services/innovationMemory/memoryIngestionService.js';
 import * as store from '../services/problemIntelligence/store.js';
 
 const discoverSchema = z.object({
@@ -34,13 +40,49 @@ const discoverSchema = z.object({
   skills: z.array(z.string().trim().max(60)).max(30).optional().default([]),
   difficulty: z.string().trim().max(40).optional().default(''),
   purpose: z.enum(['portfolio', 'startup', 'research', 'patent-readiness']).optional().default('portfolio'),
-  sources: z.array(z.enum(ALLOWED_SOURCES)).max(4).optional().default([]),
+  sources: z.array(z.enum(ALL_SOURCES)).max(11).optional().default([]),
+  communities: z.object({
+    redditSubreddits: z.array(z.string().trim().max(60)).max(10).optional().default([]),
+    discourseForums: z.array(z.string().trim().max(200)).max(10).optional().default([]),
+    specializedForums: z.array(z.string().trim().max(200)).max(10).optional().default([]),
+    devtoTags: z.array(z.string().trim().max(40)).max(10).optional().default([]),
+    hashnodeTags: z.array(z.string().trim().max(40)).max(10).optional().default([]),
+    hackerNewsQuery: z.string().trim().max(120).optional().default(''),
+  }).optional().default({}),
   manualProblems: z.array(z.object({
     title: z.string().trim().max(280), description: z.string().trim().max(2000).optional().default(''),
     tags: z.array(z.string().trim().max(40)).max(12).optional().default([]),
   })).max(30).optional().default([]),
-  timeRange: z.string().trim().max(20).optional().default(''),
+  timeRange: z.enum(['30d', '90d', '1y', 'all', '']).optional().default(''),
   limit: z.number().int().min(1).max(40).optional().default(20),
+}).passthrough();
+
+const simplifySchema = z.object({
+  audience: z.enum(['beginner', 'intermediate', 'faculty', 'recruiter', 'patent_agent']).optional().default('beginner'),
+  detailLevel: z.enum(['simple', 'normal', 'detailed']).optional().default('normal'),
+  project: z.any().optional(),
+}).passthrough();
+
+const evidenceSchema = z.object({
+  type: z.string().trim().max(40),
+  title: z.string().trim().max(200),
+  url: z.string().trim().max(500).optional().default(''),
+  description: z.string().trim().max(1000).optional().default(''),
+  visibility: z.enum(['private', 'team', 'faculty', 'college', 'public_safe']).optional().default('private'),
+  verified: z.boolean().optional().default(false),
+  source: z.enum(['github', 'live_demo', 'upload', 'manual', 'screenshot', 'video', 'benchmark']).optional().default('manual'),
+}).passthrough();
+
+const disclosureRiskSchema = z.object({
+  action: z.enum(['make_public', 'export_recruiter', 'post_linkedin', 'publish_github', 'share_disclosure', 'move_to_patent_review']).optional().default('make_public'),
+  project: z.any().optional(),
+}).passthrough();
+
+const confidentialitySchema = z.object({
+  confidentialityStatus: z.enum(['private', 'shared_with_faculty', 'shared_with_ip_cell', 'public_safe']).optional(),
+  publicDisclosureStatus: z.enum(['none', 'planned', 'already_disclosed', 'unknown']).optional(),
+  disclosureDate: z.string().trim().max(40).optional(),
+  disclosureChannel: z.string().trim().max(120).optional(),
 }).passthrough();
 
 const priorArtSchema = z.object({
@@ -84,9 +126,26 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
       aiProvider: provider,
       sources: {
         github: { available: true, mode: c.githubToken ? 'authenticated' : 'public' },
+        github_discussions: { available: true, mode: c.githubToken ? 'authenticated' : 'public' },
         stackexchange: { available: true, mode: c.stackExchangeKey ? 'keyed' : 'keyless' },
         arxiv: { available: true, mode: 'public' },
         manual: { available: true, mode: 'manual' },
+      },
+      communitySources: {
+        enabled: c.community.enabled,
+        reddit: { enabled: c.community.reddit.enabled, configured: !!(c.community.reddit.clientId && c.community.reddit.clientSecret), note: (!c.community.reddit.enabled || !(c.community.reddit.clientId && c.community.reddit.clientSecret)) ? 'Reddit source is disabled. Add official Reddit API credentials and enable REDDIT_DISCOVERY_ENABLED=1.' : 'Reddit official API ready.' },
+        hackernews: { enabled: c.community.hackernews.enabled, mode: 'public-api' },
+        discourse: { enabled: c.community.discourse.enabled, allowlistCount: c.community.discourse.allowedBaseUrls.length, note: 'Only allowlisted Discourse base URLs are queried (DISCOURSE_ALLOWED_BASE_URLS).' },
+        devto: { enabled: c.community.devto.enabled, mode: 'public-api' },
+        hashnode: { enabled: c.community.hashnode.enabled, mode: 'public-api' },
+        specialized_forum: { enabled: c.community.specializedForum.enabled, allowlistCount: c.community.specializedForum.allowedSources.length, note: 'Specialized forums must be allowlisted (SPECIALIZED_FORUM_ALLOWED_SOURCES).' },
+        trustPolicy: 'Community discussions are early signals, not verified evidence. Community-only evidence caps IP-readiness at 55.',
+      },
+      memory: {
+        enabled: c.memory.enabled,
+        embeddingProvider: c.memory.embeddingProvider,
+        vectorSearch: c.memory.vectorSearchEnabled,
+        mode: c.memory.vectorSearchEnabled && ((c.memory.embeddingProvider === 'openai' && c.openaiKey) || (c.memory.embeddingProvider === 'gemini' && c.geminiKey)) ? 'vector' : 'keyword',
       },
       warnings: buildKeyWarnings(c, provider),
       statuses: INNOVATION_STATUSES,
@@ -123,15 +182,34 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
       clusters = clusters.map((c2) => ({ ...c2, id: c2.dedupeFingerprint, persisted: false }));
     }
 
+    // ---- RAG: retrieve similar past memory + ingest these signals/clusters (privacy-filtered) ----
+    const rag = { memoryUsed: false, retrievedMemoryCount: 0, duplicateWarnings: [], mode: 'disabled' };
+    if (c.memory.enabled) {
+      try {
+        const retrieval = await retrieveSimilar({ ...me(req), query: { title: input.goal || input.domain, keywords: ing.keywords, summary: (extracted.painPoints || []).join(' ') }, sourceTypes: ['generated_project', 'problem_cluster'], limit: 6, cfg: c });
+        rag.memoryUsed = retrieval.retrievalUsed; rag.retrievedMemoryCount = retrieval.retrievedMemoryCount; rag.mode = retrieval.mode;
+        rag.duplicateWarnings = retrieval.similarityWarnings || [];
+        // store the new (safe) signals + clusters for future retrieval/dedupe
+        await ingestDiscovery({ ...me(req), signals: extracted.signals, clusters, cfg: c });
+      } catch (e) { /* memory is best-effort */ }
+    }
+
+    const sourceMix = ing.sourceMix || {};
+    const mode = provider === 'fallback' ? 'fallback' : (sourceMix.communityOnly ? 'mixed' : (sourceMix.distinctTypes > 1 ? 'mixed' : 'source_backed'));
+    if (sourceMix.communityOnly) warnings.push('Early community signal — validate with technical sources, prior-art search, and prototype evidence before treating as IP-worthy.');
+
     res.json({
       ok: true,
-      mode: provider === 'fallback' ? 'limited/fallback' : 'full',
+      mode,
       aiProvider: extracted.provider,
       confidence: extracted.confidence,
       signalsCount: ing.signalsCount,
+      communitySignalsCount: ing.communitySignalsCount || 0,
       bySource: ing.bySource,
+      sourceMix,
       painPoints: extracted.painPoints,
-      clusters: clusters.map(publicCluster),
+      clusters: clusters.map((cl) => publicCluster(cl, sourceMix)),
+      rag,
       warnings,
       db: dbOn(db),
     });
@@ -160,11 +238,23 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
     }, c);
     project.clusterId = cluster.id || cluster.dedupeFingerprint || '';
     project.status = 'project_blueprint_ready';
+    if (cluster.sources) project.sourceMix = { communityOnly: (cluster.sources.length > 0 && cluster.sources.every((s) => ['reddit', 'hackernews', 'discourse', 'devto', 'hashnode', 'specialized_forum'].includes(s))) };
+
+    // Duplicate detection against memory BEFORE saving (skip near-duplicates).
+    let duplicateInfo = { isDuplicate: false, duplicateCount: 0, duplicates: [], reason: '' };
+    if (c.memory.enabled) {
+      try { duplicateInfo = await detectDuplicates({ ...me(req), project, cfg: c }); } catch { /* best-effort */ }
+    }
+    if (duplicateInfo.isDuplicate && !req.body?.allowDuplicate) {
+      return res.json({ ok: true, duplicate: true, skipped: true, duplicateCount: duplicateInfo.duplicateCount, duplicates: duplicateInfo.duplicates, message: duplicateInfo.reason || `${duplicateInfo.duplicateCount} similar idea(s) already exist in your workspace.`, db: dbOn(db) });
+    }
 
     let saved = { ok: false };
     if (dbOn(db)) saved = await store.saveProject({ ...me(req), project });
     const id = saved.ok ? saved.project.id : project.fingerprint;
-    res.json({ ok: true, project: { ...project, id }, persisted: saved.ok, duplicate: !!saved.duplicate, db: dbOn(db) });
+    // Ingest the generated project into memory for future duplicate detection / retrieval.
+    if (c.memory.enabled) { try { await ingestProject({ ...me(req), project: { ...project, id }, cfg: c }); } catch { /* best-effort */ } }
+    res.json({ ok: true, project: { ...project, id }, persisted: saved.ok, duplicate: !!saved.duplicate, similarSkipped: duplicateInfo.duplicates || [], db: dbOn(db) });
   }));
 
   /* ---- per-project enrichments. Each accepts a stored id OR a project body. ---- */
@@ -195,8 +285,8 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
     const { project, persisted } = await loadProject(req);
     if (!project) return notFound(res);
     const priorArtRecords = persisted ? await store.listPriorArt({ ...me(req), projectId: req.params.projectId }) : (req.body?.priorArtRecords || []);
-    const hasPrototypeEvidence = !!(project.convertedProjectId || req.body?.hasPrototypeEvidence);
-    const ipReadiness = computeIPReadiness({ project, priorArtRecords, hasPrototypeEvidence });
+    const hasPrototypeEvidence = !!(project.convertedProjectId || project.linkedGithubRepoId || (project.evidence || []).length || req.body?.hasPrototypeEvidence);
+    const ipReadiness = computeIPReadiness({ project, priorArtRecords, hasPrototypeEvidence, communityOnly: communityOnlyOf(project) });
     const narrative = await ipNarrative(project, cfg());
     ipReadiness.narrative = narrative.narrative; ipReadiness.aiProvider = narrative.aiProvider;
     if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { ipReadiness } });
@@ -271,6 +361,126 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
     res.json({ ok: true, patentIdeaId, patentIdea: payload, persisted: !!patentIdeaId, db: dbOn(db), note: patentIdeaId ? 'Created in Patent OS.' : 'DB off — open Patent OS to generate persistently.' });
   }));
 
+  /* ============================================================
+     Patent OS world-class upgrade — new endpoints
+     ============================================================ */
+
+  // Student Build Explainer — "Explain What To Build"
+  app.post('/api/problem-intelligence/projects/:projectId/simplify', requireAuth, generationLimiter, validate(simplifySchema), ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const simplified = await simplifyProject({ project, audience: req.body.audience, detailLevel: req.body.detailLevel }, cfg());
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { simplified } });
+    res.json({ ok: true, simplified, db: dbOn(db) });
+  }));
+
+  // India CRI / Section 3(k) validator
+  app.post('/api/problem-intelligence/projects/:projectId/india-cri', requireAuth, ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const indiaCri = validateIndiaCRI(project);
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { indiaCri } });
+    res.json({ ok: true, indiaCri, disclaimer: INNOVATION_DISCLAIMER, db: dbOn(db) });
+  }));
+
+  // Prior-art search plan
+  app.post('/api/problem-intelligence/projects/:projectId/prior-art/search-plan', requireAuth, generationLimiter, ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const plan = priorArtSearchPlan(project);
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { priorArtSearchPlan: plan } });
+    res.json({ ok: true, searchPlan: plan, note: 'External prior-art risk unknown until reviewed.', db: dbOn(db) });
+  }));
+
+  // Safe claim directions (NOT legal claims)
+  app.post('/api/problem-intelligence/projects/:projectId/claim-directions', requireAuth, generationLimiter, ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const directions = await claimDirections({ project }, cfg());
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { claimDirections: directions } });
+    res.json({ ok: true, claimDirections: directions, db: dbOn(db) });
+  }));
+
+  // Prototype evidence checklist
+  app.post('/api/problem-intelligence/projects/:projectId/evidence-checklist', requireAuth, ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const checklist = evidenceChecklist(project);
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { evidenceChecklist: checklist } });
+    res.json({ ok: true, evidenceChecklist: checklist, db: dbOn(db) });
+  }));
+
+  // Attach evidence metadata → bump prototype + IP readiness
+  app.post('/api/problem-intelligence/projects/:projectId/evidence', requireAuth, validate(evidenceSchema), ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const item = { ...req.body, addedAt: new Date().toISOString() };
+    const evidence = [...(project.evidence || []), item];
+    const { prototypeEvidenceScore, hasPrototypeEvidence } = scoreEvidence(evidence);
+    const priorArtRecords = persisted ? await store.listPriorArt({ ...me(req), projectId: req.params.projectId }) : (req.body?.priorArtRecords || []);
+    const ipReadiness = computeIPReadiness({ project: { ...project, evidence }, priorArtRecords, hasPrototypeEvidence, communityOnly: communityOnlyOf(project) });
+    const patch = { evidence, prototypeEvidenceScore, ipReadiness };
+    if (item.source === 'github' && item.url) { patch.linkedGithubRepoId = item.url; patch.githubProofSummary = { url: item.url, title: item.title, verified: !!item.verified }; }
+    if (hasPrototypeEvidence && ['project_blueprint_ready', 'source_backed_problem', 'poc_planned'].includes(project.status)) patch.status = 'prototype_ready';
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch });
+    res.json({ ok: true, evidence, prototypeEvidenceScore, hasPrototypeEvidence, ipReadiness, db: dbOn(db) });
+  }));
+
+  // Confidentiality / disclosure-status update
+  app.post('/api/problem-intelligence/projects/:projectId/confidentiality', requireAuth, validate(confidentialitySchema), ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const patch = {}; for (const k of ['confidentialityStatus', 'publicDisclosureStatus', 'disclosureDate', 'disclosureChannel']) if (k in req.body) patch[k] = req.body[k];
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch });
+    res.json({ ok: true, confidentiality: { ...project, ...patch }, db: dbOn(db) });
+  }));
+
+  // Disclosure risk check (run BEFORE making public / posting / exporting)
+  app.post('/api/problem-intelligence/projects/:projectId/disclosure-risk-check', requireAuth, validate(disclosureRiskSchema), ifEnabled(async (req, res) => {
+    const { project } = await loadProject(req);
+    if (!project) return notFound(res);
+    const result = disclosureRiskCheck({ project, action: req.body.action });
+    res.json({ ok: true, ...result, db: dbOn(db) });
+  }));
+
+  // Diagram plan (Mermaid text — no image generation)
+  app.post('/api/problem-intelligence/projects/:projectId/diagram-plan', requireAuth, ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const plan = diagramPlan(project);
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { diagramPlan: plan } });
+    res.json({ ok: true, diagramPlan: plan, db: dbOn(db) });
+  }));
+
+  // Benchmark / experiment plan
+  app.post('/api/problem-intelligence/projects/:projectId/experiment-plan', requireAuth, ifEnabled(async (req, res) => {
+    const { project, persisted } = await loadProject(req);
+    if (!project) return notFound(res);
+    const plan = experimentPlan(project);
+    if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { experimentPlan: plan } });
+    res.json({ ok: true, experimentPlan: plan, db: dbOn(db) });
+  }));
+
+  // Find similar past ideas (RAG, public-safe across users)
+  app.get('/api/problem-intelligence/projects/:projectId/similar', requireAuth, ifEnabled(async (req, res) => {
+    const project = await store.getProject({ ...me(req), id: req.params.projectId });
+    const query = project
+      ? { title: project.title, painPoint: project.painPoint, proposedSolution: project.proposedSolution }
+      : { title: req.query.title || '', painPoint: req.query.q || '' };
+    const result = await retrieveSimilar({ ...me(req), query, sourceTypes: ['generated_project', 'patent_idea', 'problem_cluster'], limit: 8, cfg: cfg() });
+    res.json({ ok: true, ...result, db: dbOn(db) });
+  }));
+
+  // Reindex this user's memory from their stored projects/clusters
+  app.post('/api/problem-intelligence/memory/reindex', requireAuth, generationLimiter, ifEnabled(async (req, res) => {
+    if (!cfg().memory.enabled) return res.json({ ok: false, reason: 'memory_disabled' });
+    if (!dbOn(db)) return res.json({ ok: false, reason: 'db_disabled', message: 'Memory reindex requires the database.' });
+    const projects = await store.listProjects({ ...me(req) });
+    let reindexed = 0;
+    for (const p of projects) { const r = await ingestProject({ ...me(req), project: p, cfg: cfg() }); if (r.ok) reindexed += r.saved || 0; }
+    res.json({ ok: true, reindexed, projects: projects.length, db: dbOn(db) });
+  }));
+
   /* ---- list (UI rehydrate) ---- */
   app.get('/api/problem-intelligence/projects', requireAuth, ifEnabled(async (req, res) => {
     const projects = await store.listProjects({ ...me(req) });
@@ -284,20 +494,38 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
 }
 
 function dbOn(db) { return !!(db && db.dbEnabled && db.dbEnabled()); }
+function communityOnlyOf(project) {
+  const mix = project && project.sourceMix;
+  if (mix && typeof mix.communityOnly === 'boolean') return mix.communityOnly;
+  const COMMUNITY = ['reddit', 'hackernews', 'discourse', 'devto', 'hashnode', 'specialized_forum'];
+  const cites = (project && project.sourceCitations) || [];
+  if (!cites.length) return false;
+  return cites.every((c) => COMMUNITY.includes(c.source));
+}
 function notFound(res) { return res.status(404).json({ ok: false, error: 'not_found', message: 'Project not found. Pass the project in the body when DB is off.' }); }
 function mergeIds(clusters, saved) {
   const byFp = Object.fromEntries(saved.map((s) => [s.dedupeFingerprint, s.id]));
   return clusters.map((c) => ({ ...c, id: byFp[c.dedupeFingerprint] || c.dedupeFingerprint, persisted: !!byFp[c.dedupeFingerprint] }));
 }
-function publicCluster(c) {
+function publicCluster(c, sourceMix = null) {
+  const sources = c.sources || [];
+  const COMMUNITY = ['reddit', 'hackernews', 'discourse', 'devto', 'hashnode', 'specialized_forum'];
+  const communityCount = (c.signals || []).filter((s) => COMMUNITY.includes(s.source)).length;
+  const distinctTypes = new Set(sources).size;
+  const communityOnly = sources.length > 0 && sources.every((s) => COMMUNITY.includes(s));
   return {
     id: c.id || c.dedupeFingerprint, title: c.title, summary: c.summary, domain: c.domain, technology: c.technology, targetUser: c.targetUser,
-    keywords: c.keywords || [], signalCount: c.signalCount || 0, sources: c.sources || [], topSources: c.topSources || [],
+    keywords: c.keywords || [], signalCount: c.signalCount || 0, sources, topSources: c.topSources || [],
     evidenceStrengthScore: c.evidenceStrengthScore, severityScore: c.severityScore, trendScore: c.trendScore,
     buildFeasibilityScore: c.buildFeasibilityScore, portfolioValueScore: c.portfolioValueScore,
     researchPotentialScore: c.researchPotentialScore, patentPotentialScore: c.patentPotentialScore,
     recommendedRoute: c.recommendedRoute, sourceBacked: (c.signalCount || 0) > 0 && (c.evidenceStrengthScore || 0) >= 25,
     badge: ((c.signalCount || 0) > 0 && (c.evidenceStrengthScore || 0) >= 25) ? 'Source-backed' : 'Fallback draft',
+    communitySignalCount: communityCount,
+    privacySafe: true,
+    corroborated: distinctTypes >= 2 && !communityOnly,
+    validationNeeded: communityOnly || distinctTypes < 2,
+    validationLabel: communityOnly ? 'Early community signal — needs validation' : (distinctTypes >= 2 ? 'Corroborated across multiple sources' : 'Single-source signal — validate before relying on it'),
     persisted: c.persisted !== false,
     // keep signals only on the detail endpoint to keep list payloads small
     ...(c.signals ? { signals: c.signals } : {}),

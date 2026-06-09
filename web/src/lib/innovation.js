@@ -24,6 +24,20 @@ export const Innovation = {
   priorArt: (projectId) => api.get(`${B}/projects/${encodeURIComponent(projectId)}/prior-art`),
   addPriorArt: (projectId, record) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/prior-art`, record),
 
+  // ---- Patent OS world-class upgrade ----
+  simplify: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/simplify`, body),
+  indiaCri: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/india-cri`, body),
+  priorArtSearchPlan: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/prior-art/search-plan`, body),
+  claimDirections: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/claim-directions`, body),
+  evidenceChecklist: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/evidence-checklist`, body),
+  addEvidence: (projectId, evidence) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/evidence`, evidence),
+  setConfidentiality: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/confidentiality`, body),
+  disclosureRiskCheck: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/disclosure-risk-check`, body),
+  diagramPlan: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/diagram-plan`, body),
+  experimentPlan: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/experiment-plan`, body),
+  similar: (projectId) => api.get(`${B}/projects/${encodeURIComponent(projectId)}/similar`),
+  reindexMemory: () => api.post(`${B}/memory/reindex`, {}),
+
   convertToProject: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/convert-to-project`, body),
   convertToPatent: (projectId, body = {}) => api.post(`${B}/projects/${encodeURIComponent(projectId)}/convert-to-patent`, body),
 

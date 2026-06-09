@@ -28,6 +28,11 @@ export default function ProblemClusterList({ clusters = [], onOpen }) {
             <SourceBadge sourceBacked={c.sourceBacked} sourcesUsed={c.signalCount} />
             <RouteBadge route={c.recommendedRoute} />
             {c.domain && <Badge tone="default">{c.domain}</Badge>}
+            {c.communitySignalCount > 0 && <Badge tone="amber">{c.communitySignalCount} community</Badge>}
+            {c.corroborated
+              ? <Badge tone="mint">Corroborated</Badge>
+              : (c.validationNeeded && <Badge tone="amber">Validation needed</Badge>)}
+            {c.privacySafe && <Badge tone="default">Privacy-safe</Badge>}
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/8 pt-3">
             <Mini label="Evidence" value={c.evidenceStrengthScore} />

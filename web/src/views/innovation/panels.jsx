@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Loader2, Boxes, IndianRupee, ScrollText, FileStack, ExternalLink,
-  Plus, AlertTriangle, CheckCircle2, Rocket,
+  Plus, AlertTriangle, CheckCircle2, Rocket, Search,
 } from 'lucide-react';
 import { Button, Badge, Field, Input, EmptyState } from '../../components/ui/kit.jsx';
 import { SectionCard } from '../common.jsx';
@@ -329,5 +329,407 @@ function Money({ label, value }) {
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className="mt-0.5 inline-flex items-center gap-1 text-sm font-semibold text-slate-100"><IndianRupee size={13} className="text-aurora-mint" />{String(value || '—').replace(/^₹/, '')}</div>
     </div>
+  );
+}
+
+/* ============================================================
+   Patent OS world-class upgrade — new panels
+   ============================================================ */
+const SEL = 'rounded-lg border border-white/12 bg-white/[0.03] px-2.5 py-1.5 text-[12.5px] text-slate-200 focus:border-aurora-violet/50 focus:outline-none';
+const riskTone = (r) => (r === 'high' ? 'rose' : r === 'medium' ? 'amber' : 'mint');
+
+/* ---------------- Simple Explanation ("Explain What To Build") ---------------- */
+export function SimpleExplanationPanel({ project, projectId, persisted }) {
+  const [data, setData] = useState(project?.simplified || null);
+  const [audience, setAudience] = useState('beginner');
+  const [detail, setDetail] = useState('normal');
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const d = await Innovation.simplify(projectId, bodyFor(project, persisted, { audience, detailLevel: detail })); setData(d.simplified); }
+    catch (e) { setErr(e?.message || 'Failed to generate explanation.'); } finally { setBusy(false); }
+  };
+  const cs = data?.clarityScores || {};
+  return (
+    <SectionCard title="Explain what to build" eyebrow="Student-friendly" action={
+      <div className="flex flex-wrap items-center gap-2">
+        <select className={SEL} value={audience} onChange={(e) => setAudience(e.target.value)}>
+          <option value="beginner">Beginner student</option><option value="intermediate">Intermediate builder</option>
+          <option value="faculty">Faculty / IP cell</option><option value="patent_agent">Patent agent</option><option value="recruiter">Recruiter-safe</option>
+        </select>
+        <select className={SEL} value={detail} onChange={(e) => setDetail(e.target.value)}>
+          <option value="simple">Simple</option><option value="normal">Normal</option><option value="detailed">Detailed</option>
+        </select>
+        <Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{data ? 'Regenerate' : 'Explain'}</Button>
+      </div>
+    }>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!data ? <EmptyState icon={Boxes} title="No explanation yet" hint="Turn this project into plain language for your chosen audience." />
+        : (
+          <div className="space-y-4 text-[13px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="cyan">{data.audience}</Badge>
+              <Badge tone={data.confidence === 'low' ? 'amber' : 'mint'}>{data.confidence}-confidence</Badge>
+            </div>
+            {data.oneLineSummary && <p className="text-[14px] font-medium text-white">{data.oneLineSummary}</p>}
+            <Grid>
+              <Block title="The pain"><p className="text-slate-300">{data.painPoint}</p></Block>
+              <Block title="Who faces it"><p className="text-slate-300">{data.whoFacesIt}</p></Block>
+              <Block title="Real-world scenario"><p className="text-slate-300">{data.realWorldScenario}</p></Block>
+              <Block title="Today's workaround"><p className="text-slate-300">{data.currentWorkaround}</p></Block>
+              <Block title="Why existing solutions fail"><p className="text-slate-300">{data.whyExistingSolutionsFail}</p></Block>
+              <Block title="How it solves the problem"><p className="text-slate-300">{data.howItSolvesProblem}</p></Block>
+            </Grid>
+            <Block title="What to build"><p className="text-slate-300">{data.whatToBuild}</p></Block>
+            {data.mvpModules?.length > 0 && <Block title="MVP modules"><List items={data.mvpModules} /></Block>}
+            {data.demoMoment && <Block title="The demo moment"><p className="text-slate-300">{data.demoMoment}</p></Block>}
+            {data.skillsNeeded?.length > 0 && <Block title="Skills needed"><Chips items={data.skillsNeeded} tone="violet" /></Block>}
+            {data.firstWeekTasks?.length > 0 && <Block title="First-week tasks"><List items={data.firstWeekTasks} /></Block>}
+            {data.whatNotToBuildYet?.length > 0 && <Block title="What NOT to build yet"><List items={data.whatNotToBuildYet} /></Block>}
+            {data.patentAngleSimple && <Block title="Patent angle (simple)"><p className="text-slate-300">{data.patentAngleSimple}</p></Block>}
+            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Clarity</h4>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ScoreBar label="Pain clarity" value={cs.painClarity} />
+                <ScoreBar label="Build clarity" value={cs.buildClarity} />
+                <ScoreBar label="Demo clarity" value={cs.demoClarity} />
+                <ScoreBar label="IP-angle clarity" value={cs.ipAngleClarity} />
+              </div>
+            </div>
+            {data.missingInfo?.length > 0 && <Block title="Missing info to clarify"><List items={data.missingInfo} /></Block>}
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+/* ---------------- India CRI / Section 3(k) ---------------- */
+export function IndiaCriPanel({ project, projectId, persisted }) {
+  const [d, setD] = useState(project?.indiaCri || null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const r = await Innovation.indiaCri(projectId, bodyFor(project, persisted)); setD(r.indiaCri); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
+  };
+  return (
+    <SectionCard title="India CRI / Section 3(k)" eyebrow="Software patentability risk" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <ScrollText size={14} />}{d ? 'Re-check' : 'Validate'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!d ? <EmptyState icon={ScrollText} title="Not validated yet" hint="Check Section 3(k) risk (computer-program / algorithm / business-method per se)." />
+        : (
+          <div className="space-y-3 text-[13px]">
+            <Badge tone={riskTone(d.section3kRisk)}>Section 3(k) risk: {d.section3kRisk}</Badge>
+            {d.riskReasons?.length > 0 && <Block title="Why"><List items={d.riskReasons} /></Block>}
+            <Grid>
+              <Block title="Technical effect"><p className="text-slate-300">{d.technicalEffect}</p></Block>
+              <Block title="Technical problem"><p className="text-slate-300">{d.technicalProblem}</p></Block>
+              <Block title="Technical means"><p className="text-slate-300">{d.technicalMeans}</p></Block>
+              <Block title="Verdict"><p className="text-slate-300">{d.patentRouteVerdict}</p></Block>
+            </Grid>
+            {d.improvementSuggestions?.length > 0 && <Block title="How to strengthen"><List items={d.improvementSuggestions} /></Block>}
+            <NotLegalAdvice />
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Prior-art search plan ---------------- */
+export function PriorArtSearchPlanPanel({ project, projectId, persisted }) {
+  const [d, setD] = useState(project?.priorArtSearchPlan || null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const r = await Innovation.priorArtSearchPlan(projectId, bodyFor(project, persisted)); setD(r.searchPlan); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
+  };
+  return (
+    <SectionCard title="Prior-art search plan" eyebrow="Queries + what to look for" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!d ? <EmptyState icon={Search} title="No search plan yet" hint="Generate patent / paper / product / GitHub search queries and a differentiation checklist." />
+        : (
+          <div className="space-y-4 text-[13px]">
+            <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">{d.disclaimer}</div>
+            <Grid>
+              <Block title="Patent search queries"><List items={d.patentSearchQueries} /></Block>
+              <Block title="Paper / arXiv queries"><List items={d.paperSearchQueries} /></Block>
+              <Block title="Product queries"><List items={d.productSearchQueries} /></Block>
+              <Block title="GitHub queries"><List items={d.githubSearchQueries} /></Block>
+            </Grid>
+            {d.classificationHints?.length > 0 && <Block title="Classification hints (CPC/IPC guesses)"><List items={d.classificationHints} /></Block>}
+            {d.noveltyQuestions?.length > 0 && <Block title="Novelty questions"><List items={d.noveltyQuestions} /></Block>}
+            {d.redFlags?.length > 0 && <Block title="Red flags"><List items={d.redFlags} /></Block>}
+            {d.differentiationChecklist?.length > 0 && <Block title="Differentiation checklist"><List items={d.differentiationChecklist} /></Block>}
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Claim directions ---------------- */
+export function ClaimDirectionsPanel({ project, projectId, persisted }) {
+  const [d, setD] = useState(project?.claimDirections || null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const r = await Innovation.claimDirections(projectId, bodyFor(project, persisted)); setD(r.claimDirections); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
+  };
+  return (
+    <SectionCard title="Claim directions" eyebrow="Plain-language aid — not legal claims" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <ScrollText size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!d ? <EmptyState icon={ScrollText} title="No claim directions yet" hint="Get safe, plain-language claim DIRECTIONS for IP-cell / patent-agent review." />
+        : (
+          <div className="space-y-3 text-[13px]">
+            {d.plainLanguageClaimIdea && <Block title="Plain-language claim idea"><p className="text-slate-300">{d.plainLanguageClaimIdea}</p></Block>}
+            <Grid>
+              <Block title="Possible claim elements"><List items={d.possibleClaimElements} /></Block>
+              <Block title="Dependent directions"><List items={d.dependentDirections} /></Block>
+              <Block title="Likely NOT claimable"><List items={d.likelyNotClaimable} /></Block>
+              <Block title="Attorney review notes"><List items={d.attorneyReviewNotes} /></Block>
+            </Grid>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <RiskBox label="Claim breadth" value={d.claimBreadthRisk} />
+              <RiskBox label="Design-around" value={d.designAroundRisk} />
+              <RiskBox label="Enforceability" value={d.enforceabilityRisk} />
+            </div>
+            <NotLegalAdvice text={d.disclaimer} />
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+function RiskBox({ label, value }) {
+  return <div className="rounded-lg border border-white/8 bg-white/[0.02] p-2.5"><div className="text-[11px] text-slate-500">{label} risk</div><div className="mt-0.5 text-[12.5px] text-slate-200">{value}</div></div>;
+}
+
+/* ---------------- Prototype evidence ---------------- */
+export function PrototypeEvidencePanel({ project, projectId, persisted, onChange }) {
+  const [checklist, setChecklist] = useState(project?.evidenceChecklist || null);
+  const [evidence, setEvidence] = useState(project?.evidence || []);
+  const [score, setScore] = useState(project?.prototypeEvidenceScore || 0);
+  const [ip, setIp] = useState(project?.ipReadiness?.overall ?? null);
+  const [form, setForm] = useState({ type: 'repo', title: '', url: '', source: 'github', verified: false });
+  const [busy, setBusy] = useState(''); const [err, setErr] = useState('');
+  const gen = async () => {
+    setBusy('checklist'); setErr('');
+    try { const r = await Innovation.evidenceChecklist(projectId, bodyFor(project, persisted)); setChecklist(r.evidenceChecklist); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(''); }
+  };
+  const add = async () => {
+    if (!form.title) { setErr('Give the evidence a title.'); return; }
+    setBusy('add'); setErr('');
+    try {
+      const r = await Innovation.addEvidence(projectId, bodyFor(project, persisted, form));
+      setEvidence(r.evidence || []); setScore(r.prototypeEvidenceScore || 0);
+      if (r.ipReadiness) setIp(r.ipReadiness.overall);
+      setForm({ type: 'repo', title: '', url: '', source: 'github', verified: false });
+      onChange && onChange();
+    } catch (e) { setErr(e?.message || 'Failed to add evidence.'); } finally { setBusy(''); }
+  };
+  return (
+    <SectionCard title="Prototype evidence" eyebrow={`Evidence score: ${score}${ip != null ? ` · IP readiness: ${ip}` : ''}`} action={<Button size="sm" variant={checklist ? 'soft' : 'primary'} onClick={gen} disabled={!!busy}>{busy === 'checklist' ? <Loader2 size={14} className="animate-spin" /> : <FileStack size={14} />}{checklist ? 'Regenerate checklist' : 'Generate checklist'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Attach evidence</h4>
+        <div className="flex flex-wrap items-end gap-2">
+          <select className={SEL} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+            <option value="github">GitHub</option><option value="live_demo">Live demo</option><option value="benchmark">Benchmark</option><option value="screenshot">Screenshot</option><option value="video">Video</option><option value="upload">Upload</option><option value="manual">Manual</option>
+          </select>
+          <Input className="min-w-[160px] flex-1" placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <Input className="min-w-[160px] flex-1" placeholder="URL (optional)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-slate-400"><input type="checkbox" checked={form.verified} onChange={(e) => setForm({ ...form, verified: e.target.checked })} /> verified</label>
+          <Button size="sm" onClick={add} disabled={!!busy}>{busy === 'add' ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}Add</Button>
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">Adding a verified repo/demo lifts the prototype cap and recomputes IP-readiness honestly. Private repo details are never exposed publicly.</p>
+      </div>
+      {evidence.length > 0 && (
+        <ul className="mb-4 space-y-1.5">
+          {evidence.map((e, i) => (
+            <li key={i} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2 text-[12.5px]">
+              <Badge tone="cyan">{e.source}</Badge><span className="flex-1 text-slate-300">{e.title}</span>
+              {e.verified && <Badge tone="mint"><CheckCircle2 size={11} /> verified</Badge>}
+              {e.url && <a href={e.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white"><ExternalLink size={13} /></a>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!checklist ? <EmptyState icon={FileStack} title="No checklist yet" hint="Generate the required / recommended / benchmark / IP evidence list." />
+        : (
+          <div className="space-y-3 text-[13px]">
+            <Grid>
+              <Block title="Required"><List items={checklist.requiredEvidence} /></Block>
+              <Block title="Recommended"><List items={checklist.recommendedEvidence} /></Block>
+              <Block title="Benchmark"><List items={checklist.benchmarkEvidence} /></Block>
+              <Block title="Demo"><List items={checklist.demoEvidence} /></Block>
+              <Block title="IP evidence"><List items={checklist.ipEvidence} /></Block>
+              <Block title="Recruiter-safe"><List items={checklist.recruiterEvidence} /></Block>
+            </Grid>
+            {checklist.missingCriticalEvidence?.length > 0 && <Block title="Missing critical evidence"><List items={checklist.missingCriticalEvidence} /></Block>}
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Confidentiality + disclosure risk ---------------- */
+export function ConfidentialityPanel({ project, projectId, persisted }) {
+  const [conf, setConf] = useState({
+    confidentialityStatus: project?.confidentialityStatus || 'private',
+    publicDisclosureStatus: project?.publicDisclosureStatus || 'unknown',
+    disclosureChannel: project?.disclosureChannel || '', disclosureDate: project?.disclosureDate || '',
+  });
+  const [action, setAction] = useState('make_public');
+  const [risk, setRisk] = useState(null);
+  const [busy, setBusy] = useState(''); const [msg, setMsg] = useState(''); const [err, setErr] = useState('');
+  const save = async () => {
+    setBusy('save'); setErr(''); setMsg('');
+    try { await Innovation.setConfidentiality(projectId, bodyFor(project, persisted, conf)); setMsg('Saved.'); }
+    catch (e) { setErr(e?.message || 'Failed to save.'); } finally { setBusy(''); }
+  };
+  const check = async () => {
+    setBusy('check'); setErr('');
+    try { const r = await Innovation.disclosureRiskCheck(projectId, bodyFor(project, persisted, { action })); setRisk(r); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(''); }
+  };
+  return (
+    <SectionCard title="Confidentiality & disclosure" eyebrow="Protect novelty before going public">
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      <div className="space-y-3 text-[13px]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Confidentiality status"><select className={`${SEL} w-full`} value={conf.confidentialityStatus} onChange={(e) => setConf({ ...conf, confidentialityStatus: e.target.value })}><option value="private">Private</option><option value="shared_with_faculty">Shared with faculty</option><option value="shared_with_ip_cell">Shared with IP cell</option><option value="public_safe">Public-safe</option></select></Field>
+          <Field label="Public disclosure status"><select className={`${SEL} w-full`} value={conf.publicDisclosureStatus} onChange={(e) => setConf({ ...conf, publicDisclosureStatus: e.target.value })}><option value="unknown">Unknown</option><option value="none">None</option><option value="planned">Planned</option><option value="already_disclosed">Already disclosed</option></select></Field>
+          <Field label="Disclosure channel"><Input value={conf.disclosureChannel} onChange={(e) => setConf({ ...conf, disclosureChannel: e.target.value })} placeholder="e.g. conference, GitHub, demo day" /></Field>
+          <Field label="Disclosure date"><Input value={conf.disclosureDate} onChange={(e) => setConf({ ...conf, disclosureDate: e.target.value })} placeholder="YYYY-MM-DD" /></Field>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={save} disabled={!!busy}>{busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}Save</Button>
+          {msg && <span className="text-[12px] text-aurora-mint">{msg}</span>}
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Check disclosure risk before an action</h4>
+          <div className="flex flex-wrap items-center gap-2">
+            <select className={SEL} value={action} onChange={(e) => setAction(e.target.value)}>
+              <option value="make_public">Make public</option><option value="export_recruiter">Export recruiter-safe</option><option value="post_linkedin">Post on LinkedIn</option><option value="publish_github">Publish GitHub repo</option><option value="share_disclosure">Share full disclosure</option><option value="move_to_patent_review">Move to patent review</option>
+            </select>
+            <Button size="sm" variant="soft" onClick={check} disabled={!!busy}>{busy === 'check' ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}Check risk</Button>
+          </div>
+          {risk && (
+            <div className="mt-3 space-y-2">
+              <Badge tone={riskTone(risk.riskLevel)}>Risk: {risk.riskLevel}</Badge>
+              {risk.warnings?.length > 0 && <List items={risk.warnings} />}
+              {risk.safeToShareSummary && <Block title="Safe-to-share summary"><p className="text-slate-300">{risk.safeToShareSummary}</p></Block>}
+              {risk.doNotShare?.length > 0 && <Block title="Do NOT share"><List items={risk.doNotShare} /></Block>}
+              {risk.recommendedNextSteps?.length > 0 && <Block title="Recommended next steps"><List items={risk.recommendedNextSteps} /></Block>}
+            </div>
+          )}
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
+/* ---------------- Diagram plan ---------------- */
+export function DiagramPlanPanel({ project, projectId, persisted }) {
+  const [d, setD] = useState(project?.diagramPlan || null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const r = await Innovation.diagramPlan(projectId, bodyFor(project, persisted)); setD(r.diagramPlan); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
+  };
+  return (
+    <SectionCard title="Patent diagram plan" eyebrow="Figures + Mermaid text (no image gen)" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!d ? <EmptyState icon={Boxes} title="No diagram plan yet" hint="Plan Figures 1–5 and get copy-paste Mermaid diagrams." />
+        : (
+          <div className="space-y-3 text-[13px]">
+            {(d.figures || []).map((f, i) => (
+              <div key={i} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+                <div className="flex items-center gap-2"><Badge tone="violet">{f.figureNumber}</Badge><span className="font-medium text-slate-200">{f.title}</span></div>
+                <p className="mt-1.5 text-slate-400">{f.purpose}</p>
+                {f.components?.length > 0 && <div className="mt-2"><Chips items={f.components} /></div>}
+                {f.notesForDrawing && <p className="mt-2 text-[12px] text-slate-500">{f.notesForDrawing}</p>}
+              </div>
+            ))}
+            {d.mermaidDiagrams?.length > 0 && (
+              <Block title="Mermaid diagrams">
+                <div className="space-y-2">
+                  {d.mermaidDiagrams.map((m, i) => <pre key={i} className="overflow-x-auto rounded-lg border border-white/8 bg-black/30 p-2.5 text-[11.5px] text-slate-300">{m}</pre>)}
+                </div>
+              </Block>
+            )}
+            {d.diagramChecklist?.length > 0 && <Block title="Checklist"><List items={d.diagramChecklist} /></Block>}
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Experiment plan ---------------- */
+export function ExperimentPlanPanel({ project, projectId, persisted }) {
+  const [d, setD] = useState(project?.experimentPlan || null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const r = await Innovation.experimentPlan(projectId, bodyFor(project, persisted)); setD(r.experimentPlan); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
+  };
+  return (
+    <SectionCard title="Benchmark / experiment plan" eyebrow="Prove the technical effect" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <FileStack size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!d ? <EmptyState icon={FileStack} title="No experiment plan yet" hint="Plan a baseline vs. proposed benchmark with metrics and a result table." />
+        : (
+          <div className="space-y-3 text-[13px]">
+            <Grid>
+              <Block title="Baseline"><p className="text-slate-300">{d.baseline}</p></Block>
+              <Block title="Proposed method"><p className="text-slate-300">{d.proposedMethod}</p></Block>
+            </Grid>
+            {d.metrics?.length > 0 && <Block title="Metrics"><Chips items={d.metrics} tone="cyan" /></Block>}
+            {d.testSetup?.length > 0 && <Block title="Test setup"><List items={d.testSetup} /></Block>}
+            {d.sampleScenarios?.length > 0 && <Block title="Sample scenarios"><List items={d.sampleScenarios} /></Block>}
+            {d.resultTableTemplate?.length > 0 && (
+              <Block title="Result table (template)">
+                <div className="overflow-x-auto"><table className="w-full text-[12px]"><thead><tr className="text-slate-500">{Object.keys(d.resultTableTemplate[0]).map((k) => <th key={k} className="border-b border-white/8 px-2 py-1 text-left font-medium">{k}</th>)}</tr></thead>
+                  <tbody>{d.resultTableTemplate.map((row, i) => <tr key={i}>{Object.keys(d.resultTableTemplate[0]).map((k) => <td key={k} className="border-b border-white/6 px-2 py-1 text-slate-300">{row[k] || '—'}</td>)}</tr>)}</tbody></table></div>
+              </Block>
+            )}
+            {d.successCriteria?.length > 0 && <Block title="Success criteria"><List items={d.successCriteria} /></Block>}
+            <Grid>
+              <Block title="IP evidence value"><p className="text-slate-300">{d.ipEvidenceValue}</p></Block>
+              <Block title="Recruiter demo value"><p className="text-slate-300">{d.recruiterDemoValue}</p></Block>
+            </Grid>
+          </div>
+        )}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Similar memory (RAG) ---------------- */
+export function SimilarMemoryPanel({ projectId }) {
+  const [d, setD] = useState(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { const r = await Innovation.similar(projectId); setD(r); }
+    catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
+  };
+  return (
+    <SectionCard title="Similar ideas (memory)" eyebrow="Avoid duplicates · learn from the past" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}{d ? 'Refresh' : 'Find similar'}</Button>}>
+      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {!d ? <EmptyState icon={Search} title="Not searched yet" hint="Find similar past projects/ideas from your innovation memory." />
+        : (d.results?.length ? (
+          <div className="space-y-2 text-[13px]">
+            {d.similarityWarnings?.length > 0 && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">{d.similarityWarnings.join(' ')}</div>}
+            {d.results.map((r, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+                <Badge tone={r.similarity >= 78 ? 'rose' : r.similarity >= 50 ? 'amber' : 'cyan'}>{r.similarity}%</Badge>
+                <span className="flex-1 text-slate-300">{r.title}</span>
+                <Badge tone="default">{r.sourceType}</Badge>
+              </div>
+            ))}
+          </div>
+        ) : <EmptyState icon={Search} title="No similar items" hint={d.mode === 'empty' ? 'Your memory is empty — generate more projects to build it up.' : 'No close matches found — this looks distinct.'} />)}
+    </SectionCard>
   );
 }

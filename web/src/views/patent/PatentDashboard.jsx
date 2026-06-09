@@ -34,14 +34,14 @@ export default function PatentDashboard({ go }) {
 
   return (
     <>
-      <PageIntro title="Patent OS" sub="Invention intelligence — discover problems, generate patentable ideas, score and strengthen them, plan prior-art, draft disclosures, and track your pipeline." action={<Button onClick={() => go?.('patentgenerate')}><Sparkles size={16} /> Generate Patent Ideas</Button>} />
+      <PageIntro title="Patent OS" sub="Invention intelligence — discover problems, generate patentable ideas, score and strengthen them, plan prior-art, draft disclosures, and track your pipeline." action={<Button onClick={() => go?.('innovation')}><Sparkles size={16} /> Discover Innovation Projects</Button>} />
 
       <div className="mb-4 rounded-xl border border-amber-glow/25 bg-amber-glow/5 px-3 py-2"><Disclaimer /></div>
 
       {loading ? (
         <SectionCard><div className="flex items-center gap-2 py-8 text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading Patent OS…</div></SectionCard>
       ) : !hasIdeas ? (
-        <EmptyState icon={Lightbulb} title="No inventions yet" hint="Start by generating invention ideas from a problem, industry, or project." action={<Button onClick={() => go?.('patentgenerate')}><Sparkles size={14} /> Generate Patent Ideas</Button>} />
+        <EmptyState icon={Lightbulb} title="No inventions yet" hint="Start in the Innovation OS: discover real, source-backed problems and build patent-aware projects." action={<Button onClick={() => go?.('innovation')}><Sparkles size={14} /> Discover Innovation Projects</Button>} />
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -71,7 +71,7 @@ export default function PatentDashboard({ go }) {
                   {data.nextActions.map((a, i) => {
                     const Icon = ACTION_ICON[a.action] || Sparkles;
                     return (
-                      <button key={i} onClick={() => go?.(a.action === 'generate' ? 'patentgenerate' : a.action === 'prior_art' ? 'priorart' : a.action === 'disclosure' ? 'patentdisclosures' : 'patentportfolio')}
+                      <button key={i} onClick={() => go?.(a.action === 'generate' ? 'innovation' : a.action === 'prior_art' ? 'priorart' : a.action === 'disclosure' ? 'patentdisclosures' : 'patentportfolio')}
                         className="flex w-full items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-left text-[13px] text-slate-300 transition hover:border-white/20">
                         <Icon size={14} className="text-aurora-cyan" /> {a.label}
                       </button>

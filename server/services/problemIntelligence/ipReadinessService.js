@@ -11,6 +11,8 @@
    ============================================================ */
 import { getAIProvider } from './ai/aiProvider.js';
 import { clamp, lc } from './util.js';
+import { validateIndiaCRI, ipCapFromCRI } from './indiaCriValidatorService.js';
+import { COMMUNITY_ONLY_IP_CAP } from './config.js';
 
 const TECH_EFFECT = /(latency|throughput|memory|hardware|sensor|signal|device|network|protocol|compression|encryption|scheduling|pipeline|real-?time|edge|embedded|fault|anomaly|calibrat|fusion|optimi[sz])/;
 const BUSINESS_METHOD = /(marketplace|pricing|billing|subscription|payment flow|business model|matching users|recommendation feed|loyalty|discount|coupon|e-?commerce checkout)/;
@@ -19,7 +21,8 @@ const ALGO_ONLY = /(algorithm|mathematical|formula|model that predicts|ml model|
 function len(s) { return String(s || '').trim().length; }
 function has(s, re) { return re.test(lc(s || '')); }
 
-export function computeIPReadiness({ project = {}, priorArtRecords = [], hasPrototypeEvidence = false }) {
+export function computeIPReadiness({ project = {}, priorArtRecords = [], hasPrototypeEvidence = false, communityOnly = false }) {
+  const cri = validateIndiaCRI(project);
   const text = `${project.title} ${project.painPoint} ${project.proposedSolution} ${project.noveltyAngle} ${project.technicalMechanism || ''} ${JSON.stringify(project.buildBlueprint || {})}`;
   const technicalEffect = has(text, TECH_EFFECT);
   const businessMethodOnly = has(text, BUSINESS_METHOD) && !technicalEffect;
@@ -62,6 +65,11 @@ export function computeIPReadiness({ project = {}, priorArtRecords = [], hasProt
   if (!hasPrototypeEvidence) caps.push(['No prototype evidence', 75]);
   if (businessMethodOnly) caps.push(['Generic software / business-method-only idea', 50]);
   if (algorithmOnly) caps.push(['Algorithm-only idea with no technical effect', 45]);
+  // India CRI / Section 3(k) cap (dedicated validator is the source of truth).
+  const criCap = ipCapFromCRI(cri);
+  if (criCap < 100) caps.push([`India Section 3(k) risk: ${cri.section3kRisk}`, criCap]);
+  // Community-only evidence must never yield a high IP-readiness score.
+  if (communityOnly) caps.push(['Community-only evidence — needs corroboration + validation', COMMUNITY_ONLY_IP_CAP]);
   let appliedCap = 100;
   for (const [, cap] of caps) appliedCap = Math.min(appliedCap, cap);
   if (overall > appliedCap) overall = appliedCap;
@@ -80,10 +88,53 @@ export function computeIPReadiness({ project = {}, priorArtRecords = [], hasProt
     capApplied: appliedCap < 100 ? appliedCap : null,
     recommendedIPRoute,
     section3kWarning,
-    flags: { technicalEffect, businessMethodOnly, algorithmOnly, hasSourceEvidence, hasPrototypeEvidence, priorArtCount },
+    section3k: cri,
+    scoreExplanation: buildScoreExplanation({ overall, caps, appliedCap, factors, technicalEffect, businessMethodOnly, algorithmOnly, hasSourceEvidence, hasPrototypeEvidence, priorArtCount, communityOnly, cri }),
+    flags: { technicalEffect, businessMethodOnly, algorithmOnly, hasSourceEvidence, hasPrototypeEvidence, priorArtCount, communityOnly },
     priorArtStatus: priorArtCount === 0 ? 'External prior-art risk unknown.' : `${priorArtCount} prior-art record(s) reviewed.`,
     requiredEvidenceToImprove: requiredEvidence({ hasSourceEvidence, priorArtCount, hasPrototypeEvidence, technicalEffect, businessMethodOnly, algorithmOnly }),
     disclaimer: 'This is not legal advice. Scores are an internal triage signal for faculty/IP-cell/patent-agent review only.',
+  };
+}
+
+function buildScoreExplanation({ overall, caps, appliedCap, factors, technicalEffect, businessMethodOnly, algorithmOnly, hasSourceEvidence, hasPrototypeEvidence, priorArtCount, communityOnly, cri }) {
+  const strengths = [];
+  const weaknesses = [];
+  if (technicalEffect) strengths.push('A concrete technical effect appears to be present.');
+  if (hasSourceEvidence) strengths.push('The problem is backed by discovery source evidence.');
+  if (hasPrototypeEvidence) strengths.push('Prototype/demo evidence is linked.');
+  if (priorArtCount > 0) strengths.push(`${priorArtCount} prior-art record(s) have been reviewed.`);
+  if (factors.buildClarity >= 60) strengths.push('The build plan is reasonably concrete.');
+  if (!hasSourceEvidence) weaknesses.push('No source-backed evidence yet.');
+  if (priorArtCount === 0) weaknesses.push('No prior-art records — external risk is unknown.');
+  if (!hasPrototypeEvidence) weaknesses.push('No prototype/demo evidence yet.');
+  if (!technicalEffect) weaknesses.push('Technical effect is weak or not articulated.');
+  if (businessMethodOnly) weaknesses.push('Reads as a business method (Section 3(k) exclusion).');
+  if (algorithmOnly) weaknesses.push('Reads as an algorithm/math method without technical effect.');
+  if (communityOnly) weaknesses.push('Evidence is community-only and needs corroboration.');
+
+  const nextActions = [];
+  if (communityOnly) nextActions.push('Corroborate with a technical source (GitHub/Stack Exchange/arXiv) before treating as IP-worthy.');
+  if (!hasSourceEvidence) nextActions.push('Run source-backed discovery.');
+  if (priorArtCount === 0) nextActions.push('Generate a prior-art search plan and add records.');
+  if (!hasPrototypeEvidence) nextActions.push('Build and link a prototype + demo.');
+  if (!technicalEffect) nextActions.push('Demonstrate a measurable technical effect (see India CRI suggestions).');
+
+  return {
+    whyThisScore: appliedCap < 100
+      ? `Score is capped at ${appliedCap} because: ${caps.filter(([, c]) => c === appliedCap).map(([r]) => r).join('; ')}. The strongest cap wins.`
+      : `Score reflects the weighted factor profile; no hard cap is currently binding.`,
+    scoreCapsApplied: caps.map(([reason, cap]) => `${reason} → cap ${cap}`),
+    missingEvidence: [
+      !hasSourceEvidence ? 'Source-backed problem evidence' : null,
+      priorArtCount === 0 ? 'Prior-art records' : null,
+      !hasPrototypeEvidence ? 'Prototype / demo evidence' : null,
+      !technicalEffect ? 'A clear technical effect' : null,
+    ].filter(Boolean),
+    strengths,
+    weaknesses,
+    nextActions,
+    section3kVerdict: cri.patentRouteVerdict,
   };
 }
 

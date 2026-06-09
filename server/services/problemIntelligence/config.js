@@ -31,7 +31,46 @@ export const piConfig = (env = process.env) => ({
   timeoutMs: num(env.PROBLEM_DISCOVERY_TIMEOUT_MS, 12000),
   cacheTtlMs: num(env.PROBLEM_DISCOVERY_CACHE_TTL_MS, 3600000),
   maxResponseBytes: num(env.PROBLEM_DISCOVERY_MAX_RESPONSE_BYTES, 2_000_000),
+
+  // ---- Community discussion intelligence (all OFF unless explicitly enabled) ----
+  community: {
+    enabled: env.COMMUNITY_DISCOVERY_ENABLED === '1',
+    maxSignals: num(env.COMMUNITY_DISCOVERY_MAX_SIGNALS, 25),
+    timeoutMs: num(env.COMMUNITY_DISCOVERY_TIMEOUT_MS, 12000),
+    cacheTtlMs: num(env.COMMUNITY_DISCOVERY_CACHE_TTL_MS, 3600000),
+    storeRawComments: env.COMMUNITY_STORE_RAW_COMMENTS === '1', // default false
+    reddit: {
+      enabled: env.REDDIT_DISCOVERY_ENABLED === '1',
+      clientId: env.REDDIT_CLIENT_ID || '',
+      clientSecret: env.REDDIT_CLIENT_SECRET || '',
+      userAgent: env.REDDIT_USER_AGENT || 'CareerAutopilotInnovationOS/1.0',
+    },
+    // Hacker News uses a public API; may default ON but is still rate-limited + cached.
+    hackernews: { enabled: env.HACKERNEWS_DISCOVERY_ENABLED !== '0' },
+    discourse: {
+      enabled: env.DISCOURSE_DISCOVERY_ENABLED === '1',
+      allowedBaseUrls: csv(env.DISCOURSE_ALLOWED_BASE_URLS),
+      apiKey: env.DISCOURSE_API_KEY || '',
+      apiUsername: env.DISCOURSE_API_USERNAME || '',
+    },
+    devto: { enabled: env.DEVTO_DISCOVERY_ENABLED === '1', apiKey: env.DEVTO_API_KEY || '' },
+    hashnode: { enabled: env.HASHNODE_DISCOVERY_ENABLED === '1', apiKey: env.HASHNODE_API_KEY || '' },
+    specializedForum: {
+      enabled: env.SPECIALIZED_FORUM_DISCOVERY_ENABLED === '1',
+      allowedSources: csv(env.SPECIALIZED_FORUM_ALLOWED_SOURCES),
+    },
+  },
+
+  // ---- Innovation memory / RAG ----
+  memory: {
+    enabled: env.INNOVATION_MEMORY_ENABLED !== '0', // default ON (keyword fallback works without keys)
+    embeddingProvider: (env.EMBEDDING_PROVIDER || 'fallback').toLowerCase(),
+    openaiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
+    vectorSearchEnabled: env.VECTOR_SEARCH_ENABLED === '1',
+  },
 });
+
+const csv = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 /* Which AI provider can actually run given the configured keys. Returns
    'fallback' whenever the selected provider has no usable key, so the system
@@ -47,6 +86,15 @@ export function resolveActiveProvider(cfg = piConfig()) {
 }
 
 export const ALLOWED_SOURCES = ['github', 'stackexchange', 'arxiv', 'manual'];
+
+// Community sources are treated as EARLY SIGNALS, never verified facts.
+export const COMMUNITY_SOURCES = ['reddit', 'hackernews', 'discourse', 'devto', 'hashnode', 'specialized_forum'];
+
+// The full set the discovery API accepts (core + github_discussions + community).
+export const ALL_SOURCES = ['github', 'github_discussions', 'stackexchange', 'arxiv', 'manual', ...COMMUNITY_SOURCES];
+
+// Sources that, on their OWN, must not push IP-readiness above a hard ceiling.
+export const COMMUNITY_ONLY_IP_CAP = 55;
 
 export const INNOVATION_STATUSES = [
   'raw_idea', 'source_backed_problem', 'project_blueprint_ready', 'poc_planned',

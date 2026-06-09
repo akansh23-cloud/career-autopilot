@@ -38,7 +38,12 @@ export default function PatentIdeaGenerator({ go }) {
 
   return (
     <>
-      <PageIntro title="Generate invention ideas" sub="Describe a domain, user and problem. Patent OS composes non-generic ideas — each with a concrete technical mechanism — and scores their patent-readiness." />
+      <PageIntro title="Legacy idea generator" sub="The newer Innovation OS discovers real, source-backed problems and builds patent-aware projects with evidence and honest IP-readiness. This template-based generator is kept as a fallback." />
+
+      <div className="mb-4 flex flex-col gap-2 rounded-xl border border-aurora-violet/30 bg-aurora-violet/[0.07] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[13px] text-slate-200">Looking for the full experience? Start in the <span className="font-semibold text-white">Innovation OS</span> — source-backed discovery, build blueprints, prior-art plans, and IP review.</p>
+        <Button size="sm" onClick={() => go?.('innovation')}><Sparkles size={14} /> Open Innovation OS</Button>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
         <SectionCard title="Inputs">

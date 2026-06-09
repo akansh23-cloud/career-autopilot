@@ -10,9 +10,26 @@ export const PURPOSES = [
 
 export const SOURCES = [
   { id: 'github', label: 'GitHub issues' },
+  { id: 'github_discussions', label: 'GitHub discussions' },
   { id: 'stackexchange', label: 'Stack Exchange' },
   { id: 'arxiv', label: 'arXiv' },
   { id: 'manual', label: 'Manual problems' },
+];
+
+export const COMMUNITY_SOURCE_LIST = [
+  { id: 'reddit', label: 'Reddit', note: 'Official API only. Needs REDDIT_DISCOVERY_ENABLED=1 + credentials.' },
+  { id: 'hackernews', label: 'Hacker News', note: 'Public API (keyless).' },
+  { id: 'discourse', label: 'Discourse forums', note: 'Only allowlisted base URLs are queried.' },
+  { id: 'devto', label: 'Dev.to', note: 'Public API.' },
+  { id: 'hashnode', label: 'Hashnode', note: 'Public API.' },
+  { id: 'specialized_forum', label: 'Specialized forums', note: 'Allowlist required.' },
+];
+
+export const COMMUNITY_WARNING = 'Community discussions are early signals, not verified evidence. Use them for problem discovery, then validate with technical sources, prior-art search, and prototype evidence.';
+
+export const TIME_RANGES = [
+  { id: '', label: 'Any time' }, { id: '30d', label: 'Last 30 days' },
+  { id: '90d', label: 'Last 90 days' }, { id: '1y', label: 'Last year' }, { id: 'all', label: 'All time' },
 ];
 
 export const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'research-grade', 'startup-grade'];

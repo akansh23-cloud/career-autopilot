@@ -50,6 +50,13 @@ export function getAIProvider(cfg = piConfig()) {
     providerName,
     usingFallback: providerName === 'fallback',
 
+    // Generic JSON generation for newer services. Returns { data, provider }.
+    // data is null when no AI is configured or the call fails — callers MUST
+    // have a deterministic fallback. Never throws.
+    async freeformJSON(system, user, maxTokens = 1200) {
+      const out = await aiJSON(client, system, user, maxTokens);
+      return { data: out, provider: out ? providerName : 'fallback', confidence: out ? 'medium' : 'low' };
+    },
     async extractPainPoints(input) {
       const signals = (input.signals || []).slice(0, 14)
         .map((s, i) => `[${i}] ${s.title} :: ${String(s.contentSummary || '').slice(0, 240)}`).join('\n');

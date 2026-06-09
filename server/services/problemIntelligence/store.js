@@ -61,6 +61,18 @@ const generatedProjectSchema = new mongoose.Schema({
   confidence: String, aiProvider: String, sourceCitations: { type: [citationSchema], default: [] },
   buildBlueprint: { type: M, default: null }, costEstimate: { type: M, default: null },
   ipReadiness: { type: M, default: null }, disclosureDraft: { type: M, default: null },
+  // ---- Patent OS world-class upgrade ----
+  simplified: { type: M, default: null }, priorArtSearchPlan: { type: M, default: null },
+  claimDirections: { type: M, default: null }, evidenceChecklist: { type: M, default: null },
+  diagramPlan: { type: M, default: null }, experimentPlan: { type: M, default: null },
+  indiaCri: { type: M, default: null },
+  evidence: { type: [M], default: [] }, prototypeEvidenceScore: { type: Number, default: 0 },
+  linkedGithubRepoId: { type: String, default: '' }, githubProofSummary: { type: M, default: null },
+  contributionScore: { type: Number, default: 0 }, repoMaturityScore: { type: Number, default: 0 },
+  sourceMix: { type: M, default: null }, communitySignalsCount: { type: Number, default: 0 },
+  confidentialityStatus: { type: String, default: 'private' }, // private | shared_with_faculty | shared_with_ip_cell | public_safe
+  publicDisclosureStatus: { type: String, default: 'unknown' }, // none | planned | already_disclosed | unknown
+  disclosureDate: { type: String, default: '' }, disclosureChannel: { type: String, default: '' },
   fingerprint: { type: String, index: true },
   status: { type: String, default: 'source_backed_problem', enum: INNOVATION_STATUSES },
   proofRef: { type: M, default: null }, // application/publication/grant proof
@@ -175,7 +187,10 @@ export async function updateProject({ userId, email, id, patch = {} }) {
     await connectDB();
     const uid = await resolveUserId({ userId, email });
     if (!uid) return { ok: false, reason: 'user_not_found' };
-    const allowed = ['buildBlueprint', 'costEstimate', 'ipReadiness', 'disclosureDraft', 'status', 'proofRef', 'convertedProjectId', 'convertedPatentIdeaId'];
+    const allowed = ['buildBlueprint', 'costEstimate', 'ipReadiness', 'disclosureDraft', 'status', 'proofRef', 'convertedProjectId', 'convertedPatentIdeaId',
+      'simplified', 'priorArtSearchPlan', 'claimDirections', 'evidenceChecklist', 'diagramPlan', 'experimentPlan', 'indiaCri',
+      'evidence', 'prototypeEvidenceScore', 'linkedGithubRepoId', 'githubProofSummary', 'contributionScore', 'repoMaturityScore',
+      'sourceMix', 'communitySignalsCount', 'confidentialityStatus', 'publicDisclosureStatus', 'disclosureDate', 'disclosureChannel'];
     const set = {};
     for (const k of allowed) if (k in patch) set[k] = patch[k];
     const d = await GeneratedInnovationProject.findOneAndUpdate({ _id: id, userId: uid }, { $set: set }, { new: true }).lean();

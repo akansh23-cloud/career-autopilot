@@ -79,10 +79,13 @@ export default function InnovationOS({ go }) {
             <StatCard label="Signals last run" value={discovery ? String(discovery.signalsCount ?? 0) : '—'} hint={discovery ? `${(discovery.clusters || []).length} clusters` : 'Not run yet'} />
           </div>
 
-          <ProblemDiscovery onDiscover={runDiscover} busy={busy} />
+          <ProblemDiscovery onDiscover={runDiscover} busy={busy} config={cfg} />
 
           {discovery && (
-            <SectionCard title="Problem clusters" eyebrow={`${(discovery.clusters || []).length} found`}>
+            <SectionCard title="Problem clusters" eyebrow={`${(discovery.clusters || []).length} found${discovery.communitySignalsCount ? ` · ${discovery.communitySignalsCount} community` : ''}`}>
+              {(discovery.rag && discovery.rag.duplicateWarnings && discovery.rag.duplicateWarnings.length > 0) && (
+                <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">{discovery.rag.duplicateWarnings.join(' ')}</div>
+              )}
               <ProblemClusterList clusters={discovery.clusters || []} onOpen={openCluster} />
             </SectionCard>
           )}
