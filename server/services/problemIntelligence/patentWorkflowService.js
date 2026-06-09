@@ -198,9 +198,13 @@ export function disclosureRiskCheck({ project = {}, action = 'make_public' } = {
   };
 }
 
-/* ---------------- Diagram plan (Mermaid text, no image gen) ---------------- */
+/* ---------------- Diagram plan (renderable Mermaid + patent figure plan) ---------------- */
+const mermaidLabel = (value = 'System') => sanitizeText(value, 42).replace(/[\[\]{}<>|`]/g, '').replace(/\s+/g, ' ').trim() || 'System';
+
 export function diagramPlan(project = {}) {
-  const title = sanitizeText(project.title || 'System', 60);
+  const title = mermaidLabel(project.title || 'System');
+  const mainInput = mermaidLabel(project.painPoint || project.problemStatement || 'User problem');
+  const output = mermaidLabel(project.proposedSolution || 'Actionable output');
   const figures = [
     { figureNumber: 'Figure 1', title: 'Overall system architecture', purpose: 'Show the major components and how they connect.', components: ['Client/UI', 'API/Backend', 'Core engine', 'Data store', 'External sources'], flow: ['User → UI', 'UI → API', 'API → Core engine', 'Core engine → Data store', 'Core engine → Output'], notesForDrawing: 'Boxes for components, arrows for data flow; label each arrow.' },
     { figureNumber: 'Figure 2', title: 'Data / process flow', purpose: 'Show how an input becomes an output step-by-step.', components: ['Input', 'Preprocess', 'Process/Correlate', 'Decide', 'Output'], flow: ['Input', 'Preprocess', 'Process', 'Decide', 'Output'], notesForDrawing: 'Left-to-right flowchart; one box per step.' },
@@ -211,15 +215,38 @@ export function diagramPlan(project = {}) {
   return {
     figures,
     mermaidDiagrams: [
-      `flowchart LR\n  U[User] --> UI[UI]\n  UI --> API[API]\n  API --> ENG[${title} Engine]\n  ENG --> DB[(Data Store)]\n  ENG --> OUT[Result + Next Step]`,
-      'flowchart LR\n  IN[Input] --> PRE[Preprocess] --> PROC[Process/Correlate] --> DEC[Decide] --> OUT[Output]',
-      'sequenceDiagram\n  participant U as User\n  participant C as Client\n  participant S as Server\n  U->>C: request\n  C->>S: signals\n  S-->>C: result + explanation\n  C-->>U: shows answer',
+      {
+        figureNumber: 'Figure 1',
+        title: 'Overall system architecture',
+        code: `flowchart LR\n  U[User / Student] --> UI[Client UI]\n  UI --> API[Backend API]\n  API --> ENG[${title} Engine]\n  ENG --> DB[(Data Store)]\n  ENG --> SRC[External Sources]\n  ENG --> OUT[Result and Next Step]\n  OUT --> UI`,
+      },
+      {
+        figureNumber: 'Figure 2',
+        title: 'Data / process flow',
+        code: `flowchart LR\n  IN[${mainInput}] --> PRE[Preprocess / Normalize]\n  PRE --> PROC[Analyze and Correlate]\n  PROC --> DEC[Rank / Decide]\n  DEC --> OUT[${output}]`,
+      },
+      {
+        figureNumber: 'Figure 3',
+        title: 'Core technical mechanism',
+        code: 'flowchart TD\n  A[Collected Inputs] --> B[Feature / Signal Extraction]\n  B --> C[Core Technical Mechanism]\n  C --> D[Confidence / Ranking Layer]\n  D --> E[Actionable Result]\n  C --> F[Evidence Log]',
+      },
+      {
+        figureNumber: 'Figure 4',
+        title: 'User / device / server interaction',
+        code: 'sequenceDiagram\n  participant U as User\n  participant C as Client UI\n  participant S as Server\n  participant E as Core Engine\n  U->>C: Submit problem / data\n  C->>S: Send request\n  S->>E: Analyze signals\n  E-->>S: Result + explanation\n  S-->>C: Return output\n  C-->>U: Show action plan',
+      },
+      {
+        figureNumber: 'Figure 5',
+        title: 'Feedback / improvement loop',
+        code: 'flowchart TD\n  R[Generated Result] --> F[User / Expert Feedback]\n  F --> V[Validate Evidence]\n  V --> M[Update Memory / Rules]\n  M --> P[Improve Next Analysis]\n  P --> R',
+      },
     ],
     diagramChecklist: [
       'Number every figure and reference it in the disclosure text.',
       'Make the novel step its own figure (Figure 3).',
       'Keep diagrams black-and-white and label every box/arrow.',
-      'Export as SVG/PNG and attach as prototype evidence.',
+      'Use the rendered Mermaid diagrams for student understanding, then export/draw formal figures for IP-cell review.',
+      'Attach final SVG/PNG/PDF versions as prototype evidence if the project moves to disclosure review.',
     ],
   };
 }

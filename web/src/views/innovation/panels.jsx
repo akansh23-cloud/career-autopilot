@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
   Loader2, Boxes, IndianRupee, ScrollText, FileStack, ExternalLink,
-  Plus, AlertTriangle, CheckCircle2, Rocket, Search,
+  Plus, AlertTriangle, CheckCircle2, Rocket, Search, Copy,
 } from 'lucide-react';
 import { Button, Badge, Field, Input, EmptyState } from '../../components/ui/kit.jsx';
 import { SectionCard } from '../common.jsx';
 import { Innovation } from '../../lib/innovation.js';
 import { saveProject as saveClientProject, uid as projUid } from '../../lib/projectStore.js';
 import { ScoreBar, scoreTone, NotLegalAdvice } from './shared.jsx';
+import MermaidDiagram from '../../components/common/MermaidDiagram.jsx';
 
 // When the project is not persisted server-side (DB off), we round-trip the
 // project object through the request body so every action still works.
@@ -629,33 +630,64 @@ export function ConfidentialityPanel({ project, projectId, persisted }) {
   );
 }
 
+const mermaidCode = (item) => (typeof item === 'string' ? item : (item?.code || item?.mermaid || ''));
+const mermaidTitle = (item, index) => (typeof item === 'string' ? `Diagram ${index + 1}` : (item?.title || item?.figureNumber || `Diagram ${index + 1}`));
+
 /* ---------------- Diagram plan ---------------- */
 export function DiagramPlanPanel({ project, projectId, persisted }) {
   const [d, setD] = useState(project?.diagramPlan || null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const [copied, setCopied] = useState('');
   const run = async () => {
     setBusy(true); setErr('');
     try { const r = await Innovation.diagramPlan(projectId, bodyFor(project, persisted)); setD(r.diagramPlan); }
     catch (e) { setErr(e?.message || 'Failed.'); } finally { setBusy(false); }
   };
+  const copy = async (code, label) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(label);
+      window.setTimeout(() => setCopied(''), 1600);
+    } catch {
+      setErr('Copy failed. Select the Mermaid text manually.');
+    }
+  };
   return (
-    <SectionCard title="Patent diagram plan" eyebrow="Figures + Mermaid text (no image gen)" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
+    <SectionCard title="Patent diagram plan" eyebrow="Visual Mermaid diagrams + patent figure plan" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
       {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
-      {!d ? <EmptyState icon={Boxes} title="No diagram plan yet" hint="Plan Figures 1–5 and get copy-paste Mermaid diagrams." />
+      {copied && <p className="mb-2 text-[12px] text-aurora-mint">Copied {copied} Mermaid text.</p>}
+      {!d ? <EmptyState icon={Boxes} title="No diagram plan yet" hint="Generate patent figure plans with rendered Mermaid architecture/process diagrams." />
         : (
-          <div className="space-y-3 text-[13px]">
+          <div className="space-y-4 text-[13px]">
             {(d.figures || []).map((f, i) => (
               <div key={i} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
                 <div className="flex items-center gap-2"><Badge tone="violet">{f.figureNumber}</Badge><span className="font-medium text-slate-200">{f.title}</span></div>
                 <p className="mt-1.5 text-slate-400">{f.purpose}</p>
                 {f.components?.length > 0 && <div className="mt-2"><Chips items={f.components} /></div>}
+                {f.flow?.length > 0 && <p className="mt-2 text-[12px] text-slate-500">Flow: {f.flow.join(' → ')}</p>}
                 {f.notesForDrawing && <p className="mt-2 text-[12px] text-slate-500">{f.notesForDrawing}</p>}
               </div>
             ))}
             {d.mermaidDiagrams?.length > 0 && (
-              <Block title="Mermaid diagrams">
-                <div className="space-y-2">
-                  {d.mermaidDiagrams.map((m, i) => <pre key={i} className="overflow-x-auto rounded-lg border border-white/8 bg-black/30 p-2.5 text-[11.5px] text-slate-300">{m}</pre>)}
+              <Block title="Rendered Mermaid diagrams">
+                <div className="space-y-4">
+                  {d.mermaidDiagrams.map((m, i) => {
+                    const code = mermaidCode(m);
+                    const title = mermaidTitle(m, i);
+                    return (
+                      <div key={i} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="font-medium text-slate-200">{title}</span>
+                          <Button size="sm" variant="ghost" onClick={() => copy(code, title)}><Copy size={13} />Copy Mermaid</Button>
+                        </div>
+                        <MermaidDiagram chart={code} />
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[12px] text-slate-400 hover:text-white">Show Mermaid text</summary>
+                          <pre className="mt-2 overflow-x-auto rounded-lg border border-white/8 bg-black/30 p-2.5 text-[11.5px] text-slate-300">{code}</pre>
+                        </details>
+                      </div>
+                    );
+                  })}
                 </div>
               </Block>
             )}
