@@ -199,7 +199,22 @@ export function disclosureRiskCheck({ project = {}, action = 'make_public' } = {
 }
 
 /* ---------------- Diagram plan (renderable Mermaid + patent figure plan) ---------------- */
-const mermaidLabel = (value = 'System') => sanitizeText(value, 42).replace(/[\[\]{}<>|`]/g, '').replace(/\s+/g, ' ').trim() || 'System';
+const mermaidLabel = (value = 'System') => sanitizeText(Array.isArray(value) ? value.join(' / ') : value, 42).replace(/[\[\]{}<>|`]/g, '').replace(/\s+/g, ' ').trim() || 'System';
+
+const asList = (value) => {
+  if (Array.isArray(value)) return value.flatMap(asList).filter(Boolean);
+  if (typeof value === 'string') return value.split(/[,;\n|]+/).map((x) => sanitizeText(x, 80)).filter(Boolean);
+  if (value && typeof value === 'object') {
+    if (value.title || value.name || value.label) return [sanitizeText(value.title || value.name || value.label, 80)].filter(Boolean);
+    return Object.values(value).flatMap(asList).filter(Boolean);
+  }
+  return [];
+};
+
+const firstSourceLabel = (project = {}) => {
+  const sources = asList(project.sourceCitations || project.sources || project.evidenceSources || project.sourceContext);
+  return sources[0] || (Array.isArray(project.sourceCitations) && project.sourceCitations[0]?.source) || 'Prototype evidence';
+};
 
 export function diagramPlan(project = {}) {
   const title = mermaidLabel(project.title || 'System');
@@ -209,8 +224,9 @@ export function diagramPlan(project = {}) {
   const workaround = mermaidLabel(project.currentWorkaround || project.whyExistingSolutionsFail || 'Existing workaround');
   const mechanism = mermaidLabel(project.noveltyAngle || project.framing?.technicalChallenge || 'Technical mechanism');
   const output = mermaidLabel(project.proposedSolution || 'Actionable output');
-  const evidence = mermaidLabel((project.sourceCitations || [])[0]?.source || 'Prototype evidence');
-  const modules = (project.mvpScope || []).slice(0, 4).map((x, i) => mermaidLabel(x || `MVP module ${i + 1}`));
+  const evidence = mermaidLabel(firstSourceLabel(project));
+  const moduleCandidates = asList(project.mvpScope || project.mvpModules || project.modules || project.buildBlueprint?.mvpScope || project.buildBlueprint?.mvpModules || project.buildBlueprint?.featureBreakdown);
+  const modules = moduleCandidates.slice(0, 4).map((x, i) => mermaidLabel(x || `MVP module ${i + 1}`));
   const m1 = modules[0] || 'Input collector';
   const m2 = modules[1] || 'Analysis engine';
   const m3 = modules[2] || 'Result dashboard';

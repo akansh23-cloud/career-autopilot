@@ -57,11 +57,17 @@ function parseFlowchart(chart = '') {
   const roots = list.filter((n) => (indegree.get(n.id) || 0) === 0).map((n) => n.id);
   const depth = new Map();
   const queue = roots.length ? roots.map((id) => { depth.set(id, 0); return id; }) : list.slice(0, 1).map((n) => { depth.set(n.id, 0); return n.id; });
-  while (queue.length) {
+  // Cycle-safe layout: assign a node's first discovered depth only. Earlier logic
+  // kept increasing depth on feedback loops (A -> B -> A), which could freeze/crash
+  // the Patent OS diagram tab when rendering improvement-loop diagrams.
+  let guard = 0;
+  const guardLimit = Math.max(64, list.length * Math.max(1, edges.length) * 2);
+  while (queue.length && guard < guardLimit) {
+    guard += 1;
     const current = queue.shift();
     const nextDepth = (depth.get(current) || 0) + 1;
     (adjacency.get(current) || []).forEach((next) => {
-      if (!depth.has(next) || nextDepth > depth.get(next)) {
+      if (!depth.has(next)) {
         depth.set(next, nextDepth);
         queue.push(next);
       }
@@ -156,6 +162,7 @@ function FlowSvg({ data }) {
       })}
       {nodes.map((node) => {
         const p = positions.get(node.id);
+        if (!p) return null;
         const lines = wrap(node.label);
         return (
           <g key={node.id} transform={`translate(${p.x - 65}, ${p.y - 30})`}>
