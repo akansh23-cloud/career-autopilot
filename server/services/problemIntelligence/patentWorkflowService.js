@@ -203,54 +203,64 @@ const mermaidLabel = (value = 'System') => sanitizeText(value, 42).replace(/[\[\
 
 export function diagramPlan(project = {}) {
   const title = mermaidLabel(project.title || 'System');
+  const domain = mermaidLabel(project.domain || project.technology || 'Core domain');
+  const target = mermaidLabel(project.targetUser || project.affectedUsers || 'Target user');
   const mainInput = mermaidLabel(project.painPoint || project.problemStatement || 'User problem');
+  const workaround = mermaidLabel(project.currentWorkaround || project.whyExistingSolutionsFail || 'Existing workaround');
+  const mechanism = mermaidLabel(project.noveltyAngle || project.framing?.technicalChallenge || 'Technical mechanism');
   const output = mermaidLabel(project.proposedSolution || 'Actionable output');
+  const evidence = mermaidLabel((project.sourceCitations || [])[0]?.source || 'Prototype evidence');
+  const modules = (project.mvpScope || []).slice(0, 4).map((x, i) => mermaidLabel(x || `MVP module ${i + 1}`));
+  const m1 = modules[0] || 'Input collector';
+  const m2 = modules[1] || 'Analysis engine';
+  const m3 = modules[2] || 'Result dashboard';
+
   const figures = [
-    { figureNumber: 'Figure 1', title: 'Overall system architecture', purpose: 'Show the major components and how they connect.', components: ['Client/UI', 'API/Backend', 'Core engine', 'Data store', 'External sources'], flow: ['User → UI', 'UI → API', 'API → Core engine', 'Core engine → Data store', 'Core engine → Output'], notesForDrawing: 'Boxes for components, arrows for data flow; label each arrow.' },
-    { figureNumber: 'Figure 2', title: 'Data / process flow', purpose: 'Show how an input becomes an output step-by-step.', components: ['Input', 'Preprocess', 'Process/Correlate', 'Decide', 'Output'], flow: ['Input', 'Preprocess', 'Process', 'Decide', 'Output'], notesForDrawing: 'Left-to-right flowchart; one box per step.' },
-    { figureNumber: 'Figure 3', title: 'Core technical mechanism', purpose: 'Zoom into the novel step (the IP-relevant part).', components: ['Inputs', 'Mechanism', 'Result'], flow: ['Inputs → Mechanism → Result'], notesForDrawing: 'This is the figure an examiner cares about — make the novel step explicit.' },
-    { figureNumber: 'Figure 4', title: 'User / device / server interaction', purpose: 'Sequence of interactions over time.', components: ['User', 'Device/Client', 'Server'], flow: ['User → Client → Server → Client → User'], notesForDrawing: 'Sequence diagram with lifelines.' },
-    { figureNumber: 'Figure 5', title: 'Feedback / improvement loop', purpose: 'Show how results feed back to improve the system.', components: ['Result', 'Feedback', 'Update'], flow: ['Result → Feedback → Update → (back to) Process'], notesForDrawing: 'Cyclic arrows; show what is updated.' },
+    { figureNumber: 'Figure 1', title: `${title} — system architecture`, purpose: `Show how ${target} uses the ${title} system and where the core ${domain} engine fits.`, components: ['User/client', 'Backend API', `${domain} engine`, 'Project/evidence data store', 'External/source inputs'], flow: ['User → UI', 'UI → API', 'API → core engine', 'Core engine → evidence/data store', 'Core engine → output'], notesForDrawing: 'Boxes for components, arrows for data flow; label each arrow with the data moving through it.' },
+    { figureNumber: 'Figure 2', title: `${title} — problem-to-output flow`, purpose: 'Show how the painful input/workaround becomes a useful output step by step.', components: [mainInput, 'Normalize', 'Analyze', 'Rank/decide', output], flow: [mainInput, 'Normalize', 'Analyze', 'Rank/decide', output], notesForDrawing: 'Use this as the MVP process flow students can implement first.' },
+    { figureNumber: 'Figure 3', title: `${title} — core technical mechanism`, purpose: 'Zoom into the most IP-relevant technical step instead of showing a generic dashboard.', components: [mainInput, mechanism, output], flow: [`${mainInput} → ${mechanism} → ${output}`], notesForDrawing: 'This is the figure an examiner/IP cell cares about — make the novel step explicit and measurable.' },
+    { figureNumber: 'Figure 4', title: `${title} — user/device/server interaction`, purpose: 'Show the sequence of actions over time.', components: [target, 'Client/UI', 'Server/API', `${domain} engine`], flow: ['User submits input', 'Server analyzes', 'Engine returns explanation/result', 'User validates output'], notesForDrawing: 'Sequence diagram with lifelines.' },
+    { figureNumber: 'Figure 5', title: `${title} — evidence and improvement loop`, purpose: 'Show how prototype evidence, feedback, and prior-art review improve the invention.', components: ['Result', 'Prototype evidence', 'Feedback/prior art', 'Updated mechanism'], flow: ['Result → Evidence → Feedback/prior art → Improved mechanism'], notesForDrawing: 'Cyclic arrows; show what is updated and why.' },
   ];
+
   return {
     figures,
     mermaidDiagrams: [
       {
         figureNumber: 'Figure 1',
         title: 'Overall system architecture',
-        code: `flowchart LR\n  U[User / Student] --> UI[Client UI]\n  UI --> API[Backend API]\n  API --> ENG[${title} Engine]\n  ENG --> DB[(Data Store)]\n  ENG --> SRC[External Sources]\n  ENG --> OUT[Result and Next Step]\n  OUT --> UI`,
+        code: `flowchart LR\n  U[${target}] --> UI[Project UI / Demo]\n  UI --> API[Backend API]\n  API --> ENG[${title} Engine]\n  ENG --> DB[(Evidence + Project Data)]\n  ENG --> SRC[${evidence} Sources]\n  ENG --> OUT[${output}]\n  OUT --> UI`,
       },
       {
         figureNumber: 'Figure 2',
         title: 'Data / process flow',
-        code: `flowchart LR\n  IN[${mainInput}] --> PRE[Preprocess / Normalize]\n  PRE --> PROC[Analyze and Correlate]\n  PROC --> DEC[Rank / Decide]\n  DEC --> OUT[${output}]`,
+        code: `flowchart LR\n  PAIN[${mainInput}] --> WORK[${workaround}]\n  WORK --> M1[${m1}]\n  M1 --> M2[${m2}]\n  M2 --> M3[${m3}]\n  M3 --> OUT[${output}]`,
       },
       {
         figureNumber: 'Figure 3',
         title: 'Core technical mechanism',
-        code: 'flowchart TD\n  A[Collected Inputs] --> B[Feature / Signal Extraction]\n  B --> C[Core Technical Mechanism]\n  C --> D[Confidence / Ranking Layer]\n  D --> E[Actionable Result]\n  C --> F[Evidence Log]',
+        code: `flowchart TD\n  IN[Problem Signals: ${mainInput}]\n  EX[Extract Constraints + Workarounds]\n  MECH[${mechanism}]\n  SCORE[Confidence / Technical Effect Score]\n  OUT[${output}]\n  EVD[Evidence Log for IP Review]\n  IN --> EX\n  EX --> MECH\n  MECH --> SCORE\n  SCORE --> OUT\n  MECH --> EVD`,
       },
       {
         figureNumber: 'Figure 4',
         title: 'User / device / server interaction',
-        code: 'sequenceDiagram\n  participant U as User\n  participant C as Client UI\n  participant S as Server\n  participant E as Core Engine\n  U->>C: Submit problem / data\n  C->>S: Send request\n  S->>E: Analyze signals\n  E-->>S: Result + explanation\n  S-->>C: Return output\n  C-->>U: Show action plan',
+        code: `sequenceDiagram\n  participant U as ${target}\n  participant C as Client UI\n  participant S as Server API\n  participant E as ${domain} Engine\n  U->>C: Submit ${mainInput}\n  C->>S: Send project/problem data\n  S->>E: Run ${mechanism}\n  E-->>S: Return ${output}\n  S-->>C: Send explanation + next steps\n  C-->>U: Show build plan and evidence checklist`,
       },
       {
         figureNumber: 'Figure 5',
         title: 'Feedback / improvement loop',
-        code: 'flowchart TD\n  R[Generated Result] --> F[User / Expert Feedback]\n  F --> V[Validate Evidence]\n  V --> M[Update Memory / Rules]\n  M --> P[Improve Next Analysis]\n  P --> R',
+        code: `flowchart TD\n  R[${output}] --> POC[Prototype / Demo Evidence]\n  POC --> PA[Prior-art + Faculty Review]\n  PA --> GAP[Novelty / Build Gap]\n  GAP --> IMP[Improve ${mechanism}]\n  IMP --> R`,
       },
     ],
     diagramChecklist: [
       'Number every figure and reference it in the disclosure text.',
-      'Make the novel step its own figure (Figure 3).',
-      'Keep diagrams black-and-white and label every box/arrow.',
-      'Use the rendered Mermaid diagrams for student understanding, then export/draw formal figures for IP-cell review.',
+      'Make the novel technical mechanism its own figure (Figure 3).',
+      'Replace generic labels with the actual project components before IP-cell review.',
+      'Keep formal patent drawings black-and-white and label every box/arrow.',
       'Attach final SVG/PNG/PDF versions as prototype evidence if the project moves to disclosure review.',
     ],
   };
 }
-
 /* ---------------- Benchmark / experiment plan ---------------- */
 export function experimentPlan(project = {}) {
   const cri = validateIndiaCRI(project);

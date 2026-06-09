@@ -14,29 +14,85 @@ function parseFlowchart(chart = '') {
   const direction = /\bTD\b|\bTB\b/i.test(lines[0] || '') ? 'TD' : 'LR';
   const nodes = new Map();
   const edges = [];
-  for (const line of lines.slice(1)) {
+  const upsert = (node) => {
+    if (!node) return;
+    const existing = nodes.get(node.id) || {};
+    // Prefer real labels over bare ids that came from edge references.
+    const label = node.label && node.label !== node.id ? node.label : existing.label || node.label;
+    nodes.set(node.id, { ...existing, ...node, label });
+  };
+
+  for (const rawLine of lines.slice(1)) {
+    const line = rawLine.replace(/;$/, '');
+    if (!line || line.startsWith('%%')) continue;
+
     const parts = line.split(/-->|---|==>/).map((x) => x.trim()).filter(Boolean);
-    if (parts.length < 2) continue;
-    const left = parseNode(parts[0]);
-    if (left) nodes.set(left.id, { ...(nodes.get(left.id) || {}), ...left });
-    for (let i = 1; i < parts.length; i += 1) {
-      const right = parseNode(parts[i]);
-      if (right) nodes.set(right.id, { ...(nodes.get(right.id) || {}), ...right });
-      if (left && right) edges.push([parts[i - 1].match(/^([A-Za-z0-9_]+)/)?.[1] || left.id, right.id]);
+    if (parts.length >= 2) {
+      let previous = parseNode(parts[0]);
+      upsert(previous);
+      for (let i = 1; i < parts.length; i += 1) {
+        const right = parseNode(parts[i]);
+        upsert(right);
+        if (previous && right) edges.push([previous.id, right.id]);
+        previous = right;
+      }
+      continue;
     }
+
+    // Standalone node declaration, e.g. B[Feature / Signal Extraction].
+    // Without this, edge lines like A --> B followed by B[Label] render as “B”.
+    const standalone = parseNode(line);
+    upsert(standalone);
   }
+
   const list = Array.from(nodes.values());
-  const width = direction === 'LR' ? Math.max(780, list.length * 170) : 780;
-  const height = direction === 'LR' ? 250 : Math.max(260, list.length * 110);
+  const indegree = new Map(list.map((n) => [n.id, 0]));
+  const adjacency = new Map(list.map((n) => [n.id, []]));
+  edges.forEach(([from, to]) => {
+    if (!adjacency.has(from)) adjacency.set(from, []);
+    adjacency.get(from).push(to);
+    indegree.set(to, (indegree.get(to) || 0) + 1);
+  });
+
+  const roots = list.filter((n) => (indegree.get(n.id) || 0) === 0).map((n) => n.id);
+  const depth = new Map();
+  const queue = roots.length ? roots.map((id) => { depth.set(id, 0); return id; }) : list.slice(0, 1).map((n) => { depth.set(n.id, 0); return n.id; });
+  while (queue.length) {
+    const current = queue.shift();
+    const nextDepth = (depth.get(current) || 0) + 1;
+    (adjacency.get(current) || []).forEach((next) => {
+      if (!depth.has(next) || nextDepth > depth.get(next)) {
+        depth.set(next, nextDepth);
+        queue.push(next);
+      }
+    });
+  }
+  list.forEach((n, i) => { if (!depth.has(n.id)) depth.set(n.id, i); });
+
+  const layers = new Map();
+  list.forEach((node) => {
+    const d = depth.get(node.id) || 0;
+    if (!layers.has(d)) layers.set(d, []);
+    layers.get(d).push(node);
+  });
+  const maxDepth = Math.max(0, ...Array.from(layers.keys()));
+  const maxLayerSize = Math.max(1, ...Array.from(layers.values()).map((v) => v.length));
+  const width = direction === 'LR' ? Math.max(820, (maxDepth + 1) * 190) : Math.max(820, maxLayerSize * 200);
+  const height = direction === 'LR' ? Math.max(280, maxLayerSize * 115) : Math.max(300, (maxDepth + 1) * 125);
   const positions = new Map();
-  list.forEach((node, index) => {
-    const x = direction === 'LR' ? 80 + index * 160 : width / 2;
-    const y = direction === 'LR' ? height / 2 : 55 + index * 100;
-    positions.set(node.id, { x, y });
+  Array.from(layers.entries()).forEach(([d, layer]) => {
+    layer.forEach((node, index) => {
+      const x = direction === 'LR'
+        ? 90 + d * 185
+        : width / 2 + (index - (layer.length - 1) / 2) * 190;
+      const y = direction === 'LR'
+        ? height / 2 + (index - (layer.length - 1) / 2) * 105
+        : 60 + d * 115;
+      positions.set(node.id, { x, y });
+    });
   });
   return { type: 'flowchart', direction, nodes: list, edges, positions, width, height };
 }
-
 function parseSequence(chart = '') {
   const lines = chart.split('\n').map((x) => x.trim()).filter(Boolean);
   const participants = [];
@@ -89,7 +145,14 @@ function FlowSvg({ data }) {
       {edges.map(([from, to], i) => {
         const a = positions.get(from); const b = positions.get(to);
         if (!a || !b) return null;
-        return <line key={i} x1={a.x + 62} y1={a.y} x2={b.x - 62} y2={b.y} stroke="#94a3b8" strokeWidth="2" markerEnd="url(#arrow)" opacity="0.8" />;
+        const lr = data.direction === 'LR';
+        const x1 = lr ? a.x + 66 : a.x;
+        const y1 = lr ? a.y : a.y + 32;
+        const x2 = lr ? b.x - 66 : b.x;
+        const y2 = lr ? b.y : b.y - 32;
+        const mid = lr ? (x1 + x2) / 2 : (y1 + y2) / 2;
+        const d = lr ? `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}` : `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
+        return <path key={i} d={d} fill="none" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#arrow)" opacity="0.8" />;
       })}
       {nodes.map((node) => {
         const p = positions.get(node.id);
