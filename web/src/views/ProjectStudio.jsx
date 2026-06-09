@@ -5,6 +5,7 @@ import {
   CheckCircle2, Circle, Plus, Trash2, Copy, Check, ListChecks, Layers,
   Target, Gauge, Clock, Boxes, AlertTriangle, X, Image as ImageIcon, BookOpen,
   GitBranch, ShieldCheck, Network, RefreshCw, ServerCog, Database, Workflow, ChevronDown,
+  Lightbulb, HelpCircle,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input, Field, Skeleton } from '../components/ui/kit.jsx';
@@ -31,6 +32,11 @@ import {
 } from '../lib/githubSync.js';
 import { calculateProjectStatus, whyNotVerified } from '../lib/projectStatus.js';
 import { generateMermaid, normalizeMermaidInput } from '../lib/architecture.js';
+import {
+  WhyBuildPanel, ExplainPanel, BlueprintPanel, DiagramsPanel, FeasibilityPanel,
+  TaskBoardPanel, ProofChecklistPanel, ResumeOutputPanel, SimilarPanel, VerificationPanel,
+  RecommendedProjects,
+} from './ProjectIntelligencePanels.jsx';
 
 /* publish-readiness gate (Part 8) */
 function publishReadiness(p) {
@@ -64,9 +70,9 @@ function Chips({ items, tone = 'cyan' }) {
 const safeArray = (value) => Array.isArray(value) ? value : [];
 const safeObject = (value) => (value && typeof value === 'object' && !Array.isArray(value)) ? value : null;
 const safeText = (value, fallback = '—') => {
-  if (value == null) return fallback;
+  if (value == null || value === '') return fallback;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-  try { return JSON.stringify(value); } catch { return fallback; }
+  try { return JSON.stringify(value, null, 2); } catch { return fallback; }
 };
 const safeMermaid = (project) => {
   try { return normalizeMermaidInput(project?.architectureDiagram, project); }
@@ -384,11 +390,21 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
   const tabs = [
     ['overview', 'Overview', Target],
+    ['whybuild', 'Why Build This', Sparkles],
+    ['explain', 'Explain Project', Lightbulb],
+    ['blueprint', 'Build Blueprint', Boxes],
     ['architecture', 'Architecture', Network],
+    ['diagrams', 'Diagrams', Workflow],
+    ['feasibility', 'Cost & Team', Gauge],
     ['roadmap', 'Roadmap', BookOpen],
     ['tasks', 'Tasks', ListChecks],
+    ['taskboard', 'GitHub Task Board', GitBranch],
+    ['proof', 'Proof Checklist', ShieldCheck],
     ['github', 'GitHub Sync', GitBranch],
     ['verify', 'Verification', ShieldCheck],
+    ['verifypath', 'Verification Path', HelpCircle],
+    ['resumeout', 'Resume Output', FileText],
+    ['similar', 'Similar Projects', Layers],
     ['resume', 'Resume/Interview', FileText],
   ];
 
@@ -407,6 +423,18 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
       <div className="mt-3" />
       <TabBar tabs={tabs} active={tab} onPick={setTab} />
+
+      {tab === 'whybuild' && <WhyBuildPanel project={p} />}
+      {tab === 'explain' && <ExplainPanel project={p} />}
+      {tab === 'blueprint' && <BlueprintPanel project={p} />}
+      {tab === 'diagrams' && <DiagramsPanel project={p} />}
+      {tab === 'feasibility' && <FeasibilityPanel project={p} />}
+      {tab === 'taskboard' && <TaskBoardPanel project={p} />}
+      {tab === 'proof' && <ProofChecklistPanel project={p} />}
+      {tab === 'verifypath' && <VerificationPanel project={p} />}
+      {tab === 'resumeout' && <ResumeOutputPanel project={p} />}
+      {tab === 'similar' && <SimilarPanel project={p} />}
+
 
       {tab === 'overview' && (
         <div className="space-y-3">
@@ -828,18 +856,34 @@ export default function ProjectStudio({ go }) {
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 2600); };
 
-  const generate = async () => {
+  const generate = async (override = null) => {
     setStatus('loading'); setProject(null);
+    const ov = override && typeof override === 'object' && !override.nativeEvent ? override : null;
     const input = {
-      targetRole: role, difficulty: level, duration, type,
-      sourceMissingSkills: useGaps && gaps.length ? gaps : extractSkillsFromJD(jd),
+      targetRole: ov?.targetRole || role, difficulty: ov?.difficulty || level, duration, type,
+      sourceMissingSkills: ov?.sourceMissingSkills || (useGaps && gaps.length ? gaps : extractSkillsFromJD(jd)),
       jd: jd.trim(), resumeText: resume.text || '',
-      sourceJob: seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null),
-      title: seed?.idea?.title || undefined,
-      problemStatement: seed?.idea?.problem || undefined,
+      sourceJob: ov?.sourceJob || (seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null)),
+      title: ov?.title || seed?.idea?.title || undefined,
+      problemStatement: ov?.problemStatement || seed?.idea?.problem || undefined,
     };
     try { const p = await generateRoadmap(input); setProject(p); setStatus('done'); }
     catch { setStatus('error'); }
+  };
+
+  const buildFromRecommendation = (rec) => {
+    if (rec?.targetRole) setRole(rec.targetRole);
+    const diff = (rec?.difficulty || '').toLowerCase();
+    const mapped = diff.includes('begin') ? 'Beginner' : diff.includes('adv') || diff.includes('research') ? 'Advanced' : 'Intermediate';
+    setLevel(mapped);
+    generate({
+      targetRole: rec?.targetRole,
+      difficulty: mapped,
+      title: rec?.title,
+      problemStatement: rec?.problemStatement,
+      sourceMissingSkills: rec?.skillGapsFixed || rec?.skills || [],
+    });
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const saveWorkspace = () => { const saved = saveProject(project); setProjects(getProjects()); flash('Saved to workspaces.'); setOpenWs(saved); };
@@ -953,6 +997,13 @@ export default function ProjectStudio({ go }) {
         {project && status === 'done' && (
           <ProjectResult project={project} seed={seed} onSave={saveWorkspace} onAddBullets={addBullets} onOpenEditor={() => go?.('editor')} />
         )}
+      </div>
+
+      {/* gap-driven recommendations */}
+      <div className="mt-6">
+        <SectionCard title="Gap-driven recommendations" action={<Sparkles size={16} className="text-aurora-violet" />}>
+          <RecommendedProjects onBuild={buildFromRecommendation} />
+        </SectionCard>
       </div>
 
       {/* saved workspaces */}

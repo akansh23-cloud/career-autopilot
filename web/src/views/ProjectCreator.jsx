@@ -25,6 +25,7 @@ import {
   analyzeGithub, applyGithubAnalysis, verifyLiveLink, applyLiveVerification, buildRecruiterSummary,
 } from '../lib/githubSync.js';
 import { generateReadme, generateResumeBullets, generateInterviewPrep } from '../lib/projectGen.js';
+import { RecommendedProjects } from './ProjectIntelligencePanels.jsx';
 
 /* ----------------------------- helpers ----------------------------- */
 const STEP_ICONS = { discover: Compass, validate: ShieldCheck, blueprint: Boxes, build: ListChecks, verify: BadgeCheck, publish: Rocket };
@@ -252,13 +253,18 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
 
   const recLeft = remaining('creatorRecs');
 
-  const run = async () => {
+  const run = async (override = null) => {
     if (!access.isAdmin && !canUse('creatorRecs')) {
       promptUpgrade('You’ve used all your project recommendations for this month. Upgrade for more.', 'pro');
       return;
     }
+    const ov = override && typeof override === 'object' && !override.nativeEvent ? override : null;
     setLoading(true);
-    const ctx = assembleContext({ targetRole, difficulty, duration, preferredType, startFrom: source, customIdea });
+    const ctx = assembleContext({
+      targetRole: ov?.targetRole || targetRole,
+      difficulty: ov?.difficulty || difficulty,
+      duration, preferredType, startFrom: ov?.startFrom || source, customIdea,
+    });
     try {
       const salt = (state.discoverSalt || 0) + 1;
       const { recommendations } = await discover(ctx, { salt });
@@ -267,6 +273,16 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
       const s = saveCreatorState({ recommendations, context: ctx, lastSource: source, discoverSalt: salt });
       setState(s);
     } finally { setLoading(false); }
+  };
+
+  const buildFromGap = (rec) => {
+    if (rec?.targetRole) setTargetRole(rec.targetRole);
+    const diff = (rec?.difficulty || '').toLowerCase();
+    const mapped = diff.includes('begin') ? 'Beginner' : diff.includes('adv') || diff.includes('research') ? 'Advanced' : 'Intermediate';
+    setDifficulty(mapped);
+    setTab('recommendations');
+    run({ targetRole: rec?.targetRole, difficulty: mapped });
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const loadTrends = async () => { if (trends) return; const t = await fetchTrends(); setTrends(t); };
@@ -331,6 +347,10 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
           <Button onClick={run} disabled={loading}><Wand2 size={16} /> {loading ? 'Finding opportunities…' : 'Generate recommendations'}</Button>
           <Button variant="soft" onClick={() => { setTab(tab === 'marketplace' ? 'recommendations' : 'marketplace'); loadTrends(); }}><Lightbulb size={15} /> Browse idea marketplace</Button>
         </div>
+      </SectionCard>
+
+      <SectionCard title="Gap-driven recommendations" action={<Sparkles size={16} className="text-aurora-violet" />}>
+        <RecommendedProjects onBuild={buildFromGap} title="Projects matched to your career gaps" />
       </SectionCard>
 
       {loading && <SectionCard title="Discovery"><Loading msg="Finding project opportunities…" /></SectionCard>}
