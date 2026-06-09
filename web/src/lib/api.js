@@ -164,22 +164,6 @@ export const Patents = {
   dashboard: () => api.get('/api/patent/dashboard'),
 };
 
-
-// Innovation & Patent Intelligence OS — source-backed problem discovery + project synthesis.
-export const ProblemIntelligence = {
-  config: () => api.get('/api/problem-intelligence/config'),
-  discover: (input) => api.post('/api/problem-intelligence/discover', input),
-  clusters: () => api.get('/api/problem-intelligence/clusters'),
-  cluster: (id) => api.get(`/api/problem-intelligence/clusters/${encodeURIComponent(id)}`),
-  generateProject: (clusterId, body = {}) => api.post(`/api/problem-intelligence/clusters/${encodeURIComponent(clusterId)}/generate-project`, body),
-  buildBlueprint: (projectId) => api.post(`/api/problem-intelligence/projects/${encodeURIComponent(projectId)}/build-blueprint`, {}),
-  costEstimate: (projectId, body = {}) => api.post(`/api/problem-intelligence/projects/${encodeURIComponent(projectId)}/cost-estimate`, body),
-  ipReadiness: (projectId, body = {}) => api.post(`/api/problem-intelligence/projects/${encodeURIComponent(projectId)}/ip-readiness`, body),
-  convertToProject: (projectId, body = {}) => api.post(`/api/problem-intelligence/projects/${encodeURIComponent(projectId)}/convert-to-project`, body),
-  convertToPatent: (projectId, body = {}) => api.post(`/api/problem-intelligence/projects/${encodeURIComponent(projectId)}/convert-to-patent`, body),
-  disclosure: (projectId) => api.post(`/api/problem-intelligence/projects/${encodeURIComponent(projectId)}/generate-disclosure`, {}),
-};
-
 // Patent OS — invention intelligence. All scoring backend-owned. Not legal advice.
 export const PatentOS = {
   dashboard: () => api.get('/api/patents/dashboard'),
