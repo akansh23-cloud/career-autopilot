@@ -9,13 +9,23 @@ import { ScoreBar, RouteBadge, SourceBadge } from './shared.jsx';
 export default function ProblemClusterDetail({ cluster, dbOn, onBack, onGenerated, purpose, skills, difficulty }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [duplicateBlocked, setDuplicateBlocked] = useState(false);
 
   const generate = async () => {
     setBusy(true); setErr('');
     try {
       // Pass the cluster in the body so this works whether or not the DB persisted it.
-      const body = dbOn ? { purpose, skills, difficulty } : { cluster, purpose, skills, difficulty };
-      const d = await Innovation.generateProject(cluster.id, body);
+      const clusterId = cluster.id || cluster.dedupeFingerprint || cluster.fingerprint || 'unsaved-cluster';
+      const body = dbOn
+        ? { purpose, skills, difficulty, allowDuplicate: duplicateBlocked }
+        : { cluster, purpose, skills, difficulty, allowDuplicate: duplicateBlocked };
+      const d = await Innovation.generateProject(clusterId, body);
+      if (!d?.project) {
+        setDuplicateBlocked(!!(d?.duplicate || d?.skipped));
+        setErr(d?.message || 'A similar project already exists. Click Generate anyway to create another version.');
+        return;
+      }
+      setDuplicateBlocked(false);
       onGenerated(d.project, d.persisted);
     } catch (e) { setErr(e?.message || 'Could not generate a project from this cluster.'); }
     finally { setBusy(false); }
@@ -39,7 +49,7 @@ export default function ProblemClusterDetail({ cluster, dbOn, onBack, onGenerate
         eyebrow="Problem cluster"
         title={cluster.title}
         sub={cluster.summary}
-        action={<Button onClick={generate} disabled={busy}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}Generate source-backed project</Button>}
+        action={<Button onClick={generate} disabled={busy}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}{duplicateBlocked ? 'Generate anyway' : 'Generate source-backed project'}</Button>}
       />
 
       <div className="flex flex-wrap items-center gap-2">
