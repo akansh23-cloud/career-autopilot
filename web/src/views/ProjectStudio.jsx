@@ -60,6 +60,15 @@ function Chips({ items, tone = 'cyan' }) {
   return <div className="flex flex-wrap gap-1.5">{items.map((s, i) => <Badge key={i} tone={tone}>{s}</Badge>)}</div>;
 }
 
+
+const safeArray = (value) => Array.isArray(value) ? value : [];
+const safeObject = (value) => (value && typeof value === 'object' && !Array.isArray(value)) ? value : null;
+const safeText = (value, fallback = '—') => {
+  if (value == null) return fallback;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try { return JSON.stringify(value); } catch { return fallback; }
+};
+
 /* ---------------- Generated project result ---------------- */
 function MilestoneCard({ index, phase, tasks, last, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -430,39 +439,42 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <ArchitectureDiagram mermaid={p.architectureDiagram || generateMermaid(p)} />
             <details className="mt-2"><summary className="cursor-pointer text-[11px] text-slate-500">View Mermaid source</summary><pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] text-slate-400">{p.architectureDiagram || generateMermaid(p)}</pre></details>
           </Panel>
-          <Panel title="Architecture notes"><p className="text-[13px] leading-relaxed text-slate-300">{p.architecture}</p></Panel>
-          {ind.technicalArchitecture && (
+          <Panel title="Architecture notes"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{safeText(p.architecture, 'No architecture notes yet.')}</p></Panel>
+          {safeObject(ind.technicalArchitecture) && (
             <Panel title="Technical architecture">
               <div className="grid gap-1.5 text-[12px] sm:grid-cols-2">
-                {Object.entries(ind.technicalArchitecture).map(([k, v]) => (
-                  <div key={k} className="flex gap-2"><span className="w-28 shrink-0 capitalize text-slate-500">{k}</span><span className="text-slate-300">{v}</span></div>
+                {Object.entries(safeObject(ind.technicalArchitecture)).map(([k, v]) => (
+                  <div key={k} className="flex gap-2"><span className="w-28 shrink-0 capitalize text-slate-500">{k}</span><span className="text-slate-300">{safeText(v)}</span></div>
                 ))}
               </div>
             </Panel>
           )}
-          {ind.dataModel && (
+          {typeof ind.technicalArchitecture === 'string' && (
+            <Panel title="Technical architecture"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{ind.technicalArchitecture}</p></Panel>
+          )}
+          {safeArray(ind.dataModel).length > 0 && (
             <Panel title="Data model / schema">
               <div className="space-y-2">
-                {ind.dataModel.map((m, i) => (
+                {safeArray(ind.dataModel).map((m, i) => (
                   <div key={i} className="rounded-lg bg-white/[0.03] p-2">
-                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-white"><Database size={12} className="text-aurora-cyan" /> {m.name}</div>
-                    <ul className="mt-1 list-disc pl-4 font-mono text-[11px] text-slate-400">{m.fields.map((f, j) => <li key={j}>{f}</li>)}</ul>
-                    <pre className="mt-1 overflow-x-auto rounded bg-ink-950/70 p-1.5 font-mono text-[10px] text-slate-400">{JSON.stringify(m.sample, null, 2)}</pre>
+                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-white"><Database size={12} className="text-aurora-cyan" /> {safeText(m?.name || `Entity ${i + 1}`)}</div>
+                    {safeArray(m?.fields).length > 0 && <ul className="mt-1 list-disc pl-4 font-mono text-[11px] text-slate-400">{safeArray(m.fields).map((f, j) => <li key={j}>{safeText(f)}</li>)}</ul>}
+                    {m?.sample != null && <pre className="mt-1 overflow-x-auto rounded bg-ink-950/70 p-1.5 font-mono text-[10px] text-slate-400">{safeText(m.sample)}</pre>}
                   </div>
                 ))}
               </div>
             </Panel>
           )}
-          {ind.apiDesign && (
+          {safeArray(ind.apiDesign).length > 0 && (
             <Panel title="API design">
               <div className="space-y-1.5">
-                {ind.apiDesign.map((a, i) => (
+                {safeArray(ind.apiDesign).map((a, i) => (
                   <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
-                    <summary className="cursor-pointer text-slate-200"><span className="font-mono font-semibold text-aurora-cyan">{a.method}</span> <span className="font-mono">{a.endpoint}</span> — {a.purpose} {a.auth && <Badge tone="amber">auth</Badge>}</summary>
+                    <summary className="cursor-pointer text-slate-200"><span className="font-mono font-semibold text-aurora-cyan">{safeText(a?.method || 'API')}</span> <span className="font-mono">{safeText(a?.endpoint || `/endpoint-${i + 1}`)}</span> — {safeText(a?.purpose || 'Project API')} {a?.auth && <Badge tone="amber">auth</Badge>}</summary>
                     <div className="mt-1 space-y-0.5 text-slate-400">
-                      <p><span className="text-slate-500">Request:</span> <code>{a.request}</code></p>
-                      <p><span className="text-slate-500">Response:</span> <code>{a.response}</code></p>
-                      <p><span className="text-slate-500">Validation:</span> {a.validation}</p>
+                      <p><span className="text-slate-500">Request:</span> <code>{safeText(a?.request)}</code></p>
+                      <p><span className="text-slate-500">Response:</span> <code>{safeText(a?.response)}</code></p>
+                      <p><span className="text-slate-500">Validation:</span> {safeText(a?.validation)}</p>
                     </div>
                   </details>
                 ))}
@@ -470,7 +482,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             </Panel>
           )}
           <Panel title="Folder structure">
-            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre>
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{safeText(p.repoStructure, 'No folder structure generated yet.')}</pre>
           </Panel>
         </div>
       )}

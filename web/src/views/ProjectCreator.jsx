@@ -54,14 +54,29 @@ function Accordion({ title, icon: Icon, defaultOpen = false, badge, children }) 
   );
 }
 
+function toList(value) {
+  if (Array.isArray(value)) return value.filter((x) => x != null && String(typeof x === 'object' ? JSON.stringify(x) : x).trim());
+  if (value == null || value === '') return [];
+  if (typeof value === 'string') return value.split(/\n|;|\u2022/g).map((x) => x.trim()).filter(Boolean);
+  if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''))}`);
+  return [String(value)];
+}
+function toText(value, fallback = '') {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map((x) => typeof x === 'object' ? JSON.stringify(x) : String(x)).join('\n');
+  if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''))}`).join('\n');
+  return String(value);
+}
 function List({ items, tone = 'cyan' }) {
-  if (!items || !items.length) return <p className="text-[13px] text-slate-500">Not available.</p>;
+  const list = toList(items);
+  if (!list.length) return <p className="text-[13px] text-slate-500">Not available.</p>;
   return (
     <ul className="space-y-1.5">
-      {items.map((it, i) => (
+      {list.map((it, i) => (
         <li key={i} className="flex gap-2 text-[13px] text-slate-300">
           <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${tone === 'mint' ? 'bg-aurora-mint' : tone === 'amber' ? 'bg-amber-glow' : 'bg-aurora-cyan'}`} />
-          <span>{typeof it === 'string' ? it : (it.feature ? `${it.feature} — ${it.priority}` : JSON.stringify(it))}</span>
+          <span>{typeof it === 'string' ? it : (it?.feature ? `${it.feature} — ${it.priority || ''}` : JSON.stringify(it))}</span>
         </li>
       ))}
     </ul>
@@ -588,14 +603,14 @@ function BlueprintStep({ selected, setStep }) {
         ) : (
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[11px] uppercase tracking-widest text-slate-500">Vision</p><p className="mt-1 text-[13px] text-slate-200">{bp.productVision}</p></div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[11px] uppercase tracking-widest text-slate-500">Positioning</p><p className="mt-1 text-[13px] text-slate-200">{bp.positioning}</p></div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[11px] uppercase tracking-widest text-slate-500">Vision</p><p className="mt-1 text-[13px] text-slate-200">{toText(bp.productVision)}</p></div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3"><p className="text-[11px] uppercase tracking-widest text-slate-500">Positioning</p><p className="mt-1 text-[13px] text-slate-200">{toText(bp.positioning)}</p></div>
             </div>
 
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500">System architecture</p>
               <ArchitectureDiagram mermaid={selected.architectureDiagram} height={300} />
-              <p className="mt-2 text-[12px] text-slate-400">{bp.systemArchitecture}</p>
+              <p className="mt-2 text-[12px] text-slate-400">{toText(bp.systemArchitecture)}</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -603,10 +618,10 @@ function BlueprintStep({ selected, setStep }) {
               <Accordion title="Advanced features" icon={Sparkles}><List items={bp.advancedFeatures} /></Accordion>
               <Accordion title="Feature prioritization" icon={Target}><List items={bp.featurePrioritization} /></Accordion>
               <Accordion title="Personas & journeys" icon={Users}><p className="mb-1 text-slate-400">Personas:</p><List items={bp.personas} /><p className="mb-1 mt-2 text-slate-400">Journeys:</p><List items={bp.userJourneys} /></Accordion>
-              <Accordion title="Tech stack & integrations" icon={Boxes}><div className="flex flex-wrap gap-1.5">{(bp.techStack || []).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div><p className="mt-2 text-slate-400">Integrations:</p><List items={bp.integrations} /></Accordion>
+              <Accordion title="Tech stack & integrations" icon={Boxes}><div className="flex flex-wrap gap-1.5">{toList(bp.techStack).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div><p className="mt-2 text-slate-400">Integrations:</p><List items={bp.integrations} /></Accordion>
               <Accordion title="Database schema" icon={FileText}><List items={bp.databaseSchema} /></Accordion>
               <Accordion title="API design" icon={Globe}><List items={bp.apiDesign} /></Accordion>
-              <Accordion title="UI screens & folder structure" icon={Boxes}><List items={bp.uiScreens} /><pre className="mt-2 overflow-x-auto rounded-lg border border-white/10 bg-ink-950 p-3 text-[12px] text-slate-300">{bp.folderStructure}</pre></Accordion>
+              <Accordion title="UI screens & folder structure" icon={Boxes}><List items={bp.uiScreens} /><pre className="mt-2 overflow-x-auto rounded-lg border border-white/10 bg-ink-950 p-3 text-[12px] text-slate-300">{toText(bp.folderStructure)}</pre></Accordion>
               <Accordion title="Security & non-functional" icon={ShieldCheck}><p className="mb-1 text-slate-400">Security:</p><List items={bp.securityRequirements} tone="amber" /><p className="mb-1 mt-2 text-slate-400">Non-functional:</p><List items={bp.nonFunctional} /></Accordion>
               <Accordion title="Deployment, testing & analytics" icon={Rocket}><p className="mb-1 text-slate-400">Deployment:</p><List items={bp.deploymentArchitecture} /><p className="mb-1 mt-2 text-slate-400">Testing:</p><List items={bp.testingStrategy} /><p className="mb-1 mt-2 text-slate-400">Analytics:</p><List items={bp.analytics} /></Accordion>
               <Accordion title="Launch checklist" icon={BadgeCheck}><List items={bp.launchChecklist} tone="mint" /></Accordion>

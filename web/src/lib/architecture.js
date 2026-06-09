@@ -46,26 +46,56 @@ export function parseGraph(mermaid = '') {
   const nodes = new Map();
   const edges = [];
   const addNode = (id, label, shape) => {
-    if (!nodes.has(id)) nodes.set(id, { id, label: label || id, shape: shape || 'rect' });
-    else if (label) { const n = nodes.get(id); n.label = label; if (shape) n.shape = shape; }
+    const safeId = String(id || '').trim().replace(/[^A-Za-z0-9_]/g, '_');
+    if (!safeId) return null;
+    const safeLabel = String(label || safeId).replace(/<[^>]*>/g, '').trim() || safeId;
+    if (!nodes.has(safeId)) nodes.set(safeId, { id: safeId, label: safeLabel, shape: shape || 'rect' });
+    else if (label) { const n = nodes.get(safeId); n.label = safeLabel; if (shape) n.shape = shape; }
+    return safeId;
   };
-  const nodeRe = /([A-Za-z0-9_]+)(\[\("([^"]*)"\)\]|\(\("([^"]*)"\)\)|\["([^"]*)"\]|\("([^"]*)"\))?/;
-  const shapeOf = (m) => m[3] != null ? 'cyl' : m[4] != null ? 'circle' : m[5] != null ? 'rect' : m[6] != null ? 'round' : 'rect';
-  const labelOf = (m) => m[3] ?? m[4] ?? m[5] ?? m[6] ?? null;
+
+  const parseNode = (raw = '') => {
+    let text = String(raw).trim();
+    text = text.replace(/^[|].*?[|]/, '').replace(/[|].*?[|]$/, '').trim();
+    const idMatch = text.match(/^([A-Za-z0-9_]+)/);
+    if (!idMatch) return null;
+    const id = idMatch[1];
+    const rest = text.slice(id.length).trim();
+    let label = null;
+    let shape = 'rect';
+
+    const quoted = rest.match(/^\[\("([^"]*)"\)\]/) || rest.match(/^\(\("([^"]*)"\)\)/) || rest.match(/^\["([^"]*)"\]/) || rest.match(/^\("([^"]*)"\)/);
+    if (quoted) {
+      label = quoted[1];
+      if (rest.startsWith('[(')) shape = 'cyl';
+      else if (rest.startsWith('((')) shape = 'circle';
+      else if (rest.startsWith('(')) shape = 'round';
+      return { id, label, shape };
+    }
+
+    const unquoted = rest.match(/^\[\(([^)]*)\)\]/) || rest.match(/^\(\(([^)]*)\)\)/) || rest.match(/^\[([^\]]*)\]/) || rest.match(/^\(([^)]*)\)/);
+    if (unquoted) {
+      label = unquoted[1];
+      if (rest.startsWith('[(')) shape = 'cyl';
+      else if (rest.startsWith('((')) shape = 'circle';
+      else if (rest.startsWith('(')) shape = 'round';
+    }
+    return { id, label, shape };
+  };
 
   mermaid.split('\n').forEach((raw) => {
     const line = raw.trim();
-    if (!line || /^graph\s/i.test(line) || line.startsWith('%%')) return;
-    if (line.includes('-->')) {
-      const [l, r] = line.split('-->');
-      const lm = l.trim().match(nodeRe);
-      const rm = r.trim().match(nodeRe);
-      if (lm) addNode(lm[1], labelOf(lm), shapeOf(lm));
-      if (rm) addNode(rm[1], labelOf(rm), shapeOf(rm));
-      if (lm && rm) edges.push([lm[1], rm[1]]);
+    if (!line || /^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram)\s/i.test(line) || line.startsWith('%%')) return;
+    const parts = line.split(/-->|---|-.->|==>/);
+    if (parts.length >= 2) {
+      const left = parseNode(parts[0]);
+      const right = parseNode(parts[parts.length - 1]);
+      const a = left ? addNode(left.id, left.label, left.shape) : null;
+      const b = right ? addNode(right.id, right.label, right.shape) : null;
+      if (a && b && a !== b) edges.push([a, b]);
     } else {
-      const m = line.match(nodeRe);
-      if (m) addNode(m[1], labelOf(m), shapeOf(m));
+      const n = parseNode(line);
+      if (n) addNode(n.id, n.label, n.shape);
     }
   });
   return { nodes: Array.from(nodes.values()), edges };
