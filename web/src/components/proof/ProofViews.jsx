@@ -5,7 +5,7 @@ import { badgeTone } from '../../lib/badges.js';
 import { classifyBadges } from '../../lib/skillBadges.js';
 import { levelFor, nextStepFor, SKILL_STATE_LABELS, SKILL_STATE_TONES } from '../../lib/xp.js';
 import { statusTone } from '../../lib/projectStatus.js';
-import { layoutGraph } from '../../lib/architecture.js';
+import { layoutGraph, normalizeMermaidInput } from '../../lib/architecture.js';
 
 export function StatusBadge({ status, size = 'sm' }) {
   if (!status) return null;
@@ -16,56 +16,72 @@ export function StatusBadge({ status, size = 'sm' }) {
    and draws a clean dark-themed top-down SVG. No mermaid package required, so
    the build never breaks. */
 export function ArchitectureDiagram({ mermaid, height = 320 }) {
-  if (!mermaid || !mermaid.trim()) {
+  const source = normalizeMermaidInput(mermaid);
+  if (!source.trim()) {
     return <p className="text-[12px] text-slate-500">No architecture diagram yet — generate one on the Architecture tab.</p>;
   }
-  const { nodes, edges, layers, maxDepth } = layoutGraph(mermaid);
-  if (!nodes.length) return <p className="text-[12px] text-slate-500">Diagram is empty.</p>;
 
-  const W = 640;
-  const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
-  const rowH = Math.max(72, Math.min(110, (height - 24) / (maxDepth + 1)));
-  const pos = {};
-  layerKeys.forEach((d) => {
-    const row = layers[d];
-    const gap = W / (row.length + 1);
-    row.forEach((n, i) => { pos[n.id] = { x: gap * (i + 1), y: 36 + d * rowH }; });
-  });
-  const H = 48 + maxDepth * rowH + 36;
-  const boxW = 132, boxH = 40;
-  const shapeColor = (shape) => shape === 'cyl' ? 'var(--mint, #34d399)' : shape === 'circle' ? 'var(--amber, #f59e0b)' : 'var(--cyan, #38bdf8)';
+  try {
+    const graph = layoutGraph(source);
+    const { nodes, edges, layers, maxDepth } = graph;
+    if (!nodes.length) return <p className="text-[12px] text-slate-500">Diagram is empty.</p>;
 
-  return (
-    <div className="overflow-x-auto rounded-xl border border-white/10 bg-ink-950/60 p-2">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 420 }} role="img" aria-label="Architecture diagram">
-        <defs>
-          <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 z" fill="rgba(148,163,184,0.7)" />
-          </marker>
-        </defs>
-        {edges.map(([a, b], i) => {
-          const pa = pos[a], pb = pos[b];
-          if (!pa || !pb) return null;
-          const y1 = pa.y + boxH / 2, y2 = pb.y - boxH / 2;
-          return <path key={i} d={`M${pa.x},${y1} C${pa.x},${(y1 + y2) / 2} ${pb.x},${(y1 + y2) / 2} ${pb.x},${y2}`} fill="none" stroke="rgba(148,163,184,0.45)" strokeWidth="1.5" markerEnd="url(#arrow)" />;
-        })}
-        {nodes.map((n) => {
-          const p = pos[n.id];
-          if (!p) return null;
-          const c = shapeColor(n.shape);
-          const rx = n.shape === 'circle' ? boxH / 2 : 10;
-          return (
-            <g key={n.id} transform={`translate(${p.x - boxW / 2},${p.y - boxH / 2})`}>
-              <rect width={boxW} height={boxH} rx={rx} fill="rgba(255,255,255,0.04)" stroke={c} strokeWidth="1.4" />
-              <text x={boxW / 2} y={boxH / 2 + 4} textAnchor="middle" fontSize="12" fill="#e2e8f0" style={{ fontFamily: 'inherit' }}>
-                {n.label.length > 18 ? n.label.slice(0, 17) + '…' : n.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
+    const W = 640;
+    const numericHeight = Number(height) || 320;
+    const layerKeys = Object.keys(layers || {}).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    const safeDepth = Math.max(0, Number(maxDepth) || 0);
+    const rowH = Math.max(72, Math.min(110, (numericHeight - 24) / (safeDepth + 1)));
+    const pos = {};
+    layerKeys.forEach((d) => {
+      const row = Array.isArray(layers[d]) ? layers[d] : [];
+      const gap = W / (row.length + 1 || 2);
+      row.forEach((n, i) => { if (n?.id) pos[n.id] = { x: gap * (i + 1), y: 36 + d * rowH }; });
+    });
+    const H = Math.max(180, 48 + safeDepth * rowH + 36);
+    const boxW = 132, boxH = 40;
+    const markerId = `arrow-${Math.random().toString(36).slice(2)}`;
+    const shapeColor = (shape) => shape === 'cyl' ? 'var(--mint, #34d399)' : shape === 'circle' ? 'var(--amber, #f59e0b)' : 'var(--cyan, #38bdf8)';
+
+    return (
+      <div className="overflow-x-auto rounded-xl border border-white/10 bg-ink-950/60 p-2">
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 420 }} role="img" aria-label="Architecture diagram">
+          <defs>
+            <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="rgba(148,163,184,0.7)" />
+            </marker>
+          </defs>
+          {edges.map(([a, b], i) => {
+            const pa = pos[a], pb = pos[b];
+            if (!pa || !pb) return null;
+            const y1 = pa.y + boxH / 2, y2 = pb.y - boxH / 2;
+            return <path key={i} d={`M${pa.x},${y1} C${pa.x},${(y1 + y2) / 2} ${pb.x},${(y1 + y2) / 2} ${pb.x},${y2}`} fill="none" stroke="rgba(148,163,184,0.45)" strokeWidth="1.5" markerEnd={`url(#${markerId})`} />;
+          })}
+          {nodes.map((n) => {
+            const point = pos[n.id];
+            if (!point) return null;
+            const c = shapeColor(n.shape);
+            const rx = n.shape === 'circle' ? boxH / 2 : 10;
+            const label = String(n.label || n.id || 'Node');
+            return (
+              <g key={n.id} transform={`translate(${point.x - boxW / 2},${point.y - boxH / 2})`}>
+                <rect width={boxW} height={boxH} rx={rx} fill="rgba(255,255,255,0.04)" stroke={c} strokeWidth="1.4" />
+                <text x={boxW / 2} y={boxH / 2 + 4} textAnchor="middle" fontSize="12" fill="#e2e8f0" style={{ fontFamily: 'inherit' }}>
+                  {label.length > 18 ? label.slice(0, 17) + '…' : label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  } catch (err) {
+    return (
+      <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/10 p-3">
+        <p className="text-[12px] text-amber-100">Unable to render this architecture diagram. The Mermaid text is still available below.</p>
+        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-slate-300">{source}</pre>
+      </div>
+    );
+  }
 }
 
 

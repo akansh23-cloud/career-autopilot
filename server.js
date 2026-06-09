@@ -48,7 +48,6 @@ import {
 } from './validation.js';
 import * as ghEngine from './server/utils/githubIntegrationEngine.js';
 import { registerProblemIntelligenceRoutes } from './server/routes/problemIntelligenceRoutes.js';
-import { registerProjectIntelligenceRoutes } from './server/routes/projectIntelligenceRoutes.js';
 
 dotenv.config();
 
@@ -2534,7 +2533,6 @@ app.get('/api/patents/disclosures', requireAuth, async (req, res) => {
    API keys / DB are missing — it never crashes the app.
    ============================================================ */
 registerProblemIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, persistenceStatus, db });
-registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
