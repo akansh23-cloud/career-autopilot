@@ -115,14 +115,15 @@ function isAdminUsersHash() {
   return /^#\/admin\/users\b/.test(window.location.hash || '');
 }
 
+
 function parseProjectRouteHash() {
   if (typeof window === 'undefined') return null;
   const hash = window.location.hash || '';
-  let m = hash.match(/^#\/projects\/([^/?#]+)\/builder\b/);
+  let m = hash.match(/^#\/projects\/([^/?#]+)\/builder/);
   if (m) return { view: 'projectbuilder', params: { projectId: decodeURIComponent(m[1]) } };
-  m = hash.match(/^#\/projects\/([^/?#]+)\/workspace\b/);
+  m = hash.match(/^#\/projects\/([^/?#]+)\/workspace/);
   if (m) return { view: 'projectstudio', params: { openProjectId: decodeURIComponent(m[1]) } };
-  if (/^#\/(project-os|projects)\b/.test(hash)) return { view: 'projectstudio', params: {} };
+  if (/^#\/(project-os|projects)/.test(hash)) return { view: 'projectstudio', params: {} };
   return null;
 }
 
@@ -137,7 +138,7 @@ function managedProjectHash(id, params = {}) {
 function clearManagedProjectHash() {
   if (typeof window === 'undefined') return;
   const hash = window.location.hash || '';
-  if (/^#\/(projects|project-os)\b/.test(hash)) {
+  if (/^#\/(projects|project-os)/.test(hash)) {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   }
 }

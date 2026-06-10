@@ -46,13 +46,13 @@ function useRole() {
 export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'careerprofile', label: 'Career Profile', icon: BadgeCheck },
-  { id: 'projectcreator', label: 'Project Creator', icon: Wand2, legacyTool: true },
-  { id: 'marketplace', label: 'Project Marketplace', icon: Store, legacyTool: true },
-  { id: 'inspirations', label: 'Live Inspirations', icon: Lightbulb, legacyTool: true },
-  { id: 'architecture', label: 'Architecture Generator', icon: Boxes, legacyTool: true },
+  { id: 'projectcreator', label: 'Project Creator', icon: Wand2 },
+  { id: 'marketplace', label: 'Project Marketplace', icon: Store },
+  { id: 'inspirations', label: 'Live Inspirations', icon: Lightbulb },
+  { id: 'architecture', label: 'Architecture Generator', icon: Boxes },
   { id: 'innovation', label: 'Innovation OS', icon: Sparkles },
   { id: 'patents', label: 'Patent Dashboard', icon: ScrollText },
-  { id: 'patentgenerate', label: 'Legacy Generator', icon: Lightbulb, legacyTool: true },
+  { id: 'patentgenerate', label: 'Legacy Generator', icon: Lightbulb },
   { id: 'patentportfolio', label: 'My Inventions', icon: Store },
   { id: 'priorart', label: 'Prior-Art Research', icon: Search },
   { id: 'patentdisclosures', label: 'Disclosures', icon: FileStack },
@@ -68,8 +68,8 @@ export const NAV = [
   { id: 'leaderboards', label: 'Leaderboards', icon: Medal },
   { id: 'opportunities', label: 'Opportunity Arena', icon: Trophy },
   { id: 'projectstudio', label: 'Project OS', icon: Rocket },
-  { id: 'sandbox', label: 'Project Sandbox', icon: Globe2, legacyTool: true },
-  { id: 'partners', label: 'Find Project Partner', icon: Users, legacyTool: true },
+  { id: 'sandbox', label: 'Project Sandbox', icon: Globe2 },
+  { id: 'partners', label: 'Find Project Partner', icon: Users },
   { id: 'recruiter', label: 'Recruiter Console', icon: UserSearch },
   { id: 'growth', label: 'Growth', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
@@ -77,8 +77,8 @@ export const NAV = [
 ];
 
 const ROLE_NAV = {
-  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'projectstudio', 'innovation', 'patents', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
-  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'projectstudio', 'innovation', 'patents', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
+  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
   recruiter: ['dash', 'recruiter', 'readiness', 'marketplace', 'careerprofile', 'leaderboards', 'sandbox', 'settings'],
 };
 
@@ -91,8 +91,8 @@ const NAV_GROUPS = [
   { label: 'Resume OS', short: 'Résumé', ids: ['resume', 'editor'] },
   { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
   { label: 'Applications', short: 'Apply', ids: ['applications'] },
-  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio'] },
-  { label: 'Patent Engine', short: 'Patents', ids: ['innovation', 'patents', 'patentportfolio', 'priorart', 'patentdisclosures'] },
+  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'projectcreator', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },
+  { label: 'Patent Engine', short: 'Patents', ids: ['innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
   { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'skillsxp', 'readiness'] },
   { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
   { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },
@@ -104,7 +104,7 @@ function groupsForRole(role) {
   const order = ROLE_NAV[role];
   const allowed = order ? new Set(order) : null;
   const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
-  const keep = (id) => !!byId[id] && (!byId[id].legacyTool || role === 'admin') && (!allowed || allowed.has(id)) && (!byId[id].adminOnly || role === 'admin');
+  const keep = (id) => !!byId[id] && (!allowed || allowed.has(id)) && (!byId[id].adminOnly || role === 'admin');
 
   const placed = new Set();
   const primary = NAV_GROUPS

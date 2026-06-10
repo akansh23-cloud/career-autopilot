@@ -24,7 +24,7 @@ import { getPlan } from '../../lib/plan.js';
 // All targets are real NAV ids, so they can never dangle.
 const QUICK_ACTIONS = [
   { id: 'qa-resume', label: 'Tailor / analyze my resume', target: 'resume', icon: FileText, hint: 'Resume Studio' },
-  { id: 'qa-project', label: 'Open Project OS', target: 'projectstudio', icon: Wand2, hint: 'Project OS' },
+  { id: 'qa-project', label: 'Start a new project with AI', target: 'projectcreator', icon: Wand2, hint: 'Project Creator' },
   { id: 'qa-jobs', label: 'Find matching jobs', target: 'jobs', icon: Briefcase, hint: 'Job Hunt' },
   { id: 'qa-roadmap', label: 'Open my project roadmap', target: 'projectstudio', icon: Rocket, hint: 'Project Studio' },
   { id: 'qa-outreach', label: 'Draft recruiter outreach', target: 'contacts', icon: Send, hint: 'Outreach' },
@@ -62,7 +62,7 @@ export default function CommandPalette({ open, setOpen, onPick }) {
     // UI honest too.
     const isAdmin = !!getPlan().isAdmin;
     const navItems = NAV
-      .filter((n) => (!n.adminOnly || isAdmin) && (!n.legacyTool || isAdmin))
+      .filter((n) => !n.adminOnly || isAdmin)
       .filter((n) => fuzzy(q, n.label) || fuzzy(q, n.id))
       .map((n) => ({ key: `nav-${n.id}`, label: n.label, icon: n.icon, hint: 'Workspace', run: () => onPick(n.id) }));
 
