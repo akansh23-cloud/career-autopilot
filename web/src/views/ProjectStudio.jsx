@@ -411,7 +411,6 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
     ['overview', 'Overview', Target],
     ['whybuild', 'Why Build This', Sparkles],
     ['architecture', 'Architecture', Network],
-    ['builder', 'Builder', Rocket],
     ['proof', 'Proof & Verification', ShieldCheck],
     ['resume', 'Resume Output', FileText],
     ['publish', 'Publish', Globe],
@@ -930,6 +929,62 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild }) {
       </div>
     </div>
   );
+
+}
+
+function ProjectDashboardSummary({ projects, onBuild, onOpen, go }) {
+  const list = Array.isArray(projects) ? projects : [];
+  const active = list.filter((p) => !p.published && calculateProjectStatus(p).status !== 'Recruiter Ready').length;
+  const verified = list.filter((p) => calculateProjectStatus(p).status === 'Recruiter Ready').length;
+  const published = list.filter((p) => p.published).length;
+  const avgProof = list.length ? Math.round(list.reduce((sum, p) => sum + (Number(p.proofScore) || 0), 0) / list.length) : 0;
+  const next = list
+    .slice()
+    .sort((a, b) => (buildProgressFor(b).progressPercent || 0) - (buildProgressFor(a).progressPercent || 0))[0];
+  const stats = [
+    ['Projects', list.length],
+    ['Active', active],
+    ['Verified', verified],
+    ['Published', published],
+    ['Avg proof', `${avgProof}%`],
+  ];
+  return (
+    <SectionCard title="Project OS dashboard" action={<Badge tone="violet">Consolidated</Badge>}>
+      <div className="grid gap-3 lg:grid-cols-[1.35fr_1fr]">
+        <div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {stats.map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-white/8 bg-white/[0.03] p-3 text-center">
+                <div className="font-display text-xl font-semibold text-white">{value}</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-slate-400">
+            Use Project OS as the single place for project generation, workspace review, Builder Mode, proof, resume output and publishing. Legacy project tools are hidden from normal navigation but remain available internally for compatibility.
+          </p>
+        </div>
+        <div className="rounded-xl border border-aurora-violet/25 bg-aurora-violet/5 p-3.5">
+          <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-aurora-violet"><Rocket size={13} /> Next action</div>
+          {next ? (
+            <>
+              <p className="text-sm font-medium text-white">{next.title}</p>
+              <p className="mt-1 line-clamp-2 text-[12px] text-slate-400">{buildProgressFor(next).nextAction || whyNotVerified(next)}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => onBuild?.(next)}><Rocket size={13} /> {buildLabel(next)}</Button>
+                <Button size="sm" variant="outline" onClick={() => onOpen?.(next)}><Layers size={13} /> Workspace</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-300">No saved project yet.</p>
+              <Button size="sm" className="mt-3" onClick={() => go?.('projectstudio')}><Wand2 size={13} /> Generate first project</Button>
+            </>
+          )}
+        </div>
+      </div>
+    </SectionCard>
+  );
 }
 
 /* ---------------- Main view ---------------- */
@@ -1048,6 +1103,8 @@ export default function ProjectStudio({ go, openProjectId }) {
           )}
         </div>
       )}
+
+      <ProjectDashboardSummary projects={projects} onBuild={openBuilder} onOpen={setOpenWs} go={go} />
 
       <div className="grid gap-4 lg:grid-cols-2">
           <SectionCard title="Project setup">

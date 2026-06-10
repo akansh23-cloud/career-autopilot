@@ -191,6 +191,16 @@ export const PatentOS = {
   disclosures: () => api.get('/api/patents/disclosures'),
 };
 
+// Project OS Builder Mode. Backend routes mirror the deterministic frontend
+// generator, so Builder Mode remains usable offline but can persist/export via
+// the server when user-state persistence is available.
+export const ProjectBuilderApi = {
+  generate: (body) => api.post('/api/project-builder/generate', body),
+  get: (projectId) => api.get(`/api/project-builder/${encodeURIComponent(projectId)}`),
+  updateProgress: (projectId, body) => api.patch(`/api/project-builder/${encodeURIComponent(projectId)}/progress`, body),
+  exportGuide: (projectId, body) => api.post(`/api/project-builder/${encodeURIComponent(projectId)}/export`, body),
+};
+
 // Application Package Generator. Uses verified skills only; no fake claims.
 export const Applications = {
   generate: (body) => api.post('/api/applications/package', body),
