@@ -49,6 +49,7 @@ import {
 import * as ghEngine from './server/utils/githubIntegrationEngine.js';
 import { registerProblemIntelligenceRoutes } from './server/routes/problemIntelligenceRoutes.js';
 import { registerProjectIntelligenceRoutes } from './server/routes/projectIntelligenceRoutes.js';
+import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRoutes.js';
 
 dotenv.config();
 
@@ -2535,6 +2536,7 @@ app.get('/api/patents/disclosures', requireAuth, async (req, res) => {
    ============================================================ */
 registerProblemIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, persistenceStatus, db });
 registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter });
+registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR

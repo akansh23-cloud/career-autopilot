@@ -28,6 +28,7 @@ import Arena from './views/Arena.jsx';
 import Growth from './views/Growth.jsx';
 import Settings from './views/Settings.jsx';
 import ProjectStudio from './views/ProjectStudio.jsx';
+import ProjectBuilder from './views/ProjectBuilder.jsx';
 import Sandbox from './views/Sandbox.jsx';
 import PartnerMatch from './views/PartnerMatch.jsx';
 import RecruiterConsole from './views/RecruiterConsole.jsx';
@@ -63,6 +64,7 @@ const VIEWS = {
   leaderboards: Leaderboards,
   opportunities: Arena,
   projectstudio: ProjectStudio,
+  projectbuilder: ProjectBuilder,
   sandbox: Sandbox,
   partners: PartnerMatch,
   recruiter: RecruiterConsole,
@@ -210,7 +212,8 @@ export default function App() {
   }
 
   const ViewCmp = VIEWS[active] || RoleDashboard;
-  const title = (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
+  const TITLE_OVERRIDES = { projectbuilder: 'Project Builder' };
+  const title = TITLE_OVERRIDES[active] || (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
 
   // Guarded navigation: only switch to a real, registered view id. Unknown or
   // stale ids are ignored (instead of silently rendering the dashboard or a
