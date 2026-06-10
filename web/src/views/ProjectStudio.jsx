@@ -26,9 +26,9 @@ import { getAccessForUser } from '../lib/access.js';
 import { isUnlimited, promptUpgrade } from '../lib/plan.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { BadgePill, StatusBadge } from '../components/proof/ProofViews.jsx';
-// Architecture Diagram OS: universal wrapper — renders the professional canvas
-// when the project carries an architectureSpec, legacy Mermaid otherwise.
-import ArchitectureDiagram from '../components/architecture/ArchitectureDiagram.jsx';
+// Architecture Diagram OS: full studio panel (tabs/validation/refine/export);
+// the backend engine attaches structured specs, legacy Mermaid stays the fallback.
+import ArchitectureStudioPanel from '../components/architecture/ArchitectureStudioPanel.jsx';
 import {
   analyzeGithub, verifyLiveLink, applyGithubAnalysis, applyLiveVerification,
   buildRecruiterSummary, normalizeRepoUrl,
@@ -370,10 +370,6 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
       if (kind === 'readme') patch({ readme: await generateReadme(p) });
     } finally { setBusy(''); }
   };
-  const genArchitecture = () => {
-    try { patch({ architectureDiagram: generateMermaid(p) }); }
-    catch { patch({ architectureDiagram: 'graph TD\n  Project["Project"] --> MVP["Working MVP"]' }); }
-  };
   const genRecruiterSummary = () => patch({ recruiterSummary: buildRecruiterSummary({ ...p, proofScore: computeProofScore(p) }, userName) });
 
   const runGithub = async () => {
@@ -581,9 +577,13 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
       {tab === 'architecture' && (
         <TabCrashBoundary resetKey={`${p.id || p.title}:architecture`}>
         <div className="space-y-3">
-          <Panel title="Architecture diagram" action={<Button size="sm" variant="soft" onClick={genArchitecture}><RefreshCw size={13} /> Regenerate</Button>}>
-            <ArchitectureDiagram spec={p.architectureSpec} mermaid={safeMermaid(p)} />
-            <details className="mt-2"><summary className="cursor-pointer text-[11px] text-slate-500">View Mermaid source</summary><pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] text-slate-400">{safeMermaid(p)}</pre></details>
+          <Panel title="Architecture Diagram OS">
+            <ArchitectureStudioPanel
+              project={p}
+              legacyMermaid={safeMermaid(p)}
+              onPatch={patch}
+              height={440}
+            />
           </Panel>
           <Panel title="Architecture notes"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{safeText(p.architecture, 'No architecture notes yet.')}</p></Panel>
           {safeObject(ind.technicalArchitecture) && (

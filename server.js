@@ -2181,6 +2181,19 @@ app.post('/api/inspirations/:id/build', requireAuth, generationLimiter, async (r
       idea = cached || req.body?.idea || req.body || {};
     }
     const roadmap = generateProjectBlueprint(idea);
+    /* Architecture Diagram OS (additive): inspiration-built projects also get
+       the structured spec. Failure never blocks the roadmap. */
+    try {
+      const pkg = generateArchitectureSpec(
+        { title: roadmap.title || idea.title || 'Project', description: `${roadmap.problemStatement || ''} ${idea.summary || ''}`.trim(), techStack: roadmap.techStack || [], targetRole: roadmap.targetRole || '' },
+        { targetLevel: 'production' }
+      );
+      roadmap.architectureSpec = pkg.architectureSpec;
+      roadmap.architectureValidation = pkg.validation;
+      if (!roadmap.architectureDiagram) roadmap.architectureDiagram = pkg.mermaidViews.component;
+    } catch (specErr) {
+      logger.warn('Inspiration architecture spec failed (roadmap unaffected)', { message: specErr.message });
+    }
     let savedId = null;
     if (db.dbEnabled()) {
       const saved = await db.saveProjectRoadmap({ userId: u?.id, email: u?.email, roadmap, inspirationId: idea?.id || '' });
@@ -4059,10 +4072,37 @@ function psInterview(p = {}) {
 
 app.post('/api/projects/generate-roadmap', requireAuth, generationLimiter, async (req, res) => {
   const input = req.body || {};
+
+  /* Architecture Diagram OS: every generated project carries a structured
+     architectureSpec + validation + legacy-compatible Mermaid. Deterministic
+     and failure-safe — if the engine throws, the project is returned without
+     a spec and the client's legacy Mermaid generator covers the diagram. */
+  const attachArchitecture = (project) => {
+    try {
+      const pkg = generateArchitectureSpec(
+        {
+          projectId: project.id || '',
+          title: project.title || input.title || 'Project',
+          description: `${project.problemStatement || ''} ${project.useCase || ''} ${project.architecture || ''}`.trim(),
+          techStack: Array.isArray(project.techStack) ? project.techStack : [],
+          targetRole: project.targetRole || input.targetRole || '',
+          projectType: project.type || input.type || '',
+        },
+        { targetLevel: 'production' }
+      );
+      project.architectureSpec = pkg.architectureSpec;
+      project.architectureValidation = pkg.validation;
+      if (!project.architectureDiagram) project.architectureDiagram = pkg.mermaidViews.component;
+    } catch (err) {
+      logger.warn('Roadmap architecture spec failed (project unaffected)', { message: err.message });
+    }
+    return project;
+  };
+
   const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.`;
   const ai = parseJSONLoose(await anthropicJSON(prompt, 1800));
-  if (ai && ai.title) return res.json({ ok: true, project: ai, generatedBy: 'ai' });
-  res.json({ ok: true, project: psFallbackProject(input), generatedBy: 'template' });
+  if (ai && ai.title) return res.json({ ok: true, project: attachArchitecture(ai), generatedBy: 'ai' });
+  res.json({ ok: true, project: attachArchitecture(psFallbackProject(input)), generatedBy: 'template' });
 });
 app.post('/api/projects/generate-readme', requireAuth, generationLimiter, async (req, res) => {
   const p = (req.body && req.body.project) || {};

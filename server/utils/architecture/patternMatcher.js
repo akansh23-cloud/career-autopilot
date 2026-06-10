@@ -10,6 +10,63 @@ import { ARCHITECTURE_PATTERNS } from './knowledgeBase.js';
 
 const lc = (s) => String(s || '').toLowerCase();
 
+/* ---- Stack-to-capability detection ----
+   Maps concrete tech-stack items to capabilities AND remembers which
+   technology triggered each capability, so diagram nodes can show the real
+   stack ("Cache · Redis") instead of generic labels. Order matters: first
+   match wins for attribution. */
+const STACK_RULES = [
+  [/redis|memcached|elasticache|memorystore/i, 'cache'],
+  [/kafka|kinesis|event ?hub|pulsar/i, 'eventBus'],
+  [/kafka|spark|flink|samza|storm|dataflow|kinesis analytics/i, 'streamProcessor'],
+  [/rabbitmq|\bsqs\b|service bus|activemq|bullmq|celery|sidekiq/i, 'queue'],
+  [/postgres|postgresql|mysql|mariadb|\brds\b|aurora|cloud sql|azure sql|sqlite|oracle\b/i, 'relationalDb'],
+  [/mongo|documentdb|cosmos|firestore|dynamo|couch/i, 'documentDb'],
+  [/snowflake|redshift|bigquery|synapse|databricks|clickhouse|iceberg|delta lake|hive|\bemr\b|hadoop/i, 'dataWarehouse'],
+  [/elasticsearch|opensearch|solr|algolia|meilisearch/i, 'search'],
+  [/pinecone|pgvector|weaviate|milvus|qdrant|chroma|faiss|vector/i, 'vectorDb'],
+  [/\bs3\b|blob storage|cloud storage|\bgcs\b|minio|object storage/i, 'objectStorage'],
+  [/anthropic|openai|claude|gpt|gemini|llama|hugging ?face|langchain|\bllm\b|\brag\b|bedrock|vertex ai|sagemaker/i, 'ai'],
+  [/embedding|sentence-transformer/i, 'embedding'],
+  [/stripe|razorpay|paypal|braintree|paddle/i, 'payments'],
+  [/docker|kubernetes|k8s|\becs\b|\beks\b|\bgke\b|\baks\b|helm|fargate|cloud run|container/i, 'computeContainer'],
+  [/lambda|cloud functions?|azure functions|serverless|netlify functions|vercel functions/i, 'serverlessFn'],
+  [/github actions|gitlab ci|jenkins|circleci|travis|codepipeline|azure devops|argo ?cd|ci\/?cd/i, 'cicdPipeline'],
+  [/terraform|pulumi|cloudformation|bicep|\bcdk\b|ansible/i, 'iac'],
+  [/airflow|dagster|prefect|\bcron\b|temporal|step functions|\bdbt\b/i, 'scheduler'],
+  [/prometheus|grafana|datadog|new relic|cloudwatch|sentry|app insights/i, 'monitoring'],
+  [/cloudfront|fastly|akamai|cloudflare|\bcdn\b|front door/i, 'cdn'],
+  [/nginx|haproxy|\balb\b|\belb\b|load ?balancer|traefik|envoy/i, 'loadBalancer'],
+  [/kong|apigee|api gateway|graphql|apollo|trpc/i, 'apiGateway'],
+  [/auth0|clerk|cognito|keycloak|firebase auth|okta|oauth|jwt|passport/i, 'authService'],
+  [/vault|secrets manager|key vault|doppler/i, 'secrets'],
+  [/twilio|sendgrid|\bses\b|firebase messaging|onesignal|push notification/i, 'notifications'],
+  [/react|next|vue|angular|svelte|vite|nuxt|remix|tailwind/i, 'frontend'],
+  [/express|fastify|node\.?js|fastapi|django|flask|spring|rails|nest|\bgo\b|golang|laravel|\bphp\b|\.net|asp\.net/i, 'backend'],
+];
+
+/* Detect capabilities directly named in the tech stack (and free text).
+   Returns { capabilities, techByCapability } — e.g.
+   { capabilities: ['cache','eventBus'], techByCapability: { cache: ['Redis'], eventBus: ['Kafka'] } } */
+export function detectStackCapabilities(techStack = [], extraText = '') {
+  const items = (Array.isArray(techStack) ? techStack : []).map((s) => String(s).trim()).filter(Boolean);
+  const capabilities = new Set();
+  const techByCapability = {};
+  for (const item of items) {
+    for (const [rx, capId] of STACK_RULES) {
+      if (rx.test(item)) {
+        capabilities.add(capId);
+        (techByCapability[capId] = techByCapability[capId] || []).push(item);
+        break; // one capability per stack item (first/most specific rule wins)
+      }
+    }
+  }
+  // Free-text pass: adds capabilities (no tech attribution — the item name is unknown).
+  const text = String(extraText || '');
+  if (text) for (const [rx, capId] of STACK_RULES) if (rx.test(text)) capabilities.add(capId);
+  return { capabilities: [...capabilities], techByCapability };
+}
+
 /* Flatten the project input into one searchable text blob + tech list. */
 export function projectSignals(input = {}) {
   const techStack = Array.isArray(input.techStack)
@@ -58,6 +115,7 @@ function scorePattern(pattern, sig) {
 /* Match the best pattern. Returns { pattern, confidence, reasons, alternatives }. */
 export function matchPattern(input = {}) {
   const sig = projectSignals(input);
+  const stack = detectStackCapabilities(sig.techStack, sig.text);
   const ranked = ARCHITECTURE_PATTERNS
     .map((p) => ({ pattern: p, ...scorePattern(p, sig) }))
     .sort((a, b) => b.score - a.score);
@@ -79,8 +137,10 @@ export function matchPattern(input = {}) {
     alternatives: ranked.slice(0, 4).filter((r) => r.pattern.id !== best.pattern.id && r.score > 0)
       .map((r) => ({ id: r.pattern.id, name: r.pattern.name, score: r.score })),
     signals: sig,
+    stackCapabilities: stack.capabilities,
+    techByCapability: stack.techByCapability,
     secondBest: second && second.score > 0 ? { id: second.pattern.id, name: second.pattern.name } : null,
   };
 }
 
-export default { matchPattern, projectSignals };
+export default { matchPattern, projectSignals, detectStackCapabilities };

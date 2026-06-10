@@ -58,10 +58,16 @@ export function viewToMermaid(view = {}) {
   return L.join('\n');
 }
 
-/* ---- Deterministic layered layout (mirrors the server-side SVG export) ----
-   Returns absolute positions for nodes + group rectangles so the React canvas
-   only has to draw. Handles nested groups (region > vpc > subnet) and
-   ungrouped nodes (sequence-style views). */
+/* ---- Deterministic layout (mirrors the server-side SVG export) ----
+   Two orientations:
+   - 'horizontal' (default): industry-style left→right flow like classic
+     Netflix/AWS system-design diagrams. Top-level groups become columns in
+     order; ungrouped nodes form a leading chain (one per column). Nodes
+     inside a group stack vertically (2 sub-columns when crowded).
+   - 'vertical': the original nested band layout — used for views with
+     nested boundaries (deployment: region > VPC > subnets).
+   Returns absolute positions for nodes + group rectangles so renderers only
+   have to draw. Never throws on bad input. */
 export function layoutView(view = {}, opts = {}) {
   const nodes = Array.isArray(view.nodes) ? view.nodes.slice(0, 60) : [];
   const groups = Array.isArray(view.groups) ? view.groups : [];
@@ -69,15 +75,78 @@ export function layoutView(view = {}, opts = {}) {
   const NODE_H = opts.nodeH || 56;
   const GAP_X = 26, GAP_Y = 34, PAD = 16, GROUP_PAD = 34;
   const MAX_PER_ROW = opts.maxPerRow || 4;
+  const orientation = opts.orientation || (view.layout === 'nested' ? 'vertical' : 'horizontal');
 
   const topGroups = groups.filter((g) => !g.parentId).sort((a, b) => (a.order || 0) - (b.order || 0));
   const childOf = (pid) => groups.filter((g) => g.parentId === pid).sort((a, b) => (a.order || 0) - (b.order || 0));
   const nodesIn = (gid) => nodes.filter((n) => n.group === gid);
   const groupIds = new Set(groups.map((g) => g.id));
   const ungrouped = nodes.filter((n) => !n.group || !groupIds.has(n.group));
+  const hasDeepContent = (g) => nodesIn(g.id).length > 0 || childOf(g.id).some(hasDeepContent);
 
   const placed = {};
   const groupRects = [];
+
+  /* ================= horizontal (left → right) ================= */
+  if (orientation === 'horizontal') {
+    const HGAP = 64;          // gap between columns (room for edge labels)
+    const HEADER = 26;        // group label band
+    const VPAD = 14;
+
+    // Column plan: ungrouped chain first (one node per column), then one
+    // column per content-bearing top-level group (nested children flattened —
+    // nested views use vertical orientation).
+    const columns = [];
+    for (const n of ungrouped) columns.push({ group: null, nodes: [n] });
+    for (const g of topGroups) {
+      if (!hasDeepContent(g)) continue;
+      const all = [...nodesIn(g.id)];
+      const deep = (gg) => { for (const c of childOf(gg.id)) { all.push(...nodesIn(c.id)); deep(c); } };
+      deep(g);
+      if (all.length) columns.push({ group: g, nodes: all });
+    }
+    if (!columns.length) return { placed, groupRects, width: 360, height: 160, nodeW: NODE_W, nodeH: NODE_H, orientation };
+
+    // Measure each column: stacks of up to 5 nodes; overflow opens a 2nd stack.
+    let x = PAD;
+    let maxBottom = 0;
+    const colMeta = [];
+    for (const col of columns) {
+      const stacks = col.nodes.length > 5 ? 2 : 1;
+      const perStack = Math.ceil(col.nodes.length / stacks);
+      const innerW = stacks * NODE_W + (stacks - 1) * GAP_X;
+      const innerH = perStack * NODE_H + (perStack - 1) * GAP_Y;
+      const pad = col.group ? GROUP_PAD / 2 : 0;
+      const header = col.group ? HEADER : 0;
+      colMeta.push({ col, x, stacks, perStack, innerW, innerH, pad, header, w: innerW + pad * 2, h: innerH + pad * 2 + header });
+      maxBottom = Math.max(maxBottom, innerH + pad * 2 + header);
+      x += innerW + pad * 2 + HGAP;
+    }
+    const width = x - HGAP + PAD;
+    const height = Math.max(maxBottom + PAD * 2 + VPAD, 180);
+
+    // Place nodes (columns vertically centered) + group rects.
+    for (const m of colMeta) {
+      const top = (height - m.h) / 2;
+      if (m.col.group) {
+        groupRects.push({ id: m.col.group.id, label: m.col.group.label, type: m.col.group.type, x: m.x, y: top, w: m.w, h: m.h, depth: 0 });
+      }
+      m.col.nodes.forEach((n, i) => {
+        const s = Math.floor(i / m.perStack), r = i % m.perStack;
+        const inStack = Math.min(m.perStack, m.col.nodes.length - s * m.perStack);
+        const stackH = inStack * NODE_H + (inStack - 1) * GAP_Y;
+        const yOffset = (m.innerH - stackH) / 2;
+        placed[n.id] = {
+          x: m.x + m.pad + s * (NODE_W + GAP_X),
+          y: top + m.header + m.pad + yOffset + r * (NODE_H + GAP_Y),
+          w: NODE_W, h: NODE_H,
+        };
+      });
+    }
+    return { placed, groupRects, width, height, nodeW: NODE_W, nodeH: NODE_H, orientation };
+  }
+
+  /* ================= vertical (nested bands) ================= */
   let cursorY = PAD;
   const width = PAD * 2 + MAX_PER_ROW * NODE_W + (MAX_PER_ROW - 1) * GAP_X + GROUP_PAD * 2;
 
@@ -88,15 +157,13 @@ export function layoutView(view = {}, opts = {}) {
       const r = Math.floor(i / perRow), c = i % perRow;
       const rowCount = Math.min(perRow, rowNodes.length - r * perRow);
       const rowW = rowCount * NODE_W + (rowCount - 1) * GAP_X;
-      const x = x0 + (maxW - rowW) / 2 + c * (NODE_W + GAP_X);
-      const y = y0 + r * (NODE_H + GAP_Y);
-      placed[n.id] = { x, y, w: NODE_W, h: NODE_H };
+      const px = x0 + (maxW - rowW) / 2 + c * (NODE_W + GAP_X);
+      const py = y0 + r * (NODE_H + GAP_Y);
+      placed[n.id] = { x: px, y: py, w: NODE_W, h: NODE_H };
       h = Math.max(h, (r + 1) * (NODE_H + GAP_Y) - GAP_Y);
     });
     return h;
   };
-
-  const hasDeepContent = (g) => nodesIn(g.id).length > 0 || childOf(g.id).some(hasDeepContent);
 
   const layoutGroup = (g, x0, y0, maxW, depth) => {
     let y = y0 + GROUP_PAD;
@@ -118,7 +185,7 @@ export function layoutView(view = {}, opts = {}) {
   }
   const height = Math.max(cursorY + PAD, 160);
   groupRects.sort((a, b) => a.depth - b.depth);
-  return { placed, groupRects, width, height, nodeW: NODE_W, nodeH: NODE_H };
+  return { placed, groupRects, width, height, nodeW: NODE_W, nodeH: NODE_H, orientation };
 }
 
 /* ---- presentation helpers ---- */

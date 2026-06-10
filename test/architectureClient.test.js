@@ -98,3 +98,28 @@ test('tone helpers stay within the design-system palette', () => {
   assert.equal(checkTone('low'), 'default');
   assert.ok(NODE_TYPE_COLORS.service && NODE_TYPE_COLORS.datastore);
 });
+
+test('horizontal layout: flow views run left-to-right; nested deployment stays vertical', () => {
+  const container = PKG.architectureSpec.views.find((v) => v.type === 'container');
+  const h = layoutView(container);
+  assert.equal(h.orientation, 'horizontal');
+  // actors column sits left of the data layer column
+  const actor = container.nodes.find((n) => n.type === 'actor');
+  const store = container.nodes.find((n) => n.type === 'datastore');
+  if (actor && store) assert.ok(h.placed[actor.id].x < h.placed[store.id].x, 'actors left of data stores');
+  // diagram is wider than tall (Netflix-style landscape flow)
+  assert.ok(h.width > h.height, `landscape: ${h.width}x${h.height}`);
+
+  const dep = PKG.architectureSpec.views.find((v) => v.type === 'deployment');
+  const v = layoutView(dep);
+  assert.equal(v.orientation, 'vertical', 'nested deployment keeps the band layout');
+});
+
+test('dataFlow renders as a left-to-right chain in request order', () => {
+  const df = PKG.architectureSpec.views.find((v) => v.type === 'dataFlow');
+  const h = layoutView(df);
+  assert.equal(h.orientation, 'horizontal');
+  // every numbered edge points rightward or loops (never overlaps backwards on step 1)
+  const first = df.edges.find((e) => /^1\./.test(e.label || ''));
+  if (first) assert.ok(h.placed[first.from].x < h.placed[first.to].x, 'step 1 flows rightward');
+});

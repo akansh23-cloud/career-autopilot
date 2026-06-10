@@ -24,6 +24,11 @@ export function resolveCapabilities(input, match, opts = {}) {
   const sig = match.signals || {};
   const base = [...(match.pattern.requiredCapabilities || [])];
 
+  // Stack-driven additions: technologies the user explicitly named always
+  // earn their capability a place in the architecture (Redis → cache,
+  // Kafka → event bus, Snowflake → warehouse, ...).
+  for (const c of match.stackCapabilities || []) if (!base.includes(c)) base.push(c);
+
   // Signal-driven additions beyond the pattern defaults.
   if (sig.hasAI && !base.includes('ai')) base.push('ai');
   if (sig.hasPayments && !base.includes('payments')) base.push('payments');
@@ -42,16 +47,19 @@ export function resolveCapabilities(input, match, opts = {}) {
     for (const c of ['rbac', 'auditLog', 'adminUser']) if (!base.includes(c)) base.push(c);
   }
 
-  // MVP trims optional weight (keeps the core production hygiene).
+  // MVP trims optional weight (keeps the core production hygiene), but never
+  // drops a capability the user explicitly named in their tech stack.
   let list = uniq(base);
   if (level === 'mvp') {
+    const named = new Set(match.stackCapabilities || []);
     const optional = new Set(['waf', 'tracing', 'eventBus', 'search', 'iac', 'dataWarehouse']);
-    list = list.filter((c) => !optional.has(c) || (match.pattern.id === 'event-driven-pipeline' && c === 'eventBus'));
+    list = list.filter((c) => named.has(c) || !optional.has(c) || (match.pattern.id === 'event-driven-pipeline' && c === 'eventBus'));
   }
   return list;
 }
 
 /* ---- node factory ---- */
+let techAttribution = {}; // capability → user-named technologies (set per build)
 function makeNode(capability, { provider = 'generic', group = null, riskLevel = 'normal', extra = {} } = {}) {
   const c = cap(capability);
   return {
@@ -63,7 +71,9 @@ function makeNode(capability, { provider = 'generic', group = null, riskLevel = 
     provider: normalizeProvider(provider),
     capability,
     description: extra.description || '',
-    technologies: extra.technologies || c.technologies || [],
+    technologies: extra.technologies
+      || (techAttribution[capability]?.length ? techAttribution[capability].slice(0, 3).map(String) : null)
+      || c.technologies || [],
     riskLevel,
     metadata: extra.metadata || {},
   };
@@ -216,7 +226,7 @@ function vDeployment(caps, ctx) {
   if (has(caps, 'loadBalancer')) nodes.push(makeNode('loadBalancer', { provider, group: 'g-public' }));
   else nodes.push({ ...makeNode('loadBalancer', { provider, group: 'g-public' }), description: 'Implicit platform load balancer' });
   const compute = has(caps, 'serverlessFn') ? 'serverlessFn' : 'computeContainer';
-  nodes.push({ ...makeNode(compute, { provider, group: 'g-private' }), description: 'App + worker workloads' });
+  nodes.push({ ...makeNode(compute, { provider, group: 'g-private' }), description: 'App + worker workloads', metadata: { stacked: true } });
   if (has(caps, 'worker')) nodes.push(makeNode('worker', { provider, group: 'g-private' }));
   for (const c of ['relationalDb', 'documentDb', 'cache', 'dataWarehouse']) if (has(caps, c)) nodes.push(makeNode(c, { provider, group: 'g-datasubnet' }));
   for (const c of ['objectStorage', 'queue', 'eventBus', 'secrets', 'monitoring', 'backup']) if (has(caps, c)) nodes.push(makeNode(c, { provider, group: 'g-managed' }));
@@ -366,7 +376,7 @@ function vScalingFailure(caps, ctx) {
   const { provider } = ctx;
   const nodes = [
     makeNode('loadBalancer', { provider, group: 'g-traffic' }),
-    { ...makeNode(has(caps, 'serverlessFn') ? 'serverlessFn' : 'computeContainer', { provider, group: 'g-scale' }), label: 'App Instances ×N (autoscaled)' },
+    { ...makeNode(has(caps, 'serverlessFn') ? 'serverlessFn' : 'computeContainer', { provider, group: 'g-scale' }), label: 'App Instances ×N (autoscaled)', metadata: { stacked: true } },
   ];
   const E = [edge(nid('loadBalancer'), nodes[1].id, 'health-checked routing')];
   if (has(caps, 'cache')) { nodes.push(makeNode('cache', { provider, group: 'g-scale' })); E.push(edge(nodes[1].id, nid('cache'), 'reduce DB load')); }
@@ -375,7 +385,7 @@ function vScalingFailure(caps, ctx) {
   if (has(caps, 'queue')) {
     nodes.push(makeNode('queue', { provider, group: 'g-resilience' }));
     E.push(edge(nodes[1].id, nid('queue'), 'buffer spikes', { async: true }));
-    if (has(caps, 'worker')) { nodes.push({ ...makeNode('worker', { provider, group: 'g-resilience' }), label: 'Workers ×N' }); E.push(edge(nid('queue'), nid('worker'), 'backpressure-aware consume', { async: true })); }
+    if (has(caps, 'worker')) { nodes.push({ ...makeNode('worker', { provider, group: 'g-resilience' }), label: 'Workers ×N', metadata: { stacked: true } }); E.push(edge(nid('queue'), nid('worker'), 'backpressure-aware consume', { async: true })); }
     if (has(caps, 'dlq')) { nodes.push(makeNode('dlq', { provider, group: 'g-resilience' })); E.push(edge(nid('queue'), nid('dlq'), 'poison messages', { async: true })); }
   }
   if (has(caps, 'backup')) { nodes.push(makeNode('backup', { provider, group: 'g-resilience' })); if (db) E.push(edge(nid(db), nid('backup'), 'tested restore path', { async: true })); }
@@ -429,6 +439,7 @@ const VIEW_BUILDERS = {
 /* ---- main entry ---- */
 export function buildSpec(input = {}, match, opts = {}) {
   edgeSeq = 0; // deterministic edge ids per build
+  techAttribution = match.techByCapability || {}; // real stack names on nodes
   const provider = normalizeProvider(opts.cloudProvider || input.cloudProvider || match.signals?.cloud || 'generic');
   const targetLevel = TARGET_LEVELS.includes(opts.targetLevel) ? opts.targetLevel : 'production';
   const caps = Array.isArray(opts.capabilities) && opts.capabilities.length

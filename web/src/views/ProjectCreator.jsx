@@ -7,8 +7,8 @@ import {
 import { PageIntro, SectionCard, StatCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Spinner, Input, Field } from '../components/ui/kit.jsx';
 import { ScoreRing, StatusBadge } from '../components/proof/ProofViews.jsx';
-// Architecture Diagram OS: universal wrapper (spec → pro canvas, else legacy Mermaid).
-import ArchitectureDiagram from '../components/architecture/ArchitectureDiagram.jsx';
+// Architecture Diagram OS: full embedded panel (tabs/validation/refine/export).
+import ArchitectureStudioPanel from '../components/architecture/ArchitectureStudioPanel.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getAccessForUser } from '../lib/access.js';
 import { canUse, useMeter, remaining, promptUpgrade } from '../lib/plan.js';
@@ -631,7 +631,14 @@ function BlueprintStep({ selected, setStep }) {
 
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500">System architecture</p>
-              <ArchitectureDiagram spec={selected.architectureSpec} mermaid={selected.architectureDiagram} height={300} />
+              {/* Architecture Diagram OS: tabs, validation, refine and export live
+                  inside the blueprint. Patches persist via the project store. */}
+              <ArchitectureStudioPanel
+                project={selected}
+                legacyMermaid={selected.architectureDiagram}
+                onPatch={(changes) => saveProject({ ...selected, ...changes })}
+                height={380}
+              />
               <p className="mt-2 text-[12px] text-slate-400">{toText(bp.systemArchitecture)}</p>
             </div>
 

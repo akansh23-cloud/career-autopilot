@@ -128,3 +128,63 @@ Suite: **271 passing, 0 failing** (`npm test`). Lint: **0 errors**
 7. Patent Engine → Assess any invention → "Patent figure (FIG. 1 draft)" card.
 8. Confirm old features: Sandbox, Project Studio, Project Creator, Patent OS
    dashboards all unchanged; legacy projects still render their diagrams.
+
+---
+
+# v2 — Full Project OS Integration + Industry-Style Rendering
+
+## What changed in v2
+
+### Industry-style diagrams (Netflix/AWS system-design look)
+- **Left→right flow layout** for all flow views (Context, Container, Data Flow,
+  Security, CI/CD, Observability, Scaling, Patent Figure): top-level groups
+  become ordered columns; ungrouped nodes form a leading chain. Landscape,
+  scrollable, zoomable. The nested Cloud Deployment view (Region → VPC →
+  subnets) keeps the vertical band layout where nesting reads best.
+- **Cylinder shapes** for data stores and queues (classic system-design shape).
+- **Stacked-card nodes** for concurrent workers / ×N autoscaled instances
+  (like the "concurrent async workers" transcoder stack in reference diagrams).
+- **Labeled edges** with pill backgrounds (request/response/step numbers),
+  dashed async edges, feedback edges loop underneath.
+- The server-side SVG exporter uses the **same layout algorithm**, so the
+  downloaded SVG matches the on-screen diagram (repo pattern: pure generator
+  duplicated server/client and kept in sync).
+- No copyrighted logos are used — generic lucide icons with provider-mapped
+  service names convey the same information legally.
+
+### Stack-to-capability detection (much smarter)
+New `detectStackCapabilities` maps ~28 families of concrete technologies to
+capabilities AND attributes the real names onto diagram nodes:
+Redis→Cache·Redis, Kafka→Event Bus·Kafka, Snowflake→Warehouse·Snowflake,
+Elasticsearch→Search, Airflow/dbt→Scheduler, Terraform→IaC, Auth0/Cognito→
+Auth, Stripe/Razorpay→Payments, Pinecone/pgvector→Vector Store, etc.
+MVP-level trimming never drops a capability the user explicitly named.
+
+### Project OS — full integration
+- **Every generated project now carries `architectureSpec`** (+ validation +
+  legacy-compatible Mermaid), attached server-side in
+  `POST /api/projects/generate-roadmap` (AI and template paths) and
+  `POST /api/inspirations/:id/build`. Failure-safe: if the engine throws, the
+  project is returned without a spec and the legacy client Mermaid covers it.
+- New reusable `ArchitectureStudioPanel.jsx` — the full Diagram OS embedded in
+  Project OS: view tabs, professional canvas, quality score badge,
+  open-checks toggle, refine prompt box, JSON/Mermaid/SVG export,
+  Regenerate. Patches the spec back onto the project via the existing
+  project-store mechanism so it persists.
+- **Project Studio** architecture tab now hosts the panel; the old client-side
+  Mermaid "Regenerate" is replaced by backend spec generation (legacy
+  generator remains the offline/failure fallback). Architecture notes and
+  technical-architecture panels untouched.
+- **Project Creator** blueprint step hosts the same panel for the selected
+  project.
+- Old saved projects without a spec show their legacy diagram plus a single
+  "Generate professional architecture" upgrade button — nothing breaks.
+
+## v2 test/build status
+- `npm test`: **277 passing, 0 failing** (6 new: stack detection + attribution,
+  MVP keeps named stack, roadmap/inspiration spec attachment, horizontal
+  layout left-to-right ordering, dataFlow chain direction).
+- `npm run lint`: **0 errors**. `npm run build`: ✓ (dist/ rebuilt).
+- Live HTTP smoke: roadmap project carried 7 views + quality 82 with
+  Spark/PostgreSQL/Airflow attributed to nodes; inspiration roadmap carried
+  the spec with Redis→cache; SVG export landscape with cylinders.

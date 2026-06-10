@@ -326,3 +326,59 @@ test('Patent OS: /api/patent/assess additively returns a figure-ready patentFigu
   assert.ok(fig.annotations.some((a) => /NOT a claim/i.test(a)));
   assert.ok(r.json.patentFigure.mermaid.includes('graph TD'));
 });
+
+/* ============ stack-to-capability detection ============ */
+
+test('detectStackCapabilities maps named technologies and attributes them to nodes', async () => {
+  const { detectStackCapabilities } = await import('../server/utils/architecture/patternMatcher.js');
+  const det = detectStackCapabilities(['Redis', 'Kafka', 'Snowflake', 'Elasticsearch', 'Terraform', 'Auth0', 'S3']);
+  for (const c of ['cache', 'eventBus', 'dataWarehouse', 'search', 'iac', 'authService', 'objectStorage']) {
+    assert.ok(det.capabilities.includes(c), `capability ${c}`);
+  }
+  assert.deepEqual(det.techByCapability.cache, ['Redis']);
+  assert.deepEqual(det.techByCapability.dataWarehouse, ['Snowflake']);
+
+  // Attribution flows through to diagram nodes ("Cache · Redis", not generic).
+  const pkg = generateArchitectureSpec(
+    { title: 'Stacked', description: 'simple web app', techStack: ['Redis', 'Kafka', 'PostgreSQL'] },
+    { targetLevel: 'production' }
+  );
+  const container = pkg.architectureSpec.views.find((v) => v.type === 'container');
+  assert.deepEqual(container.nodes.find((n) => n.capability === 'cache')?.technologies, ['Redis']);
+  assert.deepEqual(container.nodes.find((n) => n.capability === 'relationalDb')?.technologies, ['PostgreSQL']);
+  assert.ok(pkg.architectureSpec.capabilities.includes('eventBus'), 'Kafka adds the event bus');
+});
+
+test('mvp level keeps capabilities the user explicitly named in the stack', () => {
+  const input = { title: 'Mini', description: 'small app', techStack: ['Elasticsearch', 'Terraform'] };
+  const m = matchPattern(input);
+  const caps = resolveCapabilities(input, m, { targetLevel: 'mvp' });
+  assert.ok(caps.includes('search'), 'named Elasticsearch survives the MVP trim');
+  assert.ok(caps.includes('iac'), 'named Terraform survives the MVP trim');
+});
+
+/* ============ Project OS integration ============ */
+
+test('POST /api/projects/generate-roadmap attaches architectureSpec to every project', async () => {
+  const r = await client.post('/api/projects/generate-roadmap', {
+    targetRole: 'Backend Developer', difficulty: 'Intermediate', duration: '2 weeks', type: 'Full Stack',
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  // old contract untouched
+  assert.ok(r.json.project.title && Array.isArray(r.json.project.techStack));
+  // new: structured spec + validation + legacy-compatible mermaid attached
+  assert.ok(Array.isArray(r.json.project.architectureSpec?.views) && r.json.project.architectureSpec.views.length >= 4);
+  assert.ok(r.json.project.architectureValidation?.score?.overallScore >= 0);
+  assert.ok(String(r.json.project.architectureDiagram || '').includes('graph TD'));
+});
+
+test('POST /api/inspirations/:id/build attaches architectureSpec to the roadmap', async () => {
+  const r = await client.post('/api/inspirations/custom/build', {
+    idea: { title: 'Crop Price Tracker', summary: 'Track mandi prices with alerts', techStack: ['React', 'Node.js', 'PostgreSQL'] },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  assert.ok(Array.isArray(r.json.roadmap.architectureSpec?.views));
+  assert.ok(r.json.roadmap.architectureValidation?.score);
+});
