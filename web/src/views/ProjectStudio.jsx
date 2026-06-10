@@ -32,6 +32,7 @@ import {
 } from '../lib/githubSync.js';
 import { calculateProjectStatus, whyNotVerified } from '../lib/projectStatus.js';
 import { generateMermaid, normalizeMermaidInput } from '../lib/architecture.js';
+import { generateBuildGuide, computeProgress } from '../lib/buildGuide.js';
 import {
   WhyBuildPanel, ExplainPanel, BlueprintPanel, DiagramsPanel, FeasibilityPanel,
   TaskBoardPanel, ProofChecklistPanel, ResumeOutputPanel, SimilarPanel, VerificationPanel,
@@ -78,6 +79,18 @@ const safeMermaid = (project) => {
   try { return normalizeMermaidInput(project?.architectureDiagram, project); }
   catch { try { return generateMermaid(project || {}); } catch { return ''; } }
 };
+
+/* ---- Builder Mode helpers (compact build-progress for cards + workspace) ---- */
+function buildProgressFor(p) {
+  try { return computeProgress(generateBuildGuide(p || {}, { progress: p?.buildProgress })); }
+  catch { return { progressPercent: 0, completedTasks: 0, totalTasks: 0, completedStages: 0, totalStages: 0, currentStageTitle: '—', nextAction: '' }; }
+}
+function hasBuildStarted(p) {
+  const bp = p?.buildProgress;
+  if (!bp) return false;
+  return Object.values(bp.tasks || {}).some(Boolean) || Object.values(bp.prerequisites || {}).some(Boolean) || Object.values(bp.stages || {}).some(Boolean);
+}
+function buildLabel(p) { return hasBuildStarted(p) ? 'Continue Build' : 'Start Building'; }
 
 class TabCrashBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -315,7 +328,7 @@ function Panel({ title, children, action }) {
   );
 }
 
-function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEditor, userName }) {
+function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEditor, onBuild, userName }) {
   const [p, setP] = useState(project);
   const [tab, setTab] = useState('overview');
   const [busy, setBusy] = useState('');
@@ -421,6 +434,11 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
         {p.published && <Badge tone="mint">Published</Badge>}
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={14} /> {buildLabel(p)}</Button>
+        <span className="text-[11px] text-slate-500">Builder Mode walks you through setup → deployment → proof, step by step.</span>
+      </div>
+
       <div className="mt-3" />
       <TabBar tabs={tabs} active={tab} onPick={setTab} />
 
@@ -443,6 +461,24 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <div className="mb-1 flex justify-between text-[11px] text-slate-400"><span>Task completion</span><span>{progress}%</span></div>
             <div className="h-2 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${progress}%` }} /></div>
           </div>
+          {(() => {
+            const build = buildProgressFor(p);
+            return (
+              <div className="rounded-xl border border-aurora-violet/25 bg-aurora-violet/5 p-3.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-aurora-violet"><Rocket size={13} /> Build progress</div>
+                    <p className="mt-1 text-[12px] leading-snug text-slate-400">{build.nextAction || 'Open Builder Mode to start building step by step.'}</p>
+                  </div>
+                  <Button size="sm" variant="soft" onClick={() => onBuild?.(p)} className="shrink-0"><Rocket size={13} /> {buildLabel(p)}</Button>
+                </div>
+                <div className="mt-2.5">
+                  <div className="mb-1 flex justify-between text-[10px] text-slate-500"><span>{build.completedTasks}/{build.totalTasks} tasks · stage {Math.min(build.completedStages + 1, build.totalStages || 1)}/{build.totalStages}</span><span>{build.progressPercent}%</span></div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-violet transition-all" style={{ width: `${build.progressPercent}%` }} /></div>
+                </div>
+              </div>
+            );
+          })()}
           {ind.overview && (
             <div className="grid gap-3 md:grid-cols-2">
               <Panel title="Who should build it"><p className="text-[13px] leading-relaxed text-slate-300">{ind.overview.whoShouldBuild}</p></Panel>
@@ -800,9 +836,10 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
   );
 }
 
-function WorkspaceCard({ p, onOpen, onDelete }) {
+function WorkspaceCard({ p, onOpen, onDelete, onBuild }) {
   const progress = taskProgress(p);
   const st = calculateProjectStatus(p);
+  const build = buildProgressFor(p);
   return (
     <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
       <div className="flex items-start justify-between gap-2">
@@ -821,14 +858,23 @@ function WorkspaceCard({ p, onOpen, onDelete }) {
         <div className="mb-1 flex justify-between text-[10px] text-slate-500"><span>Progress</span><span>{progress}%</span></div>
         <div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${progress}%` }} /></div>
       </div>
+      {build.totalTasks > 0 && (build.progressPercent > 0) && (
+        <div className="mt-2">
+          <div className="mb-1 flex justify-between text-[10px] text-slate-500"><span>Build</span><span>{build.progressPercent}%</span></div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-violet" style={{ width: `${build.progressPercent}%` }} /></div>
+        </div>
+      )}
       <p className="mt-2 line-clamp-2 text-[11px] text-slate-500">{whyNotVerified(p)}</p>
-      <Button size="sm" className="mt-3" onClick={() => onOpen(p)}><Layers size={14} /> Open workspace</Button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" variant="soft" onClick={() => onOpen(p)}><Layers size={14} /> Open Workspace</Button>
+        <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={14} /> {buildLabel(p)}</Button>
+      </div>
     </div>
   );
 }
 
 /* ---------------- Main view ---------------- */
-export default function ProjectStudio({ go }) {
+export default function ProjectStudio({ go, openProjectId }) {
   const { user } = useAuth();
   const access = useMemo(() => getAccessForUser(user), [user]);
   const userName = user?.name || user?.displayName || 'You';
@@ -853,6 +899,16 @@ export default function ProjectStudio({ go }) {
     window.addEventListener('career-projects-updated', sync);
     return () => window.removeEventListener('career-projects-updated', sync);
   }, []);
+
+  // When navigating back from Builder Mode (go('projectstudio', { openProjectId })),
+  // re-open that project's workspace so the user lands where they expect.
+  useEffect(() => {
+    if (!openProjectId) return;
+    const proj = getProjects().find((x) => x.id === openProjectId);
+    if (proj) setOpenWs(proj);
+  }, [openProjectId]);
+
+  const openBuilder = (proj) => { if (proj?.id) { setOpenWs(null); go?.('projectbuilder', { projectId: proj.id }); } };
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 2600); };
 
@@ -1011,7 +1067,7 @@ export default function ProjectStudio({ go }) {
         <SectionCard title="Your project workspaces" action={<Badge tone="violet">{projects.length}</Badge>}>
           {projects.length ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} />)}
+              {projects.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} onBuild={openBuilder} />)}
             </div>
           ) : (
             <EmptyState icon={Layers} title="No saved workspaces" hint="Generate a project and click “Save as workspace” to track tasks, links and proof-of-work here." />
@@ -1026,6 +1082,7 @@ export default function ProjectStudio({ go }) {
         onChange={onWsChange}
         onPublish={publish}
         onOpenEditor={() => { setOpenWs(null); go?.('editor'); }}
+        onBuild={openBuilder}
         userName={userName}
       />
     </>
