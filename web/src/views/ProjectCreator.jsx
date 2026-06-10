@@ -6,7 +6,9 @@ import {
 } from 'lucide-react';
 import { PageIntro, SectionCard, StatCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Spinner, Input, Field } from '../components/ui/kit.jsx';
-import { ScoreRing, ArchitectureDiagram, StatusBadge } from '../components/proof/ProofViews.jsx';
+import { ScoreRing, StatusBadge } from '../components/proof/ProofViews.jsx';
+// Architecture Diagram OS: universal wrapper (spec → pro canvas, else legacy Mermaid).
+import ArchitectureDiagram from '../components/architecture/ArchitectureDiagram.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getAccessForUser } from '../lib/access.js';
 import { canUse, useMeter, remaining, promptUpgrade } from '../lib/plan.js';
@@ -629,7 +631,7 @@ function BlueprintStep({ selected, setStep }) {
 
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500">System architecture</p>
-              <ArchitectureDiagram mermaid={selected.architectureDiagram} height={300} />
+              <ArchitectureDiagram spec={selected.architectureSpec} mermaid={selected.architectureDiagram} height={300} />
               <p className="mt-2 text-[12px] text-slate-400">{toText(bp.systemArchitecture)}</p>
             </div>
 

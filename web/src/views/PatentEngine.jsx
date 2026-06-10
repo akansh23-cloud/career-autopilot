@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Field, Input, EmptyState, Modal } from '../components/ui/kit.jsx';
+import ArchitectureCanvas from '../components/architecture/ArchitectureCanvas.jsx';
 import { Patents } from '../lib/api.js';
 
 const READINESS_LABELS = {
@@ -148,6 +149,20 @@ export default function PatentEngine() {
                 <div className="flex flex-wrap gap-2">{result.priorArt.suggestedQueries.map((q) => <Badge key={q} tone="default">{q}</Badge>)}</div>
                 <div className="mt-3 flex flex-wrap gap-2">{result.priorArt.searchTargets.map((t) => <span key={t} className="rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">{t}</span>)}</div>
               </SectionCard>
+
+              {/* Architecture Diagram OS: figure-ready system diagram for the disclosure.
+                  Supports documentation only — NOT a claim of patentability. */}
+              {result.patentFigure?.view && (
+                <SectionCard title="Patent figure (FIG. 1 draft)">
+                  <ArchitectureCanvas view={result.patentFigure.view} height={380} />
+                  {result.patentFigure.mermaid && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] text-slate-500">Copy Mermaid source</summary>
+                      <pre className="mt-2 max-h-44 overflow-auto rounded-lg border border-white/8 bg-ink-950/60 p-3 text-[11px] text-slate-400">{result.patentFigure.mermaid}</pre>
+                    </details>
+                  )}
+                </SectionCard>
+              )}
             </>
           )}
         </div>

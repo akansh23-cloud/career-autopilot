@@ -503,6 +503,29 @@ const projectRoadmapSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/* ---- Architecture Diagram OS: versioned architecture specs per project ----
+   Additive collection. The whole feature degrades gracefully when the DB is
+   disabled (every helper below returns a safe value), so nothing here is a
+   hard dependency of architecture generation. */
+const projectArchitectureSpecSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    projectId: { type: String, default: '', index: true },
+    title: { type: String, default: '' },
+    provider: { type: String, default: 'generic' },
+    targetLevel: { type: String, default: 'production' },
+    version: { type: Number, default: 1 },
+    architectureSpec: { type: mongoose.Schema.Types.Mixed, default: null },
+    mermaidViews: { type: mongoose.Schema.Types.Mixed, default: {} },
+    validationScore: { type: Number, default: null },
+    checks: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    refinementInstruction: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+projectArchitectureSpecSchema.index({ userId: 1, projectId: 1, version: -1 });
+
 /* avoid OverwriteModelError on hot-reload / warm starts */
 export const User = mongoose.models.User || mongoose.model('User', userSchema);export const SupportTicket =
   mongoose.models.SupportTicket || mongoose.model('SupportTicket', ticketSchema);
@@ -530,6 +553,7 @@ export const PriorArtRecord = mongoose.models.PriorArtRecord || mongoose.model('
 export const PatentDisclosure = mongoose.models.PatentDisclosure || mongoose.model('PatentDisclosure', patentDisclosureSchema);
 export const PatentFeedback = mongoose.models.PatentFeedback || mongoose.model('PatentFeedback', patentFeedbackSchema);
 export const PatentActivity = mongoose.models.PatentActivity || mongoose.model('PatentActivity', patentActivitySchema);
+export const ProjectArchitectureSpec = mongoose.models.ProjectArchitectureSpec || mongoose.model('ProjectArchitectureSpec', projectArchitectureSpecSchema);
 
 /* ---- public shape (only safe fields ever leave the server) ---- */
 export function publicUser(doc) {
@@ -3225,3 +3249,69 @@ export async function patentOsDashboard({ userId, email }) {
   } catch (err) { console.error('[db] patentOsDashboard failed:', err.message); return empty; }
 }
 
+/* ============================================================
+   ARCHITECTURE DIAGRAM OS — versioned specs per project.
+   All helpers are safe to call when the DB is disabled.
+   ============================================================ */
+export async function saveArchitectureSpec({ userId, email, spec, mermaidViews, validationScore, checks, refinementInstruction }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const s = spec || {};
+    const projectId = String(s.projectId || '').slice(0, 120);
+    if (!projectId) return { ok: false, reason: 'no_project_id' };
+    const last = await ProjectArchitectureSpec.findOne({ userId: uid, projectId }).sort({ version: -1 }).select('version').lean();
+    const version = (last?.version || 0) + 1;
+    const created = await ProjectArchitectureSpec.create({
+      userId: uid, email: cleanEmail(email), projectId,
+      title: String(s.title || '').slice(0, 200),
+      provider: String(s.provider || 'generic').slice(0, 20),
+      targetLevel: String(s.targetLevel || 'production').slice(0, 30),
+      version,
+      architectureSpec: { ...s, version },
+      mermaidViews: mermaidViews || {},
+      validationScore: Number.isFinite(validationScore) ? validationScore : null,
+      checks: (checks || []).slice(0, 60),
+      refinementInstruction: String(refinementInstruction || '').slice(0, 500),
+    });
+    return { ok: true, id: String(created._id), version };
+  } catch (err) {
+    console.error('[db] saveArchitectureSpec failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function getLatestArchitectureSpec({ userId, email, projectId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return null;
+    const doc = await ProjectArchitectureSpec.findOne({ userId: uid, projectId: String(projectId) }).sort({ version: -1 }).lean();
+    return doc ? { ...doc, id: String(doc._id) } : null;
+  } catch (err) {
+    console.error('[db] getLatestArchitectureSpec failed:', err.message);
+    return null;
+  }
+}
+
+export async function listArchitectureSpecVersions({ userId, email, projectId }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const q = { userId: uid };
+    if (projectId) q.projectId = String(projectId);
+    const docs = await ProjectArchitectureSpec.find(q)
+      .sort({ updatedAt: -1 }).limit(50)
+      .select('projectId title provider targetLevel version validationScore createdAt updatedAt')
+      .lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) {
+    console.error('[db] listArchitectureSpecVersions failed:', err.message);
+    return [];
+  }
+}

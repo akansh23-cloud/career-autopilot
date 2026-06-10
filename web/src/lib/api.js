@@ -151,8 +151,15 @@ export const Inspirations = {
 };
 
 // Industry-level Architecture Generator. Score/diagrams/gaps are backend-owned.
+// `generate` is the legacy endpoint (still returns the old shape, now with an
+// added architectureSpec). The rest are the Architecture Diagram OS endpoints.
 export const Architecture = {
   generate: (project) => api.post('/api/architecture/generate', project),
+  spec: (input) => api.post('/api/architecture/spec', input),
+  validate: (architectureSpec) => api.post('/api/architecture/validate', { architectureSpec }),
+  refine: (architectureSpec, instruction) => api.post('/api/architecture/refine', { architectureSpec, instruction }),
+  exportView: (architectureSpec, viewId, format) => api.post('/api/architecture/export', { architectureSpec, viewId, format }),
+  savedSpecs: (projectId) => api.get('/api/architecture/specs' + (projectId ? `?projectId=${encodeURIComponent(projectId)}` : '')),
 };
 
 // Patent Engine. Readiness/prior-art/disclosure are backend-owned. Not legal advice.

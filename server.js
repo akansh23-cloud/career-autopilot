@@ -50,6 +50,8 @@ import * as ghEngine from './server/utils/githubIntegrationEngine.js';
 import { registerProblemIntelligenceRoutes } from './server/routes/problemIntelligenceRoutes.js';
 import { registerProjectIntelligenceRoutes } from './server/routes/projectIntelligenceRoutes.js';
 import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRoutes.js';
+import { registerArchitectureRoutes } from './server/routes/architectureRoutes.js';
+import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
 
@@ -2237,6 +2239,19 @@ app.post('/api/architecture/generate', requireAuth, generationLimiter, validateB
     };
     const arch = generateArchitecture(project, { level }); // deterministic source of truth
 
+    /* Architecture Diagram OS (additive, backward compatible): attach the new
+       structured spec + per-view Mermaid + validation alongside the legacy
+       fields. If the new engine ever fails, the legacy response is unaffected. */
+    let archSpecPkg = null;
+    try {
+      archSpecPkg = generateArchitectureSpec(
+        { ...project, projectId: body.projectId || '', cloudProvider: body.cloudProvider || '' },
+        { targetLevel: level === 'college_saas' ? 'college_saas' : level, cloudProvider: body.cloudProvider || '' }
+      );
+    } catch (specErr) {
+      logger.warn('Architecture spec generation failed (legacy response unaffected)', { message: specErr.message });
+    }
+
     // Optional AI narrative enrichment — never changes score/diagrams/gaps.
     let narrative = '';
     if (body.enrich && process.env.ANTHROPIC_API_KEY) {
@@ -2245,7 +2260,15 @@ app.post('/api/architecture/generate', requireAuth, generationLimiter, validateB
       if (text && typeof text === 'string') narrative = text.slice(0, 2500);
     }
 
-    res.json({ ok: true, architecture: arch, narrative, db: db.dbEnabled() });
+    res.json({
+      ok: true, architecture: arch, narrative, db: db.dbEnabled(),
+      // ---- Architecture Diagram OS additions (null-safe for old clients) ----
+      architectureSpec: archSpecPkg?.architectureSpec || null,
+      mermaidViews: archSpecPkg?.mermaidViews || null,
+      validation: archSpecPkg?.validation || null,
+      specWarnings: archSpecPkg?.warnings || [],
+      specRecommendations: archSpecPkg?.recommendations || [],
+    });
   } catch (err) {
     logger.error('Architecture generate failed', { message: err.message });
     res.status(500).json({ error: 'architecture_failed', message: 'Could not generate the architecture.' });
@@ -2262,13 +2285,30 @@ app.post('/api/patent/assess', requireAuth, generationLimiter, validateBody(pate
     const assessment = assessPatentReadiness(project);
     const priorArt = priorArtKeywords(project);
     const disclosure = inventionDisclosureDraft(project);
+
+    /* Architecture Diagram OS (additive): a simplified, figure-ready patent
+       diagram from the same deterministic engine — system modules, data
+       transformation flow, decision engine, storage/indexing and feedback
+       loop. It supports a disclosure only; it is NOT a patentability claim.
+       If the engine ever fails, the patent response is unaffected. */
+    let patentFigure = null;
+    try {
+      const figPkg = generateArchitectureSpec(
+        { title: project.title || 'Invention', description: `${project.problemStatement || ''} ${project.technicalSolution || project.summary || ''}`, techStack: project.skillsCovered || project.skills || [] },
+        { diagramTypes: ['patentFigure'] }
+      );
+      const figView = figPkg.architectureSpec.views.find((v) => v.type === 'patentFigure') || null;
+      if (figView) patentFigure = { view: figView, mermaid: figPkg.mermaidViews.patentFigure || '', spec: figPkg.architectureSpec };
+    } catch (figErr) {
+      logger.warn('Patent figure generation failed (assessment unaffected)', { message: figErr.message });
+    }
     let narrative = '';
     if (project.enrich && process.env.ANTHROPIC_API_KEY) {
       const prompt = `You are a patent-readiness assistant (NOT a lawyer; never claim patentability). The readiness score (${assessment.patentReadinessScore}/100), classification and risks are ALREADY decided — do NOT change them. Write 2 short paragraphs explaining the novelty angle and recommended next steps. Plain text only.\nPROJECT: ${JSON.stringify({ title: project.title, problem: project.problemStatement, solution: project.technicalSolution }).slice(0, 1500)}`;
       const text = await anthropicJSON(prompt, 700);
       if (text && typeof text === 'string') narrative = text.slice(0, 2000);
     }
-    res.json({ ok: true, assessment, priorArt, disclosure, narrative, disclaimer: PATENT_DISCLAIMER, statuses: PATENT_STATUSES, db: db.dbEnabled() });
+    res.json({ ok: true, assessment, priorArt, disclosure, narrative, patentFigure, disclaimer: PATENT_DISCLAIMER, statuses: PATENT_STATUSES, db: db.dbEnabled() });
   } catch (err) {
     logger.error('Patent assess failed', { message: err.message });
     res.status(500).json({ error: 'patent_failed', message: 'Could not run the patent assessment.' });
@@ -2537,6 +2577,7 @@ app.get('/api/patents/disclosures', requireAuth, async (req, res) => {
 registerProblemIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, persistenceStatus, db });
 registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter });
 registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
