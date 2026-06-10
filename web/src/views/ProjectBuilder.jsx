@@ -9,7 +9,6 @@ import {
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, EmptyState, Skeleton } from '../components/ui/kit.jsx';
 import { getProject, saveProject } from '../lib/projectStore.js';
-import { ProjectBuilderApi } from '../lib/api.js';
 import {
   generateBuildGuide, computeProgress, setTaskProgress, setPrerequisiteProgress,
   setStageProgress, buildGuideToMarkdown,
@@ -568,32 +567,19 @@ function ProofSection({ guide, onOpenWorkspace }) {
 }
 
 /* ---------------- section: Export ---------------- */
-function ExportSection({ guide, project, progress }) {
+function ExportSection({ guide }) {
   const [copied, setCopied] = useState(false);
   const md = useMemo(() => buildGuideToMarkdown(guide), [guide]);
   const slug = (guide.githubPlan?.repoName || 'build-guide');
-  const getServerExport = async (format) => {
-    try {
-      if (!project?.id) return null;
-      const r = await ProjectBuilderApi.exportGuide(project.id, { project, guide, progress, format });
-      return r?.ok ? r.content : null;
-    } catch { return null; }
-  };
-  const copyMd = async () => {
-    const content = await getServerExport('markdown') || md;
-    try { navigator.clipboard?.writeText(content); } catch { /* noop */ }
-    setCopied(true); setTimeout(() => setCopied(false), 1600);
-  };
-  const downloadMarkdown = async () => downloadText(`${slug}-build-guide.md`, await getServerExport('markdown') || md, 'text/markdown');
-  const downloadJson = async () => downloadText(`${slug}-build-guide.json`, await getServerExport('json') || JSON.stringify(guide, null, 2), 'application/json');
+  const copyMd = () => { try { navigator.clipboard?.writeText(md); } catch { /* noop */ } setCopied(true); setTimeout(() => setCopied(false), 1600); };
   return (
     <div className="space-y-3">
       <Panel title="Export your build guide" icon={Download}>
         <p className="mb-3 text-[12.5px] leading-relaxed text-slate-400">Take the full guide anywhere — paste it into your repo, a doc, or your notes. JSON is handy for tooling.</p>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={downloadMarkdown}><FileText size={14} /> Download Markdown</Button>
+          <Button size="sm" onClick={() => downloadText(`${slug}-build-guide.md`, md, 'text/markdown')}><FileText size={14} /> Download Markdown</Button>
           <Button size="sm" variant="soft" onClick={copyMd}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy Markdown'}</Button>
-          <Button size="sm" variant="outline" onClick={downloadJson}><FileJson size={14} /> Download JSON</Button>
+          <Button size="sm" variant="outline" onClick={() => downloadText(`${slug}-build-guide.json`, JSON.stringify(guide, null, 2), 'application/json')}><FileJson size={14} /> Download JSON</Button>
         </div>
       </Panel>
       <Panel title="Markdown preview" icon={FileText}>
@@ -624,7 +610,6 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
   const [activeStageId, setActiveStageId] = useState(null);
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [, setServerGuideReady] = useState(false);
 
   // Re-resolve the project if the id changes (deep-link / navigation).
   useEffect(() => {
@@ -641,18 +626,6 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
   // The guide is generated deterministically from the project + saved progress.
   const guide = useMemo(() => (project ? generateBuildGuide(project, { progress }) : null), [project, progress]);
 
-  // Route parity: warm the backend guide endpoint when available. The UI keeps
-  // the deterministic local guide as fallback, so Builder Mode cannot break if
-  // the server/database is unavailable.
-  useEffect(() => {
-    let live = true;
-    if (!project) return () => { live = false; };
-    ProjectBuilderApi.generate({ project, progress })
-      .then((r) => { if (live) setServerGuideReady(!!r?.ok); })
-      .catch(() => { if (live) setServerGuideReady(false); });
-    return () => { live = false; };
-  }, [project?.id]);
-
   // Default the active stage to the current (first incomplete) stage.
   useEffect(() => {
     if (!guide) return;
@@ -663,7 +636,6 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
     setProgress(nextProgress);
     if (project) {
       try { saveProject({ ...project, buildProgress: nextProgress }); } catch { /* persistence best-effort */ }
-      ProjectBuilderApi.updateProgress(project.id, { project, progress: nextProgress }).catch(() => {});
     }
   };
 
@@ -787,7 +759,7 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
         {section === 'deploy' && <DeploymentSection guide={p} />}
         {section === 'github' && <GithubSection guide={p} />}
         {section === 'proof' && <ProofSection guide={p} onOpenWorkspace={openWorkspace} />}
-        {section === 'export' && <ExportSection guide={p} project={project} progress={progress} />}
+        {section === 'export' && <ExportSection guide={p} />}
       </SectionCard>
     </div>
   );

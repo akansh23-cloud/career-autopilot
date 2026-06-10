@@ -115,34 +115,6 @@ function isAdminUsersHash() {
   return /^#\/admin\/users\b/.test(window.location.hash || '');
 }
 
-
-function parseProjectRouteHash() {
-  if (typeof window === 'undefined') return null;
-  const hash = window.location.hash || '';
-  let m = hash.match(/^#\/projects\/([^/?#]+)\/builder/);
-  if (m) return { view: 'projectbuilder', params: { projectId: decodeURIComponent(m[1]) } };
-  m = hash.match(/^#\/projects\/([^/?#]+)\/workspace/);
-  if (m) return { view: 'projectstudio', params: { openProjectId: decodeURIComponent(m[1]) } };
-  if (/^#\/(project-os|projects)/.test(hash)) return { view: 'projectstudio', params: {} };
-  return null;
-}
-
-function managedProjectHash(id, params = {}) {
-  if (typeof window === 'undefined') return null;
-  if (id === 'projectbuilder' && params?.projectId) return `#/projects/${encodeURIComponent(params.projectId)}/builder`;
-  if (id === 'projectstudio' && params?.openProjectId) return `#/projects/${encodeURIComponent(params.openProjectId)}/workspace`;
-  if (id === 'projectstudio') return '#/project-os';
-  return null;
-}
-
-function clearManagedProjectHash() {
-  if (typeof window === 'undefined') return;
-  const hash = window.location.hash || '';
-  if (/^#\/(projects|project-os)/.test(hash)) {
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-  }
-}
-
 export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
@@ -162,14 +134,10 @@ export default function App() {
     return () => window.removeEventListener('hashchange', f);
   }, []);
 
-  // Honor deep links without adding a full router. These routes are optional
-  // conveniences; every target view still enforces its own data/auth safety.
+  // Honor a #/admin/users deep link: route to the admin view on load + on change.
+  // (The view enforces admin access; this only selects which workspace to show.)
   useEffect(() => {
-    const f = () => {
-      if (isAdminUsersHash()) { setActive('adminusers'); setViewParams({}); return; }
-      const projectRoute = parseProjectRouteHash();
-      if (projectRoute) { setActive(projectRoute.view); setViewParams(projectRoute.params); }
-    };
+    const f = () => { if (isAdminUsersHash()) setActive('adminusers'); };
     f();
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
@@ -256,15 +224,8 @@ export default function App() {
     // redirects here instead of crashing or opening a second profile page.
     if (id === 'profile') id = 'careerprofile';
     if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) {
-      const cleanParams = params && typeof params === 'object' ? params : {};
-      const routeHash = managedProjectHash(id, cleanParams);
-      if (routeHash && typeof window !== 'undefined') {
-        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${routeHash}`);
-      } else {
-        clearManagedProjectHash();
-      }
       setActive(id);
-      setViewParams(cleanParams);
+      setViewParams(params && typeof params === 'object' ? params : {});
     }
     else if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
   };
