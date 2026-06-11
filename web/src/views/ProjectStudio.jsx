@@ -5,7 +5,7 @@ import {
   CheckCircle2, Circle, Plus, Trash2, Copy, Check, ListChecks, Layers,
   Target, Gauge, Clock, Boxes, AlertTriangle, X, Image as ImageIcon, BookOpen,
   GitBranch, ShieldCheck, Network, RefreshCw, ServerCog, Database, Workflow, ChevronDown,
-  Lightbulb, HelpCircle,
+  Lightbulb, HelpCircle, Map as MapIcon,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input, Field, Skeleton } from '../components/ui/kit.jsx';
@@ -898,7 +898,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
   );
 }
 
-function WorkspaceCard({ p, onOpen, onDelete, onBuild }) {
+function WorkspaceCard({ p, onOpen, onDelete, onBuild, onGuided }) {
   const progress = taskProgress(p);
   const st = calculateProjectStatus(p);
   const build = buildProgressFor(p);
@@ -930,6 +930,7 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild }) {
       <div className="mt-3 flex flex-wrap gap-2">
         <Button size="sm" variant="soft" onClick={() => onOpen(p)}><Layers size={14} /> Open Workspace</Button>
         <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={14} /> {buildLabel(p)}</Button>
+        {onGuided && <Button size="sm" variant="soft" onClick={() => onGuided(p)}><MapIcon size={14} /> Guided Workspace</Button>}
       </div>
     </div>
   );
@@ -1037,7 +1038,7 @@ export default function ProjectStudio({ go, openProjectId }) {
 
   return (
     <>
-      <PageIntro title="Project OS" sub="Your project journey in one place: dashboard → workspace → builder → proof → resume output. Turn missing skills into portfolio projects that prove your skills to recruiters." />
+      <PageIntro title="Project OS" sub="Your project journey in one place: dashboard → workspace → builder → proof → resume output. Turn missing skills into portfolio projects that prove your skills to recruiters." action={<Button onClick={() => go?.('projectworkspace', { createCustom: true })}><Sparkles size={15} /> Create Custom Project</Button>} />
 
       {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-slate-100">{toast}</div>}
 
@@ -1150,7 +1151,7 @@ export default function ProjectStudio({ go, openProjectId }) {
                   <div key={s.key}>
                     <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.label} <Badge tone="default">{s.items.length}</Badge></div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {s.items.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} onBuild={openBuilder} />)}
+                      {s.items.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} onBuild={openBuilder} onGuided={(proj) => go?.('projectworkspace', { projectId: proj.id })} />)}
                     </div>
                   </div>
                 ))}

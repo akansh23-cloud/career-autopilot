@@ -50,6 +50,7 @@ import PatentDisclosures from './views/patent/PatentDisclosures.jsx';
 import InnovationOS from './views/innovation/InnovationOS.jsx';
 import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
+import ProjectWorkspace from './views/ProjectWorkspace.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -84,6 +85,7 @@ const VIEWS = {
   innovation: InnovationOS,
   applications: ApplicationsView,
   readiness: ReadinessView,
+  projectworkspace: ProjectWorkspace,
 };
 
 function Splash() {
@@ -212,7 +214,7 @@ export default function App() {
   }
 
   const ViewCmp = VIEWS[active] || RoleDashboard;
-  const TITLE_OVERRIDES = { projectbuilder: 'Project Builder' };
+  const TITLE_OVERRIDES = { projectbuilder: 'Project Builder', projectworkspace: 'Project Workspace' };
   const title = TITLE_OVERRIDES[active] || (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
 
   // Guarded navigation: only switch to a real, registered view id. Unknown or

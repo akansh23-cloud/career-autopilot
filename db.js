@@ -3315,3 +3315,79 @@ export async function listArchitectureSpecVersions({ userId, email, projectId })
     return [];
   }
 }
+
+/* ============================================================
+   GUIDED PROJECT WORKSPACE — one workspace plan per (user, project).
+   All helpers degrade safely when the DB is disabled; the client keeps
+   a copy of the plan on the project object (user-state) as a fallback,
+   so the feature stays usable without MongoDB.
+   ============================================================ */
+const projectWorkspaceSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true },
+    projectId: { type: String, required: true, index: true },
+    workspacePlan: { type: mongoose.Schema.Types.Mixed, default: {} },
+    currentTab: { type: String, default: 'overview' },
+    selectedItem: { type: mongoose.Schema.Types.Mixed, default: null },
+    starterPack: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true }
+);
+projectWorkspaceSchema.index({ userId: 1, projectId: 1 }, { unique: true });
+export const ProjectWorkspace = mongoose.models.ProjectWorkspace || mongoose.model('ProjectWorkspace', projectWorkspaceSchema);
+
+export async function getProjectWorkspace({ userId, email, projectId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return null;
+    const doc = await ProjectWorkspace.findOne({ userId: uid, projectId: String(projectId) }).lean();
+    return doc ? { ...doc, id: String(doc._id) } : null;
+  } catch (err) { console.error('[db] getProjectWorkspace failed:', err.message); return null; }
+}
+
+export async function saveProjectWorkspace({ userId, email, projectId, workspacePlan }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    if (!projectId) return { ok: false, reason: 'no_project_id' };
+    const doc = await ProjectWorkspace.findOneAndUpdate(
+      { userId: uid, projectId: String(projectId) },
+      { $set: { workspacePlan: workspacePlan || {}, email: cleanEmail(email) } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+    return { ok: true, id: String(doc._id) };
+  } catch (err) { console.error('[db] saveProjectWorkspace failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function saveWorkspaceUiState({ userId, email, projectId, currentTab, selectedItem }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return { ok: false, reason: 'not_found' };
+    const set = {};
+    if (currentTab != null) set.currentTab = String(currentTab).slice(0, 40);
+    if (selectedItem !== undefined) set.selectedItem = selectedItem;
+    await ProjectWorkspace.updateOne({ userId: uid, projectId: String(projectId) }, { $set: set });
+    return { ok: true };
+  } catch (err) { console.error('[db] saveWorkspaceUiState failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function saveWorkspaceStarterPackMeta({ userId, email, projectId, starterPack }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return { ok: false, reason: 'not_found' };
+    await ProjectWorkspace.updateOne(
+      { userId: uid, projectId: String(projectId) },
+      { $set: { starterPack: starterPack || {}, 'workspacePlan.starterPack': starterPack || {} } }
+    );
+    return { ok: true };
+  } catch (err) { console.error('[db] saveWorkspaceStarterPackMeta failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}

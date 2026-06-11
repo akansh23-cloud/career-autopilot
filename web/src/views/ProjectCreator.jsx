@@ -191,7 +191,14 @@ export default function ProjectCreator({ go }) {
       <PageIntro
         title="Project Creator"
         sub="From “I don’t know what to build” to a validated, built, verified and published product — your Product Building OS."
-        action={selected ? <Badge tone="violet"><Target size={11} /> {selected.title.slice(0, 40)}{selected.title.length > 40 ? '…' : ''}</Badge> : null}
+        action={(
+          <div className="flex items-center gap-2.5">
+            {selected ? <Badge tone="violet"><Target size={11} /> {selected.title.slice(0, 40)}{selected.title.length > 40 ? '…' : ''}</Badge> : null}
+            <Button size="sm" variant="soft" onClick={() => go?.('projectworkspace', { createCustom: true })}>
+              <Sparkles size={14} /> Create Custom Project
+            </Button>
+          </div>
+        )}
       />
 
       <Stepper step={step} setStep={setStep} selected={selected} />

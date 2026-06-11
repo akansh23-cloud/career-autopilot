@@ -51,6 +51,7 @@ import { registerProblemIntelligenceRoutes } from './server/routes/problemIntell
 import { registerProjectIntelligenceRoutes } from './server/routes/projectIntelligenceRoutes.js';
 import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRoutes.js';
 import { registerArchitectureRoutes } from './server/routes/architectureRoutes.js';
+import { registerWorkspaceRoutes } from './server/routes/workspaceRoutes.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
@@ -2591,6 +2592,7 @@ registerProblemIntelligenceRoutes(app, { requireAuth, currentUser, generationLim
 registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter });
 registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
