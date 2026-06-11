@@ -51,6 +51,7 @@ import InnovationOS from './views/innovation/InnovationOS.jsx';
 import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
 import ProjectWorkspace from './views/ProjectWorkspace.jsx';
+import CareerIntelligenceView from './views/CareerIntelligence.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -83,6 +84,7 @@ const VIEWS = {
   priorart: PriorArtResearch,
   patentdisclosures: PatentDisclosures,
   innovation: InnovationOS,
+  careerintelligence: CareerIntelligenceView,
   applications: ApplicationsView,
   readiness: ReadinessView,
   projectworkspace: ProjectWorkspace,

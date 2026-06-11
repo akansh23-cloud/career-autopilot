@@ -46,3 +46,48 @@ missing. Everything else degrades gracefully. Full template: `.env.example`.
 ## Validation behavior
 On startup the server logs warnings for missing optional services and, in
 production, **exits** on missing `SESSION_SECRET` / `MONGODB_URI`. See `config.js`.
+
+## Career Intelligence Engine (collective knowledge search)
+All sources are public/free. Keyless sources work out of the box; keyed sources
+degrade gracefully (skipped, never crash) when the key is absent.
+
+```env
+CAREER_INTELLIGENCE_ENABLED=1
+WIKIPEDIA_DISCOVERY_ENABLED=1
+CROSSREF_DISCOVERY_ENABLED=1
+CROSSREF_MAILTO=
+OPENALEX_DISCOVERY_ENABLED=1
+OPENALEX_MAILTO=
+DATAGOV_DISCOVERY_ENABLED=1
+DATAGOV_API_KEY=
+CENSUS_DISCOVERY_ENABLED=0
+CENSUS_API_KEY=
+FDA_DISCOVERY_ENABLED=1
+FDA_API_KEY=
+NASA_DISCOVERY_ENABLED=1
+NASA_API_KEY=
+ONET_DISCOVERY_ENABLED=0
+ONET_USERNAME=
+ONET_PASSWORD=
+ESCO_DISCOVERY_ENABLED=1
+NVD_DISCOVERY_ENABLED=1
+NVD_API_KEY=
+WORLD_BANK_DISCOVERY_ENABLED=1
+OPEN_METEO_DISCOVERY_ENABLED=1
+OPENSTREETMAP_DISCOVERY_ENABLED=1
+YOUTUBE_DISCOVERY_ENABLED=0
+YOUTUBE_API_KEY=
+GOOGLE_MAPS_DISCOVERY_ENABLED=0
+GOOGLE_MAPS_API_KEY=
+INTELLIGENCE_FETCH_TIMEOUT_MS=8000
+INTELLIGENCE_MAX_SOURCES_PER_QUERY=8
+INTELLIGENCE_CACHE_TTL_MINUTES=1440
+```
+
+Notes:
+- **Disabled by default** (key/quota requirements): YouTube Data API,
+  Google Maps Places, O*NET (needs username/password), US Census.
+- `CROSSREF_MAILTO` / `OPENALEX_MAILTO` are optional "polite pool" emails
+  that raise rate limits — no key needed.
+- No API key, mailto or credential is ever exposed to the frontend;
+  `GET /api/intelligence/sources` returns booleans + quota-risk labels only.

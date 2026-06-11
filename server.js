@@ -52,6 +52,7 @@ import { registerProjectIntelligenceRoutes } from './server/routes/projectIntell
 import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRoutes.js';
 import { registerArchitectureRoutes } from './server/routes/architectureRoutes.js';
 import { registerWorkspaceRoutes } from './server/routes/workspaceRoutes.js';
+import { registerCareerIntelligenceRoutes } from './server/routes/careerIntelligenceRoutes.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
@@ -2593,6 +2594,7 @@ registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLim
 registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerCareerIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
