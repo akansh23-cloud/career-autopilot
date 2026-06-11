@@ -2,7 +2,7 @@
 // Proof / Patent sections.
 import { Card, Badge } from '../ui/kit.jsx';
 import { StatusBadge, KeyVal, ChipList, ItemRow, SectionTitle, NoticeBar } from './workspaceBits.jsx';
-import { fileBadge } from '../../lib/workspaceSelectors.js';
+import { fileBadge, asList } from '../../lib/workspaceSelectors.js';
 
 export function WorkspaceFiles({ plan, selected, onSelect, onPreviewCode }) {
   const files = plan?.fileTree || [];
@@ -163,35 +163,43 @@ export function WorkspaceProof({ plan, selected, onSelect }) {
 
 export function WorkspacePatent({ plan }) {
   const pa = plan?.patentAssets || {};
+  const noveltyAngles = asList(pa.noveltyAngles);
+  const claimElements = asList(pa.claimElementCandidates);
+  const methodFlow = asList(pa.methodFlow);
+  const notes = asList(pa.notes);
+  const figures = asList(pa.figures || pa.patentFigure);
   if (!pa.enabled) {
     return <NoticeBar>Patent evaluation was not enabled for this project. Enable “patent potential evaluation” when creating/regenerating to populate this tab.</NoticeBar>;
   }
   return (
     <div className="space-y-4">
       <SectionTitle>Patent assets</SectionTitle>
+      {pa.stale && <NoticeBar tone="warn">Architecture changed since these patent assets were generated — Regenerate to refresh them.</NoticeBar>}
       <NoticeBar tone="warn">These are candidate angles to discuss with a patent professional — the workspace does not claim your idea is patentable.</NoticeBar>
-      {pa.patentFigure && (
+      {figures.length > 0 && (
         <Card className="p-5">
-          <SectionTitle>Patent figure (from Architecture OS)</SectionTitle>
-          <pre className="overflow-x-auto rounded-xl bg-black/30 p-3 font-mono text-[11px] text-slate-300">{typeof pa.patentFigure === 'string' ? pa.patentFigure : JSON.stringify(pa.patentFigure, null, 2)}</pre>
+          <SectionTitle>Patent figures (from Architecture OS)</SectionTitle>
+          {figures.map((fig, i) => (
+            <pre key={i} className="mb-2 overflow-x-auto rounded-xl bg-black/30 p-3 font-mono text-[11px] text-slate-300">{typeof fig === 'string' ? fig : JSON.stringify(fig, null, 2)}</pre>
+          ))}
         </Card>
       )}
       <Card className="p-5">
         <SectionTitle>Novelty angles</SectionTitle>
-        <ul className="space-y-1.5">{(pa.noveltyAngles || []).map((x, i) => <li key={i} className="text-[13px] text-slate-300">• {x}</li>)}</ul>
+        <ul className="space-y-1.5">{noveltyAngles.map((x, i) => <li key={i} className="text-[13px] text-slate-300">• {x}</li>)}</ul>
       </Card>
       <Card className="p-5">
         <SectionTitle>Claim element candidates</SectionTitle>
-        <ul className="space-y-1.5">{(pa.claimElementCandidates || []).map((x, i) => <li key={i} className="text-[13px] text-slate-300">• {x}</li>)}</ul>
+        <ul className="space-y-1.5">{claimElements.map((x, i) => <li key={i} className="text-[13px] text-slate-300">• {x}</li>)}</ul>
       </Card>
       <Card className="p-5">
         <SectionTitle>Method flow</SectionTitle>
-        <ol className="space-y-1.5">{(pa.methodFlow || []).map((x, i) => <li key={i} className="text-[13px] text-slate-300">{i + 1}. {x}</li>)}</ol>
+        <ol className="space-y-1.5">{methodFlow.map((x, i) => <li key={i} className="text-[13px] text-slate-300">{i + 1}. {x}</li>)}</ol>
       </Card>
-      {(pa.notes || []).length > 0 && (
+      {notes.length > 0 && (
         <Card className="p-5">
           <SectionTitle>Notes</SectionTitle>
-          <ul className="space-y-1.5">{pa.notes.map((x, i) => <li key={i} className="text-[12.5px] text-slate-400">{x}</li>)}</ul>
+          <ul className="space-y-1.5">{notes.map((x, i) => <li key={i} className="text-[12.5px] text-slate-400">{typeof x === 'string' ? x : JSON.stringify(x)}</li>)}</ul>
         </Card>
       )}
     </div>

@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import {
   buildWorkspacePlan, recalculatePlan, applyTaskPatch,
-  normalizeCustomProject, runVerification,
+  applyArchitecturePatch, normalizeCustomProject, runVerification,
 } from '../utils/workspace/index.js';
 import { generateArchitectureSpec } from '../utils/architecture/index.js';
 import { generateForFile, generateForTask } from '../utils/codegen/codegenEngine.js';
@@ -36,6 +36,7 @@ const generateSchema = z.object({
   project: z.object({}).passthrough().optional().default({}),
   customInput: z.object({}).passthrough().optional(),
   architectureSpec: z.object({}).passthrough().optional().nullable(),
+  architecturePackage: z.object({}).passthrough().optional().nullable(),
   existingPlan: planLike.optional().nullable(),
   regenerate: z.boolean().optional().default(false),
   persist: z.boolean().optional().default(true),
@@ -44,6 +45,7 @@ const generateSchema = z.object({
 const patchPlanSchema = z.object({
   workspacePlan: planLike.optional().nullable(),
   patch: z.object({}).passthrough().optional().default({}),
+  architecturePatch: z.object({}).passthrough().optional().nullable(),
   currentTab: shortText(60).optional(),
   selectedItem: z.object({}).passthrough().optional().nullable(),
 }).passthrough();
@@ -146,8 +148,22 @@ export function registerWorkspaceRoutes(app, deps = {}) {
       const pid = String(projectId || proj.id || '').trim() || ('proj_' + Date.now().toString(36));
       proj.id = proj.id || pid;
 
-      let architectureSpec = req.body.architectureSpec || proj.architectureSpec || null;
-      if (!architectureSpec) {
+      /* Build a clean Architecture OS package: spec + mermaid views +
+         validation + designScore. Accepts a client-sent package or a bare
+         spec, otherwise generates one. No hidden __validation fields. */
+      let architecture = null;
+      const sent = req.body.architecturePackage || req.body.architectureSpec || null;
+      if (sent && typeof sent === 'object') {
+        const spec = sent.architectureSpec || sent;
+        const validation = sent.validation || proj.architectureValidation || null;
+        architecture = {
+          architectureSpec: spec,
+          mermaidViews: sent.mermaidViews || proj.mermaidViews || null,
+          validation,
+          designScore: Number.isFinite(sent.designScore) ? sent.designScore
+            : Number.isFinite(validation?.score?.overallScore) ? validation.score.overallScore : null,
+        };
+      } else {
         try {
           const pkg = generateArchitectureSpec({
             projectId: pid,
@@ -159,15 +175,19 @@ export function registerWorkspaceRoutes(app, deps = {}) {
             cloudProvider: proj.cloudProvider || 'generic',
             targetLevel: 'mvp',
           });
-          architectureSpec = pkg?.architectureSpec || pkg || null;
-          if (architectureSpec && pkg?.validation) architectureSpec.__validation = pkg.validation;
-        } catch { architectureSpec = null; }
+          architecture = {
+            architectureSpec: pkg?.architectureSpec || null,
+            mermaidViews: pkg?.mermaidViews || null,
+            validation: pkg?.validation || null,
+            designScore: Number.isFinite(pkg?.validation?.score?.overallScore) ? pkg.validation.score.overallScore : null,
+          };
+        } catch { architecture = null; }
       }
 
       const existingPlan = regenerate ? (req.body.existingPlan || await loadPlan(req, pid)) : (req.body.existingPlan || null);
       const workspacePlan = buildWorkspacePlan({
         project: proj,
-        architecture: architectureSpec,
+        architecture,
         existingPlan,
         userId,
       });
@@ -213,19 +233,26 @@ export function registerWorkspaceRoutes(app, deps = {}) {
   app.patch('/api/workspace/:projectId', requireAuth, validate(patchPlanSchema), async (req, res) => {
     try {
       const projectId = String(req.params.projectId || '');
-      const { patch, currentTab, selectedItem } = req.body;
+      const { patch, architecturePatch, currentTab, selectedItem } = req.body;
       const { plan } = await resolvePlan(req, projectId);
 
       let updated = plan;
+      let architectureChanged = false;
+      if (plan && architecturePatch && Object.keys(architecturePatch).length) {
+        const r = applyArchitecturePatch(updated, architecturePatch);
+        updated = r.plan;
+        architectureChanged = r.changed;
+        await savePlan(req, projectId, updated);
+      }
       if (plan && patch && Object.keys(patch).length) {
-        updated = recalculatePlan({ ...plan, ...patch });
+        updated = recalculatePlan({ ...(updated || plan), ...patch });
         await savePlan(req, projectId, updated);
       }
       if ((currentTab || selectedItem) && db?.dbEnabled?.()) {
         const { userId, email } = userOf(req);
         await db.saveWorkspaceUiState({ userId, email, projectId, currentTab, selectedItem });
       }
-      res.json({ success: true, workspacePlan: updated || null });
+      res.json({ success: true, workspacePlan: updated || null, architectureChanged });
     } catch (err) {
       console.error('[workspace] patch failed:', err.message);
       res.status(500).json({ success: false, error: 'patch_failed' });

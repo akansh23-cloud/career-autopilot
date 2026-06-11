@@ -112,6 +112,13 @@ export function mergePlanIntoProject(project, workspacePlan) {
   return { ...project, workspacePlan, workspacePlanUpdatedAt: new Date().toISOString() };
 }
 
+/* Tolerates strings, arrays, null or missing — Patent tab safety. */
+export function asList(v) {
+  if (Array.isArray(v)) return v.filter((x) => x != null && String(x).trim() !== '');
+  if (v == null || v === '') return [];
+  return [v];
+}
+
 export function validCustomInput(form = {}) {
   const errors = [];
   if (!String(form.title || '').trim()) errors.push('Project title is required.');

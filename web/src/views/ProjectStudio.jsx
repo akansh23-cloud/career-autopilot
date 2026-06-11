@@ -10,6 +10,7 @@ import {
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input, Field, Skeleton } from '../components/ui/kit.jsx';
 import { ROLE_GROUPS, ALL_ROLES } from '../lib/roles.js';
+import { WorkspaceOpenButton } from '../components/workspace/WorkspaceCta.jsx';
 import { getStoredResume, saveStoredResume, getResumeSearchRole } from '../lib/resumeStore.js';
 import {
   getProjects, saveProject, deleteProject, consumeStudioSeed, peekStudioSeed,
@@ -928,9 +929,9 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild, onGuided }) {
       )}
       <p className="mt-2 line-clamp-2 text-[11px] text-slate-500">{whyNotVerified(p)}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" variant="soft" onClick={() => onOpen(p)}><Layers size={14} /> Open Workspace</Button>
+        <Button size="sm" variant="soft" onClick={() => onOpen(p)}><Layers size={14} /> Project Details</Button>
         <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={14} /> {buildLabel(p)}</Button>
-        {onGuided && <Button size="sm" variant="soft" onClick={() => onGuided(p)}><MapIcon size={14} /> Guided Workspace</Button>}
+        {onGuided && onGuided(p)}
       </div>
     </div>
   );
@@ -956,6 +957,7 @@ export default function ProjectStudio({ go, openProjectId }) {
   const [projects, setProjects] = useState(getProjects());
   const [openWs, setOpenWs] = useState(null);
   const [toast, setToast] = useState('');
+  const [wsError, setWsError] = useState('');
 
   useEffect(() => {
     const sync = () => setProjects(getProjects());
@@ -1039,6 +1041,12 @@ export default function ProjectStudio({ go, openProjectId }) {
   return (
     <>
       <PageIntro title="Project OS" sub="Your project journey in one place: dashboard → workspace → builder → proof → resume output. Turn missing skills into portfolio projects that prove your skills to recruiters." action={<Button onClick={() => go?.('projectworkspace', { createCustom: true })}><Sparkles size={15} /> Create Custom Project</Button>} />
+      {wsError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/8 px-4 py-3 text-[12.5px] text-rose-200">
+          <span>Workspace generation failed: {wsError}</span>
+          <button onClick={() => setWsError('')} className="shrink-0 text-rose-300 underline">Dismiss</button>
+        </div>
+      )}
 
       {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-slate-100">{toast}</div>}
 
@@ -1151,7 +1159,7 @@ export default function ProjectStudio({ go, openProjectId }) {
                   <div key={s.key}>
                     <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.label} <Badge tone="default">{s.items.length}</Badge></div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {s.items.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} onBuild={openBuilder} onGuided={(proj) => go?.('projectworkspace', { projectId: proj.id })} />)}
+                      {s.items.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} onBuild={openBuilder} onGuided={(proj) => <WorkspaceOpenButton project={proj} go={go} onError={setWsError} />} />)}
                     </div>
                   </div>
                 ))}

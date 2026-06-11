@@ -25,6 +25,17 @@ export function buildTemplateContext(plan = {}, fileEntry = null) {
     architectureSpec: obj(p.architecture).architectureSpec || null,
     workspacePlanExport: exportablePlan(p),
   };
+  /* Route files planned with a starter template — serverEntry mounts these. */
+  base.routeFiles = arr(p.fileTree)
+    .filter((f) => /backend\/routes\/[A-Za-z0-9_-]+\.routes\.js$/.test(f.path) && f.templateKey)
+    .map((f) => {
+      const file = f.path.split('/').pop();
+      const stem = file.replace(/\.routes\.js$/, '').replace(/[^A-Za-z0-9]+(.)/g, (_, ch) => ch.toUpperCase());
+      return { file, importName: `${stem}Routes` };
+    });
+  /* Honest doc status: an API is "starter" only when the generated backend
+     actually wires a placeholder route for it. */
+  base.apis = annotateApisImplemented(p, base.routeFiles);
   if (!fileEntry) return base;
 
   // Per-file specialization derived from the planned path.
@@ -33,6 +44,7 @@ export function buildTemplateContext(plan = {}, fileEntry = null) {
   const cm = path.match(/components\/([A-Za-z0-9]+)\.jsx$/);
   if (cm) base.componentName = cm[1];
   if (/health\.routes/.test(path)) base.routeKind = 'health';
+  if (/auth\.routes/.test(path)) base.routeKind = 'auth';
   if (/scoringService/.test(path)) base.serviceKind = 'scoring';
   if (/uploadService/.test(path)) base.serviceKind = 'upload';
   if (/tests\/health/.test(path)) base.testKind = 'health';
@@ -58,6 +70,31 @@ function exportablePlan(p) {
   const clone = { ...obj(p) };
   delete clone.userId;
   return clone;
+}
+
+/* Mark which planned APIs the generated starter backend actually wires.
+   Keep this in sync with the route templates: health, entity CRUD (+upload/
+   +score when those features are on), auth, admin, recruiter. Everything
+   else (e.g. payments) is documented as planned only. */
+function annotateApisImplemented(p, routeFiles = []) {
+  const have = new Set(routeFiles.map((r) => r.file));
+  const entity = str(p.primaryEntity) || 'Item';
+  const e = entity.toLowerCase();
+  const f = obj(obj(p.stack).features);
+  return arr(p.apiPlan).map((a) => {
+    const path = str(a.path);
+    let implemented = false;
+    if (path === '/api/health') implemented = have.has('health.routes.js');
+    else if (path.startsWith('/api/auth/')) implemented = have.has('auth.routes.js');
+    else if (path.startsWith('/api/admin/')) implemented = have.has('admin.routes.js');
+    else if (path.startsWith('/api/recruiter/')) implemented = have.has('recruiter.routes.js');
+    else if (path.startsWith(`/api/${e}s`)) {
+      if (/\/upload$/.test(path)) implemented = have.has(`${e}s.routes.js`) && f.upload === true;
+      else if (/\/score$/.test(path)) implemented = have.has(`${e}s.routes.js`) && f.ai === true;
+      else implemented = have.has(`${e}s.routes.js`);
+    }
+    return { ...a, starterImplemented: implemented };
+  });
 }
 
 function detectFeaturesFromPlan(p) {

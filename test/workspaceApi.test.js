@@ -88,7 +88,7 @@ test('starter pack preview + generate + download round-trip', async () => {
 
   const dl = await c.get(gen.json.downloadUrl);
   assert.equal(dl.status, 200);
-  assert.match(dl.headers['content-type'] || '', /application\/zip/);
+  assert.match(dl.headers.get('content-type') || '', /application\/zip/);
 });
 
 test('generating a starter pack never changes task statuses', async () => {
@@ -107,4 +107,20 @@ test('POST recalculate returns a consistent plan', async () => {
 test('input validation rejects oversized garbage', async () => {
   const r = await c.post('/api/workspace/generate', { projectId: 'x'.repeat(500) });
   assert.equal(r.status, 400);
+});
+
+test('GET unknown workspace returns null plan (drives the Generate Workspace CTA)', async () => {
+  const r = await c.get('/api/workspace/no_such_project');
+  assert.equal(r.status, 200);
+  assert.equal(r.json.workspacePlan, null);
+});
+
+test('PATCH architecturePatch syncs into the plan and marks artifacts stale', async () => {
+  const newSpec = { ...(plan.architecture?.architectureSpec || {}), refinedAt: 'api-test' };
+  const r = await c.patch(`/api/workspace/${pid}`, { workspacePlan: plan, architecturePatch: { architectureSpec: newSpec, validation: { score: { overallScore: 88 }, checks: [], warnings: [] } } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.architectureChanged, true);
+  assert.equal(r.json.workspacePlan.architecture.designScore, 88);
+  assert.equal(r.json.workspacePlan.docsStale, true);
+  plan = r.json.workspacePlan;
 });

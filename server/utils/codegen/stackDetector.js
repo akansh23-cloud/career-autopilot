@@ -22,13 +22,16 @@ export function detectStack(project = {}, architectureSpec = null) {
   const backend = has(all, ['fastapi', 'django', 'flask']) ? 'python' : has(all, ['spring']) ? 'java' : 'express';
   const database = has(all, ['postgres', 'mysql', 'sqlite']) ? 'sql' : 'mongodb';
 
+  /* Explicit boolean flags (from the custom-project form) are authoritative;
+     keyword hints only fill in when a flag was never set. */
+  const flagOr = (key, hint) => (typeof flags[key] === 'boolean' ? flags[key] : hint);
   const features = {
-    auth: flags.auth === true || has(all + text, ['auth', 'login', 'oauth', 'session', 'jwt']),
-    upload: flags.upload === true || has(all + text, ['upload', 'file', 's3', 'storage']),
-    ai: flags.ai === true || has(all + text, ['ai', 'ml', 'llm', 'scoring', 'embedding', 'model']),
-    payments: flags.payment === true || has(all + text, ['payment', 'razorpay', 'stripe', 'checkout', 'billing']),
-    admin: flags.admin === true || has(text, ['admin']),
-    recruiter: flags.recruiter === true || has(text, ['recruiter']),
+    auth: flagOr('auth', has(all + text, ['auth', 'login', 'oauth', 'session', 'jwt'])),
+    upload: flagOr('upload', has(all + text, ['upload', 'file', 's3', 'storage'])),
+    ai: flagOr('ai', has(all + text, ['ai', 'ml', 'llm', 'scoring', 'embedding', 'model'])),
+    payments: flagOr('payment', has(all + text, ['payment', 'razorpay', 'stripe', 'checkout', 'billing'])),
+    admin: flagOr('admin', has(text, ['admin'])),
+    recruiter: flagOr('recruiter', has(text, ['recruiter'])),
     queue: has(all + text, ['queue', 'worker', 'kafka', 'bull', 'job processing', 'background']),
     realtime: has(all + text, ['websocket', 'socket.io', 'realtime', 'real-time']),
   };

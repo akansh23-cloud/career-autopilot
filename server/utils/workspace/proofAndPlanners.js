@@ -79,7 +79,7 @@ export function planProof(project = {}, stack = {}) {
    from the Architecture OS spec when present. Never claims patentability. */
 export function planPatent(project = {}, stack = {}, architectureSpec = null) {
   const enabled = !!(project.flags && project.flags.patent);
-  if (!enabled) return { enabled: false, patentFigure: null, noveltyAngles: [], claimElementCandidates: [], methodFlow: [], notes: '' };
+  if (!enabled) return { enabled: false, patentFigure: null, noveltyAngles: [], claimElementCandidates: [], methodFlow: [], notes: [] };
   const f = stack.features || {};
   const views = Array.isArray(architectureSpec?.views) ? architectureSpec.views : [];
   const fig = views.find((v) => v.type === 'patentFigure') || null;
@@ -103,6 +103,9 @@ export function planPatent(project = {}, stack = {}, architectureSpec = null) {
     enabled: true,
     patentFigure: fig ? { viewId: fig.id || 'patentFigure', title: fig.title || 'Patent figure', source: 'architecture_os' } : null,
     noveltyAngles, claimElementCandidates, methodFlow,
-    notes: 'These are brainstorm-level candidates from the deterministic planner. Nothing here is a patentability opinion — run prior-art research in Patent OS and consult a professional before filing.',
+    notes: [
+      'These are brainstorm-level candidates from the deterministic planner.',
+      'Nothing here is a patentability opinion — run prior-art research in Patent OS and consult a professional before filing.',
+    ],
   };
 }

@@ -5,7 +5,7 @@
 // the plan on the project (projectStore) so everything still works
 // when the backend DB is disabled.
 // ============================================================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageIntro } from './common.jsx';
 import { Card, Spinner, Button } from '../components/ui/kit.jsx';
 import { getProject, saveProject, uid } from '../lib/projectStore.js';
@@ -24,14 +24,16 @@ import {
   WorkspaceDeployment, WorkspaceProof, WorkspacePatent,
 } from '../components/workspace/WorkspaceDataSections.jsx';
 
-export default function ProjectWorkspace({ go, projectId = '', createCustom = false }) {
+export default function ProjectWorkspace({ go, projectId = '', createCustom = false, tab: initialTab = '', openPackPreview = false }) {
   const [project, setProject] = useState(() => (projectId ? getProject(projectId) : null));
   const [plan, setPlan] = useState(project?.workspacePlan || null);
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState(initialTab || 'overview');
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState({});
+  const [notice, setNotice] = useState('');
+  const [needsGenerate, setNeedsGenerate] = useState(false);
   const [showForm, setShowForm] = useState(createCustom && !projectId);
 
   const [codePreview, setCodePreview] = useState({ open: false, loading: false, generatedFiles: [], warnings: [] });
@@ -50,25 +52,32 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
     }
   }, [project]);
 
-  /* Initial load: stored plan → server copy → generate. */
+  /* Initial load by projectId: stored plan -> server copy -> Generate CTA.
+     Ref-guarded so the effect's deps are exactly what it uses. */
+  const loadedForRef = useRef('');
   useEffect(() => {
+    if (!projectId || loadedForRef.current === projectId) return undefined;
+    loadedForRef.current = projectId;
     let alive = true;
-    if (!projectId || plan) return undefined;
     const p = getProject(projectId);
-    if (p?.workspacePlan) { setProject(p); setPlan(p.workspacePlan); return undefined; }
+    if (p) setProject(p);
+    if (p?.workspacePlan) { setPlan(p.workspacePlan); return undefined; }
     (async () => {
-      setLoading(true); setError('');
+      setLoading(true); setError(''); setNeedsGenerate(false);
       try {
         const r = await WorkspaceApi.get(projectId).catch(() => null);
         if (!alive) return;
-        if (r?.workspacePlan) { adoptPlan(r.workspacePlan, p); if (r.currentTab) setTab(r.currentTab); return; }
-        if (p) {
-          const gen = await WorkspaceApi.generate({ projectId, project: p, architectureSpec: p.architectureSpec || null });
-          if (!alive) return;
-          if (gen?.workspacePlan) adoptPlan(gen.workspacePlan, p);
-          else setError('Could not generate a workspace plan for this project.');
+        if (r?.workspacePlan) {
+          setPlan(r.workspacePlan);
+          if (p) {
+            const merged = mergePlanIntoProject(p, r.workspacePlan);
+            saveProject(merged); setProject(merged);
+          }
+          if (r.currentTab) setTab(r.currentTab);
         } else {
-          setError('Project not found. Open a project from Project Studio, or create a custom project.');
+          /* No workspace yet — surface an explicit Generate CTA. */
+          setNeedsGenerate(true);
+          if (!p) setError('Project details were not found locally; the workspace can still be generated from the server copy if one exists, or open the project from Project Studio first.');
         }
       } catch (e) {
         if (alive) setError(e?.message || 'Failed to load the workspace.');
@@ -77,8 +86,17 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
       }
     })();
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  /* Open the Starter Pack preview automatically when navigated with
+     openPackPreview (e.g. from the creation success panel). */
+  const packAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (openPackPreview && plan && !packAutoOpenedRef.current) {
+      packAutoOpenedRef.current = true;
+      previewPack();
+    }
+  });
 
   /* -------- actions -------- */
   const createFromCustom = async (customInput) => {
@@ -92,9 +110,30 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
       setPlan(r.workspacePlan);
       setShowForm(false);
       setTab('overview');
+      setNotice('Project created and workspace generated — you are in it now. Use Preview Starter Pack or the Architecture tab next.');
     } catch (e) {
       setError(e?.message || 'Failed to create the custom project.');
     } finally { setBusyKey('create', false); }
+  };
+
+  /* Explicit generation for the Generate Workspace CTA. Never silent:
+     failures keep the project saved and show a Retry. */
+  const generateWorkspace = async () => {
+    const p = project || getProject(projectId);
+    if (!p && !projectId) { setError('No project selected.'); return; }
+    setBusyKey('generate', true); setError('');
+    try {
+      const r = await WorkspaceApi.generate({ projectId: p?.id || projectId, project: p || {}, architectureSpec: p?.architectureSpec || null });
+      if (r?.workspacePlan) {
+        adoptPlan(r.workspacePlan, p);
+        setNeedsGenerate(false);
+        setTab('overview');
+      } else {
+        setError('Workspace generation failed — your project is saved; retry below.');
+      }
+    } catch (e) {
+      setError((e?.message || 'Workspace generation failed') + ' — your project is saved; retry below.');
+    } finally { setBusyKey('generate', false); }
   };
 
   const regenerate = async () => {
@@ -196,12 +235,32 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
     if (project?.id) WorkspaceApi.patch(project.id, { currentTab: id }).catch(() => {});
   };
 
-  /* Architecture panel patches (spec refinements) flow back onto the project. */
-  const onProjectPatch = (patch) => {
+  /* Architecture refinements flow onto the project AND back into the
+     workspace plan (architecture section + stale flags), then persist. */
+  const onProjectPatch = async (patch) => {
     if (!project) return;
     const merged = { ...project, ...patch };
     saveProject(merged);
     setProject(merged);
+    const touchesArchitecture = patch && (patch.architectureSpec || patch.architectureValidation || patch.mermaidViews);
+    if (touchesArchitecture && plan) {
+      try {
+        const r = await WorkspaceApi.patch(project.id, {
+          workspacePlan: plan,
+          architecturePatch: {
+            architectureSpec: patch.architectureSpec || null,
+            validation: patch.architectureValidation || null,
+            mermaidViews: patch.mermaidViews || null,
+          },
+        });
+        if (r?.workspacePlan) {
+          adoptPlan(r.workspacePlan, merged);
+          if (r.architectureChanged) setNotice('Workspace plan may need recalculation after architecture changes.');
+        }
+      } catch {
+        setNotice('Architecture saved to the project, but syncing it into the workspace plan failed — use Recalculate.');
+      }
+    }
   };
 
   const counts = useMemo(() => plan ? {
@@ -226,12 +285,23 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
   if (!plan) {
     return (
       <div>
-        <PageIntro eyebrow="Guided Workspace" title="Project Workspace" sub={error || 'No workspace yet.'} />
+        <PageIntro eyebrow="Guided Workspace" title="Project Workspace" sub={needsGenerate ? 'This project has no workspace yet.' : (error || 'No workspace yet.')} />
         <Card className="p-8 text-center">
-          <p className="text-[13.5px] text-slate-400">{error || 'Open a project from Project Studio, or create a custom project to get a guided build plan.'}</p>
+          {error && <p className="mb-3 text-[13px] text-rose-300">{error}</p>}
+          <p className="text-[13.5px] text-slate-400">
+            {needsGenerate
+              ? 'Generate a guided workspace for this project — a deterministic plan with screens, APIs, models, tasks, tests and a starter pack.'
+              : 'Open a project from Project Studio, or create a custom project to get a guided build plan.'}
+          </p>
           <div className="mt-5 flex justify-center gap-2.5">
             <Button variant="ghost" onClick={() => go?.('projectstudio')}>Open Project Studio</Button>
-            <Button onClick={() => setShowForm(true)}>Create Custom Project</Button>
+            {needsGenerate || projectId ? (
+              <Button onClick={generateWorkspace} disabled={busy.generate}>
+                {busy.generate ? <Spinner className="h-4 w-4" /> : null} {error ? 'Retry Generate Workspace' : 'Generate Workspace'}
+              </Button>
+            ) : (
+              <Button onClick={() => setShowForm(true)}>Create Custom Project</Button>
+            )}
           </div>
         </Card>
       </div>
@@ -248,6 +318,15 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
         onRegenerate={regenerate} onRecalculate={recalculate} onVerify={verify} onExport={exportPlan}
       />
       {error && <Card className="border-rose-400/30 bg-rose-500/8 p-3.5 text-[12.5px] text-rose-200">{error}</Card>}
+      {notice && (
+        <Card className="flex items-center justify-between gap-3 border-amber-glow/25 bg-amber-glow/8 p-3.5 text-[12.5px] text-[#FFE0A0]">
+          <span>{notice}</span>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" variant="ghost" onClick={() => { setNotice(''); recalculate(); }}>Recalculate now</Button>
+            <Button size="sm" variant="ghost" onClick={() => setNotice('')}>Dismiss</Button>
+          </div>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-5 lg:flex-row">
         <WorkspaceSidebar active={tab} onSelect={changeTab} counts={counts} />

@@ -70,6 +70,7 @@ export function WorkspaceOverview({ plan }) {
 
       <Card className="p-5">
         <SectionTitle>Starter pack</SectionTitle>
+        {pack.stale && <div className="mb-2"><NoticeBar tone="warn">Architecture changed since this pack was generated — regenerate it for an up-to-date skeleton.</NoticeBar></div>}
         {pack.available
           ? <p className="text-[13px] text-slate-300">Generated {pack.lastGeneratedAt ? new Date(pack.lastGeneratedAt).toLocaleString() : ''} — {pack.includedFiles?.length || 0} files. <span className="text-slate-500">A starter skeleton, not a completed project; downloading it does not mark anything done or verified.</span></p>
           : <p className="text-[13px] text-slate-500">Not generated yet. Use “Preview Starter Pack” or “Download Starter Pack” in the header.</p>}

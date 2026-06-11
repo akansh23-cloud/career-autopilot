@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { PageIntro, StatCard, SectionCard, BarChart, NextBestAction } from './common.jsx';
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui/kit.jsx';
+import { WorkspaceOpenButton } from '../components/workspace/WorkspaceCta.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { Dashboard as DashboardApi } from '../lib/api.js';
 import { getStoredResume, getStoredJobResults } from '../lib/resumeStore.js';
@@ -174,6 +175,16 @@ export default function Dashboard({ go }) {
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Career XP</p><p className="mt-1 font-display text-2xl text-white">{career.total}</p><p className="text-[11px] text-slate-500">{career.level}</p></div>
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Verified badges</p><p className="mt-1 font-display text-2xl text-white">{verifiedBadges.length}</p><p className="text-[11px] text-slate-500">Proof-based skills</p></div>
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Top skill</p><p className="mt-1 truncate font-display text-2xl text-white">{skills[0]?.skillName || '—'}</p><p className="text-[11px] text-slate-500">{skills[0] ? `${skills[0].xp} XP · ${skills[0].level}` : 'Add project evidence'}</p></div>
+            </div>
+          )}
+          {projects.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {projects.slice(0, 3).map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-2">
+                  <span className="truncate text-[13px] text-slate-200">{p.title}</span>
+                  <WorkspaceOpenButton project={p} go={go} />
+                </div>
+              ))}
             </div>
           )}
         </SectionCard>

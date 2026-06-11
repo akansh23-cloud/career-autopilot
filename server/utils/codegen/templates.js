@@ -110,9 +110,74 @@ router.post('/api/${e(ctx)}s', validate${E(ctx)}, controller.create);
 router.get('/api/${e(ctx)}s/:id', controller.getOne);
 router.patch('/api/${e(ctx)}s/:id', controller.update);
 router.delete('/api/${e(ctx)}s/:id', controller.remove);
-export default router;
+${(ctx.features || {}).upload ? `router.post('/api/${e(ctx)}s/upload', controller.upload); // starter placeholder — wire real storage in the service\n` : ''}${(ctx.features || {}).ai ? `router.post('/api/${e(ctx)}s/:id/score', controller.score); // starter placeholder — deterministic scoring lives in the service\n` : ''}export default router;
 `;
     },
+  },
+
+  /* Auth routes — register/login/me placeholders. NOT a generic CRUD copy:
+     these are intentionally auth-shaped so students extend the right thing. */
+  authRoute: {
+    label: 'backend/routes/auth.routes.js', language: 'js',
+    render: (ctx) => HDR('Auth routes — STARTER placeholders. No real credential checks yet.') + `import { Router } from 'express';
+
+const router = Router();
+
+/* TODO(real auth): hash passwords (bcrypt), issue a session or JWT,
+   and add a requireAuth middleware used by protected routes. */
+
+router.post('/api/auth/register', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ message: 'email and password are required' });
+  // TODO: create the user in the database (see models/User.js) after hashing the password.
+  res.status(201).json({ user: { email }, note: 'STARTER placeholder — user is not persisted yet.' });
+});
+
+router.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ message: 'email and password are required' });
+  // TODO: look up the user, verify the password hash, create a session/JWT.
+  res.json({ user: { email }, token: null, note: 'STARTER placeholder — no real credential check yet.' });
+});
+
+router.get('/api/auth/me', (req, res) => {
+  // TODO: read the session/JWT and return the authenticated user.
+  res.status(401).json({ message: 'Not authenticated — implement session/JWT first.' });
+});
+
+export default router;
+`,
+  },
+
+  adminRoute: {
+    label: 'backend/routes/admin.routes.js', language: 'js',
+    render: () => HDR('Admin routes — STARTER placeholder, role checks not implemented yet.') + `import { Router } from 'express';
+
+const router = Router();
+
+/* TODO(roles): add requireAuth + requireRole('admin') middleware before
+   these handlers. Until then this endpoint must not ship to production. */
+router.get('/api/admin/users', (req, res) => {
+  res.json({ users: [], note: 'STARTER placeholder — wire the User model and admin role check.' });
+});
+
+export default router;
+`,
+  },
+
+  recruiterRoute: {
+    label: 'backend/routes/recruiter.routes.js', language: 'js',
+    render: () => HDR('Recruiter routes — STARTER placeholder, role checks not implemented yet.') + `import { Router } from 'express';
+
+const router = Router();
+
+/* TODO(roles): add requireAuth + requireRole('recruiter') middleware. */
+router.get('/api/recruiter/candidates', (req, res) => {
+  res.json({ candidates: [], note: 'STARTER placeholder — wire candidate data and the recruiter role check.' });
+});
+
+export default router;
+`,
   },
   expressController: {
     label: 'Express controller', language: 'js',
@@ -137,7 +202,15 @@ export async function update(req, res) {
   try { res.json({ item: await service.update${E(ctx)}(req.params.id, req.body, req) }); }
   catch (err) { res.status(400).json({ message: err.message }); }
 }
-export async function remove(req, res) {
+${(ctx.features || {}).upload ? `export async function upload(req, res) {
+  try { res.status(201).json(await service.upload${E(ctx)}(req)); }
+  catch (err) { res.status(400).json({ message: err.message }); }
+}
+` : ''}${(ctx.features || {}).ai ? `export async function score(req, res) {
+  try { res.json(await service.score${E(ctx)}(req.params.id, req)); }
+  catch (err) { res.status(400).json({ message: err.message }); }
+}
+` : ''}export async function remove(req, res) {
   try { await service.delete${E(ctx)}(req.params.id, req); res.json({ ok: true }); }
   catch (err) { res.status(400).json({ message: err.message }); }
 }
@@ -180,7 +253,7 @@ export async function storeUpload(file) {
 `;
       }
       return HDR(`${E(ctx)} service — all DB access for ${E(ctx)} lives here.`) + `import ${E(ctx)} from '../models/${E(ctx)}.js';
-
+${(ctx.features || {}).upload ? `import { storeUpload } from './uploadService.js';\n` : ''}${(ctx.features || {}).ai ? `import { score${E(ctx)} as runScore } from './scoringService.js';\n` : ''}
 /* TODO: scope every query to the signed-in user once auth is wired
    (e.g. { userId: req.session.userId }). */
 export async function list${E(ctx)}s() {
@@ -240,22 +313,37 @@ export default mongoose.models.${modelName} || mongoose.model('${modelName}', sc
     label: 'Test file', language: 'js',
     render: (ctx) => {
       if ((ctx.testKind || '') === 'health') {
-        return HDR('Health endpoint test — run with `npm test` (node --test).') + `import { test } from 'node:test';
+        return HDR('Health endpoint test — boots the real app on an ephemeral port and calls GET /api/health. Run with `npm test` (node --test).') + `import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import app from '../server.js';
 
-test('health payload shape', () => {
-  // TODO: boot the app with supertest or fetch against a running server.
-  const payload = { ok: true, uptime: 1 };
-  assert.equal(payload.ok, true);
+let server;
+let base;
+
+before(async () => {
+  await new Promise((resolve) => {
+    server = app.listen(0, () => { base = 'http://127.0.0.1:' + server.address().port; resolve(); });
+  });
+});
+after(() => new Promise((resolve) => server.close(resolve)));
+
+test('GET /api/health responds ok', async () => {
+  const res = await fetch(base + '/api/health');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(typeof body.uptime, 'number');
 });
 `;
       }
-      return HDR(`${E(ctx)} service unit test — run with \`npm test\` (node --test).`) + `import { test } from 'node:test';
+      return HDR(`${E(ctx)} test harness example — run with \`npm test\` (node --test).`) + `import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-test('create${E(ctx)} requires a title (placeholder)', () => {
-  /* TODO: point this at the real service with a test DB or in-memory mongo.
-     This placeholder only proves the test harness runs. */
+/* TEST HARNESS EXAMPLE — this does NOT call the real ${E(ctx)} service yet.
+   It exists so \`npm test\` has a green starting point. Replace it with a real
+   test by importing ../services/${c(ctx)}Service.js against a test database
+   (e.g. mongodb-memory-server) — until then it verifies nothing about your API. */
+test('test harness runs (replace with a real ${E(ctx)} service test)', () => {
   const input = { title: '' };
   assert.equal(Boolean(input.title), false);
 });
@@ -290,18 +378,25 @@ export function assertEnv() {
   },
   serverEntry: {
     label: 'backend/server.js', language: 'js',
-    render: (ctx) => HDR('Express entry point — wire new route files here.') + `import express from 'express';
+    render: (ctx) => {
+      const routes = Array.isArray(ctx.routeFiles) && ctx.routeFiles.length
+        ? ctx.routeFiles
+        : [{ file: 'health.routes.js', importName: 'healthRoutes' }];
+      const imports = routes.map((r) => `import ${r.importName} from './routes/${r.file}';`).join('\n');
+      const uses = routes.map((r) => `app.use(${r.importName});`).join('\n');
+      return HDR('Express entry point — every generated route file is imported and mounted below.') + `import express from 'express';
 import mongoose from 'mongoose';
 import { PORT, MONGODB_URI, assertEnv } from './config/env.js';
-import healthRoutes from './routes/health.routes.js';
-import ${c(ctx)}Routes from './routes/${e(ctx)}s.routes.js';
+${imports}
 
 assertEnv();
 const app = express();
 app.use(express.json({ limit: '2mb' }));
-app.use(healthRoutes);
-app.use(${c(ctx)}Routes);
-// TODO: add auth routes/middleware, error handler, CORS if frontend runs on another origin.
+${uses}
+// TODO: add real auth middleware, an error handler, and CORS if the frontend runs on another origin.
+
+/* Exported so tests can boot the app without binding a fixed port. */
+export default app;
 
 async function start() {
   if (MONGODB_URI) {
@@ -312,8 +407,11 @@ async function start() {
   }
   app.listen(PORT, () => console.log('API listening on http://localhost:' + PORT));
 }
-start();
-`,
+
+/* Start only when run directly (\`node server.js\`), not when imported by tests. */
+if (import.meta.url === \`file://\${process.argv[1]}\`) start();
+`;
+    },
   },
   viteConfig: {
     label: 'frontend/vite.config.js', language: 'js',
@@ -496,6 +594,8 @@ workspace is **not** the same as Verified — verification requires evidence
     label: 'SETUP.md', language: 'markdown',
     render: (ctx) => `# Setup — ${str(ctx.projectTitle || name(ctx))}
 
+> **This is a starter skeleton, not a completed project.** These steps get the skeleton running; the real work is in TASKS.md.
+
 1. **Prereqs**: Node 18+, npm, and MongoDB (local install or \`docker compose up -d\`).
 2. **Env**: \`cp .env.example backend/.env\` and fill in values. Never commit \`.env\`.
 3. **Backend**: \`npm install --prefix backend\` then \`npm run dev --prefix backend\` → http://localhost:5050/api/health
@@ -531,8 +631,8 @@ now open \`TASKS.md\` and build the real project.
   },
   docApiPlan: {
     label: 'docs/api-plan.md', language: 'markdown',
-    render: (ctx) => `# API plan\n\n| Method | Path | Auth | Purpose |\n|---|---|---|---|\n` +
-      arr(ctx.apis).map((a) => `| ${a.method} | \`${a.path}\` | ${a.authRequired ? 'yes' : 'no'} | ${str(a.purpose).replace(/\|/g, '/')} |`).join('\n') + '\n',
+    render: (ctx) => `# API plan\n\nStatus legend — **starter**: a placeholder route for this endpoint IS wired in the generated backend (it returns stub data until you implement it). **planned only**: documented here but NOT present in the starter code; you create it.\n\n| Method | Path | Auth | Status | Purpose |\n|---|---|---|---|---|\n` +
+      arr(ctx.apis).map((a) => `| ${a.method} | \`${a.path}\` | ${a.authRequired ? 'yes' : 'no'} | ${a.starterImplemented ? 'starter' : 'planned only'} | ${str(a.purpose).replace(/\|/g, '/')} |`).join('\n') + '\n',
   },
   docModels: {
     label: 'docs/database-models.md', language: 'markdown',

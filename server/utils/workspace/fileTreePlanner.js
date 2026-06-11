@@ -63,10 +63,12 @@ export function planFileTree(project = {}, stack = {}, { screens = [], apis = []
   add(`backend/models/${E}.js`, `Mongoose model for ${E}.`, { templateKey: 'mongooseModel', models: models.filter((m) => m.name === E).map((m) => m.id) });
   add(`backend/validators/${camel(entity)}Validator.js`, 'Request validation (plain JS, swap in zod/joi later).', { templateKey: 'validatorFile' });
   if (f.auth) {
-    add('backend/routes/auth.routes.js', 'Auth routes (TODO real credential check).', { templateKey: 'expressRoute' });
+    add('backend/routes/auth.routes.js', 'Auth routes — register/login/me starter placeholders (no real credential check yet).', { templateKey: 'authRoute' });
     add('backend/models/User.js', 'Mongoose User model.', { templateKey: 'mongooseModel', models: models.filter((m) => m.name === 'User').map((m) => m.id) });
   }
   if (f.upload) add(`backend/services/uploadService.js`, 'File upload handling (TODO storage choice).', { templateKey: 'expressService' });
+  if (f.admin) add('backend/routes/admin.routes.js', 'Admin routes — role-gated placeholder (role check not implemented yet).', { templateKey: 'adminRoute' });
+  if (f.recruiter) add('backend/routes/recruiter.routes.js', 'Recruiter routes — role-gated placeholder (role check not implemented yet).', { templateKey: 'recruiterRoute' });
   if (f.ai) add(`backend/services/scoringService.js`, 'Deterministic scoring placeholder — backend owns the numbers.', { templateKey: 'expressService' });
   if (f.queue) add('backend/workers/worker.js', 'Background worker placeholder (planned only).', { pack: false });
   if (f.payments) add('backend/routes/payments.routes.js', 'Payment order route (SANDBOX placeholder; planned only).', { pack: false });

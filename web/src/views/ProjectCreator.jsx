@@ -13,6 +13,8 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import { getAccessForUser } from '../lib/access.js';
 import { canUse, useMeter, remaining, promptUpgrade } from '../lib/plan.js';
 import { getProjects, getProject, saveProject } from '../lib/projectStore.js';
+import { WorkspaceCtaPanel } from '../components/workspace/WorkspaceCta.jsx';
+import { ensureWorkspaceForProject } from '../lib/workspaceEnsure.js';
 import {
   CREATOR_STEPS, START_SOURCES, DIFFICULTIES, DURATIONS, CREATOR_TYPES, CATEGORY_ORDER,
   IDEA_BANK, MARKETPLACE_TABS, FIT_LABELS, VAL_LABELS, IP_DISCLAIMER,
@@ -183,8 +185,20 @@ export default function ProjectCreator({ go }) {
     return () => window.removeEventListener('career-creator-updated', sync);
   }, []);
 
+  /* Auto-generate the guided workspace when a project is created/picked.
+     The project stays saved either way; failures show a Retry. */
+  const [wsGen, setWsGen] = useState({ forId: '', generating: false, error: '' });
+  const generateWorkspaceFor = async (id) => {
+    setWsGen({ forId: id, generating: true, error: '' });
+    const r = await ensureWorkspaceForProject(id);
+    setWsGen({ forId: id, generating: false, error: r.ok ? '' : (r.error || 'Workspace generation failed.') });
+  };
+
   // jump to validate if a project is selected but we're still on discover after picking
-  const pickProject = (id, gotoStep = 'validate') => { const s = saveCreatorState({ selectedId: id }); setState(s); setStep(gotoStep); };
+  const pickProject = (id, gotoStep = 'validate') => {
+    const s = saveCreatorState({ selectedId: id }); setState(s); setStep(gotoStep);
+    generateWorkspaceFor(id);
+  };
 
   return (
     <>
@@ -202,6 +216,18 @@ export default function ProjectCreator({ go }) {
       />
 
       <Stepper step={step} setStep={setStep} selected={selected} />
+
+      {selected && (
+        <div className="mt-4">
+          <WorkspaceCtaPanel
+            project={selected}
+            go={go}
+            generating={wsGen.forId === selected.id && wsGen.generating}
+            generateError={wsGen.forId === selected.id ? wsGen.error : ''}
+            onRetry={() => generateWorkspaceFor(selected.id)}
+          />
+        </div>
+      )}
 
       <div className="mt-5">
         {step === 'discover' && <DiscoverStep {...{ user, access, isPremium, state, setState, pickProject, projects }} />}

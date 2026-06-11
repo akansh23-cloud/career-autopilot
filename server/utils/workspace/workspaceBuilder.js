@@ -75,7 +75,7 @@ export function buildWorkspacePlan({ project = {}, architecture = null, existing
     generatedAt: at,
     updatedAt: at,
     version: PLAN_VERSION,
-    stack: { frontend: stack.frontend, backend: stack.backend, database: stack.database, isMern: stack.isMern, warnings: stack.warnings },
+    stack: { frontend: stack.frontend, backend: stack.backend, database: stack.database, isMern: stack.isMern, features: stack.features, cloudProvider: stack.cloudProvider, warnings: stack.warnings },
     primaryEntity: entity,
     projectSummary: {
       title: str(p.title),
@@ -95,6 +95,8 @@ export function buildWorkspacePlan({ project = {}, architecture = null, existing
       mermaidViews: obj(architecture).mermaidViews || null,
       validation: obj(architecture).validation || p.architectureValidation || null,
       designScore: Number.isFinite(obj(architecture).designScore) ? architecture.designScore
+        : Number.isFinite(obj(architecture).validation?.score?.overallScore) ? architecture.validation.score.overallScore
+        : Number.isFinite(obj(p.architectureValidation).score?.overallScore) ? p.architectureValidation.score.overallScore
         : Number.isFinite(obj(p.architectureValidation).score) ? p.architectureValidation.score : null,
     },
     roadmap,
@@ -147,4 +149,34 @@ export function applyTaskPatch(plan = {}, taskId = '', patch = {}, { allowVerifi
     return next;
   });
   return { plan: recalculatePlan(p, { now }), notes };
+}
+
+/* ------------------------------------------------------------------
+   applyArchitecturePatch — sync architecture refinements back into the
+   workspace plan. Marks derived artifacts (starter pack, patent assets,
+   docs) stale instead of silently leaving them outdated.
+   ------------------------------------------------------------------ */
+export function applyArchitecturePatch(plan = {}, archPatch = {}, { now } = {}) {
+  const p = { ...obj(plan) };
+  const cur = obj(p.architecture);
+  const a = obj(archPatch);
+  const validation = a.validation || a.architectureValidation || cur.validation || null;
+  const next = {
+    architectureSpec: a.architectureSpec || cur.architectureSpec || null,
+    mermaidViews: a.mermaidViews || cur.mermaidViews || null,
+    validation,
+    designScore: Number.isFinite(a.designScore) ? a.designScore
+      : Number.isFinite(validation?.score?.overallScore) ? validation.score.overallScore
+      : cur.designScore ?? null,
+  };
+  const changed = JSON.stringify(next.architectureSpec) !== JSON.stringify(cur.architectureSpec || null)
+    || JSON.stringify(next.validation) !== JSON.stringify(cur.validation || null);
+  p.architecture = next;
+  if (changed) {
+    p.architectureUpdatedAt = nowIso(now);
+    if (obj(p.starterPack).available) p.starterPack = { ...p.starterPack, stale: true };
+    if (obj(p.patentAssets).enabled) p.patentAssets = { ...p.patentAssets, stale: true };
+    p.docsStale = true;
+  }
+  return { plan: recalculatePlan(p, { now }), changed };
 }
