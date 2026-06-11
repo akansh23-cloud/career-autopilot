@@ -416,7 +416,7 @@ function chunkHTML(b, from, to) {
 function measureBlocksInDOM(blocks, css, contentWidth) {
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
-  host.style.cssText = `position:fixed;left:-12000px;top:0;width:${contentWidth}px;background:#fff;z-index:-1;visibility:hidden;`;
+  host.style.cssText = `position:fixed;left:-12000px;top:0;width:${contentWidth}px;background:#fff;z-index:-1;opacity:0;pointer-events:none;`;
   const style = document.createElement('style');
   style.textContent = css;
   host.appendChild(style);
@@ -553,12 +553,18 @@ ${forPrint ? '' : `@media screen{.rp-page{box-shadow:0 6px 32px rgba(8,12,24,.28
 
 /* Paginate + mount hidden + run the layout validator. One call used by the
    preview modal, the editor and the Template Lab so export gating is uniform. */
+/* Style for offscreen hosts that the layout validator inspects. MUST NOT use
+   `visibility:hidden` or `display:none` — those inherit into every block and
+   make the validator flag all content as hidden. Invisible to the user via
+   offscreen position + opacity:0 instead. */
+export const VALIDATION_HOST_STYLE = 'position:fixed;left:-14000px;top:0;z-index:-1;opacity:0;pointer-events:none;background:#fff;';
+
 export async function renderAndValidate(data, templateId, opts = {}) {
   const { validateResumeLayout } = await import('./resumeLayoutValidator.js');
   const paged = await paginateResume(data, templateId, opts);
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
-  host.style.cssText = 'position:fixed;left:-14000px;top:0;z-index:-1;visibility:hidden;background:#fff;';
+  host.style.cssText = VALIDATION_HOST_STYLE;
   const style = document.createElement('style');
   style.textContent = paged.css;
   host.appendChild(style);
@@ -590,6 +596,20 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export { downloadBlob as triggerDownload };
+
+/**
+ * Single source of truth for whether export may proceed given the latest
+ * layout-validation report. Used by the Editor and the preview modal so the
+ * gating rule can never drift between surfaces:
+ *   report == null            → validation pending → export BLOCKED
+ *   report.valid === false    → layout errors      → export BLOCKED
+ *   report.valid === true     → export allowed (warnings don't block)
+ */
+export function canExportLayout(report) {
+  if (!report) return { allowed: false, pending: true, reason: 'Layout validation is still running — export unlocks when it completes.' };
+  if (!report.valid) return { allowed: false, pending: false, reason: 'Export blocked — fix the layout errors first. Content is never silently cropped; switch to multi-page or trim sections.' };
+  return { allowed: true, pending: false, reason: '' };
+}
 
 /**
  * PDF export (primary): print pipeline → selectable text, exact page margins,

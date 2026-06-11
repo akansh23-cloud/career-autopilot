@@ -21,7 +21,7 @@ import { detectSections, sliceSections, detectExperienceLevel } from './sectionD
 import { extractContact } from './contactExtractor.js';
 import { presentSkills, countPresent, skillEvidence, skillPresent } from './skillMatcher.js';
 
-export const SCORING_VERSION = 'resume-score-v2';
+export const SCORING_VERSION = 'resume-score-v3';
 
 export const WEIGHTS = {
   atsParseability: 15,
@@ -190,6 +190,127 @@ function scoreAntiStuffing(norm, sections, dict, keywordMatch) {
   return { penalty: round(clamp(penalty, 0, ANTI_STUFFING_MAX)), max: ANTI_STUFFING_MAX, evidencedRatio: Number(evidencedRatio.toFixed(2)) };
 }
 
+/* ============================================================
+   DETERMINISTIC QUALITY CHECKS (no AI)
+   ------------------------------------------------------------
+   Concrete, actionable findings rendered by the UI as
+   [{ type, severity: 'high'|'medium'|'info', detail }].
+   Pure function of already-computed deterministic sub-results —
+   same resume + same SCORING_VERSION always produce identical
+   checks. JD-specific missing keywords are intentionally NOT
+   produced here; /api/resume/tailor already returns
+   keywordsMissing against an actual job description.
+   ============================================================ */
+
+export const WEAK_BULLET_OPENERS = [
+  'responsible for', 'worked on', 'involved in', 'participated',
+  'helped', 'assisted', 'handled', 'supported',
+];
+
+/* Bullet lines from the normalized (lowercased, trimmed) text. */
+function extractBullets(norm) {
+  return norm.split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^[•\-*▪◦‣]\s*/.test(l))
+    .map((l) => l.replace(/^[•\-*▪◦‣]\s*/, '').trim())
+    .filter(Boolean);
+}
+
+function findWeakBullets(norm) {
+  const weak = [];
+  for (const b of extractBullets(norm)) {
+    if (WEAK_BULLET_OPENERS.some((p) => b.startsWith(p))) weak.push(b);
+  }
+  return weak;
+}
+
+const MISSING_SECTION_RULES = {
+  // [severity for fresher/junior, severity for mid/senior, label]
+  skills: ['high', 'high', 'a Skills section'],
+  education: ['high', 'medium', 'an Education section'],
+  experience: [null, 'high', 'a Work Experience section'], // freshers may legitimately have none
+  projects: ['high', null, 'a Projects section'],          // experienced folks may skip it
+  summary: ['info', 'info', 'a Summary/Profile section'],
+  certifications: [null, 'info', 'a Certifications section'],
+};
+
+export function buildQualityChecks({ norm, level, sections, impactDetail, antiStuffing, words }) {
+  const checks = [];
+  const junior = level === 'fresher' || level === 'junior';
+
+  // 1) Missing sections — role/level aware.
+  for (const [key, [freshSev, seniorSev, label]] of Object.entries(MISSING_SECTION_RULES)) {
+    const sev = junior ? freshSev : seniorSev;
+    if (!sev || sections[key]) continue;
+    checks.push({
+      type: 'missing_section',
+      severity: sev,
+      detail: `Add ${label} — recruiters and ATS parsers expect it for ${junior ? 'fresher/junior' : 'experienced'} resumes.`,
+    });
+  }
+
+  // 2) Weak bullet openers instead of action verbs.
+  const weak = findWeakBullets(norm);
+  if (weak.length) {
+    const examples = weak.slice(0, 3).map((b) => `"${b.slice(0, 70)}${b.length > 70 ? '…' : ''}"`).join('; ');
+    checks.push({
+      type: 'weak_bullets',
+      severity: weak.length >= 3 ? 'high' : 'medium',
+      detail: `${weak.length} bullet${weak.length > 1 ? 's start' : ' starts'} with a passive phrase (e.g. ${examples}). Rewrite to start with an action verb like Built, Migrated, Automated, Reduced.`,
+    });
+  }
+
+  // 3) Bullets / experience lacking metrics.
+  const bulletCount = extractBullets(norm).length;
+  const metricSignals = (impactDetail?.percentages || 0) + (impactDetail?.scaleMetrics || 0);
+  if (bulletCount >= 3 && metricSignals === 0) {
+    checks.push({
+      type: 'no_metrics',
+      severity: 'high',
+      detail: 'No quantified results found in your bullets. Add numbers — %, time saved, cost, data volume, users — to at least 3–4 bullets to prove impact.',
+    });
+  } else if (bulletCount >= 5 && metricSignals < 2) {
+    checks.push({
+      type: 'few_metrics',
+      severity: 'medium',
+      detail: 'Very few quantified results. Aim for a number (%, scale, money, time) in roughly half of your experience bullets.',
+    });
+  }
+
+  // 4) Keyword stuffing — reuses the scoreAntiStuffing penalty verbatim.
+  if ((antiStuffing?.penalty || 0) >= 4) {
+    checks.push({
+      type: 'keyword_stuffing',
+      severity: 'high',
+      detail: `Keyword-stuffing penalty applied (−${antiStuffing.penalty} pts): many role keywords appear without supporting evidence in Experience/Projects. Back each skill with a bullet, or remove it.`,
+    });
+  } else if ((antiStuffing?.penalty || 0) > 0) {
+    checks.push({
+      type: 'keyword_stuffing',
+      severity: 'medium',
+      detail: `Mild keyword-stuffing penalty (−${antiStuffing.penalty} pts). Skills listed in the Skills section score more when also evidenced inside Experience/Projects bullets.`,
+    });
+  }
+
+  // 5) Length risk vs detected experience level (word-count proxy:
+  //    ~450–550 words ≈ one dense page).
+  if (junior && words > 900) {
+    checks.push({
+      type: 'length_risk',
+      severity: 'medium',
+      detail: `At ~${words} words this fresher/junior resume very likely runs past one page. Trim to the strongest projects and bullets — one page is the expectation at this level.`,
+    });
+  } else if ((level === 'senior' || level === 'mid') && words < 350) {
+    checks.push({
+      type: 'length_risk',
+      severity: level === 'senior' ? 'high' : 'medium',
+      detail: `At ~${words} words this resume looks too thin for a ${level}-level candidate. Expand recent roles with scope, ownership and measurable outcomes.`,
+    });
+  }
+
+  return checks;
+}
+
 /* Deterministic best-fit role across all dictionaries (suggestion only). */
 function pickRecommendedRole(norm, currentRole) {
   let best = { role: currentRole, cov: -1 };
@@ -248,12 +369,18 @@ export function scoreResume({ resumeText = '', targetRole = '' } = {}) {
     experienceText: sections.experienceProjects, skillsText: sections.skills, fullText: norm,
   });
 
+  const qualityChecks = buildQualityChecks({
+    norm, level, sections: sect.detected,
+    impactDetail: impact, antiStuffing, words: ats.words,
+  });
+
   return {
     score,
     ats: clamp(atsPct, 0, 100),
     impact: clamp(impactPct, 0, 100),
     clarity: clamp(clarityPct, 0, 100),
     breakdown,
+    qualityChecks,
     matchedKeywords: keywords.matched,
     missingKeywords: keywords.missing.slice(0, 25),
     skillEvidence: evidence,

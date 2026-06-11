@@ -14,6 +14,10 @@ import { logger } from './logger.js';
 import { maxFreshDaysFromQuery, passesFreshness } from './freshness.js';
 import { createMongooseSessionStore } from './sessionStore.js';
 import {
+  normalizeWorkMode, matchesWorkMode, normalizeExperienceLevel, matchesExperienceLevel,
+  normalizeJobType, matchesJobType,
+} from './server/utils/jobFilters.js';
+import {
   scoreResume, normalizeResumeText, normalizeRole, hashResume as computeResumeHash,
   SCORING_VERSION, buildFeedback, parseJD, computeJobFit, tailorResume, checkFabrication,
 } from './server/utils/resume/index.js';
@@ -813,12 +817,9 @@ function validLocationMatch(job, loc) {
 
   return false;
 }
-function validModeMatch(job, mode) {
-  if (!mode || mode === 'Any') return true;
-  const m = String(job.mode || '').toLowerCase();
-  if (mode === 'Hybrid') return /hybrid|on-?site/.test(m);
-  return m.includes(String(mode).toLowerCase());
-}
+/* Work-mode/experience/job-type matching now lives in the pure module
+   server/utils/jobFilters.js (legacy validModeMatch removed — it could not
+   match the canonical or legacy frontend values like 'On-site/Hybrid'). */
 
 /* ============================================================
    URL VERIFICATION
@@ -941,7 +942,11 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
   try {
     const role = req.query.role || 'software engineer';
     const loc = req.query.location || '';
-    const mode = req.query.mode || 'Any';
+    // Canonical filters. normalizeWorkMode maps legacy values
+    // ('Any'/'Remote'/'On-site/Hybrid') so old clients keep working.
+    const mode = normalizeWorkMode(req.query.mode);
+    const experience = normalizeExperienceLevel(req.query.experience);
+    const jobType = normalizeJobType(req.query.jobType);
     const maxDays = maxFreshDaysFromQuery(req.query.freshness || '7d');
     const limit = Math.max(1, Math.min(40, Number(req.query.limit || 12)));
     const verify = req.query.verify !== '0';
@@ -951,7 +956,7 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
     const selected = requestedSources(req);
 
     // Serve identical recent searches from cache (cuts latency, protects quotas).
-    const cacheKey = JSON.stringify({ role, loc, mode, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
+    const cacheKey = JSON.stringify({ role, loc, mode, experience, jobType, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
     const cached = jobCacheGet(cacheKey);
     if (cached) return res.json({ ...cached, cached: true });
 
@@ -1004,7 +1009,9 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
         if (!fr.ok) reason = fr.reason;
         else if (!validRoleMatch(j, role)) reason = 'role mismatch';
         else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
-        else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
+        else if (!matchesWorkMode(j, mode)) reason = `work mode mismatch (filter: ${mode})`;
+        else if (!matchesExperienceLevel(j, experience)) reason = `experience level mismatch (filter: ${experience})`;
+        else if (!matchesJobType(j, jobType)) reason = `job type mismatch (filter: ${jobType})`;
       }
       const k = jobKey(j);
       if (!reason && seen.has(k)) reason = 'duplicate';
@@ -1070,6 +1077,7 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
 
     const payload = {
       jobs: kept, sources, audit, verified: verify,
+      filters: { mode, experience, jobType, freshness: req.query.freshness || '7d' },
       diagnostics: {
         apiKeyDetected: !!RAPIDAPI_KEY,
         host: RAPIDAPI_HOST,
@@ -1815,6 +1823,7 @@ app.post('/api/resume/analyze', requireAuth, aiLimiter, validateBody(resumeAnaly
       breakdown: d.breakdown,
       matchedKeywords: d.matchedKeywords,
       missingKeywords: d.missingKeywords,
+      qualityChecks: d.qualityChecks || [],   // deterministic findings — never AI-generated
       skillEvidence: d.skillEvidence || [],
       summary: feedback.summary || `Scored ${d.score}/100 for ${targetRole}.`,
       strengths: feedback.strengths || [],

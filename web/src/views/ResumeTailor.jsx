@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, AlertTriangle, CheckCircle2, ShieldCheck, ShieldAlert, Save, Trash2, FileText, ChevronDown, Loader2, GitCompare } from 'lucide-react';
+import { Sparkles, AlertTriangle, CheckCircle2, ShieldCheck, ShieldAlert, Save, Trash2, FileText, ChevronDown, Loader2, GitCompare, PenLine } from 'lucide-react';
 import { SectionCard } from './common.jsx';
 import { Button, Badge, EmptyState, Field } from '../components/ui/kit.jsx';
 import { ResumeApi } from '../lib/api.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
+import { openInEditorHandoff } from '../lib/resumeEditorHandoff.js';
+import { getSelectedTemplate } from '../lib/resumeStore.js';
 
 const MODES = [
   ['conservative', 'Conservative', 'Reorder & light rewrite only'],
@@ -17,20 +19,20 @@ function FitDelta({ before, after }) {
   return (
     <div className="flex items-center justify-center gap-3">
       <div className="text-center">
-        <div className="font-display text-2xl text-white">{before ?? '—'}</div>
-        <div className="text-[11px] text-slate-500">Job fit before</div>
+        <div className="font-display text-2xl text-white">{before ?? '—'}<span className="text-sm text-slate-500">/100</span></div>
+        <div className="text-[11px] text-slate-500">JD match before</div>
       </div>
       <div className="text-slate-500">→</div>
       <div className="text-center">
-        <div className="font-display text-2xl text-white">{after ?? '—'}</div>
-        <div className="text-[11px] text-slate-500">Job fit after</div>
+        <div className="font-display text-2xl text-white">{after ?? '—'}<span className="text-sm text-slate-500">/100</span></div>
+        <div className="text-[11px] text-slate-500">JD match after</div>
       </div>
       <Badge tone={tone}>{delta >= 0 ? `+${delta}` : delta}</Badge>
     </div>
   );
 }
 
-export default function ResumeTailor({ resumeText, fileName, targetRole, resumeScore }) {
+export default function ResumeTailor({ resumeText, fileName, targetRole, resumeScore, go }) {
   const [jd, setJd] = useState('');
   const [mode, setMode] = useState('balanced');
   const [role, setRole] = useState(targetRole || '');
@@ -93,6 +95,21 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
   };
 
   const hasRisks = result?.fabricationRisks?.length > 0;
+
+  // Open the tailored resume in the Resume Editor: same renderer/template
+  // registry/validation/export pipeline as everything else. The currently
+  // selected template id is mapped through the registry (legacy ids included).
+  const openEditor = () => {
+    if (!result?.tailoredResume?.text) return;
+    openInEditorHandoff({
+      tailoredText: result.tailoredResume.text,
+      originalText: resumeText || '',
+      jobDescription: jd,
+      templateId: getSelectedTemplate() || '',
+      length: 'Auto',
+    });
+    go?.('editor');
+  };
 
   return (
     <div className="mt-6 space-y-4">
@@ -202,9 +219,18 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
             </SectionCard>
           )}
 
-          <SectionCard title="Tailored resume (review before use)" action={<Button size="sm" variant="soft" onClick={() => saveVersion('job')}><Save size={14} /> Save job version</Button>}>
+          <SectionCard
+            title="Tailored resume (review before use)"
+            action={
+              <div className="flex gap-2">
+                <Button size="sm" onClick={openEditor}><PenLine size={14} /> Open in Resume Editor</Button>
+                <Button size="sm" variant="soft" onClick={() => saveVersion('job')}><Save size={14} /> Save job version</Button>
+              </div>
+            }
+          >
             <textarea readOnly value={result.tailoredResume?.text || ''}
               className="h-72 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs leading-relaxed text-slate-200 outline-none" />
+            <p className="mt-2 text-[11px] text-slate-500">Opening in the editor applies your selected template, runs layout validation, and unlocks PDF/DOCX export once the layout is valid.</p>
             {savedMsg && <p className="mt-2 flex items-center gap-1.5 text-xs text-aurora-mint"><CheckCircle2 size={13} /> {savedMsg}</p>}
           </SectionCard>
         </>

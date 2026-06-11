@@ -17,6 +17,7 @@ import {
   exportResumeDOCX, buildCustomTemplate, setCustomTemplate,
 } from '../lib/resumeTemplates.js';
 import { TemplateGallery, TemplatePreviewModal, ResumePaper, ValidationSummary } from '../components/ResumeTemplates.jsx';
+import { canExportLayout } from '../lib/resumeRenderer.js';
 import { analyzeTemplateImage } from '../lib/templateAnalyze.js';
 import { canUploadCustom, canExportDocx, useMeter, canUse, promptUpgrade, templateAllowance } from '../lib/plan.js';
 
@@ -363,11 +364,17 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
   const copy = () => { navigator.clipboard?.writeText(activeText); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   const safeName = (data?.name || 'resume').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'resume';
 
-  const layoutBlocked = !!layoutReport && !layoutReport.valid;
+  // Any change to the content, template or page-length re-renders the preview
+  // and re-validates; clear the stale report so exports re-lock until the new
+  // validation completes.
+  useEffect(() => { setLayoutReport(null); }, [activeText, tplId, len]);
+
+  const exportGate = canExportLayout(activeText.trim().length >= 30 ? layoutReport : { valid: true, errors: [], warnings: [] });
+  const layoutBlocked = !exportGate.allowed;
 
   const doPDF = async () => {
     if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
-    if (layoutBlocked) { setErr('Export blocked — the layout check found errors. Switch to Multi page or trim content; nothing is ever silently cropped.'); return; }
+    if (!exportGate.allowed) { setErr(exportGate.reason); return; }
     setBusy('pdf'); setErr('');
     try { await exportResumePDF(data, tplId, { pageMode: lenToMode(len) === 'single' ? 'one-page' : lenToMode(len), fileName: `${safeName}-${selectedTpl.id}.pdf` }); }
     catch (e) { setErr('PDF export failed: ' + (e.message || e)); }
@@ -375,7 +382,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
   };
   const doDOCX = () => {
     if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
-    if (layoutBlocked) { setErr('Export blocked — the layout check found errors. Switch to Multi page or trim content; nothing is ever silently cropped.'); return; }
+    if (!exportGate.allowed) { setErr(exportGate.reason); return; }
     if (!canExportDocx()) { promptUpgrade('DOCX export is available on Pro & Premium. Free plan exports PDF.', 'pro'); return; }
     setBusy('docx');
     try { exportResumeDOCX(data, tplId, { fileName: `${safeName}-${selectedTpl.id}.doc` }); }
@@ -486,8 +493,8 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               <div className="mt-3"><ValidationSummary report={layoutReport} /></div>
             )}
             <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-              <Button onClick={doPDF} disabled={busy === 'pdf' || layoutBlocked} title={layoutBlocked ? 'Fix layout errors first' : 'Print-quality PDF with selectable text'}>
-                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : 'Download PDF'}
+              <Button onClick={doPDF} disabled={busy === 'pdf' || layoutBlocked} title={layoutBlocked ? exportGate.reason : 'Print-quality PDF with selectable text'}>
+                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : exportGate.pending && activeText.trim().length >= 30 ? 'Validating layout…' : 'Download PDF'}
               </Button>
               <Button variant="soft" onClick={doDOCX} disabled={busy === 'docx' || layoutBlocked}>
                 <FileType2 size={15} /> DOCX

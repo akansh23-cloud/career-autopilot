@@ -57,7 +57,7 @@ function BreakdownBar({ label, value, max }) {
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]">
         <span className="text-slate-300">{label}</span>
-        <span className="tabular-nums text-slate-400">{value}/{max}</span>
+        <span className="tabular-nums text-slate-400">{value}/{max} pts</span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .8s ease' }} />
@@ -248,6 +248,7 @@ export default function Resume({ go }) {
               <SectionCard>
                 <div className="flex flex-col items-center gap-3">
                   <Ring value={Number(result.score) || 0} />
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Resume Quality Score (out of 100)</p>
                   <p className="text-center text-sm text-muted">{result.summary}</p>
 
                   {/* Scored-for vs recommended role — kept distinct so the AI
@@ -265,10 +266,12 @@ export default function Resume({ go }) {
 
                   <Button className="mt-1" variant="soft" onClick={findMatchingJobs}><Briefcase size={16} /> Find matching jobs</Button>
 
+                  {/* Top-level scores — ALL out of 100. The weighted breakdown
+                      below shows points, never the headline score. */}
                   <div className="grid w-full grid-cols-3 gap-2 border-t border-white/8 pt-3">
-                    {[['ATS', result.ats], ['Impact', result.impact], ['Clarity', result.clarity]].map(([l, v]) => (
+                    {[['ATS Score', result.ats], ['Impact', result.impact], ['Clarity', result.clarity]].map(([l, v]) => (
                       <div key={l} className="text-center">
-                        <div className="font-display text-lg text-white">{v ?? '—'}</div>
+                        <div className="font-display text-lg text-white">{v ?? '—'}<span className="text-[11px] text-slate-500">/100</span></div>
                         <div className="text-[11px] text-slate-500">{l}</div>
                       </div>
                     ))}
@@ -277,13 +280,31 @@ export default function Resume({ go }) {
               </SectionCard>
 
               {result.breakdown && (
-                <SectionCard title="Score breakdown">
+                <SectionCard title="Weighted breakdown — points toward the 100-point score">
+                  <p className="mb-3 text-[11px] text-slate-500">Each row shows weighted points (e.g. 12/15 pts), not a score. The headline ATS and quality scores above are always out of 100.</p>
                   <div className="space-y-3">
                     {BREAKDOWN_ORDER.filter((k) => result.breakdown[k] != null).map((k) => {
                       const [label, max] = BREAKDOWN_LABELS[k];
                       return <BreakdownBar key={k} label={label} value={result.breakdown[k]} max={max} />;
                     })}
                   </div>
+                </SectionCard>
+              )}
+
+              {result.qualityChecks?.length > 0 && (
+                <SectionCard title="Resume quality checks">
+                  <ul className="space-y-2">
+                    {result.qualityChecks.map((c, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-slate-300">
+                        {c.severity === 'high'
+                          ? <AlertTriangle size={15} className="mt-0.5 shrink-0 text-rose-300" />
+                          : c.severity === 'medium'
+                            ? <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-glow" />
+                            : <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-aurora-cyan" />}
+                        <span>{c.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </SectionCard>
               )}
 
@@ -337,6 +358,7 @@ export default function Resume({ go }) {
           fileName={fileName}
           targetRole={scoredRole !== 'General' ? scoredRole : role}
           resumeScore={result?.score ?? null}
+          go={go}
         />
       )}
     </>

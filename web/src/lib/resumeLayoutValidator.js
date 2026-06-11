@@ -73,6 +73,19 @@ export function findOrphanHeadings(pages) {
   return orphans;
 }
 
+/* Pure baseline-aware hidden check. An element is only "hidden content" when
+   it is hidden RELATIVE to the page it sits on. If the whole page reports
+   visibility:hidden (e.g. inherited from an offscreen validation host —
+   a measurement artifact, not a resume problem), inherited values must not be
+   flagged. display:none and the element's OWN visibility:hidden always flag. */
+export function isHiddenForValidation(elStyle = {}, pageBaselineStyle = {}) {
+  if (elStyle.display === 'none') return true;
+  if (elStyle.visibility === 'hidden') {
+    return pageBaselineStyle.visibility !== 'hidden'; // inherited from outside the page → not a content problem
+  }
+  return false;
+}
+
 /* ------------------------------------------------------- DOM validation -- */
 
 function describeEl(el) {
@@ -161,10 +174,12 @@ export function validateResumeLayout(containerElement, options = {}) {
       }
     }
 
-    // hidden / unreadable text
+    // hidden / unreadable text — measured against the PAGE baseline so an
+    // invisible offscreen validation host can never cause false positives
+    const pageBaseline = window.getComputedStyle(pageEl);
     for (const el of blocks) {
       const cs = window.getComputedStyle(el);
-      if (cs.display === 'none' || cs.visibility === 'hidden') {
+      if (isHiddenForValidation(cs, pageBaseline)) {
         errors.push(`Page ${pn}: hidden content detected (${describeEl(el)}).`);
         continue;
       }

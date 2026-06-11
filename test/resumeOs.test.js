@@ -15,10 +15,13 @@ import {
 } from '../web/src/lib/resumeDataModel.js';
 import {
   packBlocksIntoPages, buildResumeBlocks, DENSITIES, MIN_BODY_FONT_PX, DENSITY_STEPS,
+  VALIDATION_HOST_STYLE, canExportLayout,
 } from '../web/src/lib/resumeRenderer.js';
 import {
-  rectsOverlap, rectContains, findOverlaps, findOrphanHeadings,
+  rectsOverlap, rectContains, findOverlaps, findOrphanHeadings, isHiddenForValidation,
 } from '../web/src/lib/resumeLayoutValidator.js';
+import { buildEditorHandoff } from '../web/src/lib/resumeEditorHandoff.js';
+import { scoreResume, SCORING_VERSION } from '../server/utils/resume/scoringEngine.js';
 import {
   planOnePageFit, densityIsReadable, sectionOrderForRole, analyzeContentQuality,
   recommendForJobDescription, ONE_PAGE_OVERFLOW_MESSAGE,
@@ -333,4 +336,151 @@ test('resume score comes from the backend scoring engine, not template metadata'
   const { readFile } = await import('node:fs/promises');
   const src = await readFile(new URL('../server/utils/resume/scoringEngine.js', import.meta.url), 'utf8');
   assert.ok(src.length > 200, 'backend scoring engine present');
+});
+
+/* ===================== stabilization-pass regression suite =====================
+   Covers: (1) the false "hidden content" export bug — validation hosts must use
+   opacity, never visibility:hidden; (2) export gating on pending/invalid
+   reports; (3) the tailor→editor handoff contract; (4) the new deterministic
+   qualityChecks from the backend scoring engine. Pure logic only. */
+
+test('VALIDATION_HOST_STYLE hides via opacity, never visibility:hidden', () => {
+  assert.equal(typeof VALIDATION_HOST_STYLE, 'string');
+  assert.ok(/opacity\s*:\s*0/.test(VALIDATION_HOST_STYLE), 'host must use opacity:0');
+  assert.ok(!/visibility\s*:\s*hidden/.test(VALIDATION_HOST_STYLE),
+    'visibility:hidden on the host inherits into pages and triggers false hidden-content errors');
+});
+
+test('isHiddenForValidation truth table is baseline-aware', () => {
+  // inherited visibility:hidden (whole page hidden by an offscreen host) = measurement artifact, NOT flagged
+  assert.equal(isHiddenForValidation({ visibility: 'hidden' }, { visibility: 'hidden' }), false);
+  // display:none always flags, even on a hidden page
+  assert.equal(isHiddenForValidation({ display: 'none' }, { visibility: 'hidden' }), true);
+  assert.equal(isHiddenForValidation({ display: 'none' }, { visibility: 'visible' }), true);
+  // element's OWN visibility:hidden on a visible page = real hidden content
+  assert.equal(isHiddenForValidation({ visibility: 'hidden' }, { visibility: 'visible' }), true);
+  // visible element never flags
+  assert.equal(isHiddenForValidation({ visibility: 'visible', display: 'block' }, { visibility: 'visible' }), false);
+  assert.equal(isHiddenForValidation({}, {}), false);
+});
+
+test('canExportLayout blocks pending and invalid reports, allows valid ones', () => {
+  const pending = canExportLayout(null);
+  assert.equal(pending.allowed, false);
+  assert.equal(pending.pending, true);
+  assert.ok(pending.reason.length > 0);
+
+  const invalid = canExportLayout({ valid: false, errors: ['overlap'] });
+  assert.equal(invalid.allowed, false);
+  assert.equal(invalid.pending, false);
+  assert.ok(invalid.reason.length > 0);
+
+  const valid = canExportLayout({ valid: true, errors: [], warnings: ['minor'] });
+  assert.equal(valid.allowed, true);   // warnings never block
+  assert.equal(valid.pending, false);
+});
+
+test('buildEditorHandoff maps legacy template ids and defaults length to Auto', () => {
+  const p = buildEditorHandoff({
+    tailoredText: 'TAILORED', originalText: 'ORIGINAL', jobDescription: 'JD',
+    templateId: 'two-col-tech', length: 'nonsense',
+  });
+  assert.equal(p.out, 'TAILORED');
+  assert.equal(p.resume, 'ORIGINAL');
+  assert.equal(p.jd, 'JD');
+  assert.notEqual(p.tpl, 'two-col-tech');                       // legacy id mapped…
+  assert.ok(RESUME_TEMPLATES.some((t) => t.id === p.tpl), '…to a registry id');
+  assert.equal(p.len, 'Auto');                                  // invalid length -> Auto
+  // when only tailored text exists it becomes the editor source too
+  assert.equal(buildEditorHandoff({ tailoredText: 'X' }).resume, 'X');
+  assert.equal(buildEditorHandoff({ tailoredText: 'X', length: 'Single page' }).len, 'Single page');
+});
+
+/* ----------------- backend deterministic quality checks ----------------- */
+
+const BAD_RESUME = `John Doe
+john@example.com | 9999999999
+
+Experience
+Software Developer, Acme Corp
+• Responsible for maintaining the data pipeline
+• Worked on various ETL jobs
+• Helped with deployments and releases
+• Involved in team meetings and planning
+`;
+
+const GOOD_RESUME = `Jane Smith
+jane@example.com | 8888888888 | linkedin.com/in/janesmith | github.com/janesmith | Pune
+
+Summary
+Cloud Data Engineer with 4 years of experience designing and operating AWS data platforms for banking and financial services. Strong background in distributed batch and streaming processing with Spark and Kafka, lakehouse architecture with Iceberg, warehouse modelling on Snowflake, and infrastructure automation with Terraform. Known for owning pipelines end to end, from ingestion contracts and orchestration through cost optimization, observability and on-call operations.
+
+Skills
+AWS, Spark, PySpark, Python, SQL, Airflow, Snowflake, Iceberg, Kafka, Docker, Terraform, Glue, EMR, S3, Lambda, Redshift, dbt, Git, Linux
+
+Experience
+Data Engineer, FinBank (2021–present)
+• Migrated a 12 TB on-premise Hadoop warehouse to AWS EMR and S3, reducing nightly batch runtime by 40% and retiring 6 legacy clusters
+• Built PySpark pipelines processing 5 million transaction records daily with a 99.9% SLA, with idempotent reruns and automated data quality gates
+• Automated environment provisioning with Terraform modules and CI pipelines, cutting setup time for new data products by 60%
+• Optimized Snowflake warehouses and clustering keys, saving $18,000 per year in compute while improving p95 query latency by 35%
+• Designed Airflow DAG standards adopted by 4 teams, reducing failed runs by 30% through retries, SLAs and alerting conventions
+• Mentored 3 junior engineers on Spark performance tuning and code review practices
+
+Associate Data Engineer, RetailCo (2020–2021)
+• Developed incremental ingestion jobs in Python and SQL for 20+ source systems, replacing fragile full reloads
+• Reduced warehouse storage costs by 25% by introducing partitioning, lifecycle policies and columnar formats
+• Implemented dbt models and tests covering 150+ tables, improving data trust and cutting reconciliation effort by half
+• Established CloudWatch and Grafana dashboards for pipeline health, bringing mean time to detection for data incidents down from hours to under 15 minutes
+• Partnered with risk and compliance teams to implement column-level masking and audit logging across regulated datasets
+
+Projects
+• Designed a Kafka streaming pipeline handling 50,000 events per second with exactly-once semantics into an Iceberg lakehouse
+• Built an open-source Airflow operator for Snowflake cost reporting used by 200+ downloads per month
+
+Education
+B.Tech Computer Science, Pune University
+
+Certifications
+AWS Solutions Architect Associate
+Snowflake SnowPro Core
+`;
+
+test('scoreResume returns 0–100 score/ats plus a deterministic qualityChecks array', () => {
+  const r = scoreResume({ resumeText: GOOD_RESUME, targetRole: 'Data Engineer' });
+  assert.ok(r.score >= 0 && r.score <= 100);
+  assert.ok(r.ats >= 0 && r.ats <= 100);
+  assert.ok(Array.isArray(r.qualityChecks));
+  for (const c of r.qualityChecks) {
+    assert.equal(typeof c.type, 'string');
+    assert.ok(['high', 'medium', 'info'].includes(c.severity), `bad severity ${c.severity}`);
+    assert.equal(typeof c.detail, 'string');
+  }
+  assert.equal(SCORING_VERSION, 'resume-score-v3'); // cache invalidation for the new checks
+  // determinism: identical input -> identical checks
+  const r2 = scoreResume({ resumeText: GOOD_RESUME, targetRole: 'Data Engineer' });
+  assert.deepEqual(r.qualityChecks, r2.qualityChecks);
+});
+
+test('qualityChecks flags weak bullets and missing metrics on a bad sample', () => {
+  const r = scoreResume({ resumeText: BAD_RESUME, targetRole: 'Data Engineer' });
+  const types = r.qualityChecks.map((c) => c.type);
+  assert.ok(types.includes('weak_bullets'), 'weak openers must be flagged');
+  const weak = r.qualityChecks.find((c) => c.type === 'weak_bullets');
+  assert.equal(weak.severity, 'high'); // 3+ weak bullets
+  assert.ok(/responsible for/.test(weak.detail), 'detail cites an example bullet');
+  assert.ok(types.includes('no_metrics') || types.includes('few_metrics'), 'metric absence must be flagged');
+  assert.ok(types.includes('missing_section'), 'missing skills/education must be flagged');
+});
+
+test('qualityChecks stays clean of bullet/metric flags on a strong resume', () => {
+  const r = scoreResume({ resumeText: GOOD_RESUME, targetRole: 'Data Engineer' });
+  const types = r.qualityChecks.map((c) => c.type);
+  assert.ok(!types.includes('weak_bullets'), 'no weak openers in the good sample');
+  assert.ok(!types.includes('no_metrics'), 'good sample is fully quantified');
+  assert.ok(!types.includes('keyword_stuffing'), 'evidenced skills are not stuffing');
+  assert.ok(!types.includes('length_risk'));
+  // only info-level findings (if any) remain
+  assert.ok(r.qualityChecks.every((c) => c.severity === 'info'),
+    `unexpected non-info findings: ${JSON.stringify(r.qualityChecks)}`);
 });

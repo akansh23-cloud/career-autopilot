@@ -6,7 +6,7 @@ import {
 import { Modal, Badge, Button } from './ui/kit.jsx';
 import { getTemplate, TEMPLATES } from '../lib/resumeTemplates.js';
 import {
-  composePagedDocumentHTML, renderAndValidate,
+  composePagedDocumentHTML, renderAndValidate, canExportLayout,
   exportResumePDF, exportResumeSnapshotPDF, exportResumeDOCX, PAGE_SIZES,
 } from '../lib/resumeRenderer.js';
 
@@ -250,14 +250,17 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse, c
   const [exportErr, setExportErr] = useState('');
 
   useEffect(() => { if (open) { setReport(null); setExportErr(''); setMode('auto'); } }, [open, templateId]);
+  // a new size or page mode re-renders + re-validates — clear the stale report
+  useEffect(() => { setReport(null); }, [size, mode]);
 
+  const gate = canExportLayout(report);
   const hasErrors = !!report && !report.valid;
   const sections = (tpl.sections || []).filter((s) => s !== 'Header');
 
   const guardedExport = async (kind) => {
     setExportErr('');
-    if (hasErrors) {
-      setExportErr('Export blocked — fix the layout errors above (switch to multi-page or reduce content). Content is never silently cropped.');
+    if (!gate.allowed) {
+      setExportErr(gate.reason);
       return;
     }
     if (report && report.warnings.length > 0 && kind !== 'docx') {
@@ -334,13 +337,14 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse, c
           <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
             <Button onClick={() => { onUse?.(tpl.id); onClose?.(); }}><Check size={14} /> Use this template</Button>
             <div className="flex gap-2">
-              <Button variant="soft" className="flex-1" disabled={busy === 'pdf' || hasErrors} onClick={() => guardedExport('pdf')} title={hasErrors ? 'Fix layout errors first' : 'Print-quality PDF with selectable text'}>
-                <Download size={13} /> {busy === 'pdf' ? 'Opening…' : 'PDF'}
+              <Button variant="soft" className="flex-1" disabled={busy === 'pdf' || !gate.allowed} onClick={() => guardedExport('pdf')} title={!gate.allowed ? gate.reason : 'Print-quality PDF with selectable text'}>
+                <Download size={13} /> {busy === 'pdf' ? 'Opening…' : gate.pending ? 'Validating…' : 'PDF'}
               </Button>
-              <Button variant="soft" className="flex-1" disabled={busy === 'docx' || hasErrors} onClick={() => guardedExport('docx')}>
-                <FileType2 size={13} /> DOCX
+              <Button variant="soft" className="flex-1" disabled={busy === 'docx' || !gate.allowed} onClick={() => guardedExport('docx')} title={!gate.allowed ? gate.reason : ''}>
+                <FileType2 size={13} /> {gate.pending ? 'Validating…' : 'DOCX'}
               </Button>
             </div>
+            {gate.pending && <p className="text-[10px] text-slate-500">Running layout validation — exports unlock when the check completes.</p>}
             {hasErrors && <p className="text-[10px] text-amber-glow">Exports are blocked while the layout has errors — content is never silently cropped.</p>}
           </div>
         </div>

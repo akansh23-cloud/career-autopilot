@@ -9,10 +9,13 @@ import { saveStudioSeed } from '../lib/projectStore.js';
 import { saveJobToTracker, getTrackedCount, getTrackerBoard, findCard, trackerJobIdentity } from '../lib/trackerStore.js';
 import { inferType } from '../lib/projectGen.js';
 import { canUse, useMeter, canTrack, promptUpgrade } from '../lib/plan.js';
+import { openInEditorHandoff } from '../lib/resumeEditorHandoff.js';
+import {
+  WORK_MODE_OPTIONS, EXPERIENCE_OPTIONS, JOB_TYPE_OPTIONS,
+  migrateLegacyWorkMode, migrateLegacyExperience, migrateLegacyJobType,
+} from '../lib/jobFilterOptions.js';
 
 const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d'], ['Latest', 'latest']];
-const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
-const EDITOR_KEY = 'careerAutopilot.editor.lastTailor.v1';
 const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
 const ROLE_OPTIONS = Object.values(ROLE_GROUPS).flat();
 
@@ -118,7 +121,14 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
   const openEditor = () => {
     if (!job || !kit) return;
     saveSelectedJob(job);
-    safeWrite(EDITOR_KEY, { resume: kit.tailoredResume || resume.text || '', jd: jobText(job), tpl: kit.template || template, len: kit.length || length, out: kit.tailoredResume || '', kit, updatedAt: new Date().toISOString() });
+    openInEditorHandoff({
+      tailoredText: kit.tailoredResume || resume.text || '',
+      originalText: resume.text || '',
+      jobDescription: jobText(job),
+      templateId: kit.template || template || '',
+      length: kit.length || length || 'Auto',
+      extra: { kit },
+    });
     onClose?.(); go?.('editor');
   };
   const base = `${slug(job?.company)}-${slug(job?.title)}`;
@@ -261,8 +271,14 @@ export default function JobsView({ go }) {
   const initialRole = stored.role || getResumeSearchRole();
   const [role, setRole] = useState(initialRole || '');
   const [loc, setLoc] = useState(stored.location || '');
-  const [mode, setMode] = useState(stored.mode || 'Any');
+  // Canonical filter values. Stored legacy values ('Any'/'Remote'/
+  // 'On-site/Hybrid') are migrated on load so old localStorage keeps working.
+  const [mode, setMode] = useState(migrateLegacyWorkMode(stored.mode));
   const [fresh, setFresh] = useState(stored.freshness || '7d');
+  const [experience, setExperience] = useState(migrateLegacyExperience(stored.experience));
+  const [jobType, setJobType] = useState(migrateLegacyJobType(stored.jobType));
+  // "Verified links only" defaults ON — the page promises verified jobs.
+  const [verifiedOnly, setVerifiedOnly] = useState(stored.verifiedOnly !== false);
   const [state, setState] = useState({ status: stored.status || 'idle', jobs: stored.jobs || [], err: null });
   const [saved, setSaved] = useState(stored.saved || {});
   const [resumeHint, setResumeHint] = useState(Boolean(storedResume.text));
@@ -289,7 +305,8 @@ export default function JobsView({ go }) {
     return res;
   };
 
-  const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, saved, ...patch });
+  const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, experience, jobType, verifiedOnly, saved, ...patch });
+
   const enrichedJobs = useMemo(() => {
     const resume = getStoredResume();
     const list = (state.jobs || []).map((j) => enrichJob(j, resume));
@@ -305,10 +322,37 @@ export default function JobsView({ go }) {
     const nextLoc = override.location ?? loc;
     const nextMode = override.mode ?? mode;
     const nextFresh = override.freshness ?? fresh;
+    const nextExperience = override.experience ?? experience;
+    const nextJobType = override.jobType ?? jobType;
+    const nextVerified = override.verifiedOnly ?? verifiedOnly;
+    const snapshot = { role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, experience: nextExperience, jobType: nextJobType, verifiedOnly: nextVerified };
     setRole(searchRole); setState({ status: 'loading', jobs: [], err: null });
-    persist({ status: 'loading', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh });
-    try { const d = await Jobs.search({ role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, verify: '0', limit: '18' }); const jobs = d.jobs || []; setState({ status: 'done', jobs, err: null }); saveStoredJobResults({ status: 'done', jobs, role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, saved }); }
-    catch (err) { setState({ status: 'error', jobs: [], err: err.message }); saveStoredJobResults({ status: 'error', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, saved, err: err.message }); }
+    saveStoredJobResults({ status: 'loading', jobs: [], saved, ...snapshot });
+    try {
+      // verify follows the "Verified links only" toggle — the page header
+      // promises verified jobs, so '1' is the default; '0' is the explicit
+      // opt-in "Faster search" path and the results are labelled accordingly.
+      const d = await Jobs.search({
+        role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh,
+        experience: nextExperience, jobType: nextJobType,
+        verify: nextVerified ? '1' : '0', limit: '18',
+      });
+      const jobs = d.jobs || [];
+      setState({ status: 'done', jobs, err: null });
+      saveStoredJobResults({ status: 'done', jobs, saved, ...snapshot });
+    } catch (err) {
+      setState({ status: 'error', jobs: [], err: err.message });
+      saveStoredJobResults({ status: 'error', jobs: [], saved, err: err.message, ...snapshot });
+    }
+  };
+
+  // Filter clicks must actually change the results, not just the button
+  // styling — update state AND re-run the search with the new value (the
+  // override carries the value because setState hasn't applied yet).
+  const applyFilter = (setter, key, value) => {
+    setter(value);
+    if (role.trim()) run(null, { [key]: value });
+    else persist({ [key]: value });
   };
 
   useEffect(() => { const queued = consumeQueuedResumeJobSearch(); if (queued?.role) { setResumeHint(true); run(null, { role: queued.role }); } }, []);
@@ -368,12 +412,12 @@ export default function JobsView({ go }) {
   return <>
     <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />
     {resumeHint && <div className="mb-4 rounded-2xl border border-aurora-mint/20 bg-aurora-mint/10 px-4 py-3 text-sm text-slate-200">Resume and analysis are saved. Job results stay here when you move to another section. <span className="ml-1 font-medium text-white">Current role: {role || 'select a role'}</span></div>}
-    <form onSubmit={run} className="gradient-border mb-6 p-4"><div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={role} onChange={(e)=>setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer" className="pl-10"/></div><div className="relative md:w-56"><select value={ROLE_OPTIONS.includes(role) ? role : ''} onChange={(e)=>e.target.value && setRole(e.target.value)} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-ink-950 pl-3.5 pr-9 text-sm text-slate-100 outline-none"><option value="">Pick a role…</option>{Object.entries(ROLE_GROUPS).map(([grp, roles]) => <optgroup key={grp} label={grp}>{roles.map((r)=><option key={r} value={r}>{r}</option>)}</optgroup>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/></div><div className="relative md:w-52"><MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={loc} onChange={(e)=>setLoc(e.target.value)} placeholder="Country / city" className="pl-10"/></div><Button type="submit" disabled={state.status === 'loading' || !role.trim()}><Search size={16}/> Search</Button></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs text-slate-500"><Filter size={13}/> Filters:</span>{MODES.map((m)=><button key={m} onClick={()=>setMode(m)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${mode===m?'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30':'text-slate-400 hover:bg-white/5'}`}>{m}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/>{FRESH.map(([l,v])=><button key={v} onClick={()=>setFresh(v)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${fresh===v?'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30':'text-slate-400 hover:bg-white/5'}`}>{l}</button>)}</div></form>
+    <form onSubmit={run} className="gradient-border mb-6 p-4"><div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={role} onChange={(e)=>setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer" className="pl-10"/></div><div className="relative md:w-56"><select value={ROLE_OPTIONS.includes(role) ? role : ''} onChange={(e)=>e.target.value && setRole(e.target.value)} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-ink-950 pl-3.5 pr-9 text-sm text-slate-100 outline-none"><option value="">Pick a role…</option>{Object.entries(ROLE_GROUPS).map(([grp, roles]) => <optgroup key={grp} label={grp}>{roles.map((r)=><option key={r} value={r}>{r}</option>)}</optgroup>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/></div><div className="relative md:w-52"><MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={loc} onChange={(e)=>setLoc(e.target.value)} placeholder="Country / city" className="pl-10"/></div><Button type="submit" disabled={state.status === 'loading' || !role.trim()}><Search size={16}/> Search</Button></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs text-slate-500"><Filter size={13}/> Filters:</span>{WORK_MODE_OPTIONS.map((m)=><button key={m.value} onClick={()=>applyFilter(setMode, 'mode', m.value)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${mode===m.value?'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30':'text-slate-400 hover:bg-white/5'}`}>{m.label}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/>{FRESH.map(([l,v])=><button key={v} onClick={()=>applyFilter(setFresh, 'freshness', v)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${fresh===v?'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30':'text-slate-400 hover:bg-white/5'}`}>{l}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/><select value={experience} onChange={(e)=>applyFilter(setExperience, 'experience', e.target.value)} aria-label="Experience level" className="cursor-pointer rounded-lg border border-white/10 bg-ink-950 px-2.5 py-1 text-xs text-slate-300 outline-none">{EXPERIENCE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><select value={jobType} onChange={(e)=>applyFilter(setJobType, 'jobType', e.target.value)} aria-label="Job type" className="cursor-pointer rounded-lg border border-white/10 bg-ink-950 px-2.5 py-1 text-xs text-slate-300 outline-none">{JOB_TYPE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><span className="mx-1 h-4 w-px bg-white/10"/><button type="button" onClick={()=>applyFilter(setVerifiedOnly, 'verifiedOnly', !verifiedOnly)} title={verifiedOnly ? 'Every link is checked before it is shown (slower).' : 'Faster search — links are NOT verified before display.'} className={`rounded-lg px-3 py-1 text-xs transition ${verifiedOnly?'bg-aurora-mint/15 text-white ring-1 ring-aurora-mint/30':'text-slate-400 ring-1 ring-white/10 hover:bg-white/5'}`}>{verifiedOnly ? '✓ Verified links only' : 'Faster search (unverified)'}</button></div></form>
     {state.status === 'loading' && <div className="space-y-4">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-56 w-full rounded-2xl"/>)}</div>}
     {state.status === 'error' && <EmptyState icon={Briefcase} title="Search failed" hint={state.err} action={<Button size="sm" onClick={run}>Retry</Button>} />}
     {state.status === 'idle' && <EmptyState icon={Search} title="Search for your next role" hint="Analyze your resume first for best matching, or manually search a role here." />}
     {state.status === 'done' && state.jobs.length === 0 && <EmptyState icon={Briefcase} title="No jobs found" hint="Try a broader role, clear the location, or widen the time window." />}
-    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {fresh === 'latest' ? 'jobs' : 'jobs within window'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
+    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {verifiedOnly ? 'verified' : 'unverified'} {fresh === 'latest' ? 'jobs' : 'jobs within window'}{verifiedOnly ? '' : ' — faster search, links not checked'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
     <TailorModal open={!!tailorJob} job={tailorJob} go={go} onClose={()=>setTailorJob(null)} />
     <Modal open={!!buildConfirm} onClose={()=>setBuildConfirm(null)} title="Build a project for these gaps" width="max-w-xl">
       {buildConfirm && <div className="space-y-4">
