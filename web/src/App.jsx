@@ -52,6 +52,7 @@ import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
 import ProjectWorkspace from './views/ProjectWorkspace.jsx';
 import CareerIntelligenceView from './views/CareerIntelligence.jsx';
+import ResumeTemplateLab from './views/ResumeTemplateLab.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -73,6 +74,7 @@ const VIEWS = {
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
+  resumetemplatelab: ResumeTemplateLab,
   skillsxp: SkillsXp,
   marketplace: MarketplaceView,
   inspirations: InspirationsView,
@@ -119,6 +121,11 @@ function isAdminUsersHash() {
   return /^#\/admin\/users\b/.test(window.location.hash || '');
 }
 
+function isTemplateLabHash() {
+  if (typeof window === 'undefined') return false;
+  return /^#\/resume-template-lab\b/.test(window.location.hash || '');
+}
+
 export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
@@ -141,7 +148,10 @@ export default function App() {
   // Honor a #/admin/users deep link: route to the admin view on load + on change.
   // (The view enforces admin access; this only selects which workspace to show.)
   useEffect(() => {
-    const f = () => { if (isAdminUsersHash()) setActive('adminusers'); };
+    const f = () => {
+      if (isAdminUsersHash()) setActive('adminusers');
+      else if (isTemplateLabHash()) setActive('resumetemplatelab');
+    };
     f();
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
