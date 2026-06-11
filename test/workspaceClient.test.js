@@ -73,3 +73,10 @@ test('statusLabel renders honest human labels', () => {
   assert.equal(statusLabel('verified'), 'Verified');
   assert.equal(statusLabel(''), 'Planned');
 });
+
+test('WorkspaceApi.patch forwards architecturePatch to backend payload', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../web/src/lib/workspaceApi.js', import.meta.url), 'utf8');
+  assert.match(src, /\{ workspacePlan, patch, architecturePatch, currentTab, selectedItem \}/);
+  assert.match(src, /\{ workspacePlan, patch, architecturePatch, currentTab, selectedItem \}/);
+});

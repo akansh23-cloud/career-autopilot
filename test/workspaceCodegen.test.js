@@ -108,3 +108,35 @@ test('starter pack generation does not mutate plan progress or task statuses', (
   const after = JSON.stringify({ tasks: plan.tasks.map((t) => t.status), progress: plan.progress });
   assert.equal(before, after, 'building the pack must not change statuses or progress');
 });
+
+test('starter auth route implements logout when API plan marks it starter', () => {
+  const plan = makePlan();
+  const out = generateForFile(plan, 'backend/routes/auth.routes.js');
+  assert.equal(out.generatedFiles.length, 1);
+  const content = out.generatedFiles[0].content;
+  assert.match(content, /router\.post\('\/api\/auth\/logout'/);
+  const apiDoc = generateForFile(plan, 'docs/api-plan.md').generatedFiles[0].content;
+  assert.match(apiDoc, /POST \| `\/api\/auth\/logout` .*\| starter \|/);
+});
+
+test('starter upload and score routes have matching service methods', () => {
+  const project = normalizeCustomProject({
+    title: 'AI Resume Screening Platform',
+    problemStatement: 'Screen resumes and score them against jobs.',
+    category: 'AI',
+    techStack: ['React', 'Node.js', 'Express', 'MongoDB'],
+    flags: { auth: true, upload: true, ai: true },
+  });
+  const plan = buildWorkspacePlan({ project, architecture: null, userId: 'u1' });
+  const routes = generateForFile(plan, 'backend/routes/resumes.routes.js').generatedFiles[0].content;
+  const controller = generateForFile(plan, 'backend/controllers/resumeController.js').generatedFiles[0].content;
+  const service = generateForFile(plan, 'backend/services/resumeService.js').generatedFiles[0].content;
+  assert.match(routes, /router\.post\('\/api\/resumes\/upload', controller\.upload\)/);
+  assert.match(routes, /router\.post\('\/api\/resumes\/:id\/score', controller\.score\)/);
+  assert.match(controller, /service\.uploadResume\(req\)/);
+  assert.match(controller, /service\.scoreResume\(req\.params\.id, req\)/);
+  assert.match(service, /export async function uploadResume\(/);
+  assert.match(service, /export async function scoreResume\(/);
+  assert.match(service, /storeUpload\(req\.file\)/);
+  assert.match(service, /runScore\(item\)/);
+});

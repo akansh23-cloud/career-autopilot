@@ -145,6 +145,11 @@ router.get('/api/auth/me', (req, res) => {
   res.status(401).json({ message: 'Not authenticated — implement session/JWT first.' });
 });
 
+router.post('/api/auth/logout', (req, res) => {
+  // TODO: destroy the server session or invalidate the JWT.
+  res.json({ ok: true, note: 'STARTER placeholder — wire real session/JWT invalidation.' });
+});
+
 export default router;
 `,
   },
@@ -266,7 +271,28 @@ export async function get${E(ctx)}(id) { return ${E(ctx)}.findById(id).lean(); }
 export async function update${E(ctx)}(id, patch = {}) {
   return ${E(ctx)}.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean();
 }
-export async function delete${E(ctx)}(id) { return ${E(ctx)}.findByIdAndDelete(id); }
+${(ctx.features || {}).upload ? `export async function upload${E(ctx)}(req = {}) {
+  const fileMeta = await storeUpload(req.file);
+  const item = await ${E(ctx)}.create({
+    title: fileMeta.fileName || 'Uploaded ${e(ctx)}',
+    description: 'Uploaded via starter placeholder. TODO: parse and store real metadata.',
+    fileName: fileMeta.fileName,
+    fileUrl: fileMeta.fileUrl,
+    fileSize: fileMeta.fileSize,
+    status: 'uploaded',
+  });
+  return { item, fileMeta, note: 'STARTER placeholder — add multipart middleware such as multer in routes before using real uploads.' };
+}
+` : ''}${(ctx.features || {}).ai ? `export async function score${E(ctx)}(id) {
+  const item = await ${E(ctx)}.findById(id).lean();
+  if (!item) throw new Error('${E(ctx)} not found');
+  const result = runScore(item);
+  await ${E(ctx)}.findByIdAndUpdate(id, {
+    $set: { score: result.score, scoreBreakdown: result.breakdown, status: 'scored' },
+  });
+  return { ...result, note: 'STARTER deterministic score — replace rules deliberately.' };
+}
+` : ''}export async function delete${E(ctx)}(id) { return ${E(ctx)}.findByIdAndDelete(id); }
 `;
     },
   },

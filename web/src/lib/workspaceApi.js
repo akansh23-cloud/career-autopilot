@@ -11,8 +11,8 @@ export const WorkspaceApi = {
 
   get: (projectId) => api.get(`/api/workspace/${enc(projectId)}`),
 
-  patch: (projectId, { workspacePlan, patch, currentTab, selectedItem } = {}) =>
-    api.patch(`/api/workspace/${enc(projectId)}`, { workspacePlan, patch, currentTab, selectedItem }),
+  patch: (projectId, { workspacePlan, patch, architecturePatch, currentTab, selectedItem } = {}) =>
+    api.patch(`/api/workspace/${enc(projectId)}`, { workspacePlan, patch, architecturePatch, currentTab, selectedItem }),
 
   patchTask: (projectId, taskId, { workspacePlan, status, blockerReason, notes } = {}) =>
     api.patch(`/api/workspace/${enc(projectId)}/tasks/${enc(taskId)}`, { workspacePlan, status, blockerReason, notes }),
