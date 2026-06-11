@@ -551,6 +551,46 @@ ${forPrint ? '' : `@media screen{.rp-page{box-shadow:0 6px 32px rgba(8,12,24,.28
 
 /* ----------------------------------------------------------- validation --- */
 
+/* ------------------------------------------------ ATS text-export contract --
+   The PRIMARY Resume OS PDF export is the browser-print pipeline below
+   (exportResumePDF): it composes a real HTML document from actual text nodes,
+   so the saved PDF has selectable/extractable text — what ATS parsers need.
+   The snapshot/canvas path (exportResumeSnapshotPDF) produces an IMAGE-only
+   PDF and must never be the default; any UI exposing it must label it
+   "Image PDF Preview — not ATS-safe". The helpers here let tests verify the
+   contract without a browser. */
+export const PRIMARY_PDF_EXPORT_KIND = 'print-text';
+export const SNAPSHOT_PDF_LABEL = 'Image PDF Preview — not ATS-safe';
+
+/** Pure: extract the visible text content from a composed HTML document. */
+export function composedHtmlTextContent(html = '') {
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Pure: verify a composed print document is text-extractable.
+ * Returns { ok, missing, textLength, usesCanvas } — ok is true only when the
+ * document contains real text nodes (no canvas/image-only body) and every
+ * required string appears in the extracted text.
+ */
+export function printHtmlHasRealText(html = '', required = []) {
+  const text = composedHtmlTextContent(html);
+  const lower = text.toLowerCase();
+  const missing = (required || []).filter((s) => !lower.includes(String(s).toLowerCase()));
+  const usesCanvas = /<canvas\b/i.test(html) || /data:image\/(png|jpe?g)/i.test(html);
+  return { ok: text.length >= 40 && missing.length === 0 && !usesCanvas, missing, textLength: text.length, usesCanvas };
+}
+
+
 /* Paginate + mount hidden + run the layout validator. One call used by the
    preview modal, the editor and the Template Lab so export gating is uniform. */
 /* Style for offscreen hosts that the layout validator inspects. MUST NOT use
