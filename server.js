@@ -32,6 +32,7 @@ import { scorePatentIdea } from './server/utils/patentScoringEngine.js';
 import { generateIdeasDeterministic, normalizeAIIdea, buildGenerationPrompt } from './server/utils/ideaGenerationEngine.js';
 import { strengthenIdea } from './server/utils/ideaStrengtheningEngine.js';
 import { priorArtPlan } from './server/utils/priorArtEngine.js';
+import { searchLivePriorArt } from './server/services/problemIntelligence/livePriorArtService.js';
 import { generateDisclosure, convertToProject, PATENT_OS_DISCLAIMER } from './server/utils/disclosureEngine.js';
 import { getUserPatentMemory, buildGenerationContext, suggestNextActions } from './server/utils/patentMemoryEngine.js';
 import { ensureProjectPackage, normalizeProjectPackage, toPatentOsPayload, extractTechnicalMechanism, extractEvidenceConfidence } from './server/services/synthesisIntelligence/integrationBridge.js';
@@ -58,6 +59,11 @@ import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRout
 import { registerArchitectureRoutes } from './server/routes/architectureRoutes.js';
 import { registerWorkspaceRoutes } from './server/routes/workspaceRoutes.js';
 import { registerCareerIntelligenceRoutes } from './server/routes/careerIntelligenceRoutes.js';
+import { registerProjectStoreRoutes } from './server/routes/projectStoreRoutes.js';
+import { registerOpsRoutes } from './server/routes/opsRoutes.js';
+import { registerResumeOsRoutes } from './server/routes/resumeOsRoutes.js';
+import { requestIdMiddleware, createErrorHandler } from './server/utils/observability.js';
+import { createQuotaMiddleware } from './server/utils/quotaMiddleware.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
@@ -72,6 +78,10 @@ const app = express();
 
 app.set('trust proxy', 1); // honor X-Forwarded-Proto (Vercel/Render/etc.) so Secure cookies work
 app.disable('x-powered-by'); // do not advertise Express
+
+/* Observability: every request gets a stable id, echoed as X-Request-Id and
+   carried into structured logs + the persisted error_logs entries. */
+app.use(requestIdMiddleware());
 
 /* Cookie policy is centralised in config.js. Cross-site cookies
    (SameSite=None; Secure) are needed ONLY when the SPA is served from a
@@ -140,6 +150,18 @@ app.use(csrfProtection);
 
 /* Gentle global rate ceiling (skipped in the test env). */
 app.use(globalLimiter);
+
+/* Per-plan DAILY quotas on generation/AI/sync/export route families.
+   Distinct from the burst limiters above; counters live in Mongo when the
+   DB is on (in-memory per-instance fallback otherwise). Skipped under
+   NODE_ENV=test unless QUOTA_ENFORCE=1. currentUser/planForReq are hoisted
+   function declarations, so referencing them here is safe. */
+app.use(createQuotaMiddleware({
+  currentUser: (req) => currentUser(req),
+  planFor: (req) => planForReq(req),
+  db,
+  logger,
+}));
 
 /* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls).
    Prefer the built React/Vite app in dist/. Fall back to the legacy single-file UI if dist
@@ -2557,6 +2579,24 @@ app.post('/api/patents/ideas/:id/prior-art-plan', requireAuth, generationLimiter
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
   const projectPackage = await patentSynthesisPackage(idea);
   const plan = priorArtPlan(idea, { projectPackage });
+  /* Live prior-art (Phase 3, optional + degradable): when the public
+     Google Patents / Crossref endpoints answer in time, attach the top 5
+     as candidate prior art to review — titles/links only, explicitly
+     labeled unverified. Offline, rate-limited or NODE_ENV=test → the
+     service skips silently and the deterministic plan stands alone. */
+  try {
+    const live = await searchLivePriorArt(idea);
+    if (live.ok && live.candidates.length) {
+      plan.liveCandidates = {
+        label: 'Candidate prior art to review (unverified — fetched live; a human must read each document)',
+        query: live.query,
+        sources: live.sources,
+        items: live.candidates,
+      };
+    }
+  } catch (liveErr) {
+    logger.warn('Live prior-art search failed (plan unaffected)', { message: liveErr.message });
+  }
   await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { priorArtSearchPlan: plan, status: idea.status === 'raw_idea' || idea.status === 'shortlisted' ? 'prior_art_review' : idea.status } });
   res.json({ ok: true, plan, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
 });
@@ -2653,6 +2693,9 @@ registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter,
 registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerCareerIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerProjectStoreRoutes(app, { requireAuth, currentUser, db });
+registerOpsRoutes(app, { requireAuth, requireAdmin, currentUser, db, logger });
+registerResumeOsRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
@@ -5057,24 +5100,10 @@ app.get(/^\/(?!jobs|auth|apply|ai|api|health|contacts|opportunities|support|dash
    server-side; returns a safe, generic message to the client and
    NEVER leaks stack traces or secrets in production.
    ------------------------------------------------------------------ */
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  const status = err.status || err.statusCode || 500;
-  logger.error('Unhandled request error', {
-    method: req.method,
-    path: req.path,
-    status,
-    message: err.message,
-    stack: config.IS_PROD ? undefined : err.stack,
-  });
-  if (res.headersSent) return;
-  res.status(status >= 400 && status < 600 ? status : 500).json({
-    error: 'server_error',
-    message: config.IS_PROD
-      ? 'Something went wrong on our end. Please try again.'
-      : err.message || 'Internal server error',
-  });
-});
+/* Central error handler (server/utils/observability.js): same response
+   contract as before, plus the request id and a best-effort persist into
+   the capped error_logs collection for the admin error feed. */
+app.use(createErrorHandler({ logger, db, isProd: config.IS_PROD }));
 
 const port = process.env.PORT || 3000;
 

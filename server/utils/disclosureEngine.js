@@ -5,7 +5,7 @@
    draft from a saved idea. The converter turns an idea into a buildable
    POC project plan (architecture, APIs, schema, demo, resume bullets).
    ============================================================ */
-const DISCLAIMER = 'Patent OS provides invention research and drafting assistance only. It is not legal advice. Patentability and filing decisions should be reviewed by a qualified patent attorney.';
+const DISCLAIMER = 'Patent OS produces a patent-readiness estimate for faculty/IP-cell triage — invention research and drafting assistance only. It is not legal advice and never an evaluation verdict. Patentability and filing decisions require a faculty mentor / institution IP cell and a qualified patent attorney.';
 const lc = (s) => String(s || '').toLowerCase();
 const fallback = (v, d) => (String(v || '').trim() ? v : d);
 

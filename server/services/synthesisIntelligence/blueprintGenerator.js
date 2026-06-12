@@ -9,6 +9,7 @@
    ============================================================ */
 import { sanitizeText, lc } from '../problemIntelligence/util.js';
 import { getProfile } from './domainProfiles.js';
+import { applyBlueprintVariation } from './variationEngine.js';
 
 const arr = (v) => (Array.isArray(v) ? v.filter(Boolean) : []);
 
@@ -42,7 +43,7 @@ function resolveDataSources(profile, evidenceCitations = []) {
 /**
  * generateProjectBlueprint — the structured blueprint the spec requires.
  */
-export function generateProjectBlueprint({ classification, brief, evidenceCitations = [], query = '' }) {
+export function generateProjectBlueprint({ classification, brief, evidenceCitations = [], query = '', seedContext = null }) {
   const profile = getProfile(classification.domain);
   const { mvpScope, advancedScope } = scopeForDifficulty(profile, classification.difficulty);
   const mechanismName = brief?._meta?.mechanismName || profile.mechanisms[0].name;
@@ -56,7 +57,7 @@ export function generateProjectBlueprint({ classification, brief, evidenceCitati
     `Documented walkthrough connecting the original goal ("${sanitizeText(query, 80) || classification.subdomain}") to the shipped ${mechanismName}`,
   ].map((x) => sanitizeText(x, 220)).slice(0, 7);
 
-  return {
+  const blueprint = {
     architecture: profile.architecture.map((a) => sanitizeText(a, 220)),
     techStack: profile.techStack.map((t) => sanitizeText(t, 120)),
     mvpScope,
@@ -69,6 +70,17 @@ export function generateProjectBlueprint({ classification, brief, evidenceCitati
     proofChecklist,
     _meta: { profileKey: profile.key, mechanismName, difficulty: classification.difficulty, projectType: classification.projectType },
   };
+
+  /* Phase 2 — output variety at scale (strictly opt-in): with a
+     seedContext (userId + projectId + title) the variation engine
+     deterministically selects among ≥3 concrete variants per section,
+     so a user's 2nd/3rd project in the same domain never reads
+     templated. No seedContext → the blueprint above is returned
+     untouched, byte-identical to the pre-Phase-2 output. */
+  if (seedContext && (seedContext.userId || seedContext.projectId || seedContext.title)) {
+    return applyBlueprintVariation({ blueprint, profile, mechanismName, seedContext });
+  }
+  return blueprint;
 }
 
 /* Structural signature of a blueprint — used by tests/validators to assert

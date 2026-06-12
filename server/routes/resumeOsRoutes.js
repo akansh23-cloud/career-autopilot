@@ -1,0 +1,76 @@
+/* ============================================================
+   Routes — Resume OS market-readiness  (/api/resume/ats-audit,
+   /api/resume/jd-match)
+   ------------------------------------------------------------
+   Phase 4 of the Market-Readiness Gap Sprint. Both endpoints are fully
+   deterministic engine calls — no AI, no required DB. jd-match enriches
+   its output with the user's server-verified skills when the DB is on,
+   so a missing-but-provable skill is flagged "add this — you can prove
+   it" (the proof-score moat tie-in).
+   ============================================================ */
+import { z } from 'zod';
+import { auditAtsCompatibility } from '../utils/resume/atsAuditEngine.js';
+import { matchResumeToJD, resolveVerifiedSkills } from '../utils/resume/jdMatchEngine.js';
+
+const atsAuditSchema = z.object({
+  text: z.string().max(60000).default(''),
+  structure: z.object({
+    usesTables: z.boolean().optional(),
+    usesColumns: z.boolean().optional(),
+    usesImages: z.boolean().optional(),
+    usesTextBoxes: z.boolean().optional(),
+    templateId: z.string().max(80).optional(),
+    atsSafeTemplate: z.boolean().optional(),
+  }).passthrough().optional().default({}),
+}).passthrough();
+
+const jdMatchSchema = z.object({
+  resumeText: z.string().max(60000).default(''),
+  jobDescription: z.string().min(40, 'Paste the job description text (at least a few lines).').max(60000),
+  targetRole: z.string().max(160).optional().default(''),
+  verifiedSkills: z.array(z.string().max(80)).max(200).optional().default([]),
+}).passthrough();
+
+export function registerResumeOsRoutes(app, deps = {}) {
+  const { requireAuth, currentUser, generationLimiter = (req, res, next) => next(), db = null } = deps;
+  if (!requireAuth || !currentUser) throw new Error('resumeOsRoutes: requireAuth + currentUser required');
+
+  const validate = (schema) => (req, res, next) => {
+    const r = schema.safeParse(req.body || {});
+    if (!r.success) {
+      return res.status(400).json({ ok: false, error: 'invalid_input', details: r.error.issues.slice(0, 5).map((i) => i.message) });
+    }
+    req.body = r.data;
+    next();
+  };
+
+  /* ============ POST /api/resume/ats-audit ============ */
+  app.post('/api/resume/ats-audit', requireAuth, validate(atsAuditSchema), (req, res) => {
+    try {
+      const { text, structure } = req.body;
+      const audit = auditAtsCompatibility({ text, structure });
+      res.json({ ok: true, audit });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: 'ats_audit_failed', message: err.message });
+    }
+  });
+
+  /* ============ POST /api/resume/jd-match ============ */
+  app.post('/api/resume/jd-match', requireAuth, generationLimiter, validate(jdMatchSchema), async (req, res) => {
+    try {
+      const { resumeText, jobDescription, targetRole, verifiedSkills } = req.body;
+      const u = currentUser(req) || {};
+      // Server-verified skills (verified project submissions only — pending
+      // never counts) merged with the client's verified list. Annotation
+      // only: verification never changes matched/weak/missing membership.
+      const serverVerified = await resolveVerifiedSkills({ db, userId: u.id, email: u.email });
+      const allVerified = Array.from(new Set([...serverVerified, ...verifiedSkills]));
+      const match = matchResumeToJD({ resumeText, jobDescription, targetRole, verifiedSkills: allVerified });
+      res.json({ ok: true, match, verifiedSource: { server: serverVerified.length, client: verifiedSkills.length }, db: db?.dbEnabled?.() || false });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: 'jd_match_failed', message: err.message });
+    }
+  });
+}
+
+export default { registerResumeOsRoutes };

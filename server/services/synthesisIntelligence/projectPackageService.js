@@ -38,11 +38,11 @@ function scrubIdea(idea = {}) {
   return out;
 }
 
-function assembleOnce({ classification, idea, evidence, evidenceStrength, skills, query }) {
+function assembleOnce({ classification, idea, evidence, evidenceStrength, skills, query, seedContext = null }) {
   const evidenceSummary = buildEvidenceSummary({ evidence, evidenceStrength, classification });
   const buildBrief = generateBuildBrief({ classification, idea, evidence: evidenceSummary, skills });
   const evidenceCitations = arr(evidence).slice(0, 3).map((e) => e.sourceName || e.platform || e.title).filter(Boolean);
-  const projectBlueprint = generateProjectBlueprint({ classification, brief: buildBrief, evidenceCitations, query });
+  const projectBlueprint = generateProjectBlueprint({ classification, brief: buildBrief, evidenceCitations, query, seedContext });
   const title = buildBrief._meta.title;
   const quality = computeQualityScores({ buildBrief, projectBlueprint, evidenceSummary, classification });
   const projectOsPayload = buildProjectOsPayload({ title, classification, buildBrief, projectBlueprint, quality });
@@ -96,6 +96,7 @@ export async function buildProjectPackage({
   cfg = null,
   memoryCandidates = [],
   includeMemory = true,
+  seedContext = null, // Phase 2: { userId, projectId, title } → deterministic per-project variation (opt-in)
 } = {}) {
   const classification = classifyIdeaContext({
     query: query || idea.title || '',
@@ -109,14 +110,14 @@ export async function buildProjectPackage({
   if (purpose === 'patent' || purpose === 'ip') classification.intent = 'patent_readiness';
 
   const cleanIdea = scrubIdea(idea);
-  let pkg = assembleOnce({ classification, idea: cleanIdea, evidence, evidenceStrength, skills, query });
+  let pkg = assembleOnce({ classification, idea: cleanIdea, evidence, evidenceStrength, skills, query, seedContext });
   let validation = validateProjectPackage(pkg);
 
   if (!validation.ok) {
     // Regenerate from the best available fallback generator, then
     // lower confidence and keep both rounds of warnings visible.
     const retryClassification = bestFallbackClassification(classification);
-    const retry = assembleOnce({ classification: retryClassification, idea: cleanIdea, evidence, evidenceStrength, skills, query });
+    const retry = assembleOnce({ classification: retryClassification, idea: cleanIdea, evidence, evidenceStrength, skills, query, seedContext });
     const retryValidation = validateProjectPackage(retry);
     if (retryValidation.issues.length < validation.issues.length) {
       pkg = retry;

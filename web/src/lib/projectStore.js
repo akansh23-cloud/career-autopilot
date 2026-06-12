@@ -10,7 +10,17 @@ function normalizeUserKey(user) {
   const raw = user?.email || user?.id || 'guest';
   return String(raw).trim().toLowerCase().replace(/[^a-z0-9@._-]+/g, '_') || 'guest';
 }
-export function setProjectStoreUser(user) { currentUserKey = normalizeUserKey(user); }
+export function setProjectStoreUser(user) {
+  currentUserKey = normalizeUserKey(user);
+  // Server-store background sync (Phase 1): hand the sync module direct
+  // read/write access to the local cache. No-ops when logged out.
+  initProjectSync({
+    user,
+    readProjects: () => getProjects(),
+    writeProjects: (list) => write(PROJECTS_KEY, Array.isArray(list) ? list : [], EV.projects),
+    scopeKey: (base) => scoped(base),
+  });
+}
 function scoped(base) { return `${base}:${currentUserKey}`; }
 
 const EV = {
@@ -27,6 +37,15 @@ async function patchServerState(patch) {
   } catch {}
 }
 export async function hydrateProjectsFromServer() {
+  // 1) New server-owned store: a full sync round-trip pushes local projects
+  //    (first-login migration happens implicitly) and pulls the merged set.
+  //    db_off / logged-out → syncNow() returns false and we fall through.
+  try {
+    const synced = await syncNow();
+    if (synced) return getProjects();
+  } catch { /* fall through to the legacy path */ }
+  // 2) Legacy user-state snapshot (unchanged fallback — keeps the app
+  //    byte-identical in behavior when the DB is off).
   try {
     const r = await fetch('/api/user/state', { credentials: 'include' });
     if (!r.ok) return getProjects();
@@ -97,12 +116,21 @@ export function saveProject(project) {
   if (idx >= 0) list[idx] = next; else list.unshift(next);
   write(PROJECTS_KEY, list, EV.projects);
   patchServerState({ projects: list });
+  queueProjectsPush(); // server-store background push (debounced, offline-safe)
   return next;
 }
 export function deleteProject(id) {
   const next = getProjects().filter((p) => p.id !== id);
   write(PROJECTS_KEY, next, EV.projects);
   patchServerState({ projects: next });
+  // Server store: explicit delete (soft-marked server-side so a stale sync
+  // can't resurrect it), then push the remaining set.
+  try {
+    fetch(`/api/projects/store/${encodeURIComponent(id)}`, {
+      method: 'DELETE', credentials: 'include', headers: csrfHeaders({}),
+    }).catch(() => {});
+  } catch { /* ignore — local delete already done */ }
+  queueProjectsPush();
 }
 export function getPublishedProjects() {
   return getProjects().filter((p) => p.published);
@@ -113,6 +141,7 @@ export function getPublishedProjects() {
    so every existing caller keeps working. */
 import { proofScore as _proofScore, proofBreakdown as _proofBreakdown } from './proofScore.js';
 import { csrfHeaders } from './csrf.js';
+import { initProjectSync, syncNow, queueProjectsPush } from './projectSync.js';
 export function computeProofScore(p = {}) { return _proofScore(p); }
 export function proofScoreBreakdown(p = {}) { return _proofBreakdown(p); }
 export function taskProgress(p = {}) {

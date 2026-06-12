@@ -450,3 +450,34 @@ export const GENERIC_MARKER_LINES = new Set([
 ]);
 
 export default { DOMAIN_PROFILES, GENERIC_PROFILE, PROFILE_KEYS, getProfile, GENERIC_MARKER_LINES };
+
+/* ============================================================
+   SECTION VARIANT POOLS  (Phase 2 — output variety at scale)
+   ------------------------------------------------------------
+   Consumed by variationEngine.applyBlueprintVariation. Each pool holds
+   ≥3 CONCRETE variants; a stable per-(user, project, title) seed picks
+   one per section, so a user's 2nd/3rd project in the same domain reads
+   differently while staying fully deterministic (same seed → same pick).
+   Mechanism-emphasis variants come from each profile's own mechanisms
+   array (every profile ships ≥3), so they stay domain-specific.
+   ============================================================ */
+export const PROFILE_SECTION_VARIANTS = {
+  /* Milestone phrasing templates: (index, milestoneText) → line. */
+  milestonePhrasings: [
+    (n, m) => `M${n}: ${m}`,
+    (n, m) => `Phase ${n} — ${m} (write the acceptance criteria before any code)`,
+    (n, m) => `Sprint ${n}: ${m} — close with a tagged commit and a one-paragraph changelog entry`,
+  ],
+  /* Architecture emphasis design rules, parameterized by mechanism name. */
+  architectureEmphasis: [
+    (mech) => `Design rule: keep the ${mech} a pure function behind one interface — it must be unit-testable with zero infrastructure running`,
+    (mech) => `Design rule: every write produced by the ${mech} is idempotent and audit-logged, so replays and retries can never corrupt state`,
+    (mech) => `Design rule: the ${mech} exposes an /explain view returning the exact inputs and rule path behind each output — no unexplainable numbers`,
+  ],
+  /* Extra proof-checklist items, parameterized by mechanism name. */
+  proofChecklistExtras: [
+    (mech) => `A failure-mode demo: feed the ${mech} malformed/adversarial input and record the guarded rejection path`,
+    (mech) => `A before/after benchmark table for the ${mech} (naive baseline vs final) committed to the repo README`,
+    (mech) => `A 5-minute recorded walkthrough taking a stranger through the ${mech} code path end to end`,
+  ],
+};

@@ -46,6 +46,10 @@ const userSchema = new mongoose.Schema(
     // working without any migration: a missing field simply reads as the default.
     adminNotes: { type: String, default: '' },        // internal admin-only notes
     featuredTalent: { type: Boolean, default: false }, // admin "featured talent" flag
+    // ---- DPDP basics (additive, safe defaults — no migration needed) ----
+    consentAt: { type: Date, default: null },          // when the account holder consented (set at signup)
+    deletedAt: { type: Date, default: null },          // soft-delete marker (account deletion requested)
+    deleteScheduledFor: { type: Date, default: null }, // deletedAt + 7-day grace; cascade runs after this
   },
   { timestamps: true } // createdAt + updatedAt
 );
@@ -527,6 +531,20 @@ const projectArchitectureSpecSchema = new mongoose.Schema(
 );
 projectArchitectureSpecSchema.index({ userId: 1, projectId: 1, version: -1 });
 
+/* ---- Index audit (Market-Readiness Gap Sprint) ----
+   Each index below backs a hot list endpoint that sorts the user's rows by
+   recency. Registered BEFORE model compilation so Mongoose creates them.
+   - PatentIdea: listPatentIdeas → find({userId}).sort({updatedAt:-1})   */
+patentIdeaSchema.index({ userId: 1, updatedAt: -1 });
+/* - PatentActivity: per-user analytics feed → find({userId}).sort({createdAt:-1}) */
+patentActivitySchema.index({ userId: 1, createdAt: -1 });
+/* - ProjectSubmission: listProjectSubmissions → find({userId}).sort({updatedAt:-1}) */
+projectSubmissionSchema.index({ userId: 1, updatedAt: -1 });
+/* - ResumeVersion: listResumeVersions → find({userId}).sort({updatedAt:-1}) */
+resumeVersionSchema.index({ userId: 1, updatedAt: -1 });
+/* - PatentRecord: listPatentRecords → find({userId}).sort({updatedAt:-1}) */
+patentRecordSchema.index({ userId: 1, updatedAt: -1 });
+
 /* avoid OverwriteModelError on hot-reload / warm starts */
 export const User = mongoose.models.User || mongoose.model('User', userSchema);export const SupportTicket =
   mongoose.models.SupportTicket || mongoose.model('SupportTicket', ticketSchema);
@@ -597,6 +615,8 @@ export async function upsertUser({ googleId, email, name, avatar, provider }) {
       user.lastLoginAt = new Date();
       user.loginCount = (user.loginCount || 0) + 1;
       user.isActive = true;
+      // DPDP: signing back in during the 7-day grace window cancels the pending deletion.
+      if (user.deletedAt) { user.deletedAt = null; user.deleteScheduledFor = null; }
       await user.save();
     } else {
       user = await User.create({
@@ -604,6 +624,7 @@ export async function upsertUser({ googleId, email, name, avatar, provider }) {
         email: email ? String(email).toLowerCase() : undefined,
         name, avatar: avatar || null, provider: provider || 'google',
         lastLoginAt: new Date(), loginCount: 1,
+        consentAt: new Date(), // DPDP: consent recorded at account creation (signup)
       });
     }
     return publicUser(user);
@@ -3392,4 +3413,352 @@ export async function saveWorkspaceStarterPackMeta({ userId, email, projectId, s
     );
     return { ok: true };
   } catch (err) { console.error('[db] saveWorkspaceStarterPackMeta failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ============================================================
+   SERVER-OWNED PROJECT STORE  (Market-Readiness Gap Sprint, Phase 1)
+   ------------------------------------------------------------
+   One document per (user, project). The client keeps localStorage as a
+   cache; this collection is the source of truth when the DB is on. Every
+   helper degrades to a safe value when MONGODB_URI is not set, exactly
+   like the rest of this file.
+   Indexes:
+   - {userId, projectId} unique → point lookups + upserts on save/progress.
+   - {userId, updatedAt}        → listUserProjects sorted by recency, and
+                                  the updatedAt-based sync merge.
+   ============================================================ */
+const userProjectSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true },
+    projectId: { type: String, required: true, index: true },
+    project: { type: mongoose.Schema.Types.Mixed, default: {} },       // full client project object
+    workspacePlan: { type: mongoose.Schema.Types.Mixed, default: null },
+    taskProgress: { type: mongoose.Schema.Types.Mixed, default: {} },  // taskId -> status/notes
+    status: { type: String, default: 'active', enum: ['active', 'archived', 'deleted'] },
+    clientUpdatedAt: { type: Date, default: null }, // the client's own updatedAt — drives last-write-wins
+  },
+  { timestamps: true }
+);
+userProjectSchema.index({ userId: 1, projectId: 1 }, { unique: true });
+userProjectSchema.index({ userId: 1, updatedAt: -1 });
+export const UserProject = mongoose.models.UserProject || mongoose.model('UserProject', userProjectSchema);
+
+const projDoc = (d) => d ? ({
+  id: String(d._id), projectId: d.projectId, project: d.project || {},
+  workspacePlan: d.workspacePlan || null, taskProgress: d.taskProgress || {},
+  status: d.status || 'active', clientUpdatedAt: d.clientUpdatedAt || null,
+  createdAt: d.createdAt, updatedAt: d.updatedAt,
+}) : null;
+
+export async function saveUserProject({ userId, email, projectId, project, workspacePlan, taskProgress, clientUpdatedAt }) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const pid = String(projectId || project?.id || '').trim();
+    if (!pid) return { ok: false, reason: 'no_project_id' };
+    const set = { email: cleanEmail(email), status: 'active' };
+    if (project !== undefined) set.project = project || {};
+    if (workspacePlan !== undefined) set.workspacePlan = workspacePlan;
+    if (taskProgress !== undefined) set.taskProgress = taskProgress || {};
+    set.clientUpdatedAt = clientUpdatedAt ? new Date(clientUpdatedAt) : new Date();
+    const doc = await UserProject.findOneAndUpdate(
+      { userId: uid, projectId: pid },
+      { $set: set },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+    return { ok: true, id: String(doc._id), record: projDoc(doc) };
+  } catch (err) { console.error('[db] saveUserProject failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function getUserProject({ userId, email, projectId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return null;
+    const doc = await UserProject.findOne({ userId: uid, projectId: String(projectId), status: { $ne: 'deleted' } }).lean();
+    return projDoc(doc);
+  } catch (err) { console.error('[db] getUserProject failed:', err.message); return null; }
+}
+
+export async function listUserProjects({ userId, email, limit = 200 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await UserProject.find({ userId: uid, status: { $ne: 'deleted' } })
+      .sort({ updatedAt: -1 }).limit(Math.min(limit, 500)).lean();
+    return docs.map(projDoc);
+  } catch (err) { console.error('[db] listUserProjects failed:', err.message); return []; }
+}
+
+export async function updateUserProjectProgress({ userId, email, projectId, taskProgress, taskPatch }) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return { ok: false, reason: 'not_found' };
+    const update = {};
+    if (taskProgress !== undefined) update.$set = { taskProgress: taskProgress || {} };
+    else if (taskPatch && typeof taskPatch === 'object') {
+      update.$set = {};
+      for (const [taskId, v] of Object.entries(taskPatch)) {
+        update.$set[`taskProgress.${String(taskId).replace(/[.$]/g, '_').slice(0, 120)}`] = v;
+      }
+    } else return { ok: false, reason: 'no_patch' };
+    const doc = await UserProject.findOneAndUpdate(
+      { userId: uid, projectId: String(projectId), status: { $ne: 'deleted' } },
+      update, { new: true }
+    ).lean();
+    if (!doc) return { ok: false, reason: 'not_found' };
+    return { ok: true, record: projDoc(doc) };
+  } catch (err) { console.error('[db] updateUserProjectProgress failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function deleteUserProject({ userId, email, projectId }) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return { ok: false, reason: 'not_found' };
+    // Soft mark so a stale client sync can't resurrect it accidentally.
+    const r = await UserProject.updateOne({ userId: uid, projectId: String(projectId) }, { $set: { status: 'deleted' } });
+    return { ok: r.matchedCount > 0, reason: r.matchedCount > 0 ? undefined : 'not_found' };
+  } catch (err) { console.error('[db] deleteUserProject failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Merge the client's local projects array with the server set.
+   Last-write-wins PER PROJECT by the client-side updatedAt timestamp.
+   Returns the full merged set so the client can replace its cache. */
+export async function syncUserProjects({ userId, email, projects = [] }) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const incoming = (Array.isArray(projects) ? projects : []).filter((p) => p && p.id).slice(0, 300);
+    const existing = await UserProject.find({ userId: uid }).lean();
+    const byId = new Map(existing.map((d) => [d.projectId, d]));
+    let uploaded = 0, kept = 0;
+    for (const p of incoming) {
+      const pid = String(p.id);
+      const cur = byId.get(pid);
+      const clientAt = p.updatedAt ? new Date(p.updatedAt) : new Date(0);
+      const serverAt = cur?.clientUpdatedAt ? new Date(cur.clientUpdatedAt) : new Date(0);
+      if (!cur || clientAt > serverAt) {
+        await UserProject.findOneAndUpdate(
+          { userId: uid, projectId: pid },
+          { $set: { email: cleanEmail(email), project: p, status: 'active', clientUpdatedAt: clientAt } },
+          { upsert: true, setDefaultsOnInsert: true }
+        );
+        uploaded++;
+      } else kept++;
+    }
+    const docs = await UserProject.find({ userId: uid, status: { $ne: 'deleted' } }).sort({ updatedAt: -1 }).limit(500).lean();
+    return { ok: true, uploaded, kept, projects: docs.map((d) => d.project).filter(Boolean) };
+  } catch (err) { console.error('[db] syncUserProjects failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ============================================================
+   ERROR LOGS  (capped collection — observability, Phase 5)
+   ============================================================ */
+const errorLogSchema = new mongoose.Schema(
+  {
+    requestId: { type: String, default: '' },
+    method: { type: String, default: '' },
+    path: { type: String, default: '' },
+    status: { type: Number, default: 500 },
+    message: { type: String, default: '' },
+    stack: { type: String, default: '' },
+    userEmail: { type: String, default: '' },
+  },
+  { timestamps: true, capped: { size: 5 * 1024 * 1024, max: 5000 } } // bounded: never grows unchecked
+);
+/* createdAt index → paginated admin error feed (newest first). */
+errorLogSchema.index({ createdAt: -1 });
+export const ErrorLog = mongoose.models.ErrorLog || mongoose.model('ErrorLog', errorLogSchema);
+
+export async function saveErrorLog(entry = {}) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    await ErrorLog.create({
+      requestId: String(entry.requestId || '').slice(0, 64),
+      method: String(entry.method || '').slice(0, 10),
+      path: String(entry.path || '').slice(0, 300),
+      status: Number(entry.status) || 500,
+      message: String(entry.message || '').slice(0, 1000),
+      stack: String(entry.stack || '').slice(0, 4000),
+      userEmail: String(entry.userEmail || '').slice(0, 200),
+    });
+    return { ok: true };
+  } catch (err) { console.error('[db] saveErrorLog failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function listErrorLogs({ page = 1, pageSize = 50 } = {}) {
+  if (!URI) return { ok: false, reason: 'db_off', errors: [], total: 0 };
+  try {
+    await connectDB();
+    const ps = Math.min(Math.max(Number(pageSize) || 50, 1), 200);
+    const pg = Math.max(Number(page) || 1, 1);
+    const [errors, total] = await Promise.all([
+      ErrorLog.find({}).sort({ createdAt: -1 }).skip((pg - 1) * ps).limit(ps).lean(),
+      ErrorLog.estimatedDocumentCount(),
+    ]);
+    return { ok: true, errors: errors.map((e) => ({ ...e, id: String(e._id) })), total, page: pg, pageSize: ps };
+  } catch (err) { console.error('[db] listErrorLogs failed:', err.message); return { ok: false, reason: 'db_error', errors: [], total: 0 }; }
+}
+
+/* ============================================================
+   USAGE COUNTERS  (per-plan daily quotas, Phase 5)
+   ------------------------------------------------------------
+   One doc per (user, bucket, UTC day). Unique index makes $inc upserts
+   atomic and the daily reset implicit (new day → new doc).
+   ============================================================ */
+const usageCounterSchema = new mongoose.Schema(
+  {
+    userKey: { type: String, required: true },  // user id or lowercased email
+    bucket: { type: String, required: true },   // 'generation' | 'aiCalls' | 'syncs' | 'exports'
+    day: { type: String, required: true },      // 'YYYY-MM-DD' UTC
+    count: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+/* Unique {userKey, bucket, day} → atomic findOneAndUpdate($inc) per request. */
+usageCounterSchema.index({ userKey: 1, bucket: 1, day: 1 }, { unique: true });
+export const UsageCounter = mongoose.models.UsageCounter || mongoose.model('UsageCounter', usageCounterSchema);
+
+export async function incrementDailyUsage({ userKey, bucket, day }) {
+  if (!URI) return null; // caller falls back to its in-memory counter
+  try {
+    await connectDB();
+    const doc = await UsageCounter.findOneAndUpdate(
+      { userKey: String(userKey).slice(0, 200), bucket: String(bucket).slice(0, 40), day: String(day).slice(0, 10) },
+      { $inc: { count: 1 } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+    return doc.count;
+  } catch (err) { console.error('[db] incrementDailyUsage failed:', err.message); return null; }
+}
+
+/* ============================================================
+   DPDP BASICS  (account export + soft delete + cascade, Phase 5)
+   ------------------------------------------------------------
+   EXPORT_SOURCES is the single declarative list of every user-keyed
+   collection. Both the export and the delete cascade iterate it, so the
+   two can never drift apart (tested in test/hardening.test.js).
+   ============================================================ */
+export const EXPORT_SOURCES = [
+  { name: 'profile',            model: () => User,                    key: '_id' },
+  { name: 'userState',          model: () => UserState,               key: 'userId' },
+  { name: 'resumes',            model: () => Resume,                  key: 'userId' },
+  { name: 'resumeAnalyses',     model: () => ResumeAnalysis,          key: 'userId' },
+  { name: 'resumeVersions',     model: () => ResumeVersion,           key: 'userId' },
+  { name: 'applications',       model: () => Application,             key: 'userId' },
+  { name: 'outreach',           model: () => Outreach,                key: 'userId' },
+  { name: 'activities',         model: () => Activity,                key: 'userId' },
+  { name: 'skillXp',            model: () => SkillXp,                 key: 'userId' },
+  { name: 'projectSubmissions', model: () => ProjectSubmission,       key: 'userId' },
+  { name: 'projects',           model: () => UserProject,             key: 'userId' },
+  { name: 'projectWorkspaces',  model: () => ProjectWorkspace,        key: 'userId' },
+  { name: 'projectRoadmaps',    model: () => ProjectRoadmap,          key: 'userId' },
+  { name: 'architectureSpecs',  model: () => ProjectArchitectureSpec, key: 'userId' },
+  { name: 'marketplaceListings',model: () => MarketplaceListing,      key: 'userId' },
+  { name: 'savedListings',      model: () => SavedListing,            key: 'userId' },
+  { name: 'collaborationApplications', model: () => CollaborationApplication, key: 'userId' },
+  { name: 'projectClones',      model: () => ProjectClone,            key: 'userId' },
+  { name: 'projectReviews',     model: () => ProjectReview,           key: 'userId' },
+  { name: 'projectEngagements', model: () => ProjectEngagement,       key: 'userId' },
+  { name: 'patentRecords',      model: () => PatentRecord,            key: 'userId' },
+  { name: 'patentIdeas',        model: () => PatentIdea,              key: 'userId' },
+  { name: 'priorArtRecords',    model: () => PriorArtRecord,          key: 'userId' },
+  { name: 'patentDisclosures',  model: () => PatentDisclosure,        key: 'userId' },
+  { name: 'patentFeedback',     model: () => PatentFeedback,          key: 'userId' },
+  { name: 'patentActivities',   model: () => PatentActivity,          key: 'userId' },
+  { name: 'networkProfile',     model: () => NetworkProfile,          key: 'userId' },
+  { name: 'referralPosts',      model: () => ReferralPost,            key: 'userId' },
+  { name: 'referralRequests',   model: () => ReferralRequest,         key: 'userId' },
+  { name: 'githubConnection',   model: () => GithubConnection,        key: 'userId' },
+  { name: 'githubRepositories', model: () => GithubRepository,        key: 'userId' },
+  { name: 'githubRepoAnalyses', model: () => GithubRepoAnalysis,      key: 'userId' },
+  { name: 'githubAudits',       model: () => GithubAudit,             key: 'userId' },
+  { name: 'supportTickets',     model: () => SupportTicket,           key: 'userId' },
+];
+
+/* Full JSON export of everything stored for one user. */
+export async function exportUserData({ userId, email }) {
+  if (!URI) return { ok: false, reason: 'db_off', collections: {} };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found', collections: {} };
+    const collections = {};
+    for (const src of EXPORT_SOURCES) {
+      try {
+        const Model = src.model();
+        const q = src.key === '_id' ? { _id: uid } : { [src.key]: uid };
+        const docs = await Model.find(q).limit(2000).lean();
+        collections[src.name] = docs.map((d) => { const { __v, ...rest } = d; return rest; });
+      } catch { collections[src.name] = []; }
+    }
+    return { ok: true, exportedAt: new Date().toISOString(), userId: String(uid), collections };
+  } catch (err) { console.error('[db] exportUserData failed:', err.message); return { ok: false, reason: 'db_error', collections: {} }; }
+}
+
+/* Soft delete: mark the account; the cascade runs only after the grace window. */
+export const DELETE_GRACE_DAYS = 7;
+export async function softDeleteAccount({ userId, email }) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const now = new Date();
+    const scheduledFor = new Date(now.getTime() + DELETE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+    await User.updateOne({ _id: uid }, { $set: { deletedAt: now, deleteScheduledFor: scheduledFor, isActive: false } });
+    return { ok: true, deletedAt: now.toISOString(), deleteScheduledFor: scheduledFor.toISOString(), graceDays: DELETE_GRACE_DAYS };
+  } catch (err) { console.error('[db] softDeleteAccount failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Hard cascade: remove every user-keyed document, then the user itself.
+   Iterates EXPORT_SOURCES so deletion always covers exactly what export covers. */
+export async function cascadeDeleteUser({ userId, email }) {
+  if (!URI) return { ok: false, reason: 'db_off' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const removed = {};
+    for (const src of EXPORT_SOURCES) {
+      if (src.key === '_id') continue; // user doc deleted last
+      try {
+        const r = await src.model().deleteMany({ [src.key]: uid });
+        removed[src.name] = r.deletedCount || 0;
+      } catch { removed[src.name] = 0; }
+    }
+    await User.deleteOne({ _id: uid });
+    removed.profile = 1;
+    return { ok: true, removed };
+  } catch (err) { console.error('[db] cascadeDeleteUser failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Sweep accounts whose grace window has expired. Safe to call from any
+   request path or a cron — it is idempotent and bounded. */
+export async function purgeExpiredDeletions({ limit = 10 } = {}) {
+  if (!URI) return { ok: false, reason: 'db_off', purged: 0 };
+  try {
+    await connectDB();
+    const due = await User.find({ deletedAt: { $ne: null }, deleteScheduledFor: { $lte: new Date() } })
+      .select('_id email').limit(Math.min(limit, 50)).lean();
+    let purged = 0;
+    for (const u of due) {
+      const r = await cascadeDeleteUser({ userId: String(u._id) });
+      if (r.ok) purged++;
+    }
+    return { ok: true, purged };
+  } catch (err) { console.error('[db] purgeExpiredDeletions failed:', err.message); return { ok: false, reason: 'db_error', purged: 0 }; }
 }

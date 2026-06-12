@@ -677,25 +677,65 @@ export async function exportResumeSnapshotPDF(data, templateId, opts = {}) {
   return paged;
 }
 
-/* DOCX export — clean single-column section structure that Word/Google Docs
-   open without broken tables or parser-breaking visual styling. */
-export function exportResumeDOCX(data, templateId, { fileName = 'resume.doc' } = {}) {
+/* ---- ATS-safe font policy for Word exports (Phase 4 #12) ----
+   ATS-safe templates are pinned to a universally-installed standard stack
+   so the document renders identically everywhere ("embedded" in the
+   Word-HTML sense: no downloadable/custom font references survive). */
+const ATS_STANDARD_FONT = "Arial, Helvetica, 'Times New Roman', serif";
+
+/* Strip layout constructs that break ATS parsers from a CSS string:
+   multi-column flows, grid/flex side-by-side layouts, floats and
+   absolute positioning. Deterministic text transform — testable in node. */
+export function sanitizeCssForAts(css = '') {
+  return String(css)
+    .replace(/column-count\s*:[^;}]+;?/gi, '')
+    .replace(/column-gap\s*:[^;}]+;?/gi, '')
+    .replace(/display\s*:\s*grid[^;}]*;?/gi, 'display:block;')
+    .replace(/display\s*:\s*(inline-)?flex[^;}]*;?/gi, 'display:block;')
+    .replace(/grid-template-columns\s*:[^;}]+;?/gi, '')
+    .replace(/float\s*:[^;}]+;?/gi, '')
+    .replace(/position\s*:\s*absolute[^;}]*;?/gi, 'position:static;');
+}
+
+/* Pure builder for the Word-HTML document — extracted from
+   exportResumeDOCX so the structure is snapshot-testable under
+   `node --test` (no DOM, no Blob). For ATS-safe templates the output is
+   guaranteed single-column with no tables/text boxes and a standard
+   font stack; visual templates keep their styling untouched. */
+export function buildResumeDocHTML(data, templateId) {
   const tpl = typeof templateId === 'string' ? getResumeTemplate(templateId) : templateId;
   const { blocks } = buildResumeBlocks(data, tpl);
-  const css = resumeCSS(tpl, tpl.theme?.density || 'compact', 'a4')
+  const atsSafe = !!tpl.atsSafe;
+  let css = resumeCSS(tpl, tpl.theme?.density || 'compact', 'a4')
     // strip the fixed page sizing for Word — @page handles it there
     .replace(/\.rp-page\{[^}]*\}/, '.rp-page{background:#fff}');
-  const body = blocks.map((b) => `<div class="rp-block">${b.html}</div>`).join('');
-  const docHTML = `<!DOCTYPE html>
+  if (atsSafe) css = sanitizeCssForAts(css);
+  let body = blocks.map((b) => `<div class="rp-block">${b.html}</div>`).join('');
+  if (atsSafe) {
+    // No tables or text boxes may survive into the ATS document body.
+    body = body
+      .replace(/<\/?(table|thead|tbody|tfoot|colgroup|col)[^>]*>/gi, '')
+      .replace(/<tr[^>]*>/gi, '<div class="rp-row">').replace(/<\/tr>/gi, '</div>')
+      .replace(/<t[dh][^>]*>/gi, '<div class="rp-cell">').replace(/<\/t[dh]>/gi, '</div>')
+      .replace(/<v:textbox[\s\S]*?<\/v:textbox>/gi, '');
+  }
+  const font = atsSafe ? ATS_STANDARD_FONT : (tpl.theme?.font || 'Arial, sans-serif');
+  return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="utf-8">
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
 <style>
 @page{size:A4;margin:1.6cm}
 ${css}
-body{font-family:${tpl.theme?.font || 'Arial, sans-serif'}}
+body{font-family:${font}}${atsSafe ? '\n.rp-root{max-width:100%}' : ''}
 </style></head>
 <body><div class="rp-root">${body}</div></body></html>`;
+}
+
+/* DOCX export — clean single-column section structure that Word/Google Docs
+   open without broken tables or parser-breaking visual styling. */
+export function exportResumeDOCX(data, templateId, { fileName = 'resume.doc' } = {}) {
+  const docHTML = buildResumeDocHTML(data, templateId);
   const blob = new Blob(['\ufeff', docHTML], { type: 'application/msword' });
   downloadBlob(blob, fileName.replace(/\.docx$/i, '.doc'));
 }
