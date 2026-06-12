@@ -270,7 +270,7 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse, c
     try {
       const fileBase = `${(data?.personalInfo?.name || data?.name || 'resume').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'resume'}-${tpl.id}`;
       if (kind === 'pdf') await exportResumePDF(data, tpl.id, { pageMode: toPageMode(mode), size, fileName: `${fileBase}.pdf` });
-      else if (kind === 'snapshot') await exportResumeSnapshotPDF(data, tpl.id, { pageMode: toPageMode(mode), size, fileName: `${fileBase}-image-preview-not-ats-safe.pdf` });
+      else if (kind === 'snapshot') await exportResumeSnapshotPDF(data, tpl.id, { pageMode: toPageMode(mode), size, fileName: `${fileBase}.pdf` });
       else if (kind === 'docx') {
         if (!canDocx) { onDocxBlocked?.(); return; }
         exportResumeDOCX(data, tpl.id, { fileName: `${fileBase}.doc` });
@@ -337,22 +337,13 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse, c
           <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
             <Button onClick={() => { onUse?.(tpl.id); onClose?.(); }}><Check size={14} /> Use this template</Button>
             <div className="flex gap-2">
-              <Button variant="soft" className="flex-1" disabled={busy === 'pdf' || !gate.allowed} onClick={() => guardedExport('pdf')} title={!gate.allowed ? gate.reason : 'Browser-print PDF with real, selectable text — the ATS-safe default'}>
-                <Download size={13} /> {busy === 'pdf' ? 'Opening…' : gate.pending ? 'Validating…' : 'ATS-safe PDF'}
+              <Button variant="soft" className="flex-1" disabled={busy === 'pdf' || !gate.allowed} onClick={() => guardedExport('pdf')} title={!gate.allowed ? gate.reason : 'Print-quality PDF with selectable text'}>
+                <Download size={13} /> {busy === 'pdf' ? 'Opening…' : gate.pending ? 'Validating…' : 'PDF'}
               </Button>
               <Button variant="soft" className="flex-1" disabled={busy === 'docx' || !gate.allowed} onClick={() => guardedExport('docx')} title={!gate.allowed ? gate.reason : ''}>
                 <FileType2 size={13} /> {gate.pending ? 'Validating…' : 'DOCX'}
               </Button>
             </div>
-            <button
-              type="button"
-              disabled={busy === 'snapshot' || !gate.allowed}
-              onClick={() => guardedExport('snapshot')}
-              title={!gate.allowed ? gate.reason : 'Pixel-identical image of the preview. Text is NOT selectable — do not submit this version to ATS portals.'}
-              className="rounded-lg border border-white/10 px-2 py-1.5 text-[10px] text-slate-500 transition hover:bg-white/5 disabled:opacity-50"
-            >
-              {busy === 'snapshot' ? 'Rendering image…' : 'Image PDF Preview — not ATS-safe'}
-            </button>
             {gate.pending && <p className="text-[10px] text-slate-500">Running layout validation — exports unlock when the check completes.</p>}
             {hasErrors && <p className="text-[10px] text-amber-glow">Exports are blocked while the layout has errors — content is never silently cropped.</p>}
           </div>

@@ -18,12 +18,6 @@ import {
   normalizeJobType, matchesJobType,
 } from './server/utils/jobFilters.js';
 import {
-  normalizeFilterMode, progressiveGate, summarizeSearch,
-} from './server/utils/jobSearchEngine.js';
-import {
-  isJobBoardDomain, resolveCompanyDomain, normalizeContact,
-} from './web/src/lib/contactFields.js';
-import {
   scoreResume, normalizeResumeText, normalizeRole, hashResume as computeResumeHash,
   SCORING_VERSION, buildFeedback, parseJD, computeJobFit, tailorResume, checkFabrication,
 } from './server/utils/resume/index.js';
@@ -564,7 +558,6 @@ if (RAPIDAPI_KEY) {
         const url = x.job_apply_link || x.job_google_link || x.job_offer_url || '';
         const publisher = x.job_publisher || sourceFromUrl(url) || '';
         const postedRaw = x.job_posted_at_datetime_utc || x.job_posted_at_timestamp || x.job_posted_at || x.job_posted_at_string;
-        const employerSite = x.employer_website || '';
         return {
           title: x.job_title,
           company: x.employer_name,
@@ -573,15 +566,6 @@ if (RAPIDAPI_KEY) {
           experience: '',
           salary: [x.job_min_salary, x.job_max_salary].filter(Boolean).join('-') || '',
           companyType: x.employer_company_type || '',
-          // Employer identity for contact lookup — NEVER derived from the apply
-          // URL (that points at a job board). resolveCompanyDomain rejects
-          // board domains, so companyDomain is either a real employer domain
-          // or '' (frontend then asks the user for it).
-          companyWebsite: employerSite,
-          companyLinkedin: x.employer_linkedin || '',
-          companyDomain: resolveCompanyDomain({ companyWebsite: employerSite }),
-          applyUrl: url,
-          sourceUrl: x.job_google_link || '',
           // Honest labelling: provider-backed, NOT a direct board integration.
           source: publisher ? `${publisher} via JSearch` : 'JSearch',
           rawPublisher: publisher || null,
@@ -963,9 +947,6 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
     const mode = normalizeWorkMode(req.query.mode);
     const experience = normalizeExperienceLevel(req.query.experience);
     const jobType = normalizeJobType(req.query.jobType);
-    // inclusive (default) keeps unknown-seniority/undated jobs visible;
-    // strict only shows confidently matched, dated jobs.
-    const filterMode = normalizeFilterMode(req.query.filterMode);
     const maxDays = maxFreshDaysFromQuery(req.query.freshness || '7d');
     const limit = Math.max(1, Math.min(40, Number(req.query.limit || 12)));
     const verify = req.query.verify !== '0';
@@ -975,7 +956,7 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
     const selected = requestedSources(req);
 
     // Serve identical recent searches from cache (cuts latency, protects quotas).
-    const cacheKey = JSON.stringify({ role, loc, mode, experience, jobType, filterMode, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
+    const cacheKey = JSON.stringify({ role, loc, mode, experience, jobType, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
     const cached = jobCacheGet(cacheKey);
     if (cached) return res.json({ ...cached, cached: true });
 
@@ -1014,25 +995,35 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
       }
     });
     if (selected) jobs = jobs.filter(j => sourceAllowed(j.source, selected));
-    jobs.forEach(j => { j.source = inferSource(j, j.source || sourceFromUrl(j.url)); });
 
-    /* ---- Job Search Engine v2: gate + count removals + progressive fallback.
-       Step 0 is the exact request; if it yields nothing, the ladder widens
-       freshness, includes undated jobs, broadens the role match and finally
-       drops the location/mode constraint — so "No matching jobs found" only
-       appears when every fallback also fails. ---- */
-    const baseCriteria = { role, location: loc, mode, experience, jobType, freshness: req.query.freshness || '7d', filterMode };
-    const gateHelpers = {
-      passesFreshness,
-      matchRole: validRoleMatch,
-      matchLocation: validLocationMatch,
-      matchesWorkMode, matchesExperienceLevel, matchesJobType,
-      jobKey,
-      maxDaysOf: maxFreshDaysFromQuery,
-    };
-    const gated = progressiveGate(jobs, baseCriteria, gateHelpers, { minResults: 1, maxLevel: 4 });
-    const audit = gated.audit;
-    let candidates = gated.candidates;
+    const audit = [];
+    const seen = new Set();
+    let candidates = [];
+    for (const j of jobs) {
+      j.source = inferSource(j, j.source || sourceFromUrl(j.url));
+      let reason = '';
+      if (!j.title || !j.company) reason = 'missing title/company';
+      else if (!j.url || !/^https?:\/\//i.test(j.url)) reason = 'missing direct job URL';
+      else {
+        const fr = passesFreshness(typeof j.postedDays === 'number' ? j.postedDays : null, req.query.freshness || '7d');
+        if (!fr.ok) reason = fr.reason;
+        else if (!validRoleMatch(j, role)) reason = 'role mismatch';
+        else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
+        else if (!matchesWorkMode(j, mode)) reason = `work mode mismatch (filter: ${mode})`;
+        else if (!matchesExperienceLevel(j, experience)) reason = `experience level mismatch (filter: ${experience})`;
+        else if (!matchesJobType(j, jobType)) reason = `job type mismatch (filter: ${jobType})`;
+      }
+      const k = jobKey(j);
+      if (!reason && seen.has(k)) reason = 'duplicate';
+      // One audit row per job, mutated in place later if it goes to verification.
+      const row = {
+        title: j.title || '—', company: j.company || '—', source: j.source || '—',
+        postedDate: j.postedDate || '(none)', ageDays: typeof j.postedDays === 'number' ? j.postedDays : 'unknown',
+        decision: reason ? 'EXCLUDED' : 'CANDIDATE', reason: reason || 'passed filters; pending URL verification'
+      };
+      audit.push(row);
+      if (!reason) { seen.add(k); j._auditRow = row; candidates.push(j); }
+    }
 
     // newest first, then balanced by source so RemoteOK/Remotive cannot dominate the returned set
     candidates.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
@@ -1043,43 +1034,20 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
     candidates = balanced;
 
     let kept = candidates;
-    let verifiedRemoved = 0;
-    let verificationFallback = false;
     if (verify) {
       const checked = await verifyMany(candidates, 6);
       kept = [];
-      const survivable = []; // failed verification but NOT proven dead
       for (const j of checked) {
         const row = j._auditRow;
         if (j.verified) {
-          // 'live' = URL confirmed reachable. verifyLevel 'source' means the
-          // site blocked our HEAD/GET (403/405/429/timeout) — that is
-          // "verification blocked", not a dead link.
-          j.verificationStatus = j.verifyLevel === 'live' ? 'live' : 'blocked';
           kept.push(j);
-          if (row) { row.decision = 'INCLUDED'; row.reason = j.verifyLevel === 'live' ? 'verified open (URL reachable)' : 'verification blocked by site (403/405/429/timeout); source-listed active'; }
-        } else {
-          verifiedRemoved++;
-          const dead = [404, 410, 451].includes(Number(j.verifyStatus)) || /expired|closed|dead/i.test(j.verifyReason || '');
-          if (!dead) survivable.push(j);
-          if (row) { row.decision = 'EXCLUDED'; row.reason = `URL verification failed: ${j.verifyReason}`; }
+          if (row) { row.decision = 'INCLUDED'; row.reason = j.verifyLevel === 'live' ? 'verified open (URL reachable)' : 'source-listed active (URL not crawlable)'; }
+        } else if (row) {
+          row.decision = 'EXCLUDED'; row.reason = `URL verification failed: ${j.verifyReason}`;
         }
-      }
-      // Verification must never empty the whole result set: if every candidate
-      // failed, surface the not-proven-dead ones clearly labelled instead of
-      // returning "No matching jobs found".
-      if (!kept.length && survivable.length) {
-        verificationFallback = true;
-        for (const j of survivable) {
-          j.verificationStatus = 'unverified';
-          j.verified = false;
-          if (j._auditRow) { j._auditRow.decision = 'INCLUDED'; j._auditRow.reason = `not live-verified (${j.verifyReason}); shown as verification fallback`; }
-          kept.push(j);
-        }
-        verifiedRemoved = Math.max(0, verifiedRemoved - survivable.length);
       }
     } else {
-      candidates.forEach(j => { j.verificationStatus = 'source'; if (j._auditRow) { j._auditRow.decision = 'INCLUDED'; j._auditRow.reason = 'structured-source job (verification disabled)'; } });
+      candidates.forEach(j => { if (j._auditRow) { j._auditRow.decision = 'INCLUDED'; j._auditRow.reason = 'structured-source job (verification disabled)'; } });
     }
 
     kept.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
@@ -1107,28 +1075,9 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
     // strip internal helper before returning
     kept.forEach(j => { delete j._auditRow; });
 
-    const fallbackLabel = verificationFallback ? 'source-listed jobs (not live-verified)' : gated.step.label;
-    const fallbackLevel = verificationFallback ? Math.max(gated.step.level, 2) : gated.step.level;
     const payload = {
-      jobs: kept, sources, audit, verified: verify && !verificationFallback,
-      filters: { mode, experience, jobType, freshness: req.query.freshness || '7d', filterMode },
-      searchMeta: {
-        resultGroup: verificationFallback ? 'not-live-verified' : gated.step.group,
-        fallbackLevel,
-        fallbackLabel,
-        exactCount: gated.baseCount,
-        shownCount: kept.length,
-        fetchedTotal: jobs.length,
-        attempts: gated.attempts,
-        filterMode,
-        removed: { ...gated.baseRemoved, verification: verifiedRemoved },
-        providerErrors: sources.filter(s => s.error).map(s => ({ source: s.source, error: s.error })),
-        explanation: summarizeSearch({
-          baseCount: gated.baseCount, shownCount: kept.length,
-          fallbackLevel, fallbackLabel,
-          removed: gated.baseRemoved, verifiedRemoved,
-        }),
-      },
+      jobs: kept, sources, audit, verified: verify,
+      filters: { mode, experience, jobType, freshness: req.query.freshness || '7d' },
       diagnostics: {
         apiKeyDetected: !!RAPIDAPI_KEY,
         host: RAPIDAPI_HOST,
@@ -3252,26 +3201,7 @@ app.get('/contacts/diagnostics', async (req, res) => {
 
 app.post('/contacts/find', contactsLimiter, validateBody(contactsFindSchema), async (req, res) => {
   const ctx = req.body || {};
-  // Company-domain guard: job-board/ATS domains (linkedin.com, indeed.com,
-  // naukri.com, greenhouse.io, …) are NEVER a valid employer domain — a
-  // Hunter/Snov domain search against them returns garbage. Reject and tell
-  // the user a real employer domain is required.
-  const rawDomain = cleanDomain(ctx.domain);
-  const domainRejected = !!rawDomain && isJobBoardDomain(rawDomain);
-  ctx.domain = domainRejected ? '' : rawDomain;
-  const providersOn = Object.values(providersConfigured()).some(Boolean);
-  const emailLookup = {
-    domainUsed: ctx.domain || '',
-    domainRejected,
-    rejectedDomain: domainRejected ? rawDomain : '',
-    domainRequired: !ctx.domain,
-    providersConfigured: providersOn,
-    reason: !ctx.domain
-      ? (domainRejected
-        ? `'${rawDomain}' is a job-board domain, not the employer's. Company domain required for verified email search.`
-        : 'Company domain required for verified email search.')
-      : (!providersOn ? 'No contact provider keys configured — add Hunter/Apollo/PDL keys for verified emails.' : ''),
-  };
+  ctx.domain = cleanDomain(ctx.domain);
   const diagnostics = [];
   let contacts = [];
   try {
@@ -3287,16 +3217,11 @@ app.post('/contacts/find', contactsLimiter, validateBody(contactsFindSchema), as
     const providerCount = contacts.length;
     // Always guarantee useful results with compliant fallbacks (search links + probable inboxes)
     contacts = contacts.concat(fallbackContacts(ctx, false));
-    contacts = enrichContacts(dedupePeople(contacts), ctx)
-      // Field normalization: whatever shape a provider used (email, workEmail,
-      // emails[0].value, …), the response always carries a single `email`
-      // plus an explicit emailStatus / noEmailReason for the UI.
-      .map(c => normalizeContact(c, { domainUsed: ctx.domain, providersConfigured: providersOn }))
-      .map(c => ({ ...c, relatedJobId: ctx.jobId || null }));
+    contacts = enrichContacts(dedupePeople(contacts), ctx).map(c => ({ ...c, relatedJobId: ctx.jobId || null }));
     // sort: real verified first, then by confidence
-    contacts.sort((a, b) => ((b.emailStatus === 'verified') - (a.emailStatus === 'verified')) || (b.verified - a.verified) || (Number(b.confidence) - Number(a.confidence)));
+    contacts.sort((a, b) => (b.verified - a.verified) || (Number(b.confidence) - Number(a.confidence)));
     res.json({
-      ok: true, contacts, diagnostics, emailLookup,
+      ok: true, contacts, diagnostics,
       providersConfigured: providersConfigured(),
       lookupCount: contacts.length, providerCount,
       usedFallback: providerCount === 0,
@@ -3305,28 +3230,13 @@ app.post('/contacts/find', contactsLimiter, validateBody(contactsFindSchema), as
         : 'Compliant provider lookups + public search links. Guessed/unverified items are labelled.'
     });
   } catch (e) {
-    res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, emailLookup, providersConfigured: providersConfigured() });
+    res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, providersConfigured: providersConfigured() });
   }
 });
 
 app.post('/contacts/referrals', contactsLimiter, async (req, res) => {
   const ctx = req.body || {};
-  const rawRefDomain = cleanDomain(ctx.domain);
-  const refDomainRejected = !!rawRefDomain && isJobBoardDomain(rawRefDomain);
-  ctx.domain = refDomainRejected ? '' : rawRefDomain;
-  const refProvidersOn = Object.values(providersConfigured()).some(Boolean);
-  const emailLookup = {
-    domainUsed: ctx.domain || '',
-    domainRejected: refDomainRejected,
-    rejectedDomain: refDomainRejected ? rawRefDomain : '',
-    domainRequired: !ctx.domain,
-    providersConfigured: refProvidersOn,
-    reason: !ctx.domain
-      ? (refDomainRejected
-        ? `'${rawRefDomain}' is a job-board domain, not the employer's. Company domain required for verified email search.`
-        : 'Company domain required for verified email search.')
-      : (!refProvidersOn ? 'No contact provider keys configured — add Hunter/Apollo/PDL keys for verified emails.' : ''),
-  };
+  ctx.domain = cleanDomain(ctx.domain);
   const diagnostics = [];
   let contacts = [];
   try {
@@ -3341,17 +3251,15 @@ app.post('/contacts/referrals', contactsLimiter, async (req, res) => {
     for (const b of batches) if (b.status === 'fulfilled' && Array.isArray(b.value)) contacts = contacts.concat(b.value);
     const providerCount = contacts.length;
     contacts = contacts.concat(fallbackContacts(ctx, true));
-    contacts = enrichContacts(dedupePeople(contacts), ctx)
-      .map(c => normalizeContact(c, { domainUsed: ctx.domain, providersConfigured: refProvidersOn }))
-      .map(c => ({
+    contacts = enrichContacts(dedupePeople(contacts), ctx).map(c => ({
       ...c, relatedJobId: ctx.jobId || null,
       contactType: c.contactType === 'public profile result' ? 'public profile result' : (/(recruit|talent)/i.test(c.title || '') ? 'recruiter' : (c.contactType || 'current employee')),
       relationshipSignal: c.relationshipSignal || (c.company && ctx.company && String(c.company).toLowerCase().includes(String(ctx.company).toLowerCase()) ? 'same company' : 'weak public match'),
       referralFitReason: c.reason || 'Possible referral path at the target company.'
     }));
-    contacts.sort((a, b) => ((b.emailStatus === 'verified') - (a.emailStatus === 'verified')) || (b.verified - a.verified) || (Number(b.confidence) - Number(a.confidence)));
+    contacts.sort((a, b) => (b.verified - a.verified) || (Number(b.confidence) - Number(a.confidence)));
     res.json({
-      ok: true, contacts, diagnostics, emailLookup,
+      ok: true, contacts, diagnostics,
       providersConfigured: providersConfigured(),
       lookupCount: contacts.length, providerCount,
       usedFallback: providerCount === 0,
@@ -3360,7 +3268,7 @@ app.post('/contacts/referrals', contactsLimiter, async (req, res) => {
         : 'Compliant API + public search results. No scraping.'
     });
   } catch (e) {
-    res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, emailLookup, providersConfigured: providersConfigured() });
+    res.json({ ok: false, error: e.message || String(e), contacts, diagnostics, providersConfigured: providersConfigured() });
   }
 });
 

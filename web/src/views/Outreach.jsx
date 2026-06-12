@@ -4,7 +4,6 @@ import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal, Field } from '../components/ui/kit.jsx';
 import { Contacts, AI } from '../lib/api.js';
 import { canUse, useMeter, promptUpgrade } from '../lib/plan.js';
-import { normalizeContact, isJobBoardDomain, cleanDomainName } from '../lib/contactFields.js';
 
 export default function Outreach() {
   const [company, setCompany] = useState('');
@@ -16,21 +15,10 @@ export default function Outreach() {
   const find = async (e) => {
     e?.preventDefault();
     if (!company.trim() && !domain.trim()) return;
-    // Job-board domains are never the employer domain — the backend rejects
-    // them too, but warn here so the user isn't surprised by empty emails.
-    const d0 = cleanDomainName(domain);
-    if (d0 && isJobBoardDomain(d0)) {
-      setState({ status: 'error', contacts: [], note: '', err: `${d0} is a job-board domain, not the employer's website. Enter the company domain (e.g. acme.com) for verified email search.` });
-      return;
-    }
     setState({ status: 'loading', contacts: [], note: '', err: null });
     try {
       const d = await Contacts.find({ company, domain, title });
-      const contacts = (d.contacts || []).map((c) => normalizeContact(c, {
-        domainUsed: d.emailLookup?.domainUsed ?? undefined,
-        providersConfigured: d.emailLookup?.providersConfigured ?? undefined,
-      }));
-      setState({ status: 'done', contacts, note: d.note || '', emailLookup: d.emailLookup || null, err: d.ok === false ? d.error : null });
+      setState({ status: 'done', contacts: d.contacts || [], note: d.note || '', err: d.ok === false ? d.error : null });
     } catch (err) { setState({ status: 'error', contacts: [], note: '', err: err.message }); }
   };
 
@@ -84,22 +72,22 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
               <div className="flex flex-wrap gap-2">
                 {c.email && (
                   <a href={`mailto:${c.email}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                    <Badge tone={c.emailStatus === 'verified' ? 'mint' : c.emailStatus === 'probable' ? 'amber' : 'cyan'}><Mail size={11} /> {c.emailStatus === 'verified' ? 'Verified email' : c.emailStatus === 'probable' ? 'Probable email' : 'Email'}</Badge>
+                    <Badge tone="cyan"><Mail size={11} /> {c.verified ? 'Verified' : 'Email'}</Badge>
                   </a>
                 )}
                 {(() => {
-                  const liUrl = c.linkedinUrl || c.linkedin || (c.name
+                  const liUrl = c.linkedin || (c.name
                     ? `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${c.name} ${company || c.company || ''}`.trim())}`
                     : null);
                   return liUrl ? (
                     <a href={liUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                      <Badge tone="violet"><Linkedin size={11} /> {(c.linkedinUrl || c.linkedin) ? 'LinkedIn' : 'Find on LinkedIn'}</Badge>
+                      <Badge tone="violet"><Linkedin size={11} /> {c.linkedin ? 'LinkedIn' : 'Find on LinkedIn'}</Badge>
                     </a>
                   ) : null;
                 })()}
                 {c.source && <Badge>{c.source}</Badge>}
               </div>
-              {c.email ? (
+              {c.email && (
                 <a
                   href={`mailto:${c.email}`}
                   className="truncate font-mono text-xs text-aurora-cyan hover:underline"
@@ -107,8 +95,6 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
                 >
                   {c.email}
                 </a>
-              ) : (
-                <p className="text-[11px] leading-snug text-slate-500">No verified email found{c.noEmailReason ? ` — ${c.noEmailReason}` : ''}</p>
               )}
               <Button size="sm" variant="soft" className="mt-auto" onClick={() => openDraft(c)}><Sparkles size={14} /> Draft outreach</Button>
             </Card>

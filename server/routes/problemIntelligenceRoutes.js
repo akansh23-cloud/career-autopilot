@@ -30,6 +30,9 @@ import { priorArtSearchPlan, claimDirections, evidenceChecklist, scoreEvidence, 
 import { retrieveSimilar } from '../services/innovationMemory/retrievalService.js';
 import { detectDuplicates } from '../services/innovationMemory/duplicateDetectionService.js';
 import { ingestDiscovery, ingestProject } from '../services/innovationMemory/memoryIngestionService.js';
+import { enrichWorkspacePayload } from '../services/synthesisIntelligence/projectOsAdapter.js';
+import { buildMemoryInsights, applyMemoryToPackage } from '../services/synthesisIntelligence/memoryAugmentation.js';
+import { IDEA_EVENTS, isValidIdeaEvent, recordIdeaEvent } from '../services/synthesisIntelligence/outcomeHooks.js';
 import * as store from '../services/problemIntelligence/store.js';
 
 const discoverSchema = z.object({
@@ -254,6 +257,29 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
     const id = saved.ok ? saved.project.id : project.fingerprint;
     // Ingest the generated project into memory for future duplicate detection / retrieval.
     if (c.memory.enabled) { try { await ingestProject({ ...me(req), project: { ...project, id }, cfg: c }); } catch { /* best-effort */ } }
+
+    /* RAG / Innovation Memory augmentation: retrieve similar past ideas
+       (vector mode if configured, keyword fallback otherwise) and fold
+       duplicate risk + outcome lessons into the synthesis package. */
+    if (project.projectPackage) {
+      try {
+        let candidates = [];
+        let retrievalMode = 'keyword-fallback';
+        if (c.memory.enabled) {
+          const r = await retrieveSimilar({ ...me(req), query: { title: project.title, keywords: cluster.keywords || [], summary: project.painPoint || '' }, sourceTypes: ['generated_project', 'patent_idea', 'problem_cluster'], limit: 8, cfg: c });
+          candidates = r.results || [];
+          retrievalMode = r.mode || retrievalMode;
+        }
+        const memory = buildMemoryInsights({
+          idea: { title: project.title, domain: project.projectPackage.classification?.domain, technicalMechanism: project.technicalMechanism, tags: cluster.keywords || [] },
+          candidates,
+          retrievalMode,
+        });
+        project.projectPackage = applyMemoryToPackage(project.projectPackage, memory);
+        project.memoryInsights = memory;
+      } catch { /* memory layer is best-effort */ }
+      try { if (c.memory.enabled) await recordIdeaEvent({ chunkId: id, event: 'idea_generated' }); } catch { /* best-effort */ }
+    }
     res.json({ ok: true, project: { ...project, id }, persisted: saved.ok, duplicate: !!saved.duplicate, similarSkipped: duplicateInfo.duplicates || [], db: dbOn(db) });
   }));
 
@@ -336,13 +362,32 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
   app.post('/api/problem-intelligence/projects/:projectId/convert-to-project', requireAuth, generationLimiter, ifEnabled(async (req, res) => {
     const { project, persisted } = await loadProject(req);
     if (!project) return notFound(res);
-    const payload = toProjectPayload(project, project.buildBlueprint || req.body?.buildBlueprint || {}, project.costEstimate || req.body?.costEstimate || {});
+    let payload = toProjectPayload(project, project.buildBlueprint || req.body?.buildBlueprint || {}, project.costEstimate || req.body?.costEstimate || {});
+    // Synthesis Intelligence adapter: maps the structured project package
+    // (technical mechanism, required roles, proof checklists, IP-readiness
+    // possibility, warnings) onto the existing workspace shape — additive only.
+    if (project.projectPackage) payload = enrichWorkspacePayload(payload, project.projectPackage);
     // The client persists via the existing project store (saveProject) — a real,
     // tested persistence path (localStorage + PATCH /api/user/state). We stamp
     // the link on our record so it is genuinely connected, not a toast.
     const clientProjectId = req.body?.clientProjectId || '';
     if (persisted) await store.updateProject({ ...me(req), id: req.params.projectId, patch: { convertedProjectId: clientProjectId || 'pending-client-save', status: 'poc_planned' } });
+    if (cfg().memory.enabled) { try { await recordIdeaEvent({ chunkId: req.params.projectId, event: 'project_started' }); } catch { /* best-effort */ } }
     res.json({ ok: true, projectPayload: payload, persistVia: 'client-project-store', db: dbOn(db) });
+  }));
+
+  /* ---- outcome hooks: store lifecycle events so the RAG/memory layer can
+     learn from real results (faculty decisions, prior-art blocks, recruiter
+     shortlists, abandonment). Enhances Project OS / Patent OS scoring over
+     time — never replaces Patent OS. ---- */
+  app.post('/api/problem-intelligence/projects/:projectId/idea-event', requireAuth, ifEnabled(async (req, res) => {
+    const event = String(req.body?.event || '');
+    if (!isValidIdeaEvent(event)) {
+      return res.status(400).json({ ok: false, error: 'invalid_event', message: `event must be one of: ${IDEA_EVENTS.join(', ')}` });
+    }
+    const chunkId = req.body?.chunkId || req.params.projectId;
+    const result = await recordIdeaEvent({ chunkId, event });
+    res.json({ ok: true, recorded: !!result?.ok, event, db: dbOn(db) });
   }));
 
   app.post('/api/problem-intelligence/projects/:projectId/convert-to-patent', requireAuth, generationLimiter, ifEnabled(async (req, res) => {

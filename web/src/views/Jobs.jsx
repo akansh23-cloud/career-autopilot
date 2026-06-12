@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown, Users, Linkedin, FileText, Mail, Sparkles, Copy, Check, AlertTriangle, ClipboardCheck, Hammer, Send, Download, Wand2, ListChecks, Target, Eye, X, Rocket } from 'lucide-react';
 import { PageIntro } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal, Spinner } from '../components/ui/kit.jsx';
@@ -14,7 +14,6 @@ import {
   WORK_MODE_OPTIONS, EXPERIENCE_OPTIONS, JOB_TYPE_OPTIONS,
   migrateLegacyWorkMode, migrateLegacyExperience, migrateLegacyJobType,
 } from '../lib/jobFilterOptions.js';
-import { resolveCompanyDomain, normalizeContact, isJobBoardDomain, cleanDomainName } from '../lib/contactFields.js';
 
 const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d'], ['Latest', 'latest']];
 const KIT_KEY = 'careerAutopilot.tailoredKits.v1';
@@ -26,6 +25,7 @@ function keyForJob(j) { return String(j.id || j.url || `${j.company}-${j.title}`
 function clamp(n, min = 0, max = 100) { return Math.max(min, Math.min(max, Math.round(Number(n) || 0))); }
 function words(s = '') { return String(s).toLowerCase().replace(/[^a-z0-9+#.\s-]/g, ' ').split(/\s+/).filter((x) => x.length > 2); }
 function uniq(a) { return [...new Set(a.filter(Boolean))]; }
+function domainFromUrl(url = '') { try { const h = new URL(url).hostname.replace(/^www\./, ''); const p = h.split('.'); return p.length > 2 ? p.slice(-2).join('.') : h; } catch { return ''; } }
 function jobText(j) { return [j.title, j.company, j.location, j.summary, (j.requiredSkills || []).join(', ')].filter(Boolean).join('\n'); }
 function downloadText(name, text, type = 'text/plain;charset=utf-8') { const blob = new Blob([text || ''], { type }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 function extractJSON(text = '') { try { return JSON.parse(text); } catch {} const m = text.match(/\{[\s\S]*\}/); if (!m) return null; try { return JSON.parse(m[0]); } catch { return null; } }
@@ -172,52 +172,30 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
 }
 function PenIcon(){ return <FileText size={13}/>; }
 
-function ContactCard({ c: raw, onDraft, emailLookup }) {
-  const c = normalizeContact(raw, {
-    domainUsed: emailLookup?.domainUsed ?? undefined,
-    providersConfigured: emailLookup?.providersConfigured ?? undefined,
-  });
-  const [copied, setCopied] = useState(false);
+function ContactCard({ c, onDraft }) {
   const conf = Number(c.confidence) || 0;
   const confTone = conf >= 65 ? 'mint' : conf >= 40 ? 'cyan' : 'amber';
-  const linkedinHref = c.linkedinUrl || '';
+  const linkedinHref = c.linkedinUrl || c.linkedin || c.url || '';
   const isSearch = /\/search\//.test(linkedinHref);
-  const copyEmail = () => { navigator.clipboard?.writeText(c.email); setCopied(true); setTimeout(() => setCopied(false), 1400); };
-  const statusBadge = c.emailStatus === 'verified'
-    ? <Badge tone="mint"><Check size={11}/> Verified email</Badge>
-    : c.emailStatus === 'probable'
-      ? <Badge tone="amber"><Mail size={11}/> Probable email</Badge>
-      : c.emailStatus === 'source'
-        ? <Badge tone="cyan"><Mail size={11}/> Email (provider-sourced)</Badge>
-        : null;
-  const noEmailReason = c.noEmailReason || emailLookup?.reason || 'Provider returned no email for this person.';
   return (
     <Card className="flex flex-col gap-2.5 p-4">
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-white">{(c.name || c.title || 'P').trim()[0] || 'P'}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-white">{c.name || 'Public profile'}</p>
-          <p className="truncate text-xs text-slate-400">{c.title || 'Contact'}{c.company ? ` · ${c.company}` : ''}</p>
+          <p className="truncate text-xs text-slate-400">{c.title || c.position || c.contactType || 'Contact'}{c.company ? ` · ${c.company}` : ''}</p>
         </div>
         <Badge tone={confTone} className="shrink-0">{conf}%</Badge>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {statusBadge}
+        {c.email
+          ? <Badge tone={c.emailProbable || c.probable ? 'amber' : 'cyan'}><Mail size={11}/> {c.emailProbable || c.probable ? 'Probable email' : 'Email'}</Badge>
+          : <Badge tone="violet"><Linkedin size={11}/> LinkedIn only</Badge>}
+        {c.verified && <Badge tone="mint"><Check size={11}/> verified</Badge>}
         {c.source && <Badge>{c.source}</Badge>}
         {c.relationshipSignal && <Badge tone="violet">{c.relationshipSignal}</Badge>}
       </div>
-      {c.email ? (
-        <div className="flex items-center gap-1.5 rounded-lg bg-ink-950/60 px-2.5 py-1.5">
-          <p className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300">{c.email}</p>
-          <button type="button" onClick={copyEmail} title="Copy email" className="shrink-0 rounded-md border border-white/12 p-1 text-slate-300 transition hover:bg-white/8">{copied ? <Check size={12}/> : <Copy size={12}/>}</button>
-          <a href={`mailto:${c.email}`} title="Compose email" className="shrink-0 rounded-md border border-white/12 p-1 text-slate-300 transition hover:bg-white/8"><Mail size={12}/></a>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-white/8 bg-ink-950/60 px-2.5 py-1.5">
-          <p className="text-xs font-medium text-slate-300">No verified email found</p>
-          <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{noEmailReason}</p>
-        </div>
-      )}
+      {c.email && <p className="truncate rounded-lg bg-ink-950/60 px-2.5 py-1.5 font-mono text-xs text-slate-300">{c.email}</p>}
       {c.reason && <p className="text-[11px] leading-snug text-slate-500">{c.reason}</p>}
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
         {linkedinHref && <a href={linkedinHref} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Linkedin size={13}/> {isSearch ? 'Search LinkedIn' : 'Open'} <ExternalLink size={12}/></Button></a>}
@@ -235,11 +213,7 @@ function JobCard({ j, saved, onSave, onAction }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 truncate font-display text-lg font-semibold text-white md:text-xl">{j.title}</h3>
-          {j.verificationStatus === 'live' && <Badge tone="mint" title="The job URL was checked just now and responded.">✓ Verified open</Badge>}
-          {j.verificationStatus === 'blocked' && <Badge tone="cyan" title="The site blocked our link check (403/405/429/timeout) — the structured source lists it as active.">Verification blocked</Badge>}
-          {j.verificationStatus === 'unverified' && <Badge tone="amber" title="Shown as fallback because every exact result failed verification. Open the link to confirm it is still live.">Not live-verified</Badge>}
-          {j.verificationStatus === 'source' && <Badge tone="cyan" title="Faster search: links are taken from the structured source without a live check.">Source-listed</Badge>}
-          {!j.verificationStatus && j.verified && <Badge tone="mint">✓ Open</Badge>}
+          <Badge tone="mint">✓ Open</Badge>
           {j.postedDate
             ? <Badge tone="cyan"><Clock size={11}/> {j.postedDate}</Badge>
             : <Badge tone="amber" title="The source did not provide a posting date; this job is not treated as fresh."><Clock size={11}/> Date unavailable</Badge>}
@@ -305,14 +279,6 @@ export default function JobsView({ go }) {
   const [jobType, setJobType] = useState(migrateLegacyJobType(stored.jobType));
   // "Verified links only" defaults ON — the page promises verified jobs.
   const [verifiedOnly, setVerifiedOnly] = useState(stored.verifiedOnly !== false);
-  // Inclusive (default) keeps unknown-seniority/undated jobs; strict only
-  // shows confidently matched, dated jobs.
-  const [filterMode, setFilterMode] = useState(stored.filterMode === 'strict' ? 'strict' : 'inclusive');
-  const [searchMeta, setSearchMeta] = useState(stored.searchMeta || null);
-  // Stale-request protection: rapid filter clicks fire overlapping searches;
-  // only the LATEST request may write results. Each run takes a sequence
-  // number and bails if a newer run started while it was in flight.
-  const searchSeq = useRef(0);
   const [state, setState] = useState({ status: stored.status || 'idle', jobs: stored.jobs || [], err: null });
   const [saved, setSaved] = useState(stored.saved || {});
   const [resumeHint, setResumeHint] = useState(Boolean(storedResume.text));
@@ -339,7 +305,7 @@ export default function JobsView({ go }) {
     return res;
   };
 
-  const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, experience, jobType, verifiedOnly, filterMode, saved, ...patch });
+  const persist = (patch) => saveStoredJobResults({ role, location: loc, mode, freshness: fresh, experience, jobType, verifiedOnly, saved, ...patch });
 
   const enrichedJobs = useMemo(() => {
     const resume = getStoredResume();
@@ -359,10 +325,8 @@ export default function JobsView({ go }) {
     const nextExperience = override.experience ?? experience;
     const nextJobType = override.jobType ?? jobType;
     const nextVerified = override.verifiedOnly ?? verifiedOnly;
-    const nextFilterMode = override.filterMode ?? filterMode;
-    const snapshot = { role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, experience: nextExperience, jobType: nextJobType, verifiedOnly: nextVerified, filterMode: nextFilterMode };
-    const seq = ++searchSeq.current; // this run owns the results unless a newer one starts
-    setRole(searchRole); setSearchMeta(null); setState({ status: 'loading', jobs: [], err: null });
+    const snapshot = { role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh, experience: nextExperience, jobType: nextJobType, verifiedOnly: nextVerified };
+    setRole(searchRole); setState({ status: 'loading', jobs: [], err: null });
     saveStoredJobResults({ status: 'loading', jobs: [], saved, ...snapshot });
     try {
       // verify follows the "Verified links only" toggle — the page header
@@ -370,17 +334,13 @@ export default function JobsView({ go }) {
       // opt-in "Faster search" path and the results are labelled accordingly.
       const d = await Jobs.search({
         role: searchRole, location: nextLoc, mode: nextMode, freshness: nextFresh,
-        experience: nextExperience, jobType: nextJobType, filterMode: nextFilterMode,
+        experience: nextExperience, jobType: nextJobType,
         verify: nextVerified ? '1' : '0', limit: '18',
       });
-      if (seq !== searchSeq.current) return; // a newer search superseded this one
       const jobs = d.jobs || [];
-      const meta = d.searchMeta || null;
-      setSearchMeta(meta);
       setState({ status: 'done', jobs, err: null });
-      saveStoredJobResults({ status: 'done', jobs, saved, searchMeta: meta, ...snapshot });
+      saveStoredJobResults({ status: 'done', jobs, saved, ...snapshot });
     } catch (err) {
-      if (seq !== searchSeq.current) return; // never let a stale error clobber newer results
       setState({ status: 'error', jobs: [], err: err.message });
       saveStoredJobResults({ status: 'error', jobs: [], saved, err: err.message, ...snapshot });
     }
@@ -412,31 +372,17 @@ export default function JobsView({ go }) {
   const openPeople = async (type, j, opts = {}) => {
     if (!canUse('contacts')) { promptUpgrade('You’ve used all your contact searches this month. Upgrade for more.', 'pro'); return; }
     const title = type === 'referrals' ? 'Referral paths' : type === 'linkedin' ? 'Public LinkedIn profiles' : 'Hiring contacts';
-    // Employer domain only — resolveCompanyDomain uses provider company fields
-    // and rejects job-board/ATS domains (linkedin.com, indeed.com, naukri.com,
-    // greenhouse.io, …). The apply URL is never blindly used: a board domain
-    // fed to Hunter/Snov returns garbage emails. If no real employer domain
-    // exists, the modal asks the user for it instead of guessing.
-    const manual = cleanDomainName(opts.domainOverride || '');
-    const domain = (manual && !isJobBoardDomain(manual)) ? manual : resolveCompanyDomain(j);
-    setPeople({ open: true, title, status: 'loading', contacts: [], err: '', note: '', job: j, draft: '', copied: false, type, domain, domainInput: domain, emailLookup: null });
+    setPeople({ open: true, title, status: 'loading', contacts: [], err: '', note: '', job: j, draft: '', copied: false });
+    const domain = j.companyDomain || j.domain || domainFromUrl(j.url);
     const payload = { company: j.company, domain, role: j.title, title: type === 'referrals' ? role || j.title : 'Recruiter OR Talent Acquisition OR Hiring Manager', jobId: j.id || j.url };
     try {
       const d = type === 'referrals' ? await Contacts.referrals(payload) : await Contacts.find(payload);
       const contacts = d.contacts || [];
       useMeter('contacts');
-      setPeople((p) => ({ ...p, status: 'done', contacts, note: d.note || '', emailLookup: d.emailLookup || null, err: d.ok === false ? d.error : '' }));
+      setPeople((p) => ({ ...p, status: 'done', contacts, note: d.note || '', err: d.ok === false ? d.error : '' }));
       if (opts.autoDraft && contacts.length) makeDraft(contacts[0]);
     }
     catch (err) { setPeople((p) => ({ ...p, status: 'error', err: err.message || 'Lookup failed.' })); }
-  };
-  // Manual-domain retry: the user typed the employer's website domain after a
-  // "Company domain required" prompt.
-  const retryWithDomain = () => {
-    const d = cleanDomainName(people.domainInput);
-    if (!d) { setPeople((p) => ({ ...p, err: 'Enter a domain like acme.com' })); return; }
-    if (isJobBoardDomain(d)) { setPeople((p) => ({ ...p, err: `${d} is a job board, not the employer. Enter the company website domain.` })); return; }
-    if (people.job) openPeople(people.type || 'contacts', people.job, { domainOverride: d });
   };
   const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
@@ -466,12 +412,12 @@ export default function JobsView({ go }) {
   return <>
     <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />
     {resumeHint && <div className="mb-4 rounded-2xl border border-aurora-mint/20 bg-aurora-mint/10 px-4 py-3 text-sm text-slate-200">Resume and analysis are saved. Job results stay here when you move to another section. <span className="ml-1 font-medium text-white">Current role: {role || 'select a role'}</span></div>}
-    <form onSubmit={run} className="gradient-border mb-6 p-4"><div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={role} onChange={(e)=>setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer" className="pl-10"/></div><div className="relative md:w-56"><select value={ROLE_OPTIONS.includes(role) ? role : ''} onChange={(e)=>e.target.value && setRole(e.target.value)} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-ink-950 pl-3.5 pr-9 text-sm text-slate-100 outline-none"><option value="">Pick a role…</option>{Object.entries(ROLE_GROUPS).map(([grp, roles]) => <optgroup key={grp} label={grp}>{roles.map((r)=><option key={r} value={r}>{r}</option>)}</optgroup>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/></div><div className="relative md:w-52"><MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={loc} onChange={(e)=>setLoc(e.target.value)} placeholder="Country / city" className="pl-10"/></div><Button type="submit" disabled={state.status === 'loading' || !role.trim()}><Search size={16}/> Search</Button></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs text-slate-500"><Filter size={13}/> Filters:</span>{WORK_MODE_OPTIONS.map((m)=><button key={m.value} onClick={()=>applyFilter(setMode, 'mode', m.value)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${mode===m.value?'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30':'text-slate-400 hover:bg-white/5'}`}>{m.label}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/>{FRESH.map(([l,v])=><button key={v} onClick={()=>applyFilter(setFresh, 'freshness', v)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${fresh===v?'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30':'text-slate-400 hover:bg-white/5'}`}>{l}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/><select value={experience} onChange={(e)=>applyFilter(setExperience, 'experience', e.target.value)} aria-label="Experience level" className="cursor-pointer rounded-lg border border-white/10 bg-ink-950 px-2.5 py-1 text-xs text-slate-300 outline-none">{EXPERIENCE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><select value={jobType} onChange={(e)=>applyFilter(setJobType, 'jobType', e.target.value)} aria-label="Job type" className="cursor-pointer rounded-lg border border-white/10 bg-ink-950 px-2.5 py-1 text-xs text-slate-300 outline-none">{JOB_TYPE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><span className="mx-1 h-4 w-px bg-white/10"/><button type="button" onClick={()=>applyFilter(setVerifiedOnly, 'verifiedOnly', !verifiedOnly)} title={verifiedOnly ? 'Every link is checked before it is shown (slower).' : 'Faster search — links are NOT verified before display.'} className={`rounded-lg px-3 py-1 text-xs transition ${verifiedOnly?'bg-aurora-mint/15 text-white ring-1 ring-aurora-mint/30':'text-slate-400 ring-1 ring-white/10 hover:bg-white/5'}`}>{verifiedOnly ? '✓ Verified links only' : 'Faster search (unverified)'}</button><button type="button" onClick={()=>applyFilter(setFilterMode, 'filterMode', filterMode === 'strict' ? 'inclusive' : 'strict')} title={filterMode === 'strict' ? 'Strict: only confidently matched, dated jobs. May return fewer results.' : 'Inclusive: jobs with unknown seniority/type/date stay visible (labelled). Recommended.'} className={`rounded-lg px-3 py-1 text-xs transition ${filterMode === 'strict' ? 'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30' : 'text-slate-400 ring-1 ring-white/10 hover:bg-white/5'}`}>{filterMode === 'strict' ? 'Strict filters' : 'Inclusive filters'}</button></div></form>
+    <form onSubmit={run} className="gradient-border mb-6 p-4"><div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={role} onChange={(e)=>setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer" className="pl-10"/></div><div className="relative md:w-56"><select value={ROLE_OPTIONS.includes(role) ? role : ''} onChange={(e)=>e.target.value && setRole(e.target.value)} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-ink-950 pl-3.5 pr-9 text-sm text-slate-100 outline-none"><option value="">Pick a role…</option>{Object.entries(ROLE_GROUPS).map(([grp, roles]) => <optgroup key={grp} label={grp}>{roles.map((r)=><option key={r} value={r}>{r}</option>)}</optgroup>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"/></div><div className="relative md:w-52"><MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"/><Input value={loc} onChange={(e)=>setLoc(e.target.value)} placeholder="Country / city" className="pl-10"/></div><Button type="submit" disabled={state.status === 'loading' || !role.trim()}><Search size={16}/> Search</Button></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs text-slate-500"><Filter size={13}/> Filters:</span>{WORK_MODE_OPTIONS.map((m)=><button key={m.value} onClick={()=>applyFilter(setMode, 'mode', m.value)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${mode===m.value?'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30':'text-slate-400 hover:bg-white/5'}`}>{m.label}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/>{FRESH.map(([l,v])=><button key={v} onClick={()=>applyFilter(setFresh, 'freshness', v)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${fresh===v?'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30':'text-slate-400 hover:bg-white/5'}`}>{l}</button>)}<span className="mx-1 h-4 w-px bg-white/10"/><select value={experience} onChange={(e)=>applyFilter(setExperience, 'experience', e.target.value)} aria-label="Experience level" className="cursor-pointer rounded-lg border border-white/10 bg-ink-950 px-2.5 py-1 text-xs text-slate-300 outline-none">{EXPERIENCE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><select value={jobType} onChange={(e)=>applyFilter(setJobType, 'jobType', e.target.value)} aria-label="Job type" className="cursor-pointer rounded-lg border border-white/10 bg-ink-950 px-2.5 py-1 text-xs text-slate-300 outline-none">{JOB_TYPE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><span className="mx-1 h-4 w-px bg-white/10"/><button type="button" onClick={()=>applyFilter(setVerifiedOnly, 'verifiedOnly', !verifiedOnly)} title={verifiedOnly ? 'Every link is checked before it is shown (slower).' : 'Faster search — links are NOT verified before display.'} className={`rounded-lg px-3 py-1 text-xs transition ${verifiedOnly?'bg-aurora-mint/15 text-white ring-1 ring-aurora-mint/30':'text-slate-400 ring-1 ring-white/10 hover:bg-white/5'}`}>{verifiedOnly ? '✓ Verified links only' : 'Faster search (unverified)'}</button></div></form>
     {state.status === 'loading' && <div className="space-y-4">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-56 w-full rounded-2xl"/>)}</div>}
     {state.status === 'error' && <EmptyState icon={Briefcase} title="Search failed" hint={state.err} action={<Button size="sm" onClick={run}>Retry</Button>} />}
     {state.status === 'idle' && <EmptyState icon={Search} title="Search for your next role" hint="Analyze your resume first for best matching, or manually search a role here." />}
-    {state.status === 'done' && state.jobs.length === 0 && <EmptyState icon={Briefcase} title="No jobs found — even after relaxing filters" hint={searchMeta?.explanation || 'Every fallback attempt (wider freshness, broader role, any location) also returned nothing. Try a different role keyword or check the freshness log for provider errors.'} />}
-    {state.status === 'done' && state.jobs.length > 0 && <>{searchMeta?.explanation && <div className="mb-3 rounded-2xl border border-aurora-cyan/20 bg-aurora-cyan/8 px-4 py-3 text-sm text-slate-200" role="status">{searchMeta.explanation}</div>}<div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {searchMeta && searchMeta.fallbackLevel > 0 ? searchMeta.fallbackLabel.toLowerCase() : `${verifiedOnly ? 'verified' : 'unverified'} ${fresh === 'latest' ? 'jobs' : 'jobs within window'}${verifiedOnly ? '' : ' — faster search, links not checked'}`}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
+    {state.status === 'done' && state.jobs.length === 0 && <EmptyState icon={Briefcase} title="No jobs found" hint="Try a broader role, clear the location, or widen the time window." />}
+    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {verifiedOnly ? 'verified' : 'unverified'} {fresh === 'latest' ? 'jobs' : 'jobs within window'}{verifiedOnly ? '' : ' — faster search, links not checked'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-white/20 bg-white/10 text-white':'border-white/10 text-slate-300'}`}>Sort match</button><button className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
     <TailorModal open={!!tailorJob} job={tailorJob} go={go} onClose={()=>setTailorJob(null)} />
     <Modal open={!!buildConfirm} onClose={()=>setBuildConfirm(null)} title="Build a project for these gaps" width="max-w-xl">
       {buildConfirm && <div className="space-y-4">
@@ -489,18 +435,7 @@ export default function JobsView({ go }) {
       </div>}
     </Modal>
     <Modal open={mini.open} onClose={()=>setMini((m)=>({...m,open:false}))} title={mini.title} width="max-w-2xl"><pre className="whitespace-pre-wrap rounded-xl border border-white/10 bg-ink-950/70 p-4 text-sm leading-relaxed text-slate-200">{mini.body}</pre><div className="mt-4 flex gap-2"><Button onClick={()=>setTailorJob(enrichJob(mini.job, getStoredResume()))}><Sparkles size={14}/> Tailor package</Button>{mini.job?.url && <a href={mini.job.url} target="_blank" rel="noreferrer"><Button variant="soft"><ExternalLink size={14}/> Open posting</Button></a>}</div></Modal>
-    <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'done' && people.emailLookup?.domainRequired && (
-      <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/8 p-3">
-        <p className="text-xs font-medium text-amber-glow">Company domain required for verified email search</p>
-        <p className="mt-1 text-[11px] leading-snug text-slate-400">{people.emailLookup.reason || 'Email providers search by employer domain. Enter the company website domain (not a job board) and retry.'}</p>
-        <div className="mt-2 flex gap-2">
-          <Input value={people.domainInput || ''} onChange={(e)=>setPeople((p)=>({...p,domainInput:e.target.value}))} placeholder="e.g. acme.com" className="h-9 flex-1 text-xs" />
-          <Button size="sm" onClick={retryWithDomain}>Retry with domain</Button>
-        </div>
-      </div>
-    )}{people.status === 'done' && people.emailLookup && !people.emailLookup.domainRequired && people.emailLookup.domainUsed && (
-      <p className="mb-3 text-[11px] text-slate-500">Email lookup ran against <span className="font-mono text-slate-300">{people.emailLookup.domainUsed}</span>{people.emailLookup.providersConfigured ? '' : ' — no contact provider keys configured, so only LinkedIn links and probable inboxes are shown'}.</p>
-    )}{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-36 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Try again or add Hunter/PDL/Apollo keys for verified contacts.'} />}{people.status === 'done' && people.contacts.length > 0 && <>{people.note && <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-snug text-slate-400">{people.note}</p>}<div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><ContactCard key={i} c={c} onDraft={makeDraft} emailLookup={people.emailLookup} />)}</div></>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
+    <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-36 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Try again or add Hunter/PDL/Apollo keys for verified contacts.'} />}{people.status === 'done' && people.contacts.length > 0 && <>{people.note && <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-snug text-slate-400">{people.note}</p>}<div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><ContactCard key={i} c={c} onDraft={makeDraft} />)}</div></>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
     {toast && (
       <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-aurora-mint/30 bg-ink-900/95 px-4 py-2.5 text-sm font-medium text-[#A7F2CE] shadow-lift backdrop-blur" role="status">
         {toast}

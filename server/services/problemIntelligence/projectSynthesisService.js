@@ -10,6 +10,7 @@
 import { getAIProvider } from './ai/aiProvider.js';
 import { projectFingerprint } from './dedupeService.js';
 import { sanitizeText } from './util.js';
+import { buildProjectPackage } from '../synthesisIntelligence/projectPackageService.js';
 
 export async function synthesizeProject({ cluster, skills = [], difficulty = '', purpose = 'portfolio' }, cfg) {
   const ai = getAIProvider(cfg);
@@ -52,6 +53,36 @@ export async function synthesizeProject({ cluster, skills = [], difficulty = '',
     })),
   };
   project.fingerprint = projectFingerprint(project);
+
+  // --- Synthesis Intelligence layer (deterministic; never throws) ---
+  // Produces the structured project package (build brief, blueprint,
+  // evidence grounding, quality scores, Project OS payload) and a
+  // mandatory technical mechanism. The legacy fields above remain
+  // untouched so existing consumers keep working.
+  try {
+    const pkg = await buildProjectPackage({
+      query: `${cluster.title || ''} ${(cluster.keywords || []).join(' ')}`.trim() || project.title,
+      idea: project,
+      cluster,
+      evidence: cluster.topSources || cluster.signals || [],
+      evidenceStrength,
+      skills,
+      domain: cluster.domain || '',
+      technology: cluster.technology || '',
+      targetUser: cluster.targetUser || '',
+      difficulty,
+      purpose,
+      cfg,
+      includeMemory: false, // routes layer applies memory with user context
+    });
+    project.projectPackage = pkg;
+    project.technicalMechanism = pkg.buildBrief.technicalMechanism;
+    // If the AI/fallback title was weak, prefer the package's specific title.
+    if (pkg.title && (!project.title || project.title.length < 12)) project.title = pkg.title;
+    if (pkg.quality.warnings.length) project.qualityWarnings = pkg.quality.warnings;
+  } catch {
+    project.technicalMechanism = project.technicalMechanism || sanitizeText(synth.noveltyAngle, 600);
+  }
   return project;
 }
 

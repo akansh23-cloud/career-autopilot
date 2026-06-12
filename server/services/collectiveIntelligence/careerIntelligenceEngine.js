@@ -21,6 +21,7 @@ import { logSourceUsage, storeKnowledge, saveReport, recallKnowledge } from './i
 import { stripIdentifiers } from '../innovationMemory/privacyFilterService.js';
 import { ingestSignals } from '../problemIntelligence/ingestionService.js';
 import { sanitizeText, extractKeywords, clamp } from '../problemIntelligence/util.js';
+import { buildProjectPackage } from '../synthesisIntelligence/projectPackageService.js';
 
 import { fetchWikipedia } from '../problemIntelligence/connectors/wikipediaConnector.js';
 import { fetchCrossref } from '../problemIntelligence/connectors/crossrefConnector.js';
@@ -331,7 +332,67 @@ export async function runCareerIntelligence(input = {}) {
 
   const bestIdea = recommendedIdeas[0] || null;
 
-  const projectBlueprint = createAssets && bestIdea ? blueprintFor(bestIdea, understanding, evidence) : null;
+  let projectBlueprint = createAssets && bestIdea ? blueprintFor(bestIdea, understanding, evidence) : null;
+
+  /* --- Synthesis Intelligence layer ---------------------------------
+     Domain-aware classification + build brief + dynamic blueprint +
+     quality scoring + Project OS payload. Deterministic (no AI key
+     required); merged on top of the legacy blueprint so existing UI
+     fields keep working while architecture/scope/milestones become
+     domain-specific instead of one-size-fits-all. */
+  let projectPackage = null;
+  if (createAssets && bestIdea) {
+    try {
+      const evidenceStrength = clamp(Math.round(evidence.reduce((s, e) => s + (e.relevanceScore || 0) / 2 + (e.trustScore || 0) / 4, 0)), 0, 100);
+      projectPackage = await buildProjectPackage({
+        query: understanding.query,
+        idea: {
+          title: bestIdea.title,
+          problemStatement: bestIdea.problemStatement,
+          proposedSolution: bestIdea.proposedSolution || '',
+          noveltyAngle: bestIdea.noveltyAngle || '',
+        },
+        evidence,
+        evidenceStrength,
+        skills: understanding.keywords,
+        domain: understanding.domain || '',
+        targetUser: understanding.targetUser || '',
+        includeMemory: false,
+      });
+      bestIdea.buildBrief = projectPackage.buildBrief;
+      bestIdea.technicalMechanism = projectPackage.buildBrief.technicalMechanism;
+      bestIdea.quality = projectPackage.quality;
+      bestIdea.evidenceSummary = projectPackage.evidenceSummary;
+      if (projectBlueprint) {
+        const bp = projectPackage.projectBlueprint;
+        // Conform to the existing client round-trip schema (blueprintShape):
+        // `architecture` stays a string (≤1200) and techStack items stay ≤60
+        // chars; the full structured arrays ride along under new keys, which
+        // the schema passes through.
+        projectBlueprint = {
+          ...projectBlueprint,
+          title: sanitizeText(projectPackage.title || projectBlueprint.title, 240),
+          technicalMechanism: bestIdea.technicalMechanism,
+          architecture: sanitizeText(bp.architecture.join(' → '), 1200),
+          architectureLayers: bp.architecture,
+          techStack: bp.techStack.map((t) => sanitizeText(t, 60)).slice(0, 20),
+          mvpScope: bp.mvpScope.map((x) => sanitizeText(x, 300)).slice(0, 20),
+          advancedScope: bp.advancedScope,
+          databaseModels: bp.databaseModels,
+          milestones: bp.milestones,
+          testingPlan: bp.testingPlan,
+          deploymentPlan: bp.deploymentPlan,
+          proofChecklist: bp.proofChecklist.map((x) => sanitizeText(x, 300)).slice(0, 12),
+          apisAndDataSources: projectBlueprint.apisAndDataSources?.length && projectBlueprint.apisAndDataSources[0]?.url !== undefined
+            ? projectBlueprint.apisAndDataSources
+            : bp.apisAndDataSources,
+          quality: projectPackage.quality,
+          projectOsPayload: projectPackage.projectOsPayload,
+        };
+      }
+    } catch { /* synthesis layer must never break the engine */ }
+  }
+
   const patentAngle = createAssets && bestIdea ? patentAngleFor(bestIdea, understanding, evidence) : null;
   const resumeValue = createAssets && bestIdea ? resumeValueFor(bestIdea, understanding) : null;
   const skillXpMapping = createAssets && bestIdea ? skillXpFor(bestIdea, understanding) : null;
@@ -372,6 +433,7 @@ export async function runCareerIntelligence(input = {}) {
     recommendedIdeas,
     bestIdea,
     projectBlueprint,
+    projectPackage,
     patentAngle,
     resumeValue,
     skillXpMapping,

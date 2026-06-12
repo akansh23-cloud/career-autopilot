@@ -10,7 +10,12 @@ import mongoose from 'mongoose';
 import { connectDB, dbEnabled } from '../../../db.js';
 import { InnovationMemoryChunk } from './memoryStore.js';
 
-const VALID_OUTCOMES = ['built', 'shelved', 'duplicate', 'filed', 'rejected', 'faculty_positive', 'faculty_negative', 'recruiter_shown'];
+const VALID_OUTCOMES = [
+  // original vocabulary (kept — existing data and callers stay valid)
+  'built', 'shelved', 'duplicate', 'filed', 'rejected', 'faculty_positive', 'faculty_negative', 'recruiter_shown',
+  // synthesis-intelligence lifecycle events (idea → project → review outcomes)
+  'idea_generated', 'idea_selected', 'project_started', 'ip_review_shortlisted', 'prior_art_blocked', 'student_abandoned', 'recruiter_shortlisted',
+];
 
 export async function recordOutcome({ chunkId, outcome }) {
   if (!dbEnabled()) return { ok: false, reason: 'db_disabled' };

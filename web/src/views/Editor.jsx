@@ -493,8 +493,8 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               <div className="mt-3"><ValidationSummary report={layoutReport} /></div>
             )}
             <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-              <Button onClick={doPDF} disabled={busy === 'pdf' || layoutBlocked} title={layoutBlocked ? exportGate.reason : 'Browser-print PDF with real, selectable text — what ATS parsers need. Pick “Save as PDF” in the dialog.'}>
-                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : exportGate.pending && activeText.trim().length >= 30 ? 'Validating layout…' : 'Export ATS-safe PDF'}
+              <Button onClick={doPDF} disabled={busy === 'pdf' || layoutBlocked} title={layoutBlocked ? exportGate.reason : 'Print-quality PDF with selectable text'}>
+                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : exportGate.pending && activeText.trim().length >= 30 ? 'Validating layout…' : 'Download PDF'}
               </Button>
               <Button variant="soft" onClick={doDOCX} disabled={busy === 'docx' || layoutBlocked}>
                 <FileType2 size={15} /> DOCX

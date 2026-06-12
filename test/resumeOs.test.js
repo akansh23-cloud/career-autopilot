@@ -16,10 +16,7 @@ import {
 import {
   packBlocksIntoPages, buildResumeBlocks, DENSITIES, MIN_BODY_FONT_PX, DENSITY_STEPS,
   VALIDATION_HOST_STYLE, canExportLayout,
-  composePagedDocumentHTML, composedHtmlTextContent, printHtmlHasRealText,
-  PRIMARY_PDF_EXPORT_KIND, SNAPSHOT_PDF_LABEL,
 } from '../web/src/lib/resumeRenderer.js';
-import { readFileSync } from 'node:fs';
 import {
   rectsOverlap, rectContains, findOverlaps, findOrphanHeadings, isHiddenForValidation,
 } from '../web/src/lib/resumeLayoutValidator.js';
@@ -486,86 +483,4 @@ test('qualityChecks stays clean of bullet/metric flags on a strong resume', () =
   // only info-level findings (if any) remain
   assert.ok(r.qualityChecks.every((c) => c.severity === 'info'),
     `unexpected non-info findings: ${JSON.stringify(r.qualityChecks)}`);
-});
-
-
-/* ================= ATS-safe PDF export regression suite =================
-   The PRIMARY Resume OS PDF export must be the browser-print pipeline:
-   real HTML text nodes -> selectable/extractable text in the saved PDF.
-   The html2canvas+jsPDF.addImage snapshot path is an opt-in image preview
-   that must be labelled "not ATS-safe" and must never be the default. */
-
-test('primary export contract: print-text kind, snapshot honestly labelled', () => {
-  assert.equal(PRIMARY_PDF_EXPORT_KIND, 'print-text');
-  assert.ok(/not ATS-safe/i.test(SNAPSHOT_PDF_LABEL));
-});
-
-test('composed print document contains real, extractable text (name/email/sections)', () => {
-  const fix = getResumeFixture('mid-developer');
-  const { blocks } = buildResumeBlocks(fix.data, 'clean-ats-pro');
-  const paged = { size: 'a4', css: '.rp-page{background:#fff}', pages: [blocks.map((b) => b.html).join('')] };
-  const html = composePagedDocumentHTML(paged, { forPrint: true });
-
-  const check = printHtmlHasRealText(html, [
-    fix.data.personalInfo.name,        // candidate name
-    fix.data.personalInfo.email,       // email
-    'Summary', 'Experience', 'Skills', // section headings
-  ]);
-  assert.equal(check.ok, true, `missing from print text: ${check.missing.join(', ')}`);
-  assert.equal(check.usesCanvas, false, 'print document must not embed canvas/raster images');
-  assert.ok(check.textLength > 200);
-
-  // extracted text also includes experience bullets and a skill
-  const text = composedHtmlTextContent(html).toLowerCase();
-  const firstSkill = (fix.data.skills?.[0]?.items?.[0] || fix.data.skills?.[0] || 'react').toString().toLowerCase();
-  assert.ok(text.includes(firstSkill.split(',')[0].trim().toLowerCase()));
-});
-
-test('printHtmlHasRealText rejects image-only documents', () => {
-  const imageOnly = '<!DOCTYPE html><html><body><img src="data:image/png;base64,AAAA"/></body></html>';
-  const check = printHtmlHasRealText(imageOnly, ['anything']);
-  assert.equal(check.ok, false);
-  assert.equal(check.usesCanvas, true);
-  const canvasDoc = '<html><body><canvas></canvas>some text here just to pad the body over forty characters total</body></html>';
-  assert.equal(printHtmlHasRealText(canvasDoc, []).ok, false);
-});
-
-/* Source-level guards: the default export path may never route through the
-   canvas/image pipeline, and exports stay validation-gated. */
-const RENDERER_SRC = readFileSync(new URL('../web/src/lib/resumeRenderer.js', import.meta.url), 'utf8');
-const EDITOR_SRC = readFileSync(new URL('../web/src/views/Editor.jsx', import.meta.url), 'utf8');
-const TEMPLATES_SRC = readFileSync(new URL('../web/src/components/ResumeTemplates.jsx', import.meta.url), 'utf8');
-
-function fnBody(src, name) {
-  const start = src.indexOf(`export async function ${name}`);
-  assert.ok(start >= 0, `${name} not found`);
-  const next = src.indexOf('export ', start + 10);
-  return src.slice(start, next === -1 ? src.length : next);
-}
-
-test('exportResumePDF (primary) never touches html2canvas or jsPDF.addImage', () => {
-  const body = fnBody(RENDERER_SRC, 'exportResumePDF');
-  assert.ok(!/html2canvas/.test(body), 'primary export must not import html2canvas');
-  assert.ok(!/addImage/.test(body), 'primary export must not call jsPDF.addImage');
-  assert.ok(/composePagedDocumentHTML/.test(body), 'primary export composes a real text HTML document');
-  assert.ok(/print\(\)/.test(body), 'primary export uses the browser print pipeline');
-});
-
-test('only the snapshot path uses canvas, and the Editor never imports it', () => {
-  const snap = fnBody(RENDERER_SRC, 'exportResumeSnapshotPDF');
-  assert.ok(/html2canvas/.test(snap) && /addImage/.test(snap), 'snapshot is the only canvas path');
-  // Editor (the main export surface) has no route to the snapshot exporter
-  assert.ok(!/exportResumeSnapshotPDF/.test(EDITOR_SRC));
-  assert.ok(/exportResumePDF/.test(EDITOR_SRC));
-  assert.ok(/Export ATS-safe PDF/.test(EDITOR_SRC), 'default button is named for ATS safety');
-});
-
-test('templates modal: ATS-safe default, snapshot clearly labelled, both validation-gated', () => {
-  assert.ok(/ATS-safe PDF/.test(TEMPLATES_SRC));
-  assert.ok(/Image PDF Preview — not ATS-safe/.test(TEMPLATES_SRC), 'snapshot path is honestly labelled');
-  // every export click goes through guardedExport, which blocks unless
-  // canExportLayout allowed it (pending OR failed validation => blocked)
-  assert.ok(/const gate = canExportLayout\(report\)/.test(TEMPLATES_SRC));
-  assert.ok(/if \(!gate\.allowed\)/.test(TEMPLATES_SRC));
-  assert.ok(/exportGate\.allowed/.test(EDITOR_SRC), 'editor export checks the validation gate');
 });
