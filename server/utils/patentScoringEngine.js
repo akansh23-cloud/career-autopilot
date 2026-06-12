@@ -34,14 +34,23 @@ function corpus(idea) {
 const has = (t, list) => list.filter((w) => t.includes(w));
 const len = (s) => lc(s).trim().length;
 
-export function scorePatentIdea(idea = {}, { priorArtRecords = [] } = {}) {
-  const t = corpus(idea);
+export function scorePatentIdea(idea = {}, { priorArtRecords = [], projectPackage = null } = {}) {
+  // Synthesis intelligence (optional, backward compatible): when a project
+  // package is supplied it strengthens the INPUT — Patent OS still owns the
+  // evaluation. With no package, behavior is byte-identical to before.
+  const synth = projectPackage && typeof projectPackage === 'object' ? projectPackage : null;
+  const synthMechanism = lc(synth?.buildBrief?.technicalMechanism || synth?.projectOsPayload?.technicalMechanism || '');
+  const synthQuality = synth?.quality || null;
+  const synthMeta = synth?.evidenceSummary?._meta || null;
+  const ipWeakDomain = synth?.classification?.ipAnalysisAppropriate === false;
+
+  const t = corpus(idea) + (synthMechanism.length > 40 ? `  ${synthMechanism}` : '');
   const mechHits = has(t, MECHANISM);
   const genericHits = has(t, GENERIC);
   const businessHits = has(t, BUSINESS_ONLY);
   const measurableHits = has(t, MEASURABLE);
   const techHits = has(t, TECH);
-  const hasMechanismField = len(idea.technicalMechanism) > 40;
+  const hasMechanismField = len(idea.technicalMechanism) > 40 || synthMechanism.length > 60;
   const hasProcessing = len(idea.processingLogic) > 30;
   const hasFeedback = len(idea.feedbackLoop) > 15 || t.includes('feedback loop');
   const hasIO = len(idea.inputData) > 10 && len(idea.outputResult) > 10;
@@ -80,10 +89,42 @@ export function scorePatentIdea(idea = {}, { priorArtRecords = [] } = {}) {
   ), 0, 100);
 
   const factors = { novelty, technicalDepth, specificity, priorArtDistance, marketUtility, feasibility, enforceability };
-  const overall = clamp(round(Object.entries(WEIGHTS).reduce((a, [k, w]) => a + factors[k] * w, 0)), 0, 100);
 
+  /* ---- synthesis-driven adjustments (deterministic, only with a package) ----
+     - Strong, validated technical mechanism → small technical-depth lift.
+     - Weak/generic package (low specificity/uniqueness) → specificity penalty.
+     - Community-only or absent evidence → prior-art distance + novelty caution.
+     - IP-weak domains (generic workflow/marketplace/dashboard) → novelty
+       penalty and a hard overall cap: never presented as strong IP-ready. */
+  const synthReasons = [];
+  if (synth) {
+    if (synthQuality && Number(synthQuality.technicalDepthScore) >= 70 && synthMechanism.length > 60) {
+      factors.technicalDepth = clamp(factors.technicalDepth + 8, 0, 100);
+      synthReasons.push('Synthesis package supplies a validated technical mechanism — technical depth strengthened.');
+    }
+    if (synthQuality && (Number(synthQuality.specificityScore) < 50 || Number(synthQuality.blueprintUniquenessScore) <= 40)) {
+      factors.specificity = clamp(factors.specificity - 12, 0, 100);
+      synthReasons.push('Synthesis package is weak/generic (low specificity or boilerplate blueprint) — IP-readiness reduced.');
+    }
+    if (synthMeta && (synthMeta.communityOnly || !synthMeta.total)) {
+      factors.priorArtDistance = clamp(factors.priorArtDistance - 10, 0, 100);
+      factors.novelty = clamp(factors.novelty - 6, 0, 100);
+      synthReasons.push(synthMeta.communityOnly
+        ? 'Evidence is community-only — confidence and prior-art distance reduced until verified sources are added.'
+        : 'No source evidence backs this idea — prior-art risk is unknown; confidence reduced.');
+    }
+    if (ipWeakDomain) {
+      factors.novelty = clamp(factors.novelty - 15, 0, 100);
+      synthReasons.push('Domain classified as weak ground for IP (generic workflow/marketplace/dashboard pattern) — needs a specific technical mechanism with technical effect; faculty/IP-cell review required.');
+    }
+  }
+
+  let overall = clamp(round(Object.entries(WEIGHTS).reduce((a, [k, w]) => a + factors[k] * w, 0)), 0, 100);
+  if (synth && ipWeakDomain) overall = Math.min(overall, 50); // never "strong IP-ready" for generic workflow domains
+
+  const { novelty: nv, priorArtDistance: pad } = factors;
   const grade = overall >= 85 ? 'Strong candidate' : overall >= 70 ? 'Promising' : overall >= 55 ? 'Needs refinement' : overall >= 35 ? 'Weak' : 'Not recommended';
-  const riskLevel = priorArtDistance >= 65 && novelty >= 60 ? 'Low' : priorArtDistance >= 45 ? 'Medium' : 'High';
+  const riskLevel = synth && ipWeakDomain ? 'High' : pad >= 65 && nv >= 60 ? 'Low' : pad >= 45 ? 'Medium' : 'High';
 
   const reasons = [];
   if (hasMechanismField) reasons.push('Describes a concrete technical mechanism.');
@@ -92,6 +133,7 @@ export function scorePatentIdea(idea = {}, { priorArtRecords = [] } = {}) {
   if (techHits.length) reasons.push(`Grounded in implementable technology (${techHits.slice(0, 3).join(', ')}).`);
   if (genericHits.length) reasons.push(`Reads as generic ("${genericHits[0]}") — weakens novelty.`);
   if (businessHits.length) reasons.push('Leans toward a business method — harder to patent without a technical core.');
+  reasons.push(...synthReasons);
 
   const missingPieces = [];
   if (!hasMechanismField) missingPieces.push('A specific technical mechanism (how it works internally).');

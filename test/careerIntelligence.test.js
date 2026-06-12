@@ -351,3 +351,90 @@ test('route: existing innovation OS config endpoint still works (no regression)'
   const r = await c.get('/api/problem-intelligence/config');
   assert.equal(r.status, 200);
 });
+
+/* ============================================================
+   Synthesis Intelligence Integration Sprint — route tests
+   Career Intelligence → Project OS and → Patent OS.
+   ============================================================ */
+
+test('route: create-project consumes the search projectPackage and enriches the workspace plan', async () => {
+  const search = await c.post('/api/intelligence/search', { query: 'healthcare patient monitoring platform with vitals alerts' });
+  assert.ok(search.json.projectPackage, 'search must return a synthesis project package');
+  const r = await c.post('/api/intelligence/create-project', {
+    idea: search.json.bestIdea,
+    blueprint: search.json.projectBlueprint,
+    understanding: search.json.queryUnderstanding,
+    projectPackage: search.json.projectPackage,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  const p = r.json.project;
+  assert.ok(p.title && p.problemStatement && p.targetUsers, 'core Project OS fields present');
+  assert.ok(p.technicalMechanism && p.technicalMechanism.length > 40, 'technical mechanism must reach Project OS');
+  assert.ok(p.projectPackage, 'project carries the full package');
+  const intel = p.intelligence;
+  assert.ok(intel.requiredRoles.length && intel.requiredSkills.length, 'roles and skills present');
+  assert.ok(intel.milestones.length && intel.prototypeEvidenceChecklist.length && intel.testingDeploymentProofChecklist.length, 'milestones + proof checklists present');
+  assert.ok(intel.ipReadinessPossibility, 'IP-readiness possibility present');
+  assert.ok(Array.isArray(intel.warnings), 'warnings present');
+  // Workspace generation still works and gains the synthesis block.
+  assert.ok(r.json.workspacePlan.tasks.length > 0, 'workspace generation must still work');
+  const syn = r.json.workspacePlan.synthesis;
+  assert.ok(syn && syn.buildBrief && syn.architectureLayers.length && syn.milestones.length, 'workspace plan carries the synthesis block');
+  assert.ok(syn.testingPlan.length && syn.deploymentPlan.length && syn.proofChecklist.length);
+});
+
+test('route: create-project enriches a LEGACY idea/blueprint (no projectPackage) through synthesis', async () => {
+  const r = await c.post('/api/intelligence/create-project', {
+    idea: { title: 'CVE Risk Radar', problemStatement: 'security teams drown in unranked vulnerability feeds', skills: ['Node.js'] },
+    blueprint: { techStack: ['Node.js', 'React'], mvpScope: ['Ingest NVD feed'] },
+    understanding: { domain: 'cybersecurity', targetUser: 'security analysts' },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  // Legacy values win where provided…
+  assert.equal(r.json.project.title, 'CVE Risk Radar');
+  assert.ok(r.json.project.techStack.includes('Node.js'));
+  // …but the synthesis layer fills mechanism, roles, milestones, IP note.
+  assert.ok(r.json.project.technicalMechanism.length > 40, 'legacy input must be enriched with a mechanism');
+  assert.ok(r.json.project.intelligence.milestones.length > 0);
+  assert.ok(r.json.project.intelligence.ipReadinessPossibility);
+  assert.equal(r.json.project.intelligence.synthesisSource, 'enriched');
+  assert.ok(r.json.workspacePlan.synthesis, 'workspace plan enriched even from legacy input');
+});
+
+test('route: send-to-patent sends buildBrief/blueprint/evidence/mechanism/quality to Patent OS, legacy fields intact', async () => {
+  const search = await c.post('/api/intelligence/search', { query: 'Find patentable AI/ML ideas for online exams', mode: 'patent' });
+  const r = await c.post('/api/intelligence/send-to-patent', {
+    idea: search.json.bestIdea,
+    patentAngle: search.json.patentAngle,
+    blueprint: search.json.projectBlueprint,
+    projectPackage: search.json.projectPackage,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  const idea = r.json.patentIdea;
+  assert.ok(idea.title, 'legacy title kept');
+  assert.ok(/not legal advice/i.test(r.json.disclaimer));
+  const syn = idea.synthesis;
+  assert.ok(syn, 'synthesis block must reach Patent OS');
+  for (const k of ['technicalMechanism', 'buildBrief', 'projectBlueprint', 'evidenceSummary', 'quality', 'projectOsPayload', 'evidenceConfidence']) {
+    assert.ok(syn[k] !== undefined, `synthesis block missing ${k}`);
+  }
+  assert.ok(syn.technicalMechanism.length > 40);
+  assert.ok(!/\bis guaranteed\b|\bdefinitely patentable\b|\bwill be granted\b/i.test(JSON.stringify(syn)), 'conservative IP language only');
+});
+
+test('route: send-to-patent stays backward compatible for old ideas without a projectPackage', async () => {
+  const r = await c.post('/api/intelligence/send-to-patent', {
+    idea: { title: 'Old saved idea', problemStatement: 'an older record', noveltyAngle: 'a streaming anomaly detection pipeline over exam telemetry with adaptive thresholds' },
+    patentAngle: { problem: 'cheating detection is unreliable', noveltyAngle: 'adaptive multi-signal proctoring fusion' },
+    blueprint: { mvpScope: ['signal capture'] },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  assert.equal(r.json.patentIdea.title, 'Old saved idea');
+  assert.ok(r.json.patentIdea.problem, 'legacy problem mapping intact');
+  // Old input is enriched, never rejected.
+  assert.ok(r.json.patentIdea.synthesis, 'legacy idea enriched with a synthesis block');
+});

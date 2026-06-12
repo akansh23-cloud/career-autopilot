@@ -34,6 +34,7 @@ import { strengthenIdea } from './server/utils/ideaStrengtheningEngine.js';
 import { priorArtPlan } from './server/utils/priorArtEngine.js';
 import { generateDisclosure, convertToProject, PATENT_OS_DISCLAIMER } from './server/utils/disclosureEngine.js';
 import { getUserPatentMemory, buildGenerationContext, suggestNextActions } from './server/utils/patentMemoryEngine.js';
+import { ensureProjectPackage, normalizeProjectPackage, toPatentOsPayload, extractTechnicalMechanism, extractEvidenceConfidence } from './server/services/synthesisIntelligence/integrationBridge.js';
 import {
   corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
   authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
@@ -2415,10 +2416,42 @@ app.post('/api/patents/ideas/generate', requireAuth, generationLimiter, validate
     }
     if (!ideas.length) ideas = generateIdeasDeterministic(input, count);
 
+    /* Synthesis Intelligence input layer: build one deterministic project
+       package from the generation query (domain/problem/technology/goal),
+       then use it to (a) fill thin technical mechanisms, (b) attach a
+       buildable-project framing + evidence confidence to each idea, and
+       (c) feed Patent OS scoring with stronger, source-aware input.
+       Patent OS remains the IP evaluator; conservative language only. */
+    let synthPkg = null;
+    try {
+      const ensured = await ensureProjectPackage({
+        query: [input.domain, input.problem, input.technology, input.goal].filter(Boolean).join(' '),
+        idea: { domain: input.domain || '', technology: input.technology || '', targetUser: input.targetUser || '', problemStatement: input.problem || '' },
+      });
+      synthPkg = ensured.pkg;
+    } catch { synthPkg = null; }
+    const evidenceConfidence = synthPkg ? extractEvidenceConfidence(synthPkg) : null;
+
     // Attach full score (factors + suggestions + risks) to each before saving.
     ideas = ideas.map((i) => {
-      const sc = scorePatentIdea(i);
-      return { ...i, score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded/i.test(r)), strengtheningSuggestions: sc.improvementSuggestions };
+      const idea = { ...i };
+      if (synthPkg) {
+        if (String(idea.technicalMechanism || '').length < 60) {
+          const mech = extractTechnicalMechanism(synthPkg);
+          if (mech) idea.technicalMechanism = mech;
+        }
+        idea.synthesis = {
+          domain: synthPkg.classification?.domain || '',
+          technicalMechanism: extractTechnicalMechanism({ ...idea, projectPackage: synthPkg }),
+          ipReadinessAngle: synthPkg.buildBrief?.ipReadinessAngle || '',
+          ipAnalysisAppropriate: synthPkg.classification?.ipAnalysisAppropriate !== false,
+          evidenceConfidence,
+          buildableProjectFraming: synthPkg.summary || '',
+          qualityWarnings: (synthPkg.quality?.warnings || []).slice(0, 5),
+        };
+      }
+      const sc = scorePatentIdea(idea, { projectPackage: synthPkg });
+      return { ...idea, score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded|community|evidence|review/i.test(r)), strengtheningSuggestions: sc.improvementSuggestions };
     });
 
     const saved = await db.createPatentIdeas({ userId: u?.id, email: u?.email, ideas, generationWhy: why });
@@ -2470,14 +2503,28 @@ app.delete('/api/patents/ideas/:id', requireAuth, async (req, res) => {
   res.status(persistenceStatus(result)).json({ ok: result.ok, archived: !!result.archived, deleted: !!result.deleted, db: db.dbEnabled() });
 });
 
+/* Recover the synthesis project package for a stored patent idea:
+   prefer the saved `synthesis` block (normalized, gaps filled with
+   warnings), else enrich the legacy idea on the fly. Best-effort —
+   returns null rather than failing the route. */
+async function patentSynthesisPackage(idea) {
+  try {
+    const fromStored = idea?.synthesis ? normalizeProjectPackage(idea.synthesis) : null;
+    if (fromStored) return fromStored;
+    const { pkg } = await ensureProjectPackage({ patentIdea: idea });
+    return pkg;
+  } catch { return null; }
+}
+
 /* Strengthen: deterministic upgrade + new version entry. */
 app.post('/api/patents/ideas/:id/strengthen', requireAuth, generationLimiter, async (req, res) => {
   const u = currentUser(req);
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
   const priorArt = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
-  const result = strengthenIdea(idea, { priorArtRecords: priorArt });
-  const sc = scorePatentIdea(result.idea, { priorArtRecords: priorArt });
+  const projectPackage = await patentSynthesisPackage(idea);
+  const result = strengthenIdea(idea, { priorArtRecords: priorArt, projectPackage });
+  const sc = scorePatentIdea(result.idea, { priorArtRecords: priorArt, projectPackage });
   const patch = {
     title: result.idea.title, proposedSolution: result.idea.proposedSolution, technicalMechanism: result.idea.technicalMechanism,
     inputData: result.idea.inputData, processingLogic: result.idea.processingLogic, outputResult: result.idea.outputResult,
@@ -2497,9 +2544,10 @@ app.post('/api/patents/ideas/:id/score', requireAuth, async (req, res) => {
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
   const priorArt = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
-  const sc = scorePatentIdea(idea, { priorArtRecords: priorArt });
+  const projectPackage = await patentSynthesisPackage(idea);
+  const sc = scorePatentIdea(idea, { priorArtRecords: priorArt, projectPackage });
   await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, strengtheningSuggestions: sc.improvementSuggestions } });
-  res.json({ ok: true, score: sc, db: db.dbEnabled() });
+  res.json({ ok: true, score: sc, evidenceConfidence: projectPackage ? extractEvidenceConfidence(projectPackage) : null, db: db.dbEnabled() });
 });
 
 /* Prior-art search plan (suggestions only) — saved onto the idea. */
@@ -2507,7 +2555,8 @@ app.post('/api/patents/ideas/:id/prior-art-plan', requireAuth, generationLimiter
   const u = currentUser(req);
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
-  const plan = priorArtPlan(idea);
+  const projectPackage = await patentSynthesisPackage(idea);
+  const plan = priorArtPlan(idea, { projectPackage });
   await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { priorArtSearchPlan: plan, status: idea.status === 'raw_idea' || idea.status === 'shortlisted' ? 'prior_art_review' : idea.status } });
   res.json({ ok: true, plan, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
 });

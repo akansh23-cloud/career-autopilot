@@ -134,3 +134,52 @@ test('invalid feedback type is rejected', async () => {
     assert.equal(r.status, 400);
   } finally { await stopServer(server); }
 });
+
+/* ============================================================
+   Synthesis Intelligence Integration Sprint — Patent OS tests
+   ============================================================ */
+
+test('standalone generation uses the synthesis layer: ideas carry mechanism + evidence context, conservative IP', async () => {
+  const { server, base } = await startServer();
+  try {
+    const c = makeClient(base); await c.devLogin('Synth', 'synth@example.com');
+    const r = await c.post('/api/patents/ideas/generate', {
+      domain: 'Healthcare', targetUser: 'clinics', problem: 'missed early deterioration signals', technology: 'AI/ML', goal: 'increase safety', useAI: false, count: 3,
+    });
+    assert.equal(r.status, 200);
+    assert.ok(r.json.ideas.length >= 1);
+    for (const idea of r.json.ideas) {
+      assert.ok(String(idea.technicalMechanism || '').length > 40, 'every idea must carry a technical mechanism');
+      assert.ok(idea.synthesis, 'idea must carry the synthesis context block');
+      assert.ok(idea.synthesis.evidenceConfidence, 'evidence confidence must be attached');
+      assert.equal(idea.synthesis.evidenceConfidence.level, 'low', 'no live evidence → conservative low confidence');
+      assert.ok(idea.synthesis.buildableProjectFraming, 'buildable project framing present');
+      assert.ok(!/\bis guaranteed\b|\bdefinitely patentable\b|\bwill be granted\b/i.test(JSON.stringify(idea.synthesis)), 'no patentability guarantees');
+      assert.ok(idea.score && Number.isFinite(idea.score.overall), 'Patent OS still owns the score');
+    }
+    assert.ok(/not legal advice/i.test(r.json.disclaimer));
+  } finally { await stopServer(server); }
+});
+
+test('package-aware scoring: mechanism raises depth, missing mechanism scores lower, generic workflow capped', async () => {
+  const { buildProjectPackage } = await import('../server/services/synthesisIntelligence/projectPackageService.js');
+  const idea = { title: 'Vitals anomaly platform', domain: 'Healthcare', problem: 'clinicians miss early deterioration signals', proposedSolution: 'a monitoring platform' };
+  const pkg = await buildProjectPackage({ query: 'healthcare patient monitoring platform with vitals alerts', includeMemory: false });
+  const withPkg = scorePatentIdea(idea, { projectPackage: pkg });
+  const withoutPkg = scorePatentIdea(idea);
+  assert.ok(withPkg.factors.technicalDepth > withoutPkg.factors.technicalDepth, 'package mechanism must raise technical depth');
+  assert.deepEqual(scorePatentIdea(idea), scorePatentIdea(idea, {}), 'no package → legacy path byte-identical');
+
+  const genericPkg = await buildProjectPackage({ query: 'marketplace platform for students to collaborate and sell templates', includeMemory: false });
+  const generic = scorePatentIdea({ ...idea, title: 'Student marketplace', proposedSolution: 'a marketplace platform' }, { projectPackage: genericPkg });
+  assert.ok(generic.overall <= 50, 'generic workflow/marketplace must never be strong IP-ready');
+  assert.equal(generic.riskLevel, 'High');
+});
+
+test('package-aware prior-art plan reflects domain and mechanism', async () => {
+  const { buildProjectPackage } = await import('../server/services/synthesisIntelligence/projectPackageService.js');
+  const pkg = await buildProjectPackage({ query: 'agriculture crop disease detection from leaf images for farmers', includeMemory: false });
+  const plan = priorArtPlan({ title: 'Crop helper', tags: [] }, { projectPackage: pkg });
+  assert.ok(/crop|leaf|disease|image|agricult/.test(plan.keywords.join(' ')), 'plan keywords must reflect the package domain');
+  assert.ok(/technical mechanism/i.test(plan.differentiationAngles[0]), 'plan must lead with the actual mechanism');
+});

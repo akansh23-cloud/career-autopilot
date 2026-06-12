@@ -20,6 +20,7 @@ import { ciConfig, sourceRunnable, NEW_SOURCES, REUSED_SOURCES, ALL_CI_SOURCES, 
 import { runCareerIntelligence } from '../services/collectiveIntelligence/careerIntelligenceEngine.js';
 import { saveIdeaSignal, saveMarketReport } from '../services/collectiveIntelligence/intelligenceStore.js';
 import { buildWorkspacePlan, normalizeCustomProject } from '../utils/workspace/index.js';
+import { ensureProjectPackage, toProjectOsWorkspacePayload, enrichWorkspacePlanWithSynthesis, toPatentOsPayload, extractTechnicalMechanism, extractEvidenceConfidence } from '../services/synthesisIntelligence/integrationBridge.js';
 import { generateArchitectureSpec } from '../utils/architecture/index.js';
 import { resumeOutput } from '../services/projectIntelligence/resumeOutputService.js';
 import { stripIdentifiers, neutralize } from '../services/innovationMemory/privacyFilterService.js';
@@ -64,6 +65,7 @@ const createProjectSchema = z.object({
   idea: ideaShape.optional().default({}),
   blueprint: blueprintShape.optional().default({}),
   understanding: z.any().optional(),
+  projectPackage: z.any().optional(), // synthesis-intelligence package (preferred source when present)
   persist: z.boolean().optional().default(true),
 }).passthrough();
 
@@ -79,6 +81,7 @@ const patentSchema = z.object({
     riskAndLimitations: z.array(z.string().trim().max(400)).max(10).optional().default([]),
   }).passthrough().optional().default({}),
   blueprint: blueprintShape.optional().default({}),
+  projectPackage: z.any().optional(), // synthesis-intelligence package (preferred source when present)
 }).passthrough();
 
 const resumeSchema = z.object({
@@ -173,30 +176,55 @@ export function registerCareerIntelligenceRoutes(app, deps = {}) {
      the workspace plan is persisted server-side when the DB is on. */
   app.post('/api/intelligence/create-project', requireAuth, generationLimiter, validate(createProjectSchema), ifEnabled(async (req, res) => {
     const { idea, blueprint, understanding, persist } = req.body;
-    const title = blueprint.title || idea.title || 'Career Intelligence project';
+
+    /* Synthesis Intelligence: the package is the primary intelligence
+       source. Accepted as body.projectPackage, or reconstructed from a
+       blueprint that already carries the synthesis fields (the engine
+       attaches projectOsPayload/quality to projectBlueprint). Legacy
+       idea/blueprint-only requests are enriched through the synthesis
+       layer. Legacy values still take precedence in the merged payload,
+       and on synthesis failure the route degrades to legacy behavior. */
+    const providedPkg = req.body.projectPackage
+      || (blueprint.projectOsPayload && blueprint.quality
+        ? { title: blueprint.title, buildBrief: blueprint.buildBrief, projectBlueprint: blueprint, projectOsPayload: blueprint.projectOsPayload, quality: blueprint.quality }
+        : null);
+    const { pkg: synthesis, source: pkgSource } = await ensureProjectPackage({
+      projectPackage: providedPkg, idea, blueprint, understanding,
+    });
+
+    const title = blueprint.title || idea.title || synthesis?.title || 'Career Intelligence project';
     const techStack = (blueprint.techStack && blueprint.techStack.length ? blueprint.techStack : idea.skills) || [];
 
-    const project = normalizeCustomProject({
+    // Package-derived base, with legacy values winning where present.
+    const projectInput = toProjectOsWorkspacePayload(synthesis, {
       title,
       problemStatement: blueprint.problemStatement || idea.problemStatement || '',
       targetUsers: blueprint.targetUsers || idea.targetUsers || understanding?.targetUser || '',
-      category: understanding?.domain ? `${understanding.domain} app` : 'Web App',
+      category: understanding?.domain ? `${understanding.domain} app` : '',
       targetRole: understanding?.targetRole || '',
-      difficulty: understanding?.difficulty || 'Intermediate',
+      difficulty: understanding?.difficulty || '',
       techStack: techStack.join(', '),
       mvpFeatures: (blueprint.mvpScope || []).join(', '),
-      flags: { patent: !!understanding?.needs?.patent },
+      flags: { patent: !!understanding?.needs?.patent || synthesis?.classification?.ipAnalysisAppropriate === true },
     });
+    if (!projectInput.category) projectInput.category = 'Web App';
+    if (!projectInput.difficulty) projectInput.difficulty = 'Intermediate';
+
+    const project = normalizeCustomProject(projectInput);
     // Carry intelligence provenance on the payload (client persists it).
     project.sourceFeature = 'career-intelligence';
     project.intelligence = {
+      ...(projectInput.intelligence || {}),
       noveltyAngle: idea.noveltyAngle || '',
       dataSources: blueprint.apisAndDataSources || idea.dataSources || [],
       scores: idea.scores || {},
       resumeBullet: blueprint.resumeBullet || '',
-      proofChecklist: blueprint.proofChecklist || [],
+      proofChecklist: (blueprint.proofChecklist || []).length ? blueprint.proofChecklist : (projectInput.intelligence?.prototypeEvidenceChecklist || []),
       tasks: blueprint.tasks || [],
+      synthesisSource: synthesis ? pkgSource : 'unavailable',
     };
+    project.technicalMechanism = extractTechnicalMechanism({ projectPackage: synthesis, ...blueprint, ...idea });
+    if (synthesis) project.projectPackage = synthesis;
 
     let architecture = null;
     try {
@@ -219,7 +247,10 @@ export function registerCareerIntelligenceRoutes(app, deps = {}) {
     } catch { architecture = null; }
 
     const { userId, email } = me(req);
-    const workspacePlan = buildWorkspacePlan({ project, architecture, existingPlan: null, userId });
+    const workspacePlan = enrichWorkspacePlanWithSynthesis(
+      buildWorkspacePlan({ project, architecture, existingPlan: null, userId }),
+      synthesis,
+    );
 
     let persistence = { saved: false, reason: persist ? 'db_off' : 'persist_false' };
     if (persist && dbOn(db) && db.saveProjectWorkspace) {
@@ -248,7 +279,7 @@ export function registerCareerIntelligenceRoutes(app, deps = {}) {
      uses); otherwise returns the payload for the client. */
   app.post('/api/intelligence/send-to-patent', requireAuth, generationLimiter, validate(patentSchema), ifEnabled(async (req, res) => {
     const { idea, patentAngle, blueprint } = req.body;
-    const payload = {
+    const legacyPayload = {
       title: idea.title || blueprint.title || 'Career Intelligence idea',
       domain: req.body.understanding?.domain || '',
       targetUser: blueprint.targetUsers || idea.targetUsers || '',
@@ -270,6 +301,28 @@ export function registerCareerIntelligenceRoutes(app, deps = {}) {
       priorArtSignals: (patentAngle.priorArtSignals || []).slice(0, 8),
       claimsOutline: (patentAngle.possibleClaimsOutline || []).slice(0, 8),
     };
+
+    /* Synthesis Intelligence: Patent OS receives the full package context
+       (buildBrief, projectBlueprint, evidenceSummary, technicalMechanism,
+       quality, projectOsPayload) via the bridge adapter. Legacy fields are
+       preserved exactly; older ideas without a package are enriched on the
+       fly; on synthesis failure the legacy payload is sent unchanged.
+       Patent OS remains the IP evaluator — conservative language only. */
+    const providedPkg = req.body.projectPackage
+      || (blueprint.projectOsPayload && blueprint.quality
+        ? { title: blueprint.title, buildBrief: blueprint.buildBrief, projectBlueprint: blueprint, projectOsPayload: blueprint.projectOsPayload, quality: blueprint.quality }
+        : null);
+    const { pkg: synthesis } = await ensureProjectPackage(
+      { projectPackage: providedPkg, idea, blueprint, understanding: req.body.understanding },
+      { purpose: 'patent' },
+    );
+    const payload = synthesis ? toPatentOsPayload(synthesis, legacyPayload) : legacyPayload;
+    if (synthesis) {
+      // Keep the full package out of the persisted record body (synthesis
+      // block carries the structured pieces), but expose it to the client.
+      payload.synthesis = { ...payload.synthesis, evidenceConfidence: extractEvidenceConfidence(synthesis) };
+      delete payload.projectPackage;
+    }
 
     let patentIdeaId = '';
     if (db && db.createPatentIdeas && dbOn(db)) {

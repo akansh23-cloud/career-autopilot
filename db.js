@@ -421,6 +421,7 @@ const patentIdeaSchema = new mongoose.Schema(
     riskWarnings: { type: [String], default: [] },
     strengtheningSuggestions: { type: [String], default: [] },
     priorArtSearchPlan: { type: mongoose.Schema.Types.Mixed, default: {} },
+    synthesis: { type: mongoose.Schema.Types.Mixed, default: null }, // synthesis-intelligence input layer (build brief, blueprint, evidence, quality)
     versionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
     linkedProjectId: { type: String, default: '' },
     linkedProjectPlan: { type: mongoose.Schema.Types.Mixed, default: null },
@@ -3011,6 +3012,7 @@ export async function createPatentIdeas({ userId, email, ideas = [], generationW
         implementationPlan: String(i.implementationPlan || '').slice(0, 2000), tags: (i.tags || []).slice(0, 12),
         status: 'raw_idea', source: i.source || 'generated', score,
         riskWarnings: i.riskWarnings || [], strengtheningSuggestions: i.strengtheningSuggestions || [],
+        synthesis: i.synthesis && typeof i.synthesis === 'object' ? i.synthesis : null,
         generationWhy: generationWhy || '',
         versionHistory: [{ version: 1, at: new Date(), change: 'Idea generated', scoreOverall: score.overall || 0 }],
       });

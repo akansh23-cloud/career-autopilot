@@ -31,6 +31,7 @@ import { retrieveSimilar } from '../services/innovationMemory/retrievalService.j
 import { detectDuplicates } from '../services/innovationMemory/duplicateDetectionService.js';
 import { ingestDiscovery, ingestProject } from '../services/innovationMemory/memoryIngestionService.js';
 import { enrichWorkspacePayload } from '../services/synthesisIntelligence/projectOsAdapter.js';
+import { toPatentOsPayload } from '../services/synthesisIntelligence/integrationBridge.js';
 import { buildMemoryInsights, applyMemoryToPackage } from '../services/synthesisIntelligence/memoryAugmentation.js';
 import { IDEA_EVENTS, isValidIdeaEvent, recordIdeaEvent } from '../services/synthesisIntelligence/outcomeHooks.js';
 import * as store from '../services/problemIntelligence/store.js';
@@ -395,7 +396,16 @@ export function registerProblemIntelligenceRoutes(app, deps = {}) {
     if (!project) return notFound(res);
     const priorArtRecords = persisted ? await store.listPriorArt({ ...me(req), projectId: req.params.projectId }) : [];
     const ip = project.ipReadiness || computeIPReadiness({ project, priorArtRecords, hasPrototypeEvidence: !!project.convertedProjectId });
-    const payload = toPatentIdeaPayload(project, ip);
+    let payload = toPatentIdeaPayload(project, ip);
+    // Synthesis Intelligence: carry the structured package context (build
+    // brief, blueprint, evidence, quality) into Patent OS as an additive
+    // `synthesis` block — Patent OS scoring/IP-readiness stays the evaluator.
+    if (project.projectPackage) {
+      try {
+        payload = toPatentOsPayload(project.projectPackage, payload);
+        delete payload.projectPackage;
+      } catch { /* legacy payload unchanged */ }
+    }
 
     let patentIdeaId = '';
     if (db && db.createPatentIdeas && dbOn(db)) {
