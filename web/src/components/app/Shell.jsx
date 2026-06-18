@@ -108,8 +108,8 @@ const MORE_IDS = ['growth', 'settings'];
 
 const TOP_NAV_PRIORITIES = {
   admin: ['Overview', 'Admin', 'Recruiting', 'Placement Cell', 'Project OS', 'Profile / XP'],
-  recruiter: ['Overview', 'Recruiting', 'Community', 'Project OS'],
-  college_admin: ['Overview', 'Placement Cell', 'Profile / XP'],
+  recruiter: ['Overview', 'Recruiting', 'Community', 'Verified Projects'],
+  college_admin: ['Overview', 'Placement Cell', 'Profile / XP', 'Verified Projects'],
   student_early: ['Overview', 'Project OS', 'Profile / XP', 'Community'],
   student_placement: ['Overview', 'Resume OS', 'Job Match', 'Applications', 'Project OS', 'Profile / XP', 'Community'],
 };
@@ -128,8 +128,21 @@ function groupsForRole(role) {
   const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
   const keep = (id) => !!byId[id] && canSeeScreen(role, id) && (!byId[id].adminOnly || role === 'admin');
 
+  // College / recruiter staff never get the student "Project OS" surface — the
+  // only project view they can reach is the read-only verified-project Sandbox.
+  // Relabel that group to "Verified Projects" so the top-level menu never shows
+  // a misleading "Project OS" entry for staff that just opens the Sandbox.
+  const staffVerifiedProjects = role === 'college_admin' || role === 'recruiter';
+
   const grouped = NAV_GROUPS
-    .map((g) => ({ label: g.label, short: g.short, items: g.ids.filter(keep).map((id) => byId[id]) }))
+    .map((g) => {
+      const relabel = staffVerifiedProjects && g.label === 'Project OS';
+      return {
+        label: relabel ? 'Verified Projects' : g.label,
+        short: relabel ? 'Verified Projects' : g.short,
+        items: g.ids.filter(keep).map((id) => byId[id]),
+      };
+    })
     .filter((g) => g.items.length);
 
   // Keep the desktop bar readable. Admin in particular has many modules, so

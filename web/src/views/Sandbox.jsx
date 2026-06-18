@@ -8,7 +8,7 @@ import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.js
 import { ScoreRing, BadgePill, BadgeModal, StatusBadge, ArchitectureDiagram } from '../components/proof/ProofViews.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import {
-  getPublishedProjects, getProjects, saveProject, savePartnerRequest, saveStudioSeed, uid, proofScoreBreakdown,
+  getPublishedProjects, getProjects, saveProject, savePartnerRequest, uid, proofScoreBreakdown,
 } from '../lib/projectStore.js';
 import { deriveBadges } from '../lib/badges.js';
 import { rankProjects } from '../lib/roleFit.js';
@@ -62,15 +62,28 @@ const MARKET_IDEAS = [
 
 function MarketplaceIdeas({ go, flash }) {
   const startIdea = (idea) => {
-    saveStudioSeed({
-      idea,
+    // Turn the marketplace idea into a real, saved student project and open its
+    // workspace directly — no Studio "seed" handoff, so it can never bounce to
+    // Profile / a default screen. ProjectWorkspace shows its "Generate Workspace"
+    // CTA when the project has no plan yet, which is the expected next step.
+    const saved = saveProject({
+      id: uid('proj'),
+      title: idea.title,
       targetRole: idea.targetRole,
       type: idea.type,
-      missingSkills: idea.tags,
-      jd: `${idea.title}\n\nProblem statement: ${idea.problem}\n\nBusiness angle: ${idea.businessAngle}\n\nBuild a recruiter-ready project with architecture, GitHub, live demo, README, interview prep and startup-style validation.`,
+      difficulty: idea.difficulty,
+      problemStatement: idea.problem,
+      useCase: idea.businessAngle,
+      businessAngle: idea.businessAngle,
+      skillsCovered: idea.tags || [],
+      tags: idea.tags || [],
+      techStack: [],
+      sourceIdea: { id: idea.id, title: idea.title, source: 'marketplace' },
+      sourceJob: { title: idea.title, company: 'Marketplace idea' },
+      published: false,
     });
-    flash('Idea loaded into Career Project Studio.');
-    go?.('projectstudio');
+    flash('Project created — opening your workspace.');
+    go?.('projectworkspace', { projectId: saved.id });
   };
   return (
     <SectionCard title="Startup-grade project ideas" action={<Badge tone="amber">Marketplace ideas</Badge>} className="mb-4">

@@ -6,6 +6,7 @@ import {
 import { PageIntro, SectionCard, StatCard, BarChart } from './common.jsx';
 import { Button, Badge, Spinner, EmptyState, Input, Field, Modal } from '../components/ui/kit.jsx';
 import { College } from '../lib/api.js';
+import { getEffectiveRole } from '../lib/roleCapabilities.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: GraduationCap },
@@ -45,8 +46,37 @@ function ErrorState({ message, onRetry }) {
 }
 
 export default function CollegeWorkspace({ params = {}, go }) {
+  // Defense-in-depth on top of nav filtering + the App.navigate guard: the
+  // placement-cell workspace is for verified college staff / admins only. A
+  // student who reaches this view by any means (stale state, a direct hash, a
+  // race during access-context refresh) sees a small correction card instead of
+  // the "Placement cell" / "College workspace" UI — never the college data.
+  const effectiveRole = getEffectiveRole();
+  const allowed = effectiveRole === 'college_admin' || effectiveRole === 'admin';
+
   const [tab, setTab] = useState(TABS.some((t) => t.id === params.tab) ? params.tab : 'overview');
   useEffect(() => { if (params.tab && TABS.some((t) => t.id === params.tab)) setTab(params.tab); }, [params.tab]);
+
+  if (!allowed) {
+    return (
+      <div>
+        <PageIntro
+          eyebrow="Student workspace"
+          title="This is a student account"
+          sub="The College / Placement Cell workspace is only available to verified placement-cell staff and admins."
+        />
+        <SectionCard title="Let’s get you to the right place">
+          <p className="mb-4 text-sm text-muted">
+            Your account is set up as a student, so college analytics, the student directory and drive tracker don’t apply here. Head to your Project OS to build verified proof-of-work, or open your dashboard.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => go?.('projectstudio')}>Go to Project OS</Button>
+            <Button variant="soft" onClick={() => go?.('dash')}>Open dashboard</Button>
+          </div>
+        </SectionCard>
+      </div>
+    );
+  }
 
   return (
     <div>

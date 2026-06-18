@@ -21,8 +21,12 @@ export function getAccessForUser(user) {
   // Server-approved access context is the only source for privileged UI roles.
   // Self-selected recruiter / college_admin remains only a verification intent.
   let role = isAdmin ? 'admin' : localRole;
-  if (!isAdmin && ctx.roleVerified === true && ctx.accountType === 'recruiter') role = 'recruiter';
-  else if (!isAdmin && ctx.roleVerified === true && ctx.accountType === 'college_admin') role = 'college_admin';
+  // A verified privileged server context upgrades the feature role ONLY when the
+  // local persona/profile role agrees (same rule as getEffectiveRole). A student
+  // affiliated with a college — or one carrying a stale server accountType — is
+  // never treated as recruiter / placement-cell staff. collegeId is never used.
+  if (!isAdmin && ctx.roleVerified === true && ctx.accountType === 'recruiter' && localRole === 'recruiter') role = 'recruiter';
+  else if (!isAdmin && ctx.roleVerified === true && ctx.accountType === 'college_admin' && localRole === 'college_admin') role = 'college_admin';
   else if (localRole === 'recruiter' || localRole === 'college_admin') role = 'student';
   const effectivePlan = isAdmin ? 'admin' : (LIMITS[plan.planId] ? plan.planId : 'free');
   const limits = isAdmin ? ADMIN_LIMITS : (LIMITS[effectivePlan] || LIMITS.free);

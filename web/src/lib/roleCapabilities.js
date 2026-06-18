@@ -299,17 +299,29 @@ export function getEffectiveRole(profile, opts = {}) {
   const p = profile || getProfile() || {};
   const ctx = opts.accessContext || p.accessContext || getAccessContext() || {};
   const isAdmin = opts.isAdmin != null ? !!opts.isAdmin : !!safeIsAdmin();
-  if (isAdmin || ctx.isAdmin === true || ctx.role === 'admin') return 'admin';
+
+  // The LOCAL persona/profile role is the gating signal for any privileged UI.
+  // The server access-context can only CONFIRM (verify) a privileged role the
+  // user has actually chosen — it can never, on its own, promote a student into
+  // the recruiter or placement-cell experience. This is what keeps a student who
+  // merely belongs to a college (college / collegeId / branch / yearSem fields,
+  // or a stale / misattributed server `accountType`) on the student surface.
+  const base = VALID_BASE_ROLES.has(p.role) ? p.role : 'student';
+
+  // Admin always wins (billing flag, server context, or explicit profile role).
+  if (isAdmin || ctx.isAdmin === true || ctx.role === 'admin' || base === 'admin') return 'admin';
 
   const accountType = String(ctx.accountType || '').trim();
   const verified = ctx.roleVerified === true;
-  if (verified && accountType === 'recruiter') return 'recruiter';
-  if (verified && accountType === 'college_admin') return 'college_admin';
 
-  const base = VALID_BASE_ROLES.has(p.role) ? p.role : 'student';
-  if (base === 'admin') return 'admin';
+  // A verified privileged context upgrades the UI ONLY when the local persona
+  // agrees. `collegeId` is never consulted here, so college affiliation alone
+  // never changes the effective UI role.
+  if (verified && accountType === 'recruiter' && base === 'recruiter') return 'recruiter';
+  if (verified && accountType === 'college_admin' && base === 'college_admin') return 'college_admin';
+
   // Self-selected privileged personas are UI intent only. Until the server
-  // access-context says they are verified, they get only verification/status UI.
+  // access-context confirms verification, they get only verification/status UI.
   if (base === 'recruiter') return 'recruiter_unverified';
   if (base === 'college_admin') return 'college_admin_unverified';
   if (base === 'professional') return 'student_placement';

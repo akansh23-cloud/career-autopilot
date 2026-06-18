@@ -949,6 +949,7 @@ export default function ProjectStudio({ go, openProjectId }) {
   const [duration, setDuration] = useState('1 week');
   const [type, setType] = useState(seed?.type || 'Full Stack');
   const [jd, setJd] = useState(seed?.jd || '');
+  const [problemStatement, setProblemStatement] = useState(seed?.idea?.problem || '');
   const [useGaps, setUseGaps] = useState(Boolean(seed?.missingSkills?.length));
   const gaps = seed?.missingSkills || [];
 
@@ -986,7 +987,7 @@ export default function ProjectStudio({ go, openProjectId }) {
       jd: jd.trim(), resumeText: resume.text || '',
       sourceJob: ov?.sourceJob || (seed?.job ? { title: seed.job.title, company: seed.job.company } : (seed?.idea ? { title: seed.idea.title, company: 'Marketplace idea' } : null)),
       title: ov?.title || seed?.idea?.title || undefined,
-      problemStatement: ov?.problemStatement || seed?.idea?.problem || undefined,
+      problemStatement: ov?.problemStatement || (problemStatement.trim() ? problemStatement.trim() : undefined) || seed?.idea?.problem || undefined,
     };
     try { const p = await generateRoadmap(input); setProject(p); setStatus('done'); }
     catch { setStatus('error'); }
@@ -1040,7 +1041,16 @@ export default function ProjectStudio({ go, openProjectId }) {
 
   return (
     <>
-      <PageIntro title="Project OS" sub="Your project journey in one place: dashboard → workspace → builder → proof → resume output. Turn missing skills into portfolio projects that prove your skills to recruiters." action={<Button onClick={() => go?.('projectworkspace', { createCustom: true })}><Sparkles size={15} /> Create Custom Project</Button>} />
+      <PageIntro
+        title="Student Project OS"
+        sub="Build verified proof-of-work projects for your target role. Create projects, follow roadmaps, submit proof, and earn verified skills."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="soft" onClick={() => go?.('marketplace')}><Lightbulb size={15} /> Browse startup-grade ideas</Button>
+            <Button onClick={() => go?.('projectworkspace', { createCustom: true })}><Sparkles size={15} /> Create Custom Project</Button>
+          </div>
+        }
+      />
       {wsError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/8 px-4 py-3 text-[12.5px] text-rose-200">
           <span>Workspace generation failed: {wsError}</span>
@@ -1078,6 +1088,9 @@ export default function ProjectStudio({ go, openProjectId }) {
               </Field>
               <Field label="Project type">
                 <div className="flex flex-wrap gap-1.5">{TYPES.map((t) => <button key={t} onClick={() => setType(t)} className={`rounded-lg px-3 py-1.5 text-xs transition ${type === t ? 'bg-aurora-mint/15 text-white ring-1 ring-aurora-mint/30' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{t}</button>)}</div>
+              </Field>
+              <Field label="Project idea or problem statement (optional)">
+                <textarea value={problemStatement} onChange={(e) => setProblemStatement(e.target.value)} placeholder="Describe your idea or the real problem you want to solve…" className="h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
               </Field>
               <Field label="Paste a job description (optional)">
                 <textarea value={jd} onChange={(e) => setJd(e.target.value)} placeholder="Paste a JD to extract target skills…" className="h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />

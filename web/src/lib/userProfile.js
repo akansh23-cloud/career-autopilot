@@ -27,10 +27,10 @@ export const ROLE_LABELS = {
 };
 
 export const ONBOARDING_CHOICES = [
-  { role: 'student', label: 'Student', hint: 'Build proof, get placement-ready' },
+  { role: 'student', label: 'Student', hint: 'Pick this if you study at a college — build proof, get placement-ready' },
   { role: 'professional', label: 'Working Professional', hint: 'Level up and switch roles' },
   { role: 'recruiter', label: 'Recruiter', hint: 'Find proven candidates' },
-  { role: 'college_admin', label: 'College / Placement Cell', hint: 'Track student readiness' },
+  { role: 'college_admin', label: 'College / Placement Cell Staff', hint: 'For TPO, faculty, or placement administrators only' },
 ];
 
 function read() {

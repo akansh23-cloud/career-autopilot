@@ -77,7 +77,7 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
         } else {
           /* No workspace yet — surface an explicit Generate CTA. */
           setNeedsGenerate(true);
-          if (!p) setError('Project details were not found locally; the workspace can still be generated from the server copy if one exists, or open the project from Project Studio first.');
+          if (!p) setError('We couldn’t find this project locally. Open it from Project OS, or generate a workspace if a server copy exists.');
         }
       } catch (e) {
         if (alive) setError(e?.message || 'Failed to load the workspace.');
@@ -283,25 +283,34 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
   }
 
   if (!plan) {
+    // A project is "in hand" when we have a projectId that resolves locally (e.g.
+    // just created from a marketplace idea) or an already-loaded project object.
+    // In that case the project IS saved — we only need to generate its plan — so
+    // we never surface the "details were not found locally" message.
+    const hasProject = !!(project || (projectId && getProject(projectId)));
     return (
       <div>
-        <PageIntro eyebrow="Guided Workspace" title="Project Workspace" sub={needsGenerate ? 'This project has no workspace yet.' : (error || 'No workspace yet.')} />
+        <PageIntro
+          eyebrow="Guided Workspace"
+          title="Project Workspace"
+          sub={hasProject || needsGenerate ? 'This project is saved — generate its guided workspace plan.' : (error || 'No workspace yet.')}
+        />
         <Card className="p-8 text-center">
-          {error && <p className="mb-3 text-[13px] text-rose-300">{error}</p>}
+          {error && !hasProject && <p className="mb-3 text-[13px] text-rose-300">{error}</p>}
           <p className="text-[13.5px] text-slate-400">
-            {needsGenerate
-              ? 'Generate a guided workspace for this project — a deterministic plan with screens, APIs, models, tasks, tests and a starter pack.'
-              : 'Open a project from Project Studio, or create a custom project to get a guided build plan.'}
+            {hasProject || needsGenerate
+              ? 'This project is saved. Generate a guided workspace plan to get screens, APIs, tasks, tests, deployment steps, proof checklist, and starter-pack guidance.'
+              : 'Open a project from Project OS, or create a custom project to get a guided build plan.'}
           </p>
           <div className="mt-5 flex justify-center gap-2.5">
-            <Button variant="ghost" onClick={() => go?.('projectstudio')}>Open Project Studio</Button>
-            {needsGenerate || projectId ? (
+            {hasProject || needsGenerate || projectId ? (
               <Button onClick={generateWorkspace} disabled={busy.generate}>
                 {busy.generate ? <Spinner className="h-4 w-4" /> : null} {error ? 'Retry Generate Workspace' : 'Generate Workspace'}
               </Button>
             ) : (
               <Button onClick={() => setShowForm(true)}>Create Custom Project</Button>
             )}
+            <Button variant="ghost" onClick={() => go?.('projectstudio')}>Back to Project OS</Button>
           </div>
         </Card>
       </div>
