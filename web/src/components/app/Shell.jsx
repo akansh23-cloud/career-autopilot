@@ -113,7 +113,14 @@ const TOP_NAV_PRIORITIES = {
   student_early: ['Overview', 'Project OS', 'Profile / XP', 'Community'],
   student_placement: ['Overview', 'Resume OS', 'Job Match', 'Applications', 'Project OS', 'Profile / XP', 'Community'],
 };
-const MAX_TOP_NAV_GROUPS = 7;
+// Cap chosen so the primary set fits the inline bar even in the tightest
+// case (2xl, where the search control expands to a full pill and the
+// centered container is already capped at max-w-7xl). Any extra groups —
+// most often for admin / student_placement, which generate the most menus —
+// flow into the existing "More" menu instead of overflowing onto the
+// right-side controls. Kept role-agnostic so the bar behaves identically
+// for every role.
+const MAX_TOP_NAV_GROUPS = 6;
 
 function orderGroupsForTopNav(groups, role) {
   const priority = TOP_NAV_PRIORITIES[role] || TOP_NAV_PRIORITIES.student_placement;
@@ -357,7 +364,7 @@ export default function Shell({ active, onPick, title, children }) {
             <span className="hidden font-display text-[16px] font-extrabold tracking-tight text-white sm:block">Career Autopilot</span>
           </button>
 
-          <nav className="ml-3 hidden min-w-0 flex-1 items-center gap-0.5 lg:flex">
+          <nav className="ml-3 hidden min-w-0 flex-1 items-center gap-0.5 xl:flex">
             {primary.map((g) => <NavMenu key={g.label} group={g} active={active} onPick={pick} />)}
             {more.length > 0 && <NavMenu group={{ label: 'More', short: 'More', items: more }} active={active} onPick={pick} />}
           </nav>
@@ -395,7 +402,7 @@ export default function Shell({ active, onPick, title, children }) {
                 <MenuItem icon={LogOut} danger onClick={logout}>Sign out</MenuItem>
               </div>
             </Dropdown>
-            <button onClick={() => setDrawer(true)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/8 text-slate-300 hover:bg-white/6 lg:hidden" aria-label="Menu"><Menu size={20} /></button>
+            <button onClick={() => setDrawer(true)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/8 text-slate-300 hover:bg-white/6 xl:hidden" aria-label="Menu"><Menu size={20} /></button>
           </div>
         </div>
       </header>
@@ -404,11 +411,11 @@ export default function Shell({ active, onPick, title, children }) {
       <AnimatePresence>
         {drawer && [
           <motion.div key="nav-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setDrawer(false)} />,
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm xl:hidden" onClick={() => setDrawer(false)} />,
           <motion.aside
             key="nav-panel"
             initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-[300px] flex-col overflow-y-auto border-l border-white/[0.07] bg-ink-900 lg:hidden"
+            className="fixed inset-y-0 right-0 z-50 flex w-[300px] flex-col overflow-y-auto border-l border-white/[0.07] bg-ink-900 xl:hidden"
           >
             <div className="flex items-center justify-between px-5 py-5">
               <span className="font-display text-[15px] font-extrabold text-white">Menu</span>
