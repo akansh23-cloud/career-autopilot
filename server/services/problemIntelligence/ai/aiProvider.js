@@ -12,6 +12,7 @@
    accordingly. It NEVER throws and NEVER claims high confidence
    from a single generation.
    ============================================================ */
+import crypto from 'crypto';
 import { piConfig, resolveActiveProvider } from '../config.js';
 import { parseLooseJSON } from '../util.js';
 import { fallbackProvider } from './fallbackProvider.js';
@@ -30,10 +31,30 @@ function buildClient(cfg) {
 
 const JSON_RULE = 'Respond with ONLY valid minified JSON (no prose, no markdown fences). ';
 
+/* Tiny in-memory response cache: identical (provider+model+prompt) calls within
+   the TTL reuse the prior result instead of paying for another generation. A
+   meaningful cost saver for repeated discovery/blueprint runs. */
+const _aiCache = new Map(); // key -> { at, value }
+function cacheKey(client, system, user, maxTokens) {
+  return crypto.createHash('sha256').update([client?.name, client?.model || '', maxTokens, system, user].join('\u0000')).digest('hex');
+}
+
 /* Run an AI generation that must return JSON; on any failure return null so the
    caller can use the deterministic fallback. */
-async function aiJSON(client, system, user, maxTokens) {
+async function aiJSON(client, system, user, maxTokens, cache = null) {
   if (!client || !client.available) return null;
+  const useCache = cache && cache.enabled;
+  if (useCache) {
+    const k = cacheKey(client, system, user, maxTokens);
+    const hit = _aiCache.get(k);
+    if (hit && Date.now() - hit.at < cache.ttlMs) return hit.value;
+    const value = await generate(client, system, user, maxTokens);
+    if (value) _aiCache.set(k, { at: Date.now(), value });
+    return value;
+  }
+  return generate(client, system, user, maxTokens);
+}
+async function generate(client, system, user, maxTokens) {
   try {
     const text = await client.complete(JSON_RULE + system, user, maxTokens);
     const parsed = parseLooseJSON(text);
@@ -41,9 +62,24 @@ async function aiJSON(client, system, user, maxTokens) {
   } catch { return null; }
 }
 
+
+export function configuredProviderName(cfg = piConfig()) {
+  const client = buildClient(cfg);
+  return client?.available ? client.name : 'fallback';
+}
+
+export async function askJSON(prompt, opts = {}) {
+  const cfg = opts.cfg || piConfig();
+  const provider = getAIProvider(cfg);
+  const system = opts.system || 'Return a JSON object. Do not include prose or markdown.';
+  const out = await provider.freeformJSON(system, String(prompt || ''), opts.maxTokens || 1200);
+  return { json: out.data || {}, provider: out.provider || provider.providerName || 'fallback', confidence: out.confidence || 'low' };
+}
+
 export function getAIProvider(cfg = piConfig()) {
   const client = buildClient(cfg);
   const providerName = client?.available ? client.name : 'fallback';
+  const cache = { enabled: cfg.aiCacheEnabled !== false, ttlMs: cfg.aiCacheTtlMs || 3600000 };
   const stamp = (obj, ok) => ({ ...obj, _ai: { provider: ok ? providerName : 'fallback', confidence: ok ? 'medium' : 'low' } });
 
   return {
@@ -54,7 +90,7 @@ export function getAIProvider(cfg = piConfig()) {
     // data is null when no AI is configured or the call fails — callers MUST
     // have a deterministic fallback. Never throws.
     async freeformJSON(system, user, maxTokens = 1200) {
-      const out = await aiJSON(client, system, user, maxTokens);
+      const out = await aiJSON(client, system, user, maxTokens, cache);
       return { data: out, provider: out ? providerName : 'fallback', confidence: out ? 'medium' : 'low' };
     },
     async extractPainPoints(input) {

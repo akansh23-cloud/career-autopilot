@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp, ShieldCheck, BadgeCheck, ExternalLink } from 'lucide-react';
+import { Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp, ShieldCheck, BadgeCheck, ExternalLink, LockKeyhole } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.jsx';
 import { ScoreRing, BadgePill, BadgeModal, StatusBadge } from '../components/proof/ProofViews.jsx';
+import { VerificationReport } from '../components/proof/VerificationReport.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getPublishedProjects, proofScoreBreakdown } from '../lib/projectStore.js';
 import { buildCandidates, rankCandidates } from '../lib/roleFit.js';
@@ -10,7 +11,7 @@ import { calculateProjectStatus } from '../lib/projectStatus.js';
 import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
 import { ALL_ROLES } from '../lib/roles.js';
-import { fetchCandidates, roleFitForProfile, toggleShortlistCandidate, isShortlisted } from '../lib/network.js';
+import { fetchCandidates, roleFitForProfile, toggleShortlistCandidate, isShortlisted, sendReferralRequest } from '../lib/network.js';
 
 function FitBars({ parts }) {
   return (
@@ -31,6 +32,7 @@ export default function RecruiterConsole() {
   const access = getAccessForUser(user);
   const [published, setPublished] = useState(getPublishedProjects());
   const [netCandidates, setNetCandidates] = useState([]);
+  const [candidateError, setCandidateError] = useState(null);
   const [shortlistTick, setShortlistTick] = useState(0);
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
@@ -43,10 +45,11 @@ export default function RecruiterConsole() {
   const [minTrust, setMinTrust] = useState(0);
   const [open, setOpen] = useState(null);
   const [badgeOpen, setBadgeOpen] = useState(null);
+  const [verifyTarget, setVerifyTarget] = useState(null);
 
   useEffect(() => {
     const sync = () => setPublished(getPublishedProjects());
-    const loadNet = () => { fetchCandidates().then((list) => setNetCandidates(Array.isArray(list) ? list : [])); };
+    const loadNet = () => { fetchCandidates().then((list) => { setCandidateError(null); setNetCandidates(Array.isArray(list) ? list : []); }).catch((e) => { setCandidateError(e?.status || 'error'); setNetCandidates([]); }); };
     loadNet();
     window.addEventListener('career-projects-updated', sync);
     window.addEventListener('career-engagement-updated', sync);
@@ -96,8 +99,57 @@ export default function RecruiterConsole() {
 
   const viewProfile = (userId) => { if (userId) window.location.hash = `#/profile/${encodeURIComponent(userId)}`; };
   const onShortlistProfile = async (userId) => { await toggleShortlistCandidate(userId); setShortlistTick((t) => t + 1); };
+  // Consent rule: a direct "Contact candidate" is only offered when the
+  // candidate has opted in (openToRecruiters). Everyone else can only be sent a
+  // softer "Request introduction" — never a direct contact. The backend applies
+  // the same opt-in/visibility filtering, so this keeps the UI honest.
+  const [reqState, setReqState] = useState({});
+  const onContactOrIntro = async (p) => {
+    const kind = p.openToRecruiters ? 'contact' : 'intro';
+    setReqState((s) => ({ ...s, [p.userId]: 'sending' }));
+    const res = await sendReferralRequest({
+      toUserId: p.userId, kind,
+      message: '', effectivePlan: access.effectivePlan, isAdmin: access.isAdmin,
+    });
+    setReqState((s) => ({ ...s, [p.userId]: res?.ok ? 'sent' : (res?.error || 'error') }));
+  };
 
   const rolesPresent = Array.from(new Set([...candidates.map((c) => c.targetRole), ...netCandidates.map((c) => c.targetRole)].filter(Boolean)));
+
+  // Saved searches (simple, per-browser). Lets a recruiter store a filter set
+  // and re-apply it later. Client-side only — no private data leaves the device.
+  const SS_KEY = 'ca_recruiter_saved_searches';
+  const [savedSearches, setSavedSearches] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SS_KEY) || '[]'); } catch { return []; }
+  });
+  const persistSaved = (list) => { setSavedSearches(list); try { localStorage.setItem(SS_KEY, JSON.stringify(list)); } catch { /* ignore */ } };
+  const saveCurrentSearch = () => {
+    const name = String(q || role || skills || 'Search').slice(0, 40);
+    const entry = { id: 'ss_' + Date.now(), name, query: { q, role, skills, minScore, minXP, minTrust, reqGithub, reqLive, reqAvail } };
+    persistSaved([entry, ...savedSearches].slice(0, 12));
+  };
+  const applySaved = (s) => {
+    const x = s.query || {};
+    setQ(x.q || ''); setRole(x.role || ''); setSkills(x.skills || '');
+    setMinScore(x.minScore || 0); setMinXP(x.minXP || 0); setMinTrust(x.minTrust || 0);
+    setReqGithub(!!x.reqGithub); setReqLive(!!x.reqLive); setReqAvail(!!x.reqAvail);
+  };
+  const removeSaved = (id) => persistSaved(savedSearches.filter((s) => s.id !== id));
+
+  if (candidateError === 401 || candidateError === 403) {
+    return (
+      <>
+        <PageIntro title="Recruiter verification required" sub="Candidate discovery unlocks only after admin-approved recruiter verification." />
+        <SectionCard title="Access locked">
+          <EmptyState
+            icon={LockKeyhole}
+            title="Recruiter access is not verified"
+            hint="Your onboarding role is treated as intent only. Request verification before opening candidate search, shortlists, or contact actions."
+          />
+        </SectionCard>
+      </>
+    );
+  }
 
   return (
     <>
@@ -140,6 +192,17 @@ export default function RecruiterConsole() {
           ].map(([label, on, toggle]) => (
             <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#A7ECF8]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>{label}</button>
           ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
+          <Button size="sm" variant="soft" onClick={saveCurrentSearch}>Save search</Button>
+          {savedSearches.length === 0
+            ? <span className="text-xs text-slate-500">No saved searches yet</span>
+            : savedSearches.map((s) => (
+              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.03] px-2.5 py-1 text-xs text-slate-300">
+                <button onClick={() => applySaved(s)} className="hover:text-white">{s.name}</button>
+                <button onClick={() => removeSaved(s.id)} className="text-slate-500 hover:text-rose-300" aria-label="Remove saved search">×</button>
+              </span>
+            ))}
         </div>
       </SectionCard>
 
@@ -187,7 +250,11 @@ export default function RecruiterConsole() {
                       {m.hasLive && <Badge tone="mint"><Globe size={11} /> Live</Badge>}
                       {p.openToRecruiters && <Badge tone="cyan">Open to recruiters</Badge>}
                       <div className="ml-auto flex gap-2">
+                        <Button size="sm" variant="soft" onClick={() => setVerifyTarget(p)}><ShieldCheck size={13} /> Verification report</Button>
                         <Button size="sm" variant="soft" onClick={() => viewProfile(p.userId)}><ExternalLink size={13} /> View profile</Button>
+                        <Button size="sm" variant="soft" onClick={() => onContactOrIntro(p)} disabled={reqState[p.userId] === 'sending' || reqState[p.userId] === 'sent'}>
+                          <Mail size={13} /> {reqState[p.userId] === 'sent' ? (p.openToRecruiters ? 'Contact sent' : 'Intro requested') : (p.openToRecruiters ? 'Contact candidate' : 'Request intro')}
+                        </Button>
                         <Button size="sm" onClick={() => onShortlistProfile(p.userId)}><Star size={13} /> {sl ? 'Shortlisted' : 'Shortlist'}</Button>
                       </div>
                     </div>
@@ -274,6 +341,12 @@ export default function RecruiterConsole() {
         )}
       </Modal>
       <BadgeModal badge={badgeOpen} open={!!badgeOpen} onClose={() => setBadgeOpen(null)} />
+      <VerificationReport
+        open={!!verifyTarget}
+        onClose={() => setVerifyTarget(null)}
+        subjectName={verifyTarget?.name || 'Candidate'}
+        credentials={verifyTarget?.metrics?.credentials || verifyTarget?.credentials || []}
+      />
     </>
   );
 }

@@ -26,21 +26,10 @@ const SYNONYMS = {
 
 const SOFTWARE = ['software', 'ml', 'ai', 'api', 'algorithm', 'pipeline', 'app', 'system'];
 
-export function priorArtPlan(idea = {}, { projectPackage = null } = {}) {
-  // Optional synthesis input: fold the package's technical mechanism and
-  // domain into term extraction so the plan reflects the actual project,
-  // not just the saved idea text. Fully backward compatible without it.
-  const synth = projectPackage && typeof projectPackage === 'object' ? projectPackage : null;
-  const synthMech = String(synth?.buildBrief?.technicalMechanism || '');
-  const synthDomain = String(synth?.classification?.domain || '');
-  const synthMeta = synth?.evidenceSummary?._meta || null;
-  const enriched = synth
-    ? { ...idea, technicalMechanism: `${idea.technicalMechanism || ''} ${synthMech}`.trim(), domain: idea.domain || synthDomain, tags: [...(idea.tags || []), ...(synth.projectOsPayload?.requiredSkills || []).slice(0, 4)] }
-    : idea;
-
-  const terms = keyTerms(enriched);
+export function priorArtPlan(idea = {}) {
+  const terms = keyTerms(idea);
   const phrase = terms.slice(0, 4).join(' ');
-  const isSoftware = SOFTWARE.some((s) => lc(`${enriched.technicalMechanism} ${enriched.tags?.join(' ')} ${enriched.proposedSolution}`).includes(s));
+  const isSoftware = SOFTWARE.some((s) => lc(`${idea.technicalMechanism} ${idea.tags?.join(' ')} ${idea.proposedSolution}`).includes(s));
 
   const synonyms = terms.flatMap((t) => (SYNONYMS[t] || [])).slice(0, 8);
   const technicalPhrases = [
@@ -50,13 +39,13 @@ export function priorArtPlan(idea = {}, { projectPackage = null } = {}) {
 
   const googlePatents = [`${phrase} method system`, `${terms.slice(0, 3).join(' ')} apparatus`, `${terms[0]} ${terms[1]} feedback`].filter((q) => q.trim().length > 4);
   const uspto = googlePatents.map((q) => q);
-  const wipoEspacenet = [`${phrase}`, `${terms.slice(0, 2).join(' ')} ${enriched.domain || ''}`.trim()];
+  const wipoEspacenet = [`${phrase}`, `${terms.slice(0, 2).join(' ')} ${idea.domain || ''}`.trim()];
   const scholar = [`${phrase} algorithm`, `${terms.slice(0, 3).join(' ')} evaluation`];
-  const product = [`${enriched.domain || ''} ${terms[0] || ''} tool`.trim(), `${terms.slice(0, 2).join(' ')} startup`, `best ${enriched.domain || ''} ${terms[0] || ''} software`.trim()];
-  const github = isSoftware ? [`${terms.slice(0, 2).join(' ')}`, `${terms[0] || ''} ${enriched.tags?.[0] || ''}`.trim()] : [];
+  const product = [`${idea.domain || ''} ${terms[0] || ''} tool`.trim(), `${terms.slice(0, 2).join(' ')} startup`, `best ${idea.domain || ''} ${terms[0] || ''} software`.trim()];
+  const github = isSoftware ? [`${terms.slice(0, 2).join(' ')}`, `${terms[0] || ''} ${idea.tags?.[0] || ''}`.trim()] : [];
 
   // Rough CPC/IPC classification hints by domain/tech.
-  const t = lc(`${enriched.domain} ${enriched.technicalMechanism} ${enriched.tags?.join(' ')}`);
+  const t = lc(`${idea.domain} ${idea.technicalMechanism} ${idea.tags?.join(' ')}`);
   const classHints = [];
   if (/ml|ai|model|learning|neural/.test(t)) classHints.push('G06N (computing arrangements based on specific computational models)');
   if (/data|database|record|fusion|pipeline/.test(t)) classHints.push('G06F 16 (information retrieval / data structures)');
@@ -82,18 +71,12 @@ export function priorArtPlan(idea = {}, { projectPackage = null } = {}) {
       ...(isSoftware ? [{ name: 'GitHub', url: 'https://github.com/search' }] : []),
     ],
     classificationHints: classHints,
-    similarCategories: [`${enriched.domain || 'General'} ${terms[0] || 'tools'}`, `${terms[0] || ''} ${terms[1] || ''} platforms`.trim()],
+    similarCategories: [`${idea.domain || 'General'} ${terms[0] || 'tools'}`, `${terms[0] || ''} ${terms[1] || ''} platforms`.trim()],
     riskAreas: [
       'Crowded space if the core idea is a common workflow without a unique mechanism.',
       'Business-method framing may face stricter examination — lead with the technical mechanism.',
-      ...(synth && synth.classification?.ipAnalysisAppropriate === false
-        ? ['Synthesis classification flags this domain as weak ground for IP (generic workflow/marketplace pattern) — a specific technical mechanism with technical effect is required before any filing discussion.'] : []),
-      ...(synthMeta && (synthMeta.communityOnly || !synthMeta.total)
-        ? ['Source evidence is weak or community-only — prior-art risk is effectively unknown until verified technical/research sources are reviewed.'] : []),
     ],
     differentiationAngles: [
-      ...(synthMech.length > 40
-        ? [`Lead with the project's actual technical mechanism: ${synthMech.slice(0, 180)}`] : []),
       'Emphasize the specific multi-source fusion + adaptive feedback combination.',
       'Highlight the measurable technical improvement over isolated tools.',
       'Stress any privacy-preserving / on-device / real-time aspect.',

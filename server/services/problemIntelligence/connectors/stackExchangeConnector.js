@@ -75,3 +75,6 @@ function seWarning(res, key) {
 }
 
 export default { fetchStackExchange };
+
+// Back-compat alias used by the legacy problem-intelligence index.
+export const fetchStackExchangeSignals = fetchStackExchange;

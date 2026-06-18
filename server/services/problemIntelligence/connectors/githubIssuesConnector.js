@@ -73,3 +73,6 @@ function githubWarning(res, token) {
 }
 
 export default { fetchGithubIssues };
+
+// Back-compat alias used by the legacy problem-intelligence index.
+export const fetchGitHubIssueSignals = fetchGithubIssues;

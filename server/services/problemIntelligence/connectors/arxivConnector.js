@@ -66,3 +66,6 @@ function parseEntries(xml) {
 }
 
 export default { fetchArxiv };
+
+// Back-compat alias used by the legacy problem-intelligence index.
+export const fetchArxivSignals = fetchArxiv;

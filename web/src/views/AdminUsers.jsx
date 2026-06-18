@@ -160,6 +160,8 @@ function DetailDrawer({ id, onClose, onMutated }) {
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [vForm, setVForm] = useState({ accountType: '', organizationId: '', collegeId: '' });
+  const [vMsg, setVMsg] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -168,6 +170,7 @@ function DetailDrawer({ id, onClose, onMutated }) {
       if (!r.ok) throw new Error(r.reason || 'failed');
       setData(r);
       setNotes(r.user.adminNotes || '');
+      setVForm({ accountType: r.user.accountType || '', organizationId: r.user.organizationId || '', collegeId: r.user.collegeId || '' });
     } catch (e) {
       const reason = e?.data?.reason || e?.message;
       setError(reason === 'db_disabled' ? 'A database connection is required to load full user details.' : (e.message || 'Could not load this user.'));
@@ -197,6 +200,23 @@ function DetailDrawer({ id, onClose, onMutated }) {
     setBusy(true);
     try { await Admin.setFeatured(id, !u.featuredTalent); await load(); onMutated?.(); }
     catch { /* no-op */ } finally { setBusy(false); }
+  };
+
+  // ---- Privileged-role verification (the ONLY path that grants recruiter /
+  // college_admin backend access). Sets server-controlled fields on the user. ----
+  const submitVerification = async (action) => {
+    if (!u) return;
+    setBusy(true); setVMsg('');
+    try {
+      const body = { email: u.email, action };
+      if (vForm.accountType) body.accountType = vForm.accountType;
+      if (vForm.organizationId) body.organizationId = vForm.organizationId;
+      if (vForm.collegeId) body.collegeId = vForm.collegeId;
+      const res = await Admin.verifyUser(id, body);
+      setVMsg(res?.ok ? (action === 'approve' ? 'Approved — role verified.' : action === 'reject' ? 'Rejected.' : 'Saved.') : (res?.error || 'Failed.'));
+      await load(); onMutated?.();
+    } catch (e) { setVMsg(e?.message || 'Failed.'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -241,6 +261,41 @@ function DetailDrawer({ id, onClose, onMutated }) {
                     <Badge tone={u.isActive ? 'mint' : 'default'}>{u.isActive ? 'Active account' : 'Disabled'}</Badge>
                   </div>
                 </div>
+              </div>
+
+              {/* Privileged-role verification — server-controlled. Grants recruiter /
+                  college_admin BACKEND access (the only path that does). */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <ShieldCheck size={15} className="text-aurora-cyan" />
+                  <p className="text-sm font-semibold text-white">Role &amp; verification</p>
+                  {u.roleVerified
+                    ? <Badge tone="mint">verified {u.accountType || ''}</Badge>
+                    : <Badge tone="default">{u.verificationStatus && u.verificationStatus !== 'none' ? u.verificationStatus : 'unverified'}</Badge>}
+                </div>
+                <p className="mb-3 text-[12px] leading-relaxed text-slate-400">Self-selected onboarding role never grants backend access. Approve to set a verified recruiter/college role.</p>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <label className="text-xs text-slate-400">Account type
+                    <select value={vForm.accountType} onChange={(e) => setVForm((f) => ({ ...f, accountType: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-ink-900 px-2.5 py-2 text-sm text-slate-200">
+                      {['', 'student', 'professional', 'recruiter', 'college_admin', 'admin'].map((t) => <option key={t} value={t}>{t || '—'}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs text-slate-400">Organization id (recruiter)
+                    <input value={vForm.organizationId} onChange={(e) => setVForm((f) => ({ ...f, organizationId: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-ink-900 px-2.5 py-2 text-sm text-slate-200" placeholder="org-…" />
+                  </label>
+                  <label className="text-xs text-slate-400 sm:col-span-2">College id (placement cell)
+                    <input value={vForm.collegeId} onChange={(e) => setVForm((f) => ({ ...f, collegeId: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-ink-900 px-2.5 py-2 text-sm text-slate-200" placeholder="college-…" />
+                  </label>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" disabled={busy} onClick={() => submitVerification('save')}>Save fields</Button>
+                  <Button size="sm" disabled={busy} onClick={() => submitVerification('approve')}>Approve &amp; verify</Button>
+                  <Button size="sm" variant="soft" disabled={busy} onClick={() => submitVerification('reject')}>Reject</Button>
+                </div>
+                {vMsg && <p className="mt-2 text-[12px] text-slate-400">{vMsg}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

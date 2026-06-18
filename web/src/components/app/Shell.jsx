@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, PenLine, Briefcase, KanbanSquare, Send,
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
   Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake, Wand2,
-  LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge, Sparkles, BrainCircuit,
+  LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge, Sparkles, GraduationCap,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import CommandPalette from './CommandPalette.jsx';
@@ -12,7 +12,9 @@ import { useSupport } from '../../support/SupportProvider.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { openPricing } from '../PricingModal.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
-import { getUserRole, PROFILE_EVENT } from '../../lib/userProfile.js';
+import { getProfile, PROFILE_EVENT } from '../../lib/userProfile.js';
+import { getEffectiveRole, canSeeScreen } from '../../lib/roleCapabilities.js';
+import { ACCESS_CONTEXT_EVENT, getAccessContext, useAccountAccessContext } from '../../lib/accessContext.js';
 
 function detectShortcut() {
   if (typeof navigator === 'undefined') return { isMac: false, label: 'Ctrl K' };
@@ -32,26 +34,27 @@ function usePlanId() {
 }
 
 function useRole() {
-  const compute = () => (getPlan().isAdmin ? 'admin' : getUserRole());
+  const compute = () => getEffectiveRole(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() });
   const [r, setR] = useState(compute());
   useEffect(() => {
     const f = () => setR(compute());
     window.addEventListener(PLAN_EVENT, f);
     window.addEventListener(PROFILE_EVENT, f);
-    return () => { window.removeEventListener(PLAN_EVENT, f); window.removeEventListener(PROFILE_EVENT, f); };
+    window.addEventListener(ACCESS_CONTEXT_EVENT, f);
+    return () => { window.removeEventListener(PLAN_EVENT, f); window.removeEventListener(PROFILE_EVENT, f); window.removeEventListener(ACCESS_CONTEXT_EVENT, f); };
   }, []);
   return r;
 }
 
 export const NAV = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'verification', label: 'Verification', icon: ShieldCheck },
   { id: 'careerprofile', label: 'Career Profile', icon: BadgeCheck },
   { id: 'projectcreator', label: 'Project Creator', icon: Wand2 },
   { id: 'marketplace', label: 'Project Marketplace', icon: Store },
   { id: 'inspirations', label: 'Live Inspirations', icon: Lightbulb },
   { id: 'architecture', label: 'Architecture Generator', icon: Boxes },
   { id: 'innovation', label: 'Innovation OS', icon: Sparkles },
-  { id: 'careerintelligence', label: 'Career Intelligence', icon: BrainCircuit },
   { id: 'patents', label: 'Patent Dashboard', icon: ScrollText },
   { id: 'patentgenerate', label: 'Legacy Generator', icon: Lightbulb },
   { id: 'patentportfolio', label: 'My Inventions', icon: Store },
@@ -72,40 +75,40 @@ export const NAV = [
   { id: 'sandbox', label: 'Project Sandbox', icon: Globe2 },
   { id: 'partners', label: 'Find Project Partner', icon: Users },
   { id: 'recruiter', label: 'Recruiter Console', icon: UserSearch },
+  { id: 'college', label: 'Placement Cell', icon: GraduationCap },
   { id: 'growth', label: 'Growth', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'adminusers', label: 'User Directory', icon: ShieldCheck, adminOnly: true },
 ];
 
-const ROLE_NAV = {
-  student: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'marketplace', 'inspirations', 'architecture', 'projectstudio', 'projectcreator', 'sandbox', 'partners', 'innovation', 'careerintelligence', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
-  professional: ['dash', 'resume', 'editor', 'applications', 'jobs', 'tracker', 'contacts', 'marketplace', 'inspirations', 'architecture', 'projectcreator', 'sandbox', 'innovation', 'careerintelligence', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures', 'careerprofile', 'skillsxp', 'readiness', 'leaderboards', 'referralexchange', 'opportunities', 'growth', 'settings'],
-  recruiter: ['dash', 'recruiter', 'readiness', 'marketplace', 'careerprofile', 'leaderboards', 'sandbox', 'settings'],
-};
+// Navigation visibility is driven entirely by the centralized capability
+// layer (roleCapabilities.canSeeScreen) — the same checks used by the command
+// palette, dashboard cards and the App navigation guard. No per-nav role list
+// is maintained here, so a screen can never appear in the nav for a role that
+// isn't allowed to open it.
 
 // Journey groups -> top-level website menus. Short labels keep the bar clean.
 // Top-level information architecture (spec L). Every existing view id is kept;
 // they are regrouped into clean menus. Patents gets its own top-level entry;
 // Profile/XP consolidates identity + verified skills + readiness.
 const NAV_GROUPS = [
-  { label: 'Overview', short: 'Home', ids: ['dash'] },
+  { label: 'Overview', short: 'Home', ids: ['dash', 'verification'] },
   { label: 'Resume OS', short: 'Résumé', ids: ['resume', 'editor'] },
   { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
   { label: 'Applications', short: 'Apply', ids: ['applications'] },
-  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'projectcreator', 'careerintelligence', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },
+  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'projectcreator', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },
   { label: 'Patent Engine', short: 'Patents', ids: ['innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
   { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'skillsxp', 'readiness'] },
   { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
   { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },
+  { label: 'Placement Cell', short: 'College', ids: ['college'] },
   { label: 'Admin', short: 'Admin', ids: ['adminusers'] },
 ];
 const MORE_IDS = ['growth', 'settings'];
 
 function groupsForRole(role) {
-  const order = ROLE_NAV[role];
-  const allowed = order ? new Set(order) : null;
   const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
-  const keep = (id) => !!byId[id] && (!allowed || allowed.has(id)) && (!byId[id].adminOnly || role === 'admin');
+  const keep = (id) => !!byId[id] && canSeeScreen(role, id) && (!byId[id].adminOnly || role === 'admin');
 
   const placed = new Set();
   const primary = NAV_GROUPS
@@ -259,6 +262,7 @@ function PlanChip({ plan }) {
 }
 
 export default function Shell({ active, onPick, title, children }) {
+  useAccountAccessContext(true);
   const { user, logout } = useAuth();
   const plan = usePlanId();
   const role = useRole();

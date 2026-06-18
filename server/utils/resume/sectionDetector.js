@@ -8,18 +8,12 @@
 
 const SECTION_ALIASES = {
   summary: ['summary', 'profile', 'objective', 'about me', 'professional summary', 'career objective'],
-  skills: ['skills', 'technical skills', 'core competencies', 'technologies', 'tech stack', 'key skills',
-    'technical proficiencies', 'technical proficiency', 'technical stack', 'technology stack',
-    'tools & technologies', 'tools and technologies', 'technologies & tools', 'technologies and tools', 'skill set'],
-  experience: ['experience', 'work experience', 'employment', 'professional experience', 'work history', 'career history',
-    'internships', 'internship', 'internship experience', 'industrial experience'],
+  skills: ['skills', 'technical skills', 'core competencies', 'technologies', 'tech stack', 'key skills'],
+  experience: ['experience', 'work experience', 'employment', 'professional experience', 'work history', 'career history'],
   projects: ['projects', 'project', 'personal projects', 'academic projects', 'key projects', 'selected projects'],
-  education: ['education', 'academics', 'qualification', 'academic background',
-    'relevant coursework', 'coursework', 'educational background', 'educational qualifications'],
-  certifications: ['certifications', 'certification', 'licenses', 'courses', 'certificates',
-    'licenses & certifications', 'licenses and certifications', 'certifications & licenses', 'certifications and licenses'],
-  achievements: ['achievements', 'achievement', 'awards', 'accomplishments', 'honors', 'honours',
-    'awards & honors', 'awards and honors', 'awards & honours', 'awards and honours', 'honors & awards', 'honors and awards'],
+  education: ['education', 'academics', 'qualification', 'academic background'],
+  certifications: ['certifications', 'certification', 'licenses', 'courses', 'certificates'],
+  achievements: ['achievements', 'achievement', 'awards', 'accomplishments', 'honors', 'honours'],
 };
 
 const HEADER_RE = /^[ \t]*([a-z][a-z &/]{1,40})[ \t]*:?[ \t]*$/i;
@@ -71,20 +65,15 @@ export function sliceSections(normalizedText = '') {
 }
 
 export function detectExperienceLevel(normalizedText = '') {
-  const fresherSignals = ['intern', 'fresher', 'b.tech', 'b.e.', 'bachelor', 'undergraduate', 'cgpa', 'gpa', 'final year', 'pursuing', 'student', 'entry level', 'entry-level', 'new grad', 'recent graduate'];
+  const fresherSignals = ['intern', 'fresher', 'b.tech', 'b.e.', 'bachelor', 'undergraduate', 'cgpa', 'gpa', 'final year', 'pursuing', 'student'];
   const expPatterns = [/\b(\d{1,2})\+?\s*years?\b/, /years of experience/, /work experience/, /professional experience/];
   const fresher = fresherSignals.reduce((n, w) => n + (normalizedText.includes(w) ? 1 : 0), 0);
   const exp = expPatterns.reduce((n, re) => n + (re.test(normalizedText) ? 1 : 0), 0);
-  // Explicit "<a>-<b> years" range -> use the LOWER bound ("0-1 years" is a
-  // fresher signal, not 1 year of experience).
-  const range = normalizedText.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\+?\s*(?:years?|yrs?)\b/);
-  // Otherwise try a plain "<n> years".
-  const ym = normalizedText.match(/\b(\d{1,2})\+?\s*(?:years?|yrs?)\b/);
-  const years = range ? Number(range[1]) : (ym ? Number(ym[1]) : null);
-  const explicitEntry = /\bentry[\s-]?level\b/.test(normalizedText) || (range && Number(range[1]) === 0 && Number(range[2]) <= 1);
+  // Try to read an explicit "<n> years"
+  const ym = normalizedText.match(/\b(\d{1,2})\+?\s*years?\b/);
+  const years = ym ? Number(ym[1]) : null;
   let level = 'fresher';
-  if (explicitEntry) level = 'fresher';
-  else if (years != null) level = years >= 6 ? 'senior' : years >= 2 ? 'mid' : years >= 1 ? 'junior' : 'fresher';
+  if (years != null) level = years >= 6 ? 'senior' : years >= 2 ? 'mid' : 'junior';
   else if (exp > fresher) level = 'mid';
   return { level, years, isExperienced: level !== 'fresher' && level !== 'junior' ? true : (exp > fresher) };
 }

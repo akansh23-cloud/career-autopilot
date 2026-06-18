@@ -7,6 +7,7 @@
 
 import { getPlan, LIMITS, isUnlimited } from './plan.js';
 import { getUserRole } from './userProfile.js';
+import { getAccessContext } from './accessContext.js';
 import { PLAN_BADGE_CAP } from './badges.js';
 
 const U = Infinity;
@@ -14,9 +15,15 @@ const ADMIN_LIMITS = { tailoring: U, contacts: U, tracking: U, templates: U, cus
 
 export function getAccessForUser(user) {
   const plan = getPlan();
-  const isAdmin = !!plan.isAdmin;
-  // Admin persona overrides the stored persona for routing/features.
-  const role = isAdmin ? 'admin' : getUserRole();
+  const ctx = getAccessContext() || {};
+  const isAdmin = !!plan.isAdmin || ctx.isAdmin === true || ctx.role === 'admin';
+  const localRole = getUserRole();
+  // Server-approved access context is the only source for privileged UI roles.
+  // Self-selected recruiter / college_admin remains only a verification intent.
+  let role = isAdmin ? 'admin' : localRole;
+  if (!isAdmin && ctx.roleVerified === true && ctx.accountType === 'recruiter') role = 'recruiter';
+  else if (!isAdmin && ctx.roleVerified === true && ctx.accountType === 'college_admin') role = 'college_admin';
+  else if (localRole === 'recruiter' || localRole === 'college_admin') role = 'student';
   const effectivePlan = isAdmin ? 'admin' : (LIMITS[plan.planId] ? plan.planId : 'free');
   const limits = isAdmin ? ADMIN_LIMITS : (LIMITS[effectivePlan] || LIMITS.free);
 

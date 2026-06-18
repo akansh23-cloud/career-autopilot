@@ -66,6 +66,70 @@ export function featuresForRole(role, planId = 'free') {
   };
 }
 
+/* Effective billing plan for a user (admin is implicitly fully entitled).
+   Unchanged subscription/payment semantics — restored after the RBAC refactor. */
 export function effectivePlan(role, planId = 'free') {
   return role === 'admin' ? 'admin' : planId;
 }
+
+/* ---------------------------------------------------------------------------
+   Persona roles (student / professional / recruiter / college_admin / admin).
+   These are distinct from billing plans. `admin` is the ONLY server-verified
+   privileged role — it comes solely from resolveIsAdmin() (ADMIN_EMAILS or a
+   persisted User.role === 'admin'). recruiter / college_admin are currently
+   self-selected personas (no identity verification yet), so resolvePersonaRole
+   NEVER promotes a self-selected role to admin. The structure leaves a single
+   place to later require verification for recruiter/college_admin.
+--------------------------------------------------------------------------- */
+export const PERSONA_ROLES = ['student', 'professional', 'recruiter', 'college_admin', 'admin'];
+
+export function resolvePersonaRole({ email, dbRole, profileRole, networkRole } = {}) {
+  // Admin is authoritative and server-verified only.
+  if (resolveIsAdmin({ email, dbRole })) return 'admin';
+  // Persona comes from persisted profile/network role when available. A
+  // self-selected 'admin' is intentionally ignored here (never trusted).
+  for (const r of [profileRole, networkRole]) {
+    if (r && PERSONA_ROLES.includes(r) && r !== 'admin') return r;
+  }
+  return 'student';
+}
+
+/* Privileged personas that, today, are NOT identity-verified. Used to mark
+   req.userRole.verified === false so downstream handlers can keep the most
+   sensitive data (PII, non-consenting candidates) admin-only until a real
+   recruiter/college verification flow exists. */
+export function isPersonaVerified(role) {
+  return role === 'admin';
+}
+
+/* ---------------------------------------------------------------------------
+   SERVER-CONTROLLED privileged role resolution (backend authorization).
+   profile.role is a self-selected onboarding PERSONA and is intentionally NOT
+   consulted here. A recruiter/college_admin backend privilege is only granted
+   from server-controlled account fields: a persisted account role/accountType,
+   an explicit roleVerified flag, or admin (allowlist / isAdmin / dbRole).
+   Returns 'admin' | 'recruiter' | 'college_admin' | null (no privilege).
+--------------------------------------------------------------------------- */
+export function resolvePrivilegedRole(src = {}) {
+  const { email, dbRole, accountType, roleVerified, isAdmin } = src;
+  if (isAdmin === true || resolveIsAdmin({ email, dbRole })) return 'admin';
+  // recruiter/college_admin backend privilege requires a SERVER-CONTROLLED
+  // accountType that is ALSO verified (admin-approved). A persisted dbRole of
+  // recruiter/college_admin is itself server-set and counts as verified.
+  const verifiedType = roleVerified === true ? accountType : null;
+  const fromDbRole = (dbRole === 'recruiter' || dbRole === 'college_admin') ? dbRole : null;
+  const type = verifiedType || fromDbRole;
+  if (type === 'recruiter') return 'recruiter';
+  if (type === 'college_admin') return 'college_admin';
+  return null;
+}
+
+/* College scoping: a college_admin may only act on resources in their OWN
+   college. Compares stable ids (collegeId / organizationId) — never a typed
+   college name. Missing ids fail closed (no cross-college access). */
+export function collegeScopeAllowed(userCollegeId, targetCollegeId) {
+  if (!userCollegeId || !targetCollegeId) return false;
+  return String(userCollegeId).trim() === String(targetCollegeId).trim();
+}
+
+

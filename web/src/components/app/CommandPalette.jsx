@@ -7,6 +7,9 @@ import {
 import { NAV } from './Shell.jsx';
 import { useSupport } from '../../support/SupportProvider.jsx';
 import { getPlan } from '../../lib/plan.js';
+import { getProfile } from '../../lib/userProfile.js';
+import { getEffectiveRole, canSeeScreen } from '../../lib/roleCapabilities.js';
+import { useAccountAccessContext } from '../../lib/accessContext.js';
 
 /* ============================================================
    Global command palette / AI action bar (⌘K · Ctrl K).
@@ -45,6 +48,7 @@ function fuzzy(q, s) {
 
 export default function CommandPalette({ open, setOpen, onPick }) {
   const support = useSupport();
+  const accessState = useAccountAccessContext(open);
   const [q, setQ] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef(null);
@@ -57,16 +61,18 @@ export default function CommandPalette({ open, setOpen, onPick }) {
 
   // Build the flat, filtered, grouped result list.
   const groups = useMemo(() => {
-    // Admin-only workspaces (e.g. the User Directory) must never surface in the
-    // palette for non-admins — the server still enforces access, this keeps the
-    // UI honest too.
-    const isAdmin = !!getPlan().isAdmin;
+    // RBAC: the palette must only ever surface workspaces and quick actions the
+    // current effective role is allowed to open — the same capability checks
+    // used by the sidebar, dashboard cards and the App navigation guard. The
+    // server still enforces access; this keeps the UI honest too.
+    const role = getEffectiveRole(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: accessState.context });
     const navItems = NAV
-      .filter((n) => !n.adminOnly || isAdmin)
+      .filter((n) => canSeeScreen(role, n.id))
       .filter((n) => fuzzy(q, n.label) || fuzzy(q, n.id))
       .map((n) => ({ key: `nav-${n.id}`, label: n.label, icon: n.icon, hint: 'Workspace', run: () => onPick(n.id) }));
 
     const quick = QUICK_ACTIONS
+      .filter((a) => canSeeScreen(role, a.target))
       .filter((a) => fuzzy(q, a.label) || fuzzy(q, a.hint))
       .map((a) => ({ key: a.id, label: a.label, icon: a.icon, hint: a.hint, run: () => onPick(a.target) }));
 
@@ -78,7 +84,7 @@ export default function CommandPalette({ open, setOpen, onPick }) {
     if (navItems.length) out.push({ heading: 'Go to', items: navItems });
     if (help.length) out.push({ heading: 'Help', items: help });
     return out;
-  }, [q, onPick, support]);
+  }, [q, onPick, support, accessState.context]);
 
   // Flat list for keyboard navigation.
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);

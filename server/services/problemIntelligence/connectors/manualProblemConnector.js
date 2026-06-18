@@ -34,3 +34,11 @@ function normalize(p) {
 }
 
 export default { fetchManual };
+
+// Back-compat helper used by the legacy problem-intelligence index.
+export function buildManualSignals(input = {}) {
+  const explicit = Array.isArray(input.manualProblems) && input.manualProblems.length
+    ? input.manualProblems
+    : [{ title: input.problem || `${input.domain || 'Technology'} problem`, description: input.problem || `Teams need a better way to solve recurring ${input.domain || 'technical'} problems.` }];
+  return fetchManual({ ...input, manualProblems: explicit }).signals || [];
+}

@@ -10,7 +10,47 @@ const num = (v, d) => {
   return Number.isFinite(n) && n > 0 ? n : d;
 };
 
-export const piConfig = (env = process.env) => ({
+/* ------------------------------------------------------------------
+   PROVIDER PRESETS  (cost-efficient / free / open-source)
+   Each preset is just the OpenAI-compatible client pointed at a different
+   gateway with a sensible default model and its own key env var. Pick one with
+   AI_PROVIDER=<name>. Ordered cheapest-first for the auto-default below.
+     - gemini      : Google Gemini Flash — generous free tier, very cheap paid.
+     - groq        : Groq — free tier, extremely fast open Llama models.
+     - openrouter  : OpenRouter — many ':free' open-source models.
+     - ollama      : fully local / offline — $0, open-source, no key needed.
+     - together    : Together AI — cheap hosted open-source models.
+   ------------------------------------------------------------------ */
+export const PROVIDER_PRESETS = {
+  groq:       { kind: 'openai', baseUrl: 'https://api.groq.com/openai/v1', keyEnv: 'GROQ_API_KEY',       model: 'llama-3.3-70b-versatile' },
+  openrouter: { kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1',  keyEnv: 'OPENROUTER_API_KEY', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  ollama:     { kind: 'openai', baseUrl: 'http://localhost:11434/v1',     keyEnv: 'OLLAMA_API_KEY',     model: 'llama3.1', keyOptional: true },
+  together:   { kind: 'openai', baseUrl: 'https://api.together.xyz/v1',   keyEnv: 'TOGETHER_API_KEY',   model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+};
+
+/* Cheapest-first auto-selection when AI_PROVIDER is not set: use whatever free/
+   cheap key is present before falling back to (costly) Anthropic, then to the
+   deterministic $0 provider. */
+function autoProvider(env) {
+  if (env.GEMINI_API_KEY) return 'gemini';
+  if (env.GROQ_API_KEY) return 'groq';
+  if (env.OPENROUTER_API_KEY) return 'openrouter';
+  if (env.TOGETHER_API_KEY) return 'together';
+  if (env.OPENAI_API_KEY) return 'openai';
+  if (env.OLLAMA_BASE_URL || env.AI_PROVIDER === 'ollama') return 'ollama';
+  if (env.ANTHROPIC_API_KEY) return 'anthropic';
+  return 'fallback';
+}
+
+export const piConfig = (env = process.env) => {
+  const requested = (env.AI_PROVIDER || autoProvider(env)).toLowerCase();
+  const preset = PROVIDER_PRESETS[requested];
+  // Fold a preset into the OpenAI-compatible fields so the rest of the system
+  // (resolveActiveProvider / buildClient) needs no special casing.
+  const aiProvider = preset ? 'openai' : requested;
+  const presetKey = preset ? (env[preset.keyEnv] || (preset.keyOptional ? 'local' : '')) : '';
+
+  return {
   // Master switch. Default ON; set PROBLEM_INTELLIGENCE_ENABLED=0 to hide it.
   enabled: env.PROBLEM_INTELLIGENCE_ENABLED !== '0',
 
@@ -18,13 +58,18 @@ export const piConfig = (env = process.env) => ({
   githubToken: env.GITHUB_TOKEN || '',
   stackExchangeKey: env.STACKEXCHANGE_KEY || '',
 
-  // AI provider selection.
-  aiProvider: (env.AI_PROVIDER || (env.ANTHROPIC_API_KEY ? 'anthropic' : 'fallback')).toLowerCase(),
+  // AI provider selection (preset-aware; label keeps the human-facing name).
+  aiProvider,
+  providerLabel: requested,
   anthropicKey: env.ANTHROPIC_API_KEY || '',
-  openaiKey: env.OPENAI_API_KEY || '',
-  openaiBaseUrl: env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  openaiKey: preset ? presetKey : (env.OPENAI_API_KEY || ''),
+  openaiBaseUrl: preset ? preset.baseUrl : (env.OPENAI_BASE_URL || env.OLLAMA_BASE_URL || 'https://api.openai.com/v1'),
   geminiKey: env.GEMINI_API_KEY || '',
-  aiModel: env.AI_MODEL || '',
+  aiModel: env.AI_MODEL || (preset ? preset.model : ''),
+
+  // Response cache: avoid re-billing identical prompts. Set AI_CACHE_ENABLED=0 to disable.
+  aiCacheEnabled: env.AI_CACHE_ENABLED !== '0',
+  aiCacheTtlMs: num(env.AI_CACHE_TTL_MS, 3600000),
 
   // Discovery limits / safety rails.
   maxSignals: num(env.PROBLEM_DISCOVERY_MAX_SIGNALS, 30),
@@ -68,7 +113,8 @@ export const piConfig = (env = process.env) => ({
     openaiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
     vectorSearchEnabled: env.VECTOR_SEARCH_ENABLED === '1',
   },
-});
+  };
+};
 
 const csv = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
 

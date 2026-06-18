@@ -14,10 +14,9 @@ import {
 } from '../lib/resumeStore.js';
 import {
   parseResume, TEMPLATES, getTemplate, recommendTemplateId, exportResumePDF,
-  exportResumeDOCX, buildCustomTemplate, setCustomTemplate,
+  exportResumeDOCX, buildCustomTemplate, setCustomTemplate, atsEstimate,
 } from '../lib/resumeTemplates.js';
-import { TemplateGallery, TemplatePreviewModal, ResumePaper, ValidationSummary } from '../components/ResumeTemplates.jsx';
-import { canExportLayout } from '../lib/resumeRenderer.js';
+import { TemplateGallery, TemplatePreviewModal, ResumePaper } from '../components/ResumeTemplates.jsx';
 import { analyzeTemplateImage } from '../lib/templateAnalyze.js';
 import { canUploadCustom, canExportDocx, useMeter, canUse, promptUpgrade, templateAllowance } from '../lib/plan.js';
 
@@ -154,6 +153,7 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
   const inputRef = useRef(null);
 
   const tpl = analysis ? buildCustomTemplate({ ...analysis, atsSafe }) : null;
+  const twoCol = tpl?.layout === 'twocol';
 
   const onPick = async (e) => {
     const file = e.target.files?.[0];
@@ -224,20 +224,16 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="flex items-center justify-between">
           <p className="text-[13px] font-semibold text-white">My Uploaded Template</p>
-          {tpl ? (
-            <Badge tone={tpl.atsSafe ? 'mint' : 'amber'} className="text-[9px]">
-              <Shield size={8} className="mr-0.5 inline" /> {tpl.atsSafe ? 'ATS-safe' : 'Visual, not ATS-first'}
-            </Badge>
-          ) : <Badge tone="violet" className="text-[9px]">From upload</Badge>}
+          {tpl ? <Badge tone={tpl.atsScore >= 85 ? 'mint' : tpl.atsScore >= 65 ? 'cyan' : 'amber'} className="text-[9px]">ATS {tpl.atsScore}</Badge> : <Badge tone="violet" className="text-[9px]">From upload</Badge>}
         </div>
 
         {status === 'reading' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-cyan"><Loader2 size={12} className="animate-spin" /> Reading file…</p>}
         {status === 'error' && <p className="flex items-center gap-1.5 text-[11px] text-amber-glow"><AlertTriangle size={12} /> {err}</p>}
         {status === 'done' && (
           <>
-            <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint"><Check size={12} /> Matched: single-column layout{tpl.theme?.headerBand ? ' with banner header' : ''}.</p>
+            <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint"><Check size={12} /> Matched: {tpl.layout === 'twocol' ? 'two-column' : tpl.layout === 'darkheader' ? 'banner header' : 'single-column'} layout.</p>
             {source === 'fallback' && <p className="text-[10px] text-slate-500">Template matched using fallback mode — try “Re-analyse”.</p>}
-            {!atsSafe && <p className="flex items-center gap-1.5 text-[10px] text-amber-glow"><AlertTriangle size={11} /> Visual styling kept — treat as visual, not ATS-first. Use ATS-safe for portal applications.</p>}
+            {twoCol && !atsSafe && <p className="flex items-center gap-1.5 text-[10px] text-amber-glow"><AlertTriangle size={11} /> Two-column may lower ATS parsing. Use ATS-safe for applications.</p>}
             <div className="mt-0.5 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-0.5 text-[10px]">
               <button onClick={() => toggleAtsSafe(false)} className={`flex-1 rounded-md px-2 py-1 transition ${!atsSafe ? 'bg-aurora-violet/25 text-white' : 'text-slate-400'}`}>Visual</button>
               <button onClick={() => toggleAtsSafe(true)} className={`flex-1 rounded-md px-2 py-1 transition ${atsSafe ? 'bg-aurora-mint/20 text-white' : 'text-slate-400'}`}><Shield size={9} className="mr-0.5 inline" />ATS-safe</button>
@@ -306,7 +302,6 @@ export default function Editor() {
   const [previewId, setPreviewId] = useState(null);
   const [customSpec, setCustomSpec] = useState(getCustomTemplateSpec());
   const [busy, setBusy] = useState('');
-  const [layoutReport, setLayoutReport] = useState(null);
 
   // rebuild a saved custom template on mount so it survives refresh
   useEffect(() => {
@@ -364,25 +359,15 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
   const copy = () => { navigator.clipboard?.writeText(activeText); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   const safeName = (data?.name || 'resume').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'resume';
 
-  // Any change to the content, template or page-length re-renders the preview
-  // and re-validates; clear the stale report so exports re-lock until the new
-  // validation completes.
-  useEffect(() => { setLayoutReport(null); }, [activeText, tplId, len]);
-
-  const exportGate = canExportLayout(activeText.trim().length >= 30 ? layoutReport : { valid: true, errors: [], warnings: [] });
-  const layoutBlocked = !exportGate.allowed;
-
   const doPDF = async () => {
     if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
-    if (!exportGate.allowed) { setErr(exportGate.reason); return; }
     setBusy('pdf'); setErr('');
-    try { await exportResumePDF(data, tplId, { pageMode: lenToMode(len) === 'single' ? 'one-page' : lenToMode(len), fileName: `${safeName}-${selectedTpl.id}.pdf` }); }
+    try { await exportResumePDF(data, tplId, { mode: lenToMode(len), fileName: `${safeName}-${selectedTpl.id}.pdf` }); }
     catch (e) { setErr('PDF export failed: ' + (e.message || e)); }
     finally { setBusy(''); }
   };
   const doDOCX = () => {
     if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
-    if (!exportGate.allowed) { setErr(exportGate.reason); return; }
     if (!canExportDocx()) { promptUpgrade('DOCX export is available on Pro & Premium. Free plan exports PDF.', 'pro'); return; }
     setBusy('docx');
     try { exportResumeDOCX(data, tplId, { fileName: `${safeName}-${selectedTpl.id}.doc` }); }
@@ -451,9 +436,9 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               : tplId === 'custom' ? <span className="flex items-center gap-1 text-[11px] text-aurora-violet"><ImagePlus size={10} /> Custom active</span> : null}
           >
             <TemplateGallery
+              data={data}
               selectedId={tplId}
               recommendedId={recommendedId}
-              allowance={templateAllowance()}
               onSelect={pickTemplate}
               onPreview={(id) => setPreviewId(id)}
               customCard={
@@ -486,17 +471,14 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               </div>
             ) : (
               <div className="flex justify-center rounded-xl border border-white/10 bg-[#e9edf5] p-3">
-                <ResumePaper key={tplId + len} data={data} templateId={tplId} mode={lenToMode(len)} scale={0.52} className="rounded shadow-lift" onReport={(r) => setLayoutReport(r)} />
+                <ResumePaper key={tplId + len} data={data} templateId={tplId} mode={lenToMode(len)} scale={0.52} className="rounded shadow-lift" />
               </div>
             )}
-            {activeText.trim().length >= 30 && layoutReport && (
-              <div className="mt-3"><ValidationSummary report={layoutReport} /></div>
-            )}
             <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-              <Button onClick={doPDF} disabled={busy === 'pdf' || layoutBlocked} title={layoutBlocked ? exportGate.reason : 'Print-quality PDF with selectable text'}>
-                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : exportGate.pending && activeText.trim().length >= 30 ? 'Validating layout…' : 'Download PDF'}
+              <Button onClick={doPDF} disabled={busy === 'pdf'}>
+                <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : 'Download PDF'}
               </Button>
-              <Button variant="soft" onClick={doDOCX} disabled={busy === 'docx' || layoutBlocked}>
+              <Button variant="soft" onClick={doDOCX} disabled={busy === 'docx'}>
                 <FileType2 size={15} /> DOCX
               </Button>
               <Button variant="soft" onClick={() => downloadText(`${safeName}.txt`, activeText)}>
@@ -504,7 +486,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               </Button>
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
-              PDF uses the exact preview renderer (selectable text, validated layout, smart page breaks — never cropped). Template: <span className="text-slate-300">{selectedTpl.name}</span>.
+              PDF is generated directly (no browser headers/footers) at A4 with smart page breaks. Downloads use the selected template: <span className="text-slate-300">{selectedTpl.name}</span>.
             </p>
           </SectionCard>
         </div>
@@ -516,8 +498,6 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
         data={data}
         templateId={previewId || tplId}
         onUse={(id) => pickTemplate(id)}
-        canDocx={canExportDocx()}
-        onDocxBlocked={() => promptUpgrade('DOCX export is available on Pro & Premium. Free plan exports PDF.', 'pro')}
       />
     </>
   );

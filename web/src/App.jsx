@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './hooks/useAuth.jsx';
-import { syncPlanFromServer } from './lib/plan.js';
-import { hydrateProfileFromServer, needsOnboarding, PROFILE_EVENT, setProfileUser } from './lib/userProfile.js';
+import { syncPlanFromServer, getPlan } from './lib/plan.js';
+import { hydrateProfileFromServer, needsOnboarding, PROFILE_EVENT, setProfileUser, getProfile } from './lib/userProfile.js';
+import { getEffectiveRole, canSeeScreen, defaultScreenForUser } from './lib/roleCapabilities.js';
+import { clearAccessContext, getAccessContext, refreshAccessContext, useAccountAccessContext } from './lib/accessContext.js';
 import { clearAppCache, purgeLegacyUnscopedKeys } from './lib/userCache.js';
 import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
@@ -32,6 +34,8 @@ import ProjectBuilder from './views/ProjectBuilder.jsx';
 import Sandbox from './views/Sandbox.jsx';
 import PartnerMatch from './views/PartnerMatch.jsx';
 import RecruiterConsole from './views/RecruiterConsole.jsx';
+import CollegeWorkspace from './views/CollegeWorkspace.jsx';
+import VerificationStatus from './views/VerificationStatus.jsx';
 import CareerProfile, { PublicProfile } from './views/CareerProfile.jsx';
 import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
@@ -51,8 +55,6 @@ import InnovationOS from './views/innovation/InnovationOS.jsx';
 import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
 import ProjectWorkspace from './views/ProjectWorkspace.jsx';
-import CareerIntelligenceView from './views/CareerIntelligence.jsx';
-import ResumeTemplateLab from './views/ResumeTemplateLab.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -71,10 +73,11 @@ const VIEWS = {
   sandbox: Sandbox,
   partners: PartnerMatch,
   recruiter: RecruiterConsole,
+  college: CollegeWorkspace,
+  verification: VerificationStatus,
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
-  resumetemplatelab: ResumeTemplateLab,
   skillsxp: SkillsXp,
   marketplace: MarketplaceView,
   inspirations: InspirationsView,
@@ -86,7 +89,6 @@ const VIEWS = {
   priorart: PriorArtResearch,
   patentdisclosures: PatentDisclosures,
   innovation: InnovationOS,
-  careerintelligence: CareerIntelligenceView,
   applications: ApplicationsView,
   readiness: ReadinessView,
   projectworkspace: ProjectWorkspace,
@@ -107,6 +109,27 @@ function Splash() {
   );
 }
 
+// Minimal unauthorized fallback. This is a BACKSTOP only — it renders solely
+// when a blocked screen is reached by direct hash/URL tampering. Normal UX never
+// lands here because every nav surface is capability-filtered upstream.
+function AccessFallback({ onHome }) {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center px-6">
+      <Atmosphere variant="app" />
+      <div className="relative flex max-w-md flex-col items-center gap-4 text-center">
+        <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-slate-300">
+          <span className="font-display text-xl font-bold">403</span>
+        </div>
+        <h1 className="font-display text-xl font-semibold text-white">This workspace isn’t available for your account</h1>
+        <p className="text-sm text-muted">You don’t have access to that screen. Let’s take you back to your dashboard.</p>
+        <button onClick={onHome} className="mt-1 rounded-xl btn-primary px-4 py-2 text-sm font-semibold text-ink-950">
+          Go to my dashboard
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function parseProfileHash() {
   if (typeof window === 'undefined') return null;
   const m = (window.location.hash || '').match(/^#\/profile\/([^/?#]+)/);
@@ -119,11 +142,6 @@ function parseProfileHash() {
 function isAdminUsersHash() {
   if (typeof window === 'undefined') return false;
   return /^#\/admin\/users\b/.test(window.location.hash || '');
-}
-
-function isTemplateLabHash() {
-  if (typeof window === 'undefined') return false;
-  return /^#\/resume-template-lab\b/.test(window.location.hash || '');
 }
 
 export default function App() {
@@ -145,12 +163,15 @@ export default function App() {
     return () => window.removeEventListener('hashchange', f);
   }, []);
 
-  // Honor a #/admin/users deep link: route to the admin view on load + on change.
-  // (The view enforces admin access; this only selects which workspace to show.)
+  // Honor a #/admin/users deep link: route to the admin view on load + on change
+  // — but ONLY if the effective role may see it. Non-admins are redirected to
+  // their default landing (the deep link is a convenience, never a bypass).
   useEffect(() => {
     const f = () => {
-      if (isAdminUsersHash()) setActive('adminusers');
-      else if (isTemplateLabHash()) setActive('resumetemplatelab');
+      if (!isAdminUsersHash()) return;
+      const role = getEffectiveRole(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() });
+      if (canSeeScreen(role, 'adminusers')) setActive('adminusers');
+      else setActive(defaultScreenForUser(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() }));
     };
     f();
     window.addEventListener('hashchange', f);
@@ -171,6 +192,7 @@ export default function App() {
       setCreatorUser(null);
       setTrackerStoreUser(null);
       setWorkspaceReady(false);
+      clearAccessContext();
       return () => { live = false; };
     }
     // A different user signed in on this browser → clear the previous user's cache
@@ -186,7 +208,7 @@ export default function App() {
     setCreatorUser(user);
     setTrackerStoreUser(user);
     syncPlanFromServer();
-    Promise.all([hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer(), hydrateCreatorFromServer(), hydrateTrackerFromServer()])
+    Promise.all([refreshAccessContext(), hydrateProfileFromServer(), hydrateResumeFromServer(), hydrateProjectsFromServer(), hydrateNetworkFromServer(), hydrateCreatorFromServer(), hydrateTrackerFromServer()])
       .finally(() => { if (live) { setOnboarded(!needsOnboarding()); setWorkspaceReady(true); } });
     return () => { live = false; };
   }, [user]);
@@ -196,6 +218,7 @@ export default function App() {
     return () => window.removeEventListener(PROFILE_EVENT, f);
   }, []);
   // profile updates after onboarding/settings should refresh the gate
+  const accessContextState = useAccountAccessContext(!!user && workspaceReady);
 
   if (loading || (user && !workspaceReady)) return <Splash />;
 
@@ -225,36 +248,49 @@ export default function App() {
     return <Onboarding onDone={() => setOnboarded(true)} />;
   }
 
-  const ViewCmp = VIEWS[active] || RoleDashboard;
+  const effectiveRole = getEffectiveRole(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: accessContextState.context });
+  const defaultActive = defaultScreenForUser(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: accessContextState.context });
+  const renderActive = canSeeScreen(effectiveRole, active) ? active : defaultActive;
+  const ViewCmp = VIEWS[renderActive] || RoleDashboard;
   const TITLE_OVERRIDES = { projectbuilder: 'Project Builder', projectworkspace: 'Project Workspace' };
-  const title = TITLE_OVERRIDES[active] || (NAV.find((n) => n.id === active) || {}).label || 'Dashboard';
+  const title = TITLE_OVERRIDES[renderActive] || (NAV.find((n) => n.id === renderActive) || {}).label || 'Dashboard';
 
-  // Guarded navigation: only switch to a real, registered view id. Unknown or
-  // stale ids are ignored (instead of silently rendering the dashboard or a
-  // blank page), so internal links can never land on the wrong workspace.
+  const goHome = () => setActive(defaultActive);
+
+  // Guarded navigation: only switch to a real, registered view id THAT THE
+  // CURRENT ROLE MAY SEE. Unknown/stale ids are ignored; blocked ids redirect to
+  // the role's default landing instead of rendering the wrong workspace. This is
+  // the single choke point every internal go()/navigate() call flows through.
   const navigate = (id, params = {}) => {
-    // Canonical Career Profile route. The old standalone "Profile" view was a
-    // duplicate of Career Profile, so any legacy link/CTA pointing at it now
-    // redirects here instead of crashing or opening a second profile page.
+    // Canonical Career Profile route (legacy "profile" → careerprofile).
     if (id === 'profile') id = 'careerprofile';
-    if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(VIEWS, id)) {
-      setActive(id);
-      setViewParams(params && typeof params === 'object' ? params : {});
+    if (typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(VIEWS, id)) {
+      if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
+      return;
     }
-    else if (id != null && typeof console !== 'undefined') console.warn(`[nav] ignored unknown view id: ${String(id)}`);
+    if (!canSeeScreen(effectiveRole, id)) {
+      if (typeof console !== 'undefined') console.warn(`[nav] blocked view id for role ${effectiveRole}: ${id}`);
+      goHome();
+      return;
+    }
+    setActive(id);
+    setViewParams(params && typeof params === 'object' ? params : {});
   };
 
+  // Backstop is redirect-by-render: if active becomes invalid after a role/context
+  // change, render the role default instead of the blocked workspace.
+
   return (
-    <Shell active={active} onPick={navigate} title={title}>
+    <Shell active={renderActive} onPick={navigate} title={title}>
       <AnimatePresence mode="wait">
         <motion.div
-          key={active}
+          key={renderActive}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          <ViewCmp go={navigate} {...viewParams} />
+          <ViewCmp go={navigate} {...(renderActive === active ? viewParams : {})} />
         </motion.div>
       </AnimatePresence>
       <PricingModal />

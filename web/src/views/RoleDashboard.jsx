@@ -15,6 +15,7 @@ import { classifyBadges } from '../lib/skillBadges.js';
 import { roleConsistency, buildCandidates } from '../lib/roleFit.js';
 import { getAccessForUser } from '../lib/access.js';
 import { getProfile, ROLE_LABELS } from '../lib/userProfile.js';
+import { getCurrentEffectiveRole, canSeeScreen } from '../lib/roleCapabilities.js';
 import { getWeeklyMissions, setMissionDone, missionStats } from '../lib/missions.js';
 import { assembleMyProfile, adoptionSuggestions, requestCareerProfileEditor } from '../lib/network.js';
 import { BadgeCheck, Medal, Handshake } from 'lucide-react';
@@ -57,6 +58,10 @@ function WeeklyMissionPanel({ go }) {
   }, []);
   const stats = missionStats(missions);
   const toggle = (m) => setMissions(setMissionDone(m.id, !m.done));
+  // Only surface missions whose target screen the current role may open
+  // (e.g. year 1–2 students don't get résumé/jobs missions).
+  const role = getCurrentEffectiveRole();
+  const visibleMissions = missions.filter((m) => canSeeScreen(role, m.route));
   return (
     <SectionCard title="This week’s skill sprint" action={<Badge tone="mint">{stats.done}/{stats.total} done · {stats.xpEarned}/{stats.xpTotal} XP</Badge>}>
       <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.025] p-3">
@@ -67,7 +72,7 @@ function WeeklyMissionPanel({ go }) {
         <p className="mt-2 text-[12px] leading-relaxed text-slate-400">A balanced mix of building, coding, interview practice and market alignment so students return weekly and improve with visible proof.</p>
       </div>
       <div className="space-y-2.5">
-        {missions.map((m) => {
+        {visibleMissions.map((m) => {
           const meta = MISSION_STYLE[m.type] || MISSION_STYLE.project;
           const Icon = meta.icon;
           return (
@@ -130,7 +135,9 @@ function ProfileAdoptionPanel({ go }) {
         </div>
       </div>
       <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
-        {[[BadgeCheck, 'Career Profile', 'careerprofile'], [Medal, 'Leaderboards', 'leaderboards'], [Handshake, 'Referral Exchange', 'referralexchange']].map(([Icon, label, id]) => (
+        {[[BadgeCheck, 'Career Profile', 'careerprofile'], [Medal, 'Leaderboards', 'leaderboards'], [Handshake, 'Referral Exchange', 'referralexchange']]
+          .filter(([, , id]) => canSeeScreen(getCurrentEffectiveRole(), id))
+          .map(([Icon, label, id]) => (
           <button key={id} onClick={() => go(id)} className="lift flex items-center gap-2.5 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-sm text-slate-200 hover:border-white/20">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={15} /></span>
             {label}
@@ -147,6 +154,7 @@ function StudentDashboard({ go }) {
   const profile = getProfile();
   const projects = useProjectsLive();
   const [badgeOpen, setBadgeOpen] = useState(null);
+  const effRole = getCurrentEffectiveRole();
 
   const skillXP = useMemo(() => deriveSkillXP(projects), [projects]);
   const badges = useMemo(() => deriveBadges(projects, access), [projects, access]);
@@ -174,9 +182,9 @@ function StudentDashboard({ go }) {
         description={nba.description}
         primary={nba.primary}
         secondary={[
-          { label: 'Tailor resume', icon: Briefcase, onClick: () => go('resume') },
-          { label: 'Track applications', icon: KanbanSquare, onClick: () => go('tracker') },
-        ]}
+          { label: 'Tailor resume', icon: Briefcase, onClick: () => go('resume'), screen: 'resume' },
+          { label: 'Track applications', icon: KanbanSquare, onClick: () => go('tracker'), screen: 'tracker' },
+        ].filter((s) => canSeeScreen(effRole, s.screen))}
         score={projects.length ? avgProof : 0}
         scoreLabel="Proof"
       />
@@ -226,7 +234,9 @@ function StudentDashboard({ go }) {
       <div className="mt-4">
         <SectionCard title="Next steps">
           <div className="grid gap-2.5 sm:grid-cols-2">
-            {[[Rocket, 'Generate a project roadmap', 'projectstudio'], [KanbanSquare, 'Track applications', 'tracker'], [Briefcase, 'Find matching jobs', 'jobs'], [Award, 'View your Career Profile', 'careerprofile']].map(([Icon, label, id]) => (
+            {[[Rocket, 'Generate a project roadmap', 'projectstudio'], [KanbanSquare, 'Track applications', 'tracker'], [Briefcase, 'Find matching jobs', 'jobs'], [Award, 'View your Career Profile', 'careerprofile']]
+              .filter(([, , id]) => canSeeScreen(effRole, id))
+              .map(([Icon, label, id]) => (
               <button key={id} onClick={() => go(id)} className="lift flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-slate-200 hover:border-white/20">
                 <span className="grid h-8 w-8 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={16} /></span>
                 {label}<ArrowRight size={15} className="ml-auto text-slate-600" />

@@ -2,11 +2,12 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Github, ShieldCheck, Lock, Globe, RefreshCw, Plug, PlugZap, Link2, Eye, EyeOff,
   CheckCircle2, AlertTriangle, Loader2, Star, GitFork, Boxes, FileCode2, FlaskConical,
-  Cloud, Container, Workflow, Unlink, Upload, ChevronDown, ChevronRight, Info,
+  Cloud, Container, Workflow, Unlink, Upload, ChevronDown, ChevronRight, Info, Brain,
 } from 'lucide-react';
 import { SectionCard } from '../../views/common.jsx';
 import { Badge, Button, EmptyState, Modal, Spinner } from '../ui/kit.jsx';
 import { GithubIntegration, consumeGithubReturnFlags, GH_ERROR_LABELS } from '../../lib/githubIntegration.js';
+import { VivaSession } from './VivaSession.jsx';
 
 function scoreTone(score) {
   return score >= 85 ? 'mint' : score >= 70 ? 'cyan' : score >= 50 ? 'amber' : 'default';
@@ -30,6 +31,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
   const [visibilityRepo, setVisibilityRepo] = useState(null);
   const [linkRepo, setLinkRepo] = useState(null);
   const [analysisDetail, setAnalysisDetail] = useState(null);
+  const [vivaRepo, setVivaRepo] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -215,6 +217,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
                   onVisibility={() => setVisibilityRepo(r)}
                   onLink={() => setLinkRepo(r)}
                   onImport={async () => { const res = await GithubIntegration.importProject(r.repoId); if (res.ok) setNotice({ type: 'ok', text: 'Project draft created from repository analysis.' }); else setNotice({ type: 'error', text: res.message || 'Analyze the repository first.' }); }}
+                  onViva={() => setVivaRepo(r)}
                 />
               ))}
             </div>
@@ -268,13 +271,19 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
 
       {/* ---- Analysis detail ---- */}
       <AnalysisDetailModal data={analysisDetail} onClose={() => setAnalysisDetail(null)} />
+      <VivaSession
+        open={!!vivaRepo}
+        onClose={() => setVivaRepo(null)}
+        repoFullName={vivaRepo?.fullName || vivaRepo?.name || ''}
+        skills={vivaRepo?.detectedSkills || []}
+      />
     </SectionCard>
   );
 }
 
 const SKILL_ICONS = { Docker: Container, Kubernetes: Cloud, Terraform: Cloud, 'GitHub Actions': Workflow, Testing: FlaskConical };
 
-function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport }) {
+function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport, onViva }) {
   const [open, setOpen] = useState(false);
   const analyzed = repo.analysisStatus === 'complete' || repo.analysisStatus === 'partial';
   return (
@@ -317,6 +326,7 @@ function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport }) {
         </Button>
         {analyzed && <Button size="sm" variant="soft" onClick={onLink}><Link2 size={14} /> Link to project</Button>}
         {analyzed && <Button size="sm" variant="soft" onClick={onImport}><Upload size={14} /> Import as project</Button>}
+        {analyzed && <Button size="sm" onClick={onViva}><Brain size={14} /> Take viva</Button>}
         {analyzed && <Button size="sm" variant="soft" onClick={onVisibility}><Eye size={14} /> Visibility</Button>}
         {(repo.evidence || []).length > 0 && (
           <Button size="sm" variant="soft" onClick={() => setOpen((o) => !o)}>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Evidence</Button>

@@ -307,11 +307,18 @@ export function rankSegment(profiles, segment) {
 export async function fetchCandidates() {
   try {
     const r = await fetch('/api/network/candidates', { credentials: 'include' });
+    if (r.status === 401 || r.status === 403) {
+      const err = new Error('recruiter_verification_required');
+      err.status = r.status;
+      throw err;
+    }
     if (r.ok) {
       const d = await r.json();
       if (d?.db && Array.isArray(d.profiles)) return d.profiles;
     }
-  } catch {}
+  } catch (e) {
+    if (e?.status === 401 || e?.status === 403) throw e;
+  }
   const me = assembleMyProfile();
   const eligible = me.openToRecruiters || me.visibility === 'public' || me.metrics.publishedCount > 0;
   return eligible && me.metrics.publishedCount > 0 ? [me] : [];

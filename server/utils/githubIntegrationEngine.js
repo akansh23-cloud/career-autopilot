@@ -445,10 +445,20 @@ export async function fetchSafeRepoFiles(repo, installationId) {
   try {
     const commits = await ghFetch(`/repos/${owner}/${name}/commits?per_page=30`, { token });
     if (Array.isArray(commits) && commits.length) {
+      // Per-login authored-commit counts. `c.author.login` is the GitHub
+      // account GitHub matched to the commit (not just the free-text git
+      // author), which is what lets us prove the connected identity actually
+      // wrote the code rather than merely having repo access.
+      const authorCounts = {};
+      for (const c of commits) {
+        const login = String(c.author?.login || '').toLowerCase();
+        if (login) authorCounts[login] = (authorCounts[login] || 0) + 1;
+      }
       out.commitSignals = {
         recentCommits: commits.length,
         lastCommitDate: commits[0]?.commit?.author?.date || commits[0]?.commit?.committer?.date || null,
         contributors: new Set(commits.map((c) => c.author?.login || c.commit?.author?.email).filter(Boolean)).size,
+        authorCounts,
       };
     }
   } catch { /* commit signals optional */ }
@@ -596,13 +606,100 @@ export function calculateRepoProofScore(repo = {}, files = {}, commitSignals = {
 }
 
 /* ============================================================
+   AUTHORSHIP VERIFICATION
+   ------------------------------------------------------------
+   The difference between "this repo contains Kubernetes manifests" and
+   "this person wrote Kubernetes manifests" is the whole ballgame for a
+   recruiter. Repo access (an install) proves neither ownership nor authorship
+   — a fork or a repo someone was added to looks identical to original work at
+   the file level. This classifies the connected identity's relationship to the
+   repo from objective signals only:
+
+     authored      — connected identity owns the repo OR authored the majority
+                      of recent commits. -> credential method github_commit_authored (high ceiling)
+     contributor   — connected identity authored some, but not most, commits.
+                      -> github_contributor (medium ceiling)
+     fork           — repo is a fork and identity has no authored commits.
+                      Skills here must NOT be presented as the user's work.
+     unverified    — no identity supplied, or identity authored nothing we
+                      can see. -> github_repo_detected (medium, NOT authorship)
+
+   Deterministic. No network. Same inputs -> same classification.
+   ============================================================ */
+export function verifyRepoAuthorship({ repo = {}, commitSignals = {}, identityHandle = '' } = {}) {
+  const handle = String(identityHandle || '').toLowerCase().trim();
+  const owner = String(repo.owner || '').toLowerCase().trim();
+  const counts = commitSignals.authorCounts || {};
+  const total = Object.values(counts).reduce((s, n) => s + Number(n || 0), 0);
+  const mine = handle ? Number(counts[handle] || 0) : 0;
+  const share = total > 0 ? mine / total : 0;
+  const isOwner = !!handle && handle === owner;
+
+  // Deterministic risk flags: patterns consistent with a copied or AI-dumped
+  // repo rather than genuine iterative authorship. These cap confidence even
+  // when commits are attributed to the identity.
+  const riskFlags = [];
+  if (repo.fork) riskFlags.push('fork');
+  if (total > 0 && total <= 2) riskFlags.push('single_burst');      // whole project in 1-2 commits
+  if (commitSignals.recentCommits != null && commitSignals.recentCommits < 3) riskFlags.push('shallow_history');
+
+  let classification;
+  let method;
+  if (!handle) {
+    classification = 'unverified';
+    method = 'github_repo_detected';
+  } else if (isOwner && !repo.fork) {
+    classification = 'authored';
+    method = 'github_commit_authored';
+  } else if (mine > 0 && share >= 0.5) {
+    classification = 'authored';
+    method = 'github_commit_authored';
+  } else if (mine > 0) {
+    classification = 'contributor';
+    method = 'github_contributor';
+  } else if (repo.fork) {
+    classification = 'fork';
+    method = 'github_repo_detected';
+  } else {
+    classification = 'unverified';
+    method = 'github_repo_detected';
+  }
+
+  return {
+    classification,
+    method,
+    isOwner,
+    isFork: !!repo.fork,
+    authoredCommitShare: Math.round(share * 100) / 100,
+    authoredCommits: mine,
+    observedCommits: total,
+    identityHandle: handle || null,
+    riskFlags,
+    // True when authorship is claimed but the commit pattern looks like a dump
+    // (a copied/AI-generated repo committed in one shot) rather than iterative
+    // work. Downstream scoring uses this to refuse HIGH confidence on artifacts.
+    lowAuthorshipConfidence: riskFlags.length > 0,
+    authorshipVerified: (classification === 'authored' || classification === 'contributor') && riskFlags.length === 0,
+  };
+}
+
+/* ============================================================
    ANALYSIS ASSEMBLY + SUMMARIES + PUBLIC-SAFE FILTER
    ============================================================ */
-export function buildRepoAnalysis(repo = {}, fetched = {}) {
+export function buildRepoAnalysis(repo = {}, fetched = {}, opts = {}) {
   const files = sanitizeRepoFilesForAnalysis(fetched.files || {});
   const detectedStack = detectRepoStack(files, repo);
   const detectedSkills = detectRepoSkills(files, repo);
   const { score, level, factors } = calculateRepoProofScore(repo, files, fetched.commitSignals || {});
+
+  // Authorship is computed whenever we know who the connected identity is. When
+  // unknown it degrades to a non-authorship "detected" classification — the
+  // analysis still works, the skills just can't claim authorship.
+  const authorship = verifyRepoAuthorship({
+    repo,
+    commitSignals: fetched.commitSignals || {},
+    identityHandle: opts.identityHandle || '',
+  });
 
   const fs = fileSet(files);
   const evidence = [];
@@ -642,6 +739,7 @@ export function buildRepoAnalysis(repo = {}, fetched = {}) {
     qualitySignals: factors,
     securityWarnings: [],
     truncated: !!fetched.truncated,
+    authorship,
   };
 }
 
@@ -668,13 +766,26 @@ export function generatePublicSafeRepoSummary(analysis = {}) {
 
 export function mapRepoEvidenceToSkills(analysis = {}) {
   const skills = analysis.detectedSkills || [];
+  const authorship = analysis.authorship || {};
+  // The verification method (and therefore the confidence ceiling) a skill can
+  // claim is dictated by authorship, NOT by mere detection. Authored repo ->
+  // the skill can be a high-confidence authored credential. Detected-only ->
+  // medium "detected" at best. A fork the user didn't commit to -> the skill is
+  // surfaced but explicitly NOT attributed as their work.
+  const method = authorship.method || 'github_repo_detected';
+  const attributable = authorship.classification !== 'fork' && authorship.classification !== 'unverified'
+    ? true
+    : authorship.classification === 'unverified'; // unverified can still be "detected", forks cannot be attributed
   return skills.map((name) => ({
     skill: name,
     source: 'github_repo',
     repoFullName: analysis.visibility === 'private' ? null : (analysis.repoFullName || null),
     visibility: analysis.visibility || 'public',
     proofScore: analysis.score || 0,
-    status: 'evidence_detected',
+    method,
+    authorshipClassification: authorship.classification || 'unverified',
+    attributable,
+    status: authorship.authorshipVerified ? 'authorship_verified' : 'evidence_detected',
   }));
 }
 
@@ -721,6 +832,17 @@ export function githubProofContribution({ identityConnected = false, appInstalle
   publicPoints += detail.skillBreadth;
   privatePoints += detail.skillBreadth;
 
+  // Authorship bonus: provably-authored repos are worth more than repos we
+  // could only detect, because that is exactly the distinction a recruiter
+  // cares about. Repos with no authorship metadata contribute nothing here, so
+  // this is purely additive and never lowers an existing score. The overall
+  // cap still bounds the result.
+  const authoredCount = repos.filter((r) => r.authorship?.authorshipVerified || r.authorship?.classification === 'authored').length;
+  detail.authoredRepos = authoredCount;
+  detail.authorshipBonus = Math.min(6, authoredCount * 3);
+  publicPoints += detail.authorshipBonus;
+  privatePoints += detail.authorshipBonus;
+
   const TOTAL_CAP = 30;
   return {
     publicContribution: Math.min(TOTAL_CAP, publicPoints),
@@ -738,6 +860,7 @@ export default {
   generateGitHubAppJwt, createInstallationToken, fetchInstallationMeta, fetchInstallationRepositories,
   isSecretLikePath, isAllowedProofFile, sanitizeRepoFilesForAnalysis, fetchSafeRepoFiles, ANALYSIS_LIMITS,
   detectRepoStack, detectRepoSkills, calculateRepoProofScore, buildRepoAnalysis,
+  verifyRepoAuthorship,
   generateRepoVerificationSummary, generatePublicSafeRepoSummary, mapRepoEvidenceToSkills,
   filterPrivateRepoDataForPublicView, githubProofContribution,
 };

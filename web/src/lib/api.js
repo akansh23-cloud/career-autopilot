@@ -230,4 +230,32 @@ export const Admin = {
   setVisibility: (id, recruiterVisible) => api.patch(`/api/admin/users/${encodeURIComponent(id)}/visibility`, { recruiterVisible }),
   setNotes: (id, adminNotes) => api.patch(`/api/admin/users/${encodeURIComponent(id)}/admin-notes`, { adminNotes }),
   setFeatured: (id, featuredTalent) => api.patch(`/api/admin/users/${encodeURIComponent(id)}/featured`, { featuredTalent }),
+  // Privileged-role verification management (admin only).
+  verificationRequests: (status = 'pending') => api.get(`/api/admin/verification-requests?status=${encodeURIComponent(status)}`),
+  verifyUser: (id, body) => api.post(`/api/admin/users/${encodeURIComponent(id)}/verify`, body),
+};
+
+// College / placement-cell APIs. Every call is gated server-side by a VERIFIED
+// college_admin (or admin) and scoped to the caller's own collegeId.
+export const College = {
+  overview: () => api.get('/api/college/overview'),
+  students: (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== false && v != null));
+    const qs = new URLSearchParams(clean).toString();
+    return api.get('/api/college/students' + (qs ? `?${qs}` : ''));
+  },
+  student: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}`),
+  analytics: () => api.get('/api/college/analytics'),
+  drives: () => api.get('/api/college/drives'),
+  createDrive: (body) => api.post('/api/college/drives', body),
+  exportCsv: () => api.get('/api/college/export'),
+  notify: (studentIds) => api.post('/api/college/notify', { studentIds }),
+  assignTask: (body) => api.post('/api/college/tasks', body),
+};
+
+// Current caller's SERVER-CONTROLLED access context (verified privileges) and
+// self-service verification request. profile.role stays UI-persona only.
+export const Account = {
+  accessContext: () => api.get('/api/account/access-context'),
+  requestVerification: (body) => api.post('/api/account/request-verification', body),
 };

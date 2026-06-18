@@ -34,51 +34,14 @@ function corpus(idea) {
 const has = (t, list) => list.filter((w) => t.includes(w));
 const len = (s) => lc(s).trim().length;
 
-/* ---- Anti-gaming: keyword-stuffing detection (Phase 3) ----
-   Stuffing = high mechanism-keyword density WITHOUT the supporting
-   structure a real invention description has (no I/O fields, no
-   processing logic), combined with low lexical variety or literally
-   repeated keyword lists. Detection is deliberately conservative so
-   every legitimate fixture and real description scores byte-identically
-   to before — only padded keyword soups trip it. */
-export const STUFFING_REASON = 'Mechanism reads as keyword-padding — describe actual components and data flow.';
-
-function detectKeywordStuffing({ text, mechHits, hasIO, hasProcessing }) {
-  if (hasIO || hasProcessing) return false;           // real structure present → never stuffing
-  if (mechHits.length < 6) return false;              // needs a dense keyword spread
-  const words = lc(text).split(/[^a-z0-9+#.]+/).filter(Boolean);
-  if (words.length < 12) return false;
-  const uniqueRatio = new Set(words).size / words.length;
-  // Total mechanism-keyword occurrences (with repeats) over total words.
-  let keywordOccurrences = 0;
-  let maxRepeat = 0;
-  for (const kw of MECHANISM) {
-    const hits = lc(text).split(kw).length - 1;
-    if (hits > 0) { keywordOccurrences += hits; maxRepeat = Math.max(maxRepeat, hits); }
-  }
-  const density = keywordOccurrences / words.length;
-  // Trip on: repeated keyword lists (same keyword 3+ times), OR low
-  // lexical variety, OR keyword density that no prose description reaches.
-  return maxRepeat >= 3 || uniqueRatio < 0.55 || density >= 0.35;
-}
-
-export function scorePatentIdea(idea = {}, { priorArtRecords = [], projectPackage = null } = {}) {
-  // Synthesis intelligence (optional, backward compatible): when a project
-  // package is supplied it strengthens the INPUT — Patent OS still owns the
-  // evaluation. With no package, behavior is byte-identical to before.
-  const synth = projectPackage && typeof projectPackage === 'object' ? projectPackage : null;
-  const synthMechanism = lc(synth?.buildBrief?.technicalMechanism || synth?.projectOsPayload?.technicalMechanism || '');
-  const synthQuality = synth?.quality || null;
-  const synthMeta = synth?.evidenceSummary?._meta || null;
-  const ipWeakDomain = synth?.classification?.ipAnalysisAppropriate === false;
-
-  const t = corpus(idea) + (synthMechanism.length > 40 ? `  ${synthMechanism}` : '');
+export function scorePatentIdea(idea = {}, { priorArtRecords = [] } = {}) {
+  const t = corpus(idea);
   const mechHits = has(t, MECHANISM);
   const genericHits = has(t, GENERIC);
   const businessHits = has(t, BUSINESS_ONLY);
   const measurableHits = has(t, MEASURABLE);
   const techHits = has(t, TECH);
-  const hasMechanismField = len(idea.technicalMechanism) > 40 || synthMechanism.length > 60;
+  const hasMechanismField = len(idea.technicalMechanism) > 40;
   const hasProcessing = len(idea.processingLogic) > 30;
   const hasFeedback = len(idea.feedbackLoop) > 15 || t.includes('feedback loop');
   const hasIO = len(idea.inputData) > 10 && len(idea.outputResult) > 10;
@@ -117,49 +80,10 @@ export function scorePatentIdea(idea = {}, { priorArtRecords = [], projectPackag
   ), 0, 100);
 
   const factors = { novelty, technicalDepth, specificity, priorArtDistance, marketUtility, feasibility, enforceability };
+  const overall = clamp(round(Object.entries(WEIGHTS).reduce((a, [k, w]) => a + factors[k] * w, 0)), 0, 100);
 
-  /* ---- anti-gaming cap (deterministic; no-op for non-stuffed inputs) ---- */
-  const stuffingDetected = detectKeywordStuffing({ text: t, mechHits, hasIO, hasProcessing });
-  if (stuffingDetected) {
-    factors.technicalDepth = Math.min(factors.technicalDepth, 35);
-    factors.specificity = Math.min(factors.specificity, 35);
-  }
-
-  /* ---- synthesis-driven adjustments (deterministic, only with a package) ----
-     - Strong, validated technical mechanism → small technical-depth lift.
-     - Weak/generic package (low specificity/uniqueness) → specificity penalty.
-     - Community-only or absent evidence → prior-art distance + novelty caution.
-     - IP-weak domains (generic workflow/marketplace/dashboard) → novelty
-       penalty and a hard overall cap: never presented as strong IP-ready. */
-  const synthReasons = [];
-  if (synth) {
-    if (synthQuality && Number(synthQuality.technicalDepthScore) >= 70 && synthMechanism.length > 60) {
-      factors.technicalDepth = clamp(factors.technicalDepth + 8, 0, 100);
-      synthReasons.push('Synthesis package supplies a validated technical mechanism — technical depth strengthened.');
-    }
-    if (synthQuality && (Number(synthQuality.specificityScore) < 50 || Number(synthQuality.blueprintUniquenessScore) <= 40)) {
-      factors.specificity = clamp(factors.specificity - 12, 0, 100);
-      synthReasons.push('Synthesis package is weak/generic (low specificity or boilerplate blueprint) — IP-readiness reduced.');
-    }
-    if (synthMeta && (synthMeta.communityOnly || !synthMeta.total)) {
-      factors.priorArtDistance = clamp(factors.priorArtDistance - 10, 0, 100);
-      factors.novelty = clamp(factors.novelty - 6, 0, 100);
-      synthReasons.push(synthMeta.communityOnly
-        ? 'Evidence is community-only — confidence and prior-art distance reduced until verified sources are added.'
-        : 'No source evidence backs this idea — prior-art risk is unknown; confidence reduced.');
-    }
-    if (ipWeakDomain) {
-      factors.novelty = clamp(factors.novelty - 15, 0, 100);
-      synthReasons.push('Domain classified as weak ground for IP (generic workflow/marketplace/dashboard pattern) — needs a specific technical mechanism with technical effect; faculty/IP-cell review required.');
-    }
-  }
-
-  let overall = clamp(round(Object.entries(WEIGHTS).reduce((a, [k, w]) => a + factors[k] * w, 0)), 0, 100);
-  if (synth && ipWeakDomain) overall = Math.min(overall, 50); // never "strong IP-ready" for generic workflow domains
-
-  const { novelty: nv, priorArtDistance: pad } = factors;
   const grade = overall >= 85 ? 'Strong candidate' : overall >= 70 ? 'Promising' : overall >= 55 ? 'Needs refinement' : overall >= 35 ? 'Weak' : 'Not recommended';
-  const riskLevel = synth && ipWeakDomain ? 'High' : pad >= 65 && nv >= 60 ? 'Low' : pad >= 45 ? 'Medium' : 'High';
+  const riskLevel = priorArtDistance >= 65 && novelty >= 60 ? 'Low' : priorArtDistance >= 45 ? 'Medium' : 'High';
 
   const reasons = [];
   if (hasMechanismField) reasons.push('Describes a concrete technical mechanism.');
@@ -168,8 +92,6 @@ export function scorePatentIdea(idea = {}, { priorArtRecords = [], projectPackag
   if (techHits.length) reasons.push(`Grounded in implementable technology (${techHits.slice(0, 3).join(', ')}).`);
   if (genericHits.length) reasons.push(`Reads as generic ("${genericHits[0]}") — weakens novelty.`);
   if (businessHits.length) reasons.push('Leans toward a business method — harder to patent without a technical core.');
-  if (stuffingDetected) reasons.push(STUFFING_REASON);
-  reasons.push(...synthReasons);
 
   const missingPieces = [];
   if (!hasMechanismField) missingPieces.push('A specific technical mechanism (how it works internally).');
@@ -180,24 +102,6 @@ export function scorePatentIdea(idea = {}, { priorArtRecords = [], projectPackag
 
   const improvementSuggestions = buildSuggestions(factors, { hasFeedback, hasMechanismField, measurableHits, techHits });
 
-  /* ---- Triage summary (Phase 3): the score is positioned as a
-     patent-readiness estimate for faculty/IP-cell triage, never as an
-     evaluation verdict. The block always states what's strong, what's
-     missing, and the recommended next HUMAN step. Additive — every
-     pre-existing field above is unchanged for backward compatibility. */
-  const strongPoints = reasons.filter((r) => !r.includes('generic') && !r.includes('business method') && r !== STUFFING_REASON && !r.includes('reduced') && !r.includes('weak'));
-  const nextHumanStep = overall >= 70
-    ? 'Share this triage summary with your faculty mentor or institution IP cell for a human prior-art review before any filing decision.'
-    : overall >= 55
-      ? 'Strengthen the missing pieces below, then bring the idea to a faculty mentor or IP cell for triage — do not file on this estimate alone.'
-      : 'Develop the technical mechanism further before requesting faculty/IP-cell time; this estimate suggests it is not triage-ready yet.';
-  const triage = {
-    headline: `Patent-readiness estimate for faculty/IP-cell triage: ${overall}/100 (${grade}).`,
-    strong: strongPoints.slice(0, 4),
-    missing: missingPieces.slice(0, 5),
-    nextHumanStep,
-  };
-
   return {
     factors,
     overall,
@@ -206,9 +110,6 @@ export function scorePatentIdea(idea = {}, { priorArtRecords = [], projectPackag
     reasons,
     missingPieces,
     improvementSuggestions,
-    stuffingDetected,
-    positioning: 'patent-readiness estimate for faculty/IP-cell triage',
-    triage,
     scoreVersion: PATENT_SCORE_VERSION,
   };
 }

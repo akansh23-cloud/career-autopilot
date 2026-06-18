@@ -14,10 +14,6 @@ import { logger } from './logger.js';
 import { maxFreshDaysFromQuery, passesFreshness } from './freshness.js';
 import { createMongooseSessionStore } from './sessionStore.js';
 import {
-  normalizeWorkMode, matchesWorkMode, normalizeExperienceLevel, matchesExperienceLevel,
-  normalizeJobType, matchesJobType,
-} from './server/utils/jobFilters.js';
-import {
   scoreResume, normalizeResumeText, normalizeRole, hashResume as computeResumeHash,
   SCORING_VERSION, buildFeedback, parseJD, computeJobFit, tailorResume, checkFabrication,
 } from './server/utils/resume/index.js';
@@ -32,10 +28,8 @@ import { scorePatentIdea } from './server/utils/patentScoringEngine.js';
 import { generateIdeasDeterministic, normalizeAIIdea, buildGenerationPrompt } from './server/utils/ideaGenerationEngine.js';
 import { strengthenIdea } from './server/utils/ideaStrengtheningEngine.js';
 import { priorArtPlan } from './server/utils/priorArtEngine.js';
-import { searchLivePriorArt } from './server/services/problemIntelligence/livePriorArtService.js';
 import { generateDisclosure, convertToProject, PATENT_OS_DISCLAIMER } from './server/utils/disclosureEngine.js';
 import { getUserPatentMemory, buildGenerationContext, suggestNextActions } from './server/utils/patentMemoryEngine.js';
-import { ensureProjectPackage, normalizeProjectPackage, toPatentOsPayload, extractTechnicalMechanism, extractEvidenceConfidence } from './server/services/synthesisIntelligence/integrationBridge.js';
 import {
   corsMiddleware, helmetMiddleware, csrfCookieIssuer, csrfProtection,
   authLimiter, aiLimiter, jobsLimiter, contactsLimiter,
@@ -53,17 +47,14 @@ import {
   githubLinkProjectSchema, githubVisibilitySchema, githubAnalyzeSchema, githubImportProjectSchema,
 } from './validation.js';
 import * as ghEngine from './server/utils/githubIntegrationEngine.js';
+import * as credEngine from './server/utils/verificationCredentialEngine.js';
+import * as vivaEngine from './server/utils/vivaEngine.js';
+import * as vivaStore from './server/utils/vivaSessionStore.js';
 import { registerProblemIntelligenceRoutes } from './server/routes/problemIntelligenceRoutes.js';
 import { registerProjectIntelligenceRoutes } from './server/routes/projectIntelligenceRoutes.js';
 import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRoutes.js';
 import { registerArchitectureRoutes } from './server/routes/architectureRoutes.js';
 import { registerWorkspaceRoutes } from './server/routes/workspaceRoutes.js';
-import { registerCareerIntelligenceRoutes } from './server/routes/careerIntelligenceRoutes.js';
-import { registerProjectStoreRoutes } from './server/routes/projectStoreRoutes.js';
-import { registerOpsRoutes } from './server/routes/opsRoutes.js';
-import { registerResumeOsRoutes } from './server/routes/resumeOsRoutes.js';
-import { requestIdMiddleware, createErrorHandler } from './server/utils/observability.js';
-import { createQuotaMiddleware } from './server/utils/quotaMiddleware.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
@@ -78,10 +69,6 @@ const app = express();
 
 app.set('trust proxy', 1); // honor X-Forwarded-Proto (Vercel/Render/etc.) so Secure cookies work
 app.disable('x-powered-by'); // do not advertise Express
-
-/* Observability: every request gets a stable id, echoed as X-Request-Id and
-   carried into structured logs + the persisted error_logs entries. */
-app.use(requestIdMiddleware());
 
 /* Cookie policy is centralised in config.js. Cross-site cookies
    (SameSite=None; Secure) are needed ONLY when the SPA is served from a
@@ -150,18 +137,6 @@ app.use(csrfProtection);
 
 /* Gentle global rate ceiling (skipped in the test env). */
 app.use(globalLimiter);
-
-/* Per-plan DAILY quotas on generation/AI/sync/export route families.
-   Distinct from the burst limiters above; counters live in Mongo when the
-   DB is on (in-memory per-instance fallback otherwise). Skipped under
-   NODE_ENV=test unless QUOTA_ENFORCE=1. currentUser/planForReq are hoisted
-   function declarations, so referencing them here is safe. */
-app.use(createQuotaMiddleware({
-  currentUser: (req) => currentUser(req),
-  planFor: (req) => planForReq(req),
-  db,
-  logger,
-}));
 
 /* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls).
    Prefer the built React/Vite app in dist/. Fall back to the legacy single-file UI if dist
@@ -840,9 +815,12 @@ function validLocationMatch(job, loc) {
 
   return false;
 }
-/* Work-mode/experience/job-type matching now lives in the pure module
-   server/utils/jobFilters.js (legacy validModeMatch removed — it could not
-   match the canonical or legacy frontend values like 'On-site/Hybrid'). */
+function validModeMatch(job, mode) {
+  if (!mode || mode === 'Any') return true;
+  const m = String(job.mode || '').toLowerCase();
+  if (mode === 'Hybrid') return /hybrid|on-?site/.test(m);
+  return m.includes(String(mode).toLowerCase());
+}
 
 /* ============================================================
    URL VERIFICATION
@@ -965,11 +943,7 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
   try {
     const role = req.query.role || 'software engineer';
     const loc = req.query.location || '';
-    // Canonical filters. normalizeWorkMode maps legacy values
-    // ('Any'/'Remote'/'On-site/Hybrid') so old clients keep working.
-    const mode = normalizeWorkMode(req.query.mode);
-    const experience = normalizeExperienceLevel(req.query.experience);
-    const jobType = normalizeJobType(req.query.jobType);
+    const mode = req.query.mode || 'Any';
     const maxDays = maxFreshDaysFromQuery(req.query.freshness || '7d');
     const limit = Math.max(1, Math.min(40, Number(req.query.limit || 12)));
     const verify = req.query.verify !== '0';
@@ -979,7 +953,7 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
     const selected = requestedSources(req);
 
     // Serve identical recent searches from cache (cuts latency, protects quotas).
-    const cacheKey = JSON.stringify({ role, loc, mode, experience, jobType, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
+    const cacheKey = JSON.stringify({ role, loc, mode, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
     const cached = jobCacheGet(cacheKey);
     if (cached) return res.json({ ...cached, cached: true });
 
@@ -1032,9 +1006,7 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
         if (!fr.ok) reason = fr.reason;
         else if (!validRoleMatch(j, role)) reason = 'role mismatch';
         else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
-        else if (!matchesWorkMode(j, mode)) reason = `work mode mismatch (filter: ${mode})`;
-        else if (!matchesExperienceLevel(j, experience)) reason = `experience level mismatch (filter: ${experience})`;
-        else if (!matchesJobType(j, jobType)) reason = `job type mismatch (filter: ${jobType})`;
+        else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
       }
       const k = jobKey(j);
       if (!reason && seen.has(k)) reason = 'duplicate';
@@ -1100,7 +1072,6 @@ app.get('/jobs/search', jobsLimiter, async (req, res) => {
 
     const payload = {
       jobs: kept, sources, audit, verified: verify,
-      filters: { mode, experience, jobType, freshness: req.query.freshness || '7d' },
       diagnostics: {
         apiKeyDetected: !!RAPIDAPI_KEY,
         host: RAPIDAPI_HOST,
@@ -1398,6 +1369,99 @@ async function requireAdmin(req, res, next) {
   req.isAdmin = true;
   next();
 }
+
+/* ============================================================
+   PRIVILEGED-ROLE RBAC — access context + middleware
+   ------------------------------------------------------------
+   Backend privilege is SERVER-CONTROLLED only:
+     - admin       → ADMIN_EMAILS allowlist / persisted User.role==='admin' / isAdmin
+     - recruiter   → accountType==='recruiter' AND roleVerified===true (admin-approved)
+     - college_admin → accountType==='college_admin' AND roleVerified===true
+   The self-selected onboarding persona (profile.role) is NEVER consulted here, so
+   a student who picked "recruiter" in onboarding gets NO recruiter API access.
+   Backward compatible: users without these fields resolve to a normal
+   authenticated student; existing admin (allowlist) keeps working.
+   ============================================================ */
+async function getCurrentUserAccessContext(req) {
+  const u = req.user || currentUser(req);
+  const empty = { user: null, role: null, isAdmin: false, privileged: false, accountType: '', roleVerified: false, verificationStatus: 'none', organizationId: '', collegeId: '' };
+  if (!u) return empty;
+  let dbRole = null;
+  let v = null;
+  if (db.dbEnabled()) {
+    try { const fresh = await db.getUser({ id: u.id, googleId: u.id, email: u.email }); dbRole = fresh?.role || null; } catch { /* allowlist-only */ }
+  }
+  try { v = await db.getUserVerification({ id: u.id, email: u.email }); } catch { /* none */ }
+  v = v || {};
+  const privileged = access.resolvePrivilegedRole({
+    email: u.email,
+    dbRole,
+    accountType: v.accountType || '',
+    roleVerified: v.roleVerified === true,
+    isAdmin: dbRole === 'admin',
+  });
+  return {
+    user: u,
+    role: privileged || 'student',
+    privileged: privileged != null,
+    isAdmin: privileged === 'admin',
+    accountType: v.accountType || '',
+    roleVerified: v.roleVerified === true,
+    verificationStatus: v.verificationStatus || 'none',
+    organizationId: v.organizationId || '',
+    collegeId: v.collegeId || '',
+  };
+}
+// Back-compat alias used by older call sites.
+const resolveUserRole = getCurrentUserAccessContext;
+
+/* requireVerifiedRole(...roles): runs after auth. Admin always passes; otherwise
+   the caller's VERIFIED privileged role must be in `roles`. 401 unauth, 403 else.
+   Attaches req.userRole + req.isAdmin. */
+function requireVerifiedRole(...roles) {
+  return async function verifiedRoleGuard(req, res, next) {
+    const u = currentUser(req);
+    if (!u) return res.status(401).json({ error: 'auth_required', message: 'Please sign in to continue.' });
+    req.user = u;
+    try {
+      const ctx = await getCurrentUserAccessContext(req);
+      req.userRole = ctx;
+      req.isAdmin = ctx.isAdmin;
+      if (ctx.isAdmin || (ctx.privileged && roles.includes(ctx.role))) return next();
+      return res.status(403).json({ error: 'forbidden', message: 'You do not have access to this resource.' });
+    } catch {
+      return res.status(403).json({ error: 'forbidden', message: 'You do not have access to this resource.' });
+    }
+  };
+}
+// Back-compat alias (same semantics).
+const requireRole = requireVerifiedRole;
+
+/* requireCollegeScope(getTargetCollege): a college_admin may only act on
+   resources in their OWN college (compared by stable collegeId, never a typed
+   name). Admin bypasses scope. Missing target → no cross-college resource to
+   leak → pass. */
+function requireCollegeScope(getTargetCollege) {
+  return async function collegeScopeGuard(req, res, next) {
+    try {
+      const ctx = req.userRole || await getCurrentUserAccessContext(req);
+      req.userRole = ctx;
+      if (ctx.isAdmin) return next();
+      if (!(ctx.privileged && ctx.role === 'college_admin')) {
+        return res.status(403).json({ error: 'forbidden', message: 'College access required.' });
+      }
+      const target = typeof getTargetCollege === 'function' ? await getTargetCollege(req) : null;
+      if (!target) return next();
+      if (!access.collegeScopeAllowed(ctx.collegeId, target)) {
+        return res.status(403).json({ error: 'forbidden_scope', message: 'You can only access students from your own college.' });
+      }
+      return next();
+    } catch {
+      return res.status(403).json({ error: 'forbidden', message: 'College access required.' });
+    }
+  };
+}
+
 
 /* HTTP status for a persistence (DB write) result.
    - DB on + write ok        → 200
@@ -1846,7 +1910,6 @@ app.post('/api/resume/analyze', requireAuth, aiLimiter, validateBody(resumeAnaly
       breakdown: d.breakdown,
       matchedKeywords: d.matchedKeywords,
       missingKeywords: d.missingKeywords,
-      qualityChecks: d.qualityChecks || [],   // deterministic findings — never AI-generated
       skillEvidence: d.skillEvidence || [],
       summary: feedback.summary || `Scored ${d.score}/100 for ${targetRole}.`,
       strengths: feedback.strengths || [],
@@ -1969,7 +2032,7 @@ app.delete('/api/resume/versions/:id', requireAuth, async (req, res) => {
 app.post('/api/projects/submit', requireAuth, generationLimiter, validateBody(projectSubmissionSchema), async (req, res) => {
   try {
     const u = currentUser(req);
-    const submission = req.body || {};
+    const submission = { ...(req.body || {}), subjectId: u?.id || u?.email || '' };
     const result = verifyProjectSubmission(submission); // deterministic, no AI
 
     // Persist submission + apply XP to the per-skill ledger (duplicate-safe).
@@ -2024,6 +2087,190 @@ app.post('/api/admin/projects/:id/verify', requireAuth, requireAdmin, validateBo
   } catch (err) {
     logger.error('Admin verify failed', { message: err.message });
     res.status(500).json({ error: 'verify_failed', message: 'Could not apply verification.' });
+  }
+});
+
+/* ============================================================
+   LIVE COMPREHENSION VIVA  (top verification tier)
+   ------------------------------------------------------------
+   The candidate proves, live and timed, that they understand the specific code
+   they committed. Eligibility requires an authorship-verified repo (you said
+   you wrote it — now explain it). Probes are generated server-side from the
+   candidate's own files; scoring is deterministic; a PASS mints HIGH-confidence
+   `assessment_passed` credentials. AI never sets a score or a pass/fail.
+   ============================================================ */
+app.post('/api/viva/start', requireAuth, generationLimiter, async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const userId = u?.id || u?.email;
+    const { repoFullName, skills } = req.body || {};
+    if (!repoFullName) return res.status(400).json({ ok: false, error: 'repo_required', message: 'repoFullName is required.' });
+
+    const cached = vivaStore.getRepoFiles(userId, repoFullName);
+    if (!cached) {
+      return res.status(409).json({ ok: false, error: 'analyze_first', message: 'Analyze this repository first so the viva can be generated from your code.' });
+    }
+    // Gate: only repos whose authorship is verified (your identity committed the
+    // code) are eligible. This is what makes a viva pass mean something.
+    if (!cached.authorship?.authorshipVerified) {
+      return res.status(403).json({
+        ok: false, error: 'authorship_unverified',
+        message: 'A live viva is only offered for repositories whose authorship is verified. Connect the GitHub identity that committed this code and ensure iterative history.',
+        authorship: cached.authorship || null,
+      });
+    }
+
+    const probes = vivaEngine.generateVivaProbes(cached.files, { seed: `${userId}:${repoFullName}:${Date.now()}`, count: vivaEngine.DEFAULT_PROBE_COUNT });
+    if (probes.length < vivaEngine.MIN_PROBES) {
+      return res.status(422).json({ ok: false, error: 'insufficient_code', message: 'Not enough analyzable code in this repository to run a meaningful viva.' });
+    }
+    const session = vivaStore.createSession({ userId, repoFullName, probes, skills: Array.isArray(skills) ? skills : [] });
+    res.json({
+      ok: true,
+      sessionId: session.sessionId,
+      version: vivaEngine.VIVA_VERSION,
+      budgetMs: vivaEngine.SESSION_BUDGET_MS,
+      threshold: vivaEngine.PASS_THRESHOLD,
+      probes: probes.map(vivaEngine.publicProbe), // answer keys stripped
+    });
+  } catch (err) {
+    logger.error('Viva start failed', { message: err.message });
+    res.status(500).json({ ok: false, error: 'viva_start_failed', message: 'Could not start the viva.' });
+  }
+});
+
+app.post('/api/viva/submit', requireAuth, async (req, res) => {
+  try {
+    const u = currentUser(req);
+    const userId = u?.id || u?.email;
+    const { sessionId, answers, totalElapsedMs } = req.body || {};
+    const session = vivaStore.getSession(sessionId);
+    if (!session) return res.status(404).json({ ok: false, error: 'session_not_found', message: 'Viva session not found or expired.' });
+    if (session.userId !== userId) return res.status(403).json({ ok: false, error: 'not_your_session' });
+    if (session.submitted) return res.status(409).json({ ok: false, error: 'already_submitted' });
+
+    // Deterministic scoring — no AI.
+    const result = vivaEngine.scoreVivaSession(session.probes, answers || {}, { totalElapsedMs: Number(totalElapsedMs) || null });
+    vivaStore.closeSession(sessionId);
+
+    // On PASS, mint HIGH-confidence assessment credentials (time-bounded) for the
+    // claimed skills. The score is bound into the signed evidence.
+    const credentials = [];
+    if (result.passed) {
+      const skills = vivaEngine.vivaVerifiedSkills(result, session.skills);
+      const issuedAt = new Date().toISOString();
+      for (const skill of skills) {
+        credentials.push(credEngine.issueCredential({
+          subject: userId, claim: skill, claimType: 'skill',
+          method: 'assessment_passed', confidence: 'high',
+          evidence: { signal: 'live_viva', repo: session.repoFullName, score: result.comprehensionScore, probes: result.totalProbes, version: result.version },
+          issuedAt, validityDays: 365,
+        }));
+      }
+      await db.logGithubAudit?.({ userId: u?.id, email: u?.email, action: 'viva_passed', detail: { repo: session.repoFullName, score: result.comprehensionScore, skills } });
+    }
+
+    res.json({
+      ok: true,
+      passed: result.passed,
+      comprehensionScore: result.comprehensionScore,
+      threshold: result.threshold,
+      answered: result.answered,
+      totalProbes: result.totalProbes,
+      sessionFlags: result.sessionFlags,
+      perProbe: result.perProbe.map((p) => ({ id: p.id, score: p.score, flags: p.flags })),
+      credentials: credentials.map(credEngine.credentialPublicView),
+      credentialsFull: credentials, // server/caller may persist these
+    });
+  } catch (err) {
+    logger.error('Viva submit failed', { message: err.message });
+    res.status(500).json({ ok: false, error: 'viva_submit_failed', message: 'Could not score the viva.' });
+  }
+});
+
+
+/* ============================================================
+   CREDENTIAL VERIFICATION  (recruiter trust surface)
+   ------------------------------------------------------------
+   A verified skill is only worth something if the green checkmark can be
+   independently re-checked. These endpoints let a recruiter (or any
+   authenticated viewer) recompute a credential's signature server-side and
+   detect tampering — the confidence was bumped, the claim was swapped, or the
+   evidence behind it was changed. The signing key never leaves the server.
+   ============================================================ */
+
+/* Publish the Ed25519 public key so ANYONE can verify a credential's signature
+   offline, without trusting this server and without being able to forge one.
+   This is the difference between "trust our API" and "trust the math". Public
+   on purpose — it's a public key. */
+app.get('/api/verification/public-key', (req, res) => {
+  res.json({
+    ok: true,
+    alg: credEngine.ALG,
+    issuer: credEngine.DEFAULT_ISSUER,
+    kid: credEngine.keyId(),
+    signingConfigured: credEngine.signingConfigured(),
+    publicKeyJwk: credEngine.publicKeyJwk(),
+    publicKeyPem: credEngine.publicKeyPem(),
+    credentialVersion: credEngine.CREDENTIAL_VERSION,
+  });
+});
+
+/* Expose the verification-method taxonomy so the UI can explain what each
+   method/confidence actually means (and its trust ceiling). */
+app.get('/api/verification/methods', requireAuth, (req, res) => {
+  const methods = Object.entries(credEngine.METHODS).map(([key, m]) => ({
+    method: key, label: m.label, ceiling: m.ceiling, authorship: !!m.authorship, kind: m.kind,
+  }));
+  res.json({ ok: true, version: credEngine.CREDENTIAL_VERSION, signingConfigured: credEngine.signingConfigured(), methods });
+});
+
+/* Re-verify one or many credentials. Body: { credential } or { credentials: [] }.
+   Optionally include { evidence } to also prove the underlying evidence behind
+   a single credential has not been swapped. Reports tampering, expiry, revocation. */
+app.post('/api/verification/verify-credential', requireAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const list = Array.isArray(body.credentials) ? body.credentials
+      : (body.credential ? [body.credential] : []);
+    if (!list.length) {
+      return res.status(400).json({ error: 'no_credential', message: 'Provide a credential or credentials array to verify.' });
+    }
+    if (list.length > 100) {
+      return res.status(400).json({ error: 'too_many', message: 'Verify at most 100 credentials per request.' });
+    }
+    const singleEvidence = list.length === 1 ? body.evidence : undefined;
+    const results = list.map((c) => {
+      const result = credEngine.verifyCredential(c, { evidence: list.length === 1 ? singleEvidence : undefined });
+      return { ...result, credential: credEngine.credentialPublicView(c) };
+    });
+    res.json({
+      ok: true,
+      allValid: results.every((r) => r.valid),
+      anyTampered: results.some((r) => r.tampered),
+      anyExpired: results.some((r) => r.expired),
+      anyRevoked: results.some((r) => r.revoked),
+      count: results.length,
+      results,
+    });
+  } catch (err) {
+    logger.error('Credential verify failed', { message: err.message });
+    res.status(500).json({ error: 'verify_failed', message: 'Could not verify the credential(s).' });
+  }
+});
+
+/* Revoke a credential (admin only). A credential later found fraudulent — e.g.
+   plagiarism discovered after issuance — must be killable; revoked credentials
+   fail verification thereafter. */
+app.post('/api/verification/revoke', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const { credentialId, reason } = req.body || {};
+    if (!credentialId) return res.status(400).json({ error: 'no_id', message: 'credentialId is required.' });
+    credEngine.revokeCredential(credentialId, reason || '');
+    res.json({ ok: true, credentialId, revoked: true });
+  } catch (err) {
+    logger.error('Credential revoke failed', { message: err.message });
+    res.status(500).json({ error: 'revoke_failed', message: 'Could not revoke the credential.' });
   }
 });
 
@@ -2438,42 +2685,10 @@ app.post('/api/patents/ideas/generate', requireAuth, generationLimiter, validate
     }
     if (!ideas.length) ideas = generateIdeasDeterministic(input, count);
 
-    /* Synthesis Intelligence input layer: build one deterministic project
-       package from the generation query (domain/problem/technology/goal),
-       then use it to (a) fill thin technical mechanisms, (b) attach a
-       buildable-project framing + evidence confidence to each idea, and
-       (c) feed Patent OS scoring with stronger, source-aware input.
-       Patent OS remains the IP evaluator; conservative language only. */
-    let synthPkg = null;
-    try {
-      const ensured = await ensureProjectPackage({
-        query: [input.domain, input.problem, input.technology, input.goal].filter(Boolean).join(' '),
-        idea: { domain: input.domain || '', technology: input.technology || '', targetUser: input.targetUser || '', problemStatement: input.problem || '' },
-      });
-      synthPkg = ensured.pkg;
-    } catch { synthPkg = null; }
-    const evidenceConfidence = synthPkg ? extractEvidenceConfidence(synthPkg) : null;
-
     // Attach full score (factors + suggestions + risks) to each before saving.
     ideas = ideas.map((i) => {
-      const idea = { ...i };
-      if (synthPkg) {
-        if (String(idea.technicalMechanism || '').length < 60) {
-          const mech = extractTechnicalMechanism(synthPkg);
-          if (mech) idea.technicalMechanism = mech;
-        }
-        idea.synthesis = {
-          domain: synthPkg.classification?.domain || '',
-          technicalMechanism: extractTechnicalMechanism({ ...idea, projectPackage: synthPkg }),
-          ipReadinessAngle: synthPkg.buildBrief?.ipReadinessAngle || '',
-          ipAnalysisAppropriate: synthPkg.classification?.ipAnalysisAppropriate !== false,
-          evidenceConfidence,
-          buildableProjectFraming: synthPkg.summary || '',
-          qualityWarnings: (synthPkg.quality?.warnings || []).slice(0, 5),
-        };
-      }
-      const sc = scorePatentIdea(idea, { projectPackage: synthPkg });
-      return { ...idea, score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded|community|evidence|review/i.test(r)), strengtheningSuggestions: sc.improvementSuggestions };
+      const sc = scorePatentIdea(i);
+      return { ...i, score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded/i.test(r)), strengtheningSuggestions: sc.improvementSuggestions };
     });
 
     const saved = await db.createPatentIdeas({ userId: u?.id, email: u?.email, ideas, generationWhy: why });
@@ -2525,28 +2740,14 @@ app.delete('/api/patents/ideas/:id', requireAuth, async (req, res) => {
   res.status(persistenceStatus(result)).json({ ok: result.ok, archived: !!result.archived, deleted: !!result.deleted, db: db.dbEnabled() });
 });
 
-/* Recover the synthesis project package for a stored patent idea:
-   prefer the saved `synthesis` block (normalized, gaps filled with
-   warnings), else enrich the legacy idea on the fly. Best-effort —
-   returns null rather than failing the route. */
-async function patentSynthesisPackage(idea) {
-  try {
-    const fromStored = idea?.synthesis ? normalizeProjectPackage(idea.synthesis) : null;
-    if (fromStored) return fromStored;
-    const { pkg } = await ensureProjectPackage({ patentIdea: idea });
-    return pkg;
-  } catch { return null; }
-}
-
 /* Strengthen: deterministic upgrade + new version entry. */
 app.post('/api/patents/ideas/:id/strengthen', requireAuth, generationLimiter, async (req, res) => {
   const u = currentUser(req);
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
   const priorArt = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
-  const projectPackage = await patentSynthesisPackage(idea);
-  const result = strengthenIdea(idea, { priorArtRecords: priorArt, projectPackage });
-  const sc = scorePatentIdea(result.idea, { priorArtRecords: priorArt, projectPackage });
+  const result = strengthenIdea(idea, { priorArtRecords: priorArt });
+  const sc = scorePatentIdea(result.idea, { priorArtRecords: priorArt });
   const patch = {
     title: result.idea.title, proposedSolution: result.idea.proposedSolution, technicalMechanism: result.idea.technicalMechanism,
     inputData: result.idea.inputData, processingLogic: result.idea.processingLogic, outputResult: result.idea.outputResult,
@@ -2566,10 +2767,9 @@ app.post('/api/patents/ideas/:id/score', requireAuth, async (req, res) => {
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
   const priorArt = await db.listPriorArtRecords({ userId: u?.id, email: u?.email, ideaId: req.params.id });
-  const projectPackage = await patentSynthesisPackage(idea);
-  const sc = scorePatentIdea(idea, { priorArtRecords: priorArt, projectPackage });
+  const sc = scorePatentIdea(idea, { priorArtRecords: priorArt });
   await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, strengtheningSuggestions: sc.improvementSuggestions } });
-  res.json({ ok: true, score: sc, evidenceConfidence: projectPackage ? extractEvidenceConfidence(projectPackage) : null, db: db.dbEnabled() });
+  res.json({ ok: true, score: sc, db: db.dbEnabled() });
 });
 
 /* Prior-art search plan (suggestions only) — saved onto the idea. */
@@ -2577,26 +2777,7 @@ app.post('/api/patents/ideas/:id/prior-art-plan', requireAuth, generationLimiter
   const u = currentUser(req);
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
-  const projectPackage = await patentSynthesisPackage(idea);
-  const plan = priorArtPlan(idea, { projectPackage });
-  /* Live prior-art (Phase 3, optional + degradable): when the public
-     Google Patents / Crossref endpoints answer in time, attach the top 5
-     as candidate prior art to review — titles/links only, explicitly
-     labeled unverified. Offline, rate-limited or NODE_ENV=test → the
-     service skips silently and the deterministic plan stands alone. */
-  try {
-    const live = await searchLivePriorArt(idea);
-    if (live.ok && live.candidates.length) {
-      plan.liveCandidates = {
-        label: 'Candidate prior art to review (unverified — fetched live; a human must read each document)',
-        query: live.query,
-        sources: live.sources,
-        items: live.candidates,
-      };
-    }
-  } catch (liveErr) {
-    logger.warn('Live prior-art search failed (plan unaffected)', { message: liveErr.message });
-  }
+  const plan = priorArtPlan(idea);
   await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { priorArtSearchPlan: plan, status: idea.status === 'raw_idea' || idea.status === 'shortlisted' ? 'prior_art_review' : idea.status } });
   res.json({ ok: true, plan, disclaimer: PATENT_OS_DISCLAIMER, db: db.dbEnabled() });
 });
@@ -2692,10 +2873,6 @@ registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLim
 registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
-registerCareerIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
-registerProjectStoreRoutes(app, { requireAuth, currentUser, db });
-registerOpsRoutes(app, { requireAuth, requireAdmin, currentUser, db, logger });
-registerResumeOsRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
@@ -2757,10 +2934,128 @@ app.get('/api/readiness', requireAuth, async (req, res) => {
   res.json({ ok: true, readiness, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
 });
 
+/* ============================================================
+   RBAC NAMESPACE GUARDS
+   ------------------------------------------------------------
+   Whole-namespace protection so privileged API families can never be reached by
+   the wrong persona — independent of any individual route's own guard.
+   - /api/admin/*    → already protected per-route by requireAdmin.
+   - /api/recruiter/* → recruiter-or-admin (each recruiter route also guards
+                         itself so it can apply consent-safe response shaping).
+   - /api/college/*  → college_admin-or-admin. No college routes exist yet, so a
+                         wrong-role caller gets 403 and an authorized caller falls
+                         through to 404 — the namespace is protected for any
+                         college endpoint added later. requireCollegeScope is
+                         available to enforce same-college access on those routes.
+   ============================================================ */
+app.use('/api/college', requireAuth, requireRole('college_admin', 'admin'));
+
+/* ---- College / placement-cell APIs (verified college_admin or admin) --------
+   All listings are scoped to the caller's own collegeId. requireCollegeScope
+   blocks any attempt to target another college via an explicit collegeId. ---- */
+const collegeScopeFromQuery = (req) => req.query.collegeId || req.body?.collegeId || null;
+function callerCollegeId(req) {
+  const ctx = req.userRole || {};
+  // Admin may target any college via ?collegeId=; college_admin is pinned to own.
+  if (ctx.isAdmin) return String(req.query.collegeId || req.body?.collegeId || '').trim() || ctx.collegeId || '';
+  return ctx.collegeId || '';
+}
+
+app.get('/api/college/overview', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const collegeId = callerCollegeId(req);
+  const students = await db.listCollegeStudents({ collegeId });
+  const n = students.length;
+  const avg = (key) => (n ? Math.round(students.reduce((s, x) => s + (Number(x[key]) || 0), 0) / n) : 0);
+  const placementReady = students.filter((s) => Number(s.readinessScore || 0) >= 70).length;
+  res.json({
+    ok: true, collegeId,
+    summary: { students: n, avgReadiness: avg('readinessScore'), avgResume: avg('resumeScore'), placementReady, withVerifiedProjects: students.filter((s) => s.verifiedProjects > 0).length },
+    db: db.dbEnabled(),
+  });
+});
+
+app.get('/api/college/students', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const collegeId = callerCollegeId(req);
+  const filters = {
+    branch: req.query.branch || '', batch: req.query.batch || '', year: req.query.year || '',
+    skill: req.query.skill || '', minReadiness: req.query.minReadiness || '', minResume: req.query.minResume || '',
+    verifiedOnly: req.query.verifiedOnly === 'true' || req.query.verifiedOnly === '1',
+  };
+  const students = await db.listCollegeStudents({ collegeId, filters });
+  res.json({ ok: true, collegeId, students, count: students.length, db: db.dbEnabled() });
+});
+
+app.get('/api/college/students/:id', requireAuth, requireRole('college_admin', 'admin'), async (req, res) => {
+  const collegeId = callerCollegeId(req);
+  const students = await db.listCollegeStudents({ collegeId });
+  const student = students.find((s) => s.id === req.params.id);
+  if (!student) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+  res.json({ ok: true, student, db: db.dbEnabled() });
+});
+
+app.get('/api/college/analytics', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const collegeId = callerCollegeId(req);
+  const students = await db.listCollegeStudents({ collegeId });
+  const byKey = (key) => {
+    const m = {};
+    for (const s of students) { const k = String(s[key] || 'Unknown'); (m[k] ||= { count: 0, readiness: 0 }); m[k].count++; m[k].readiness += Number(s.readinessScore || 0); }
+    return Object.entries(m).map(([k, v]) => ({ key: k, count: v.count, avgReadiness: Math.round(v.readiness / v.count) }));
+  };
+  const skillHeat = {};
+  for (const s of students) for (const sk of (s.skills || [])) skillHeat[sk] = (skillHeat[sk] || 0) + 1;
+  res.json({
+    ok: true, collegeId,
+    batch: byKey('batch'), branch: byKey('branch'),
+    skillHeatmap: Object.entries(skillHeat).map(([skill, count]) => ({ skill, count })).sort((a, b) => b.count - a.count).slice(0, 40),
+    resumeReadiness: { withResume: students.filter((s) => s.resumeScore != null).length, total: students.length, avgResume: students.length ? Math.round(students.reduce((a, s) => a + (Number(s.resumeScore) || 0), 0) / students.length) : 0 },
+    db: db.dbEnabled(),
+  });
+});
+
+app.get('/api/college/drives', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const drives = await db.listPlacementDrives({ collegeId: callerCollegeId(req) });
+  res.json({ ok: true, drives, db: db.dbEnabled() });
+});
+app.post('/api/college/drives', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const b = req.body || {};
+  const drive = { title: String(b.title || 'Untitled drive').slice(0, 160), company: String(b.company || '').slice(0, 160), eligibility: b.eligibility || {}, status: 'open' };
+  const result = await db.createPlacementDrive({ collegeId: callerCollegeId(req), drive });
+  res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+});
+
+app.get('/api/college/export', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const students = await db.listCollegeStudents({ collegeId: callerCollegeId(req) });
+  const cols = ['id', 'name', 'email', 'branch', 'batch', 'readinessScore', 'resumeScore', 'verifiedProjects'];
+  const csv = [cols.join(','), ...students.map((s) => cols.map((c) => JSON.stringify(s[c] ?? '')).join(','))].join('\n');
+  res.json({ ok: true, format: 'csv', rows: students.length, csv, db: db.dbEnabled() });
+});
+
+/* Notify / assign-task: safe placeholders — the current repo has no batch
+   notification or task-assignment subsystem, so these record intent and return
+   ok without inventing a fake delivery pipeline. */
+app.post('/api/college/notify', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  const n = Array.isArray(req.body?.studentIds) ? req.body.studentIds.length : 0;
+  res.json({ ok: true, queued: n, placeholder: true, message: 'Notifications recorded (delivery pipeline not yet configured).' });
+});
+app.post('/api/college/tasks', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
+  res.json({ ok: true, placeholder: true, message: 'Improvement task recorded (task subsystem not yet configured).' });
+});
+
 /* Recruiter candidate shortlist — ranked by VERIFIED signals only. */
-app.get('/api/recruiter/candidates', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/recruiter/candidates', requireAuth, requireRole('recruiter', 'admin'), async (req, res) => {
   const filters = { skill: req.query.skill || '', category: req.query.category || '', minScore: req.query.minScore || '' };
-  const candidates = await db.recruiterCandidates({ filters, computeReadiness, limit: 60 });
+  let candidates = await db.recruiterCandidates({ filters, computeReadiness, limit: 60 });
+  // Admins get the full talent pool (including contact email) — unchanged.
+  // Self-selected recruiters are NOT identity-verified, so they only ever see
+  // consent-gated candidates (opted in to recruiters) and NEVER raw email/PII or
+  // non-consenting students. This enforces the consent rule server-side.
+  if (!req.isAdmin) {
+    const optIn = await db.listNetworkProfiles({ forRecruiter: true });
+    const allowed = new Set(optIn.map((p) => String(p.userId)));
+    candidates = candidates
+      .filter((c) => allowed.has(String(c.id)))
+      .map(({ email, ...safe }) => safe);
+  }
   res.json({ ok: true, candidates, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
 });
 
@@ -2831,8 +3126,10 @@ app.get('/api/network/leaderboards', requireAuth, async (req, res) => {
   res.json({ ok: true, profiles, db: db.dbEnabled() });
 });
 
-/* Recruiter candidate discovery (respects visibility + open-to-recruiters). */
-app.get('/api/network/candidates', requireAuth, async (req, res) => {
+/* Recruiter candidate discovery (respects visibility + open-to-recruiters).
+   Candidate discovery is recruiter-or-admin only; the underlying list is already
+   consent-gated (public / published / opted-in profiles), so no PII leaks. */
+app.get('/api/network/candidates', requireAuth, requireRole('recruiter', 'admin'), async (req, res) => {
   const profiles = await db.listNetworkProfiles({ forRecruiter: true });
   res.json({ ok: true, profiles, db: db.dbEnabled() });
 });
@@ -2879,13 +3176,13 @@ app.post('/api/network/requests', requireAuth, validateBody(networkRequestSchema
   res.status(persistenceStatus(result)).json({ ...result, limit, db: db.dbEnabled() });
 });
 
-/* Recruiter shortlists. */
-app.get('/api/network/shortlists', requireAuth, async (req, res) => {
+/* Recruiter shortlists — recruiter or admin only. */
+app.get('/api/network/shortlists', requireAuth, requireRole('recruiter', 'admin'), async (req, res) => {
   const u = currentUser(req);
   const shortlists = await db.listShortlists({ recruiterUserId: u?.id, recruiterEmail: u?.email });
   res.json({ ok: true, shortlists, db: db.dbEnabled() });
 });
-app.post('/api/network/shortlists', requireAuth, async (req, res) => {
+app.post('/api/network/shortlists', requireAuth, requireRole('recruiter', 'admin'), async (req, res) => {
   const u = currentUser(req);
   const body = req.body || {};
   const result = await db.shortlistCandidate({
@@ -2958,6 +3255,60 @@ app.patch('/api/admin/users/:id/featured', requireAuth, requireAdmin, async (req
   const result = await db.adminSetFeatured({ id: req.params.id, featuredTalent });
   res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
 });
+
+/* ---- Admin: privileged-role verification management ------------------------
+   List pending requests, and set/approve/reject server-controlled role fields.
+   This is the ONLY path that grants recruiter/college_admin backend privilege. */
+app.get('/api/admin/verification-requests', requireAuth, requireAdmin, async (req, res) => {
+  const requests = await db.listVerificationRequests({ status: req.query.status || 'pending' });
+  res.json({ ok: true, requests, db: db.dbEnabled() });
+});
+
+const ACCOUNT_TYPES = ['', 'student', 'professional', 'recruiter', 'college_admin', 'admin'];
+app.post('/api/admin/users/:id/verify', requireAuth, requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  const patch = { id: req.params.id, email: b.email };
+  if (b.accountType !== undefined) {
+    if (!ACCOUNT_TYPES.includes(String(b.accountType))) return res.status(400).json({ ok: false, error: 'invalid_account_type' });
+    patch.accountType = b.accountType;
+  }
+  if (b.roleVerified !== undefined) patch.roleVerified = b.roleVerified === true || b.roleVerified === 'true';
+  if (b.organizationId !== undefined) patch.organizationId = b.organizationId;
+  if (b.collegeId !== undefined) patch.collegeId = b.collegeId;
+  if (b.action === 'approve') { patch.roleVerified = true; patch.verificationStatus = 'approved'; }
+  if (b.action === 'reject') { patch.roleVerified = false; patch.verificationStatus = 'rejected'; }
+  const result = await db.setUserVerification(patch);
+  res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+});
+
+/* Self-service: a user REQUESTS a privileged role. Creates a pending request
+   only — never grants access (an admin must approve). */
+app.post('/api/account/request-verification', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  const b = req.body || {};
+  const requestedType = String(b.requestedType || '');
+  if (!['recruiter', 'college_admin'].includes(requestedType)) return res.status(400).json({ ok: false, error: 'invalid_requested_type' });
+  const result = await db.requestRoleVerification({
+    id: u?.id, email: u?.email, name: u?.name,
+    requestedType, organizationId: b.organizationId, collegeId: b.collegeId,
+  });
+  res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+});
+
+/* Current caller's server-controlled access context (UI reads this to know its
+   VERIFIED privileges — distinct from the self-selected onboarding persona). */
+app.get('/api/account/access-context', requireAuth, async (req, res) => {
+  const ctx = await getCurrentUserAccessContext(req);
+  res.json({
+    ok: true,
+    role: ctx.role, isAdmin: ctx.isAdmin, privileged: ctx.privileged,
+    accountType: ctx.accountType, roleVerified: ctx.roleVerified,
+    verificationStatus: ctx.verificationStatus || 'none',
+    organizationId: ctx.organizationId, collegeId: ctx.collegeId,
+    db: db.dbEnabled(),
+  });
+});
+
 
 /* ============================================================
    CONTACTS / REFERRALS  (compliant provider lookups)
@@ -4915,8 +5266,15 @@ app.post('/api/integrations/github/repositories/:repoId/analyze', requireAuth, g
       archived: repo.archived, language: repo.language, linkedProjectId: repo.linkedProjectId,
     };
     const fetched = await ghEngine.fetchSafeRepoFiles(normalized, installation.installationId);
-    const analysis = ghEngine.buildRepoAnalysis(normalized, fetched);
+    // Pass the connected GitHub identity so authorship is verified against the
+    // account that actually committed the code (not merely repo access).
+    const conn = await db.getGithubConnectionRaw({ userId: u?.id, email: u?.email });
+    const analysis = ghEngine.buildRepoAnalysis(normalized, fetched, { identityHandle: conn?.handle || '' });
     analysis.installationId = installation.installationId;
+    // Cache sanitized files + authorship so a live comprehension viva can be
+    // generated server-side from the candidate's own code (integrity: source
+    // and answer keys never round-trip through the client).
+    try { vivaStore.cacheRepoFiles(u?.id || u?.email, repo.fullName, fetched.files || {}, analysis.authorship); } catch { /* non-fatal */ }
     const verificationSummary = ghEngine.generateRepoVerificationSummary(analysis);
     const publicSafeSummary = ghEngine.generatePublicSafeRepoSummary(analysis);
     const saved = await db.saveRepoAnalysis({ userId: u?.id, email: u?.email, repoId: repo.githubRepoId, analysis, verificationSummary, publicSafeSummary });
@@ -5100,10 +5458,24 @@ app.get(/^\/(?!jobs|auth|apply|ai|api|health|contacts|opportunities|support|dash
    server-side; returns a safe, generic message to the client and
    NEVER leaks stack traces or secrets in production.
    ------------------------------------------------------------------ */
-/* Central error handler (server/utils/observability.js): same response
-   contract as before, plus the request id and a best-effort persist into
-   the capped error_logs collection for the admin error feed. */
-app.use(createErrorHandler({ logger, db, isProd: config.IS_PROD }));
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  logger.error('Unhandled request error', {
+    method: req.method,
+    path: req.path,
+    status,
+    message: err.message,
+    stack: config.IS_PROD ? undefined : err.stack,
+  });
+  if (res.headersSent) return;
+  res.status(status >= 400 && status < 600 ? status : 500).json({
+    error: 'server_error',
+    message: config.IS_PROD
+      ? 'Something went wrong on our end. Please try again.'
+      : err.message || 'Internal server error',
+  });
+});
 
 const port = process.env.PORT || 3000;
 
