@@ -439,6 +439,77 @@ function AccessDenied() {
   );
 }
 
+function requestLabel(r) {
+  const t = r?.requestedType || r?.accountType || '';
+  if (t === 'college_admin') return 'Placement cell';
+  if (t === 'recruiter') return 'Recruiter';
+  return t || 'Privileged role';
+}
+
+function PendingVerificationPanel({ requests, loading, error, busyKey, onApprove, onReject, onRefresh, onOpen }) {
+  const rows = Array.isArray(requests) ? requests : [];
+  return (
+    <SectionCard className="mb-6">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-display text-lg font-semibold text-white">Pending verification requests</p>
+          <p className="mt-1 text-sm text-slate-400">Approve recruiter or placement-cell access from here. Self-selected roles do not unlock backend access.</p>
+        </div>
+        <Button variant="soft" size="sm" onClick={onRefresh} disabled={loading}>
+          <RefreshCw size={14} className={loading ? 'animate-spin-slow' : ''} /> Refresh
+        </Button>
+      </div>
+
+      {error ? (
+        <p className="rounded-xl border border-rose-400/20 bg-rose-400/5 px-3 py-2 text-sm text-rose-200">{error}</p>
+      ) : loading ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <Skeleton className="h-28 w-full rounded-2xl" />
+          <Skeleton className="h-28 w-full rounded-2xl" />
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-4 text-sm text-slate-400">
+          No pending recruiter or placement-cell requests. New requests will appear here, even if the user directory list is empty.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {rows.map((r) => {
+            const id = r.id || r.userId || r.email;
+            const key = `${id}:${r.status || 'pending'}`;
+            const type = r.requestedType || r.accountType || '';
+            const busy = busyKey === key;
+            return (
+              <div key={key} className="rounded-2xl border border-aurora-violet/20 bg-aurora-violet/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate font-semibold text-white">{r.name || r.email || 'Unknown user'}</p>
+                      <Badge tone={type === 'college_admin' ? 'cyan' : 'amber'}>{requestLabel(r)}</Badge>
+                      <Badge tone="default">{r.status || 'pending'}</Badge>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-500">{r.email || 'No email'}</p>
+                  </div>
+                  {onOpen && r.id && <Button size="sm" variant="ghost" onClick={() => onOpen(r.id)}>Open</Button>}
+                </div>
+
+                <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/8 bg-white/[0.02] px-2.5 py-2">Org: <span className="text-slate-200">{r.organizationId || '—'}</span></div>
+                  <div className="rounded-lg border border-white/8 bg-white/[0.02] px-2.5 py-2">College: <span className="text-slate-200">{r.collegeId || '—'}</span></div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" disabled={busy} onClick={() => onApprove(r)}><ShieldCheck size={14} /> Approve</Button>
+                  <Button size="sm" variant="soft" disabled={busy} onClick={() => onReject(r)}><X size={14} /> Reject</Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 export default function AdminUsers() {
   const isAdmin = useIsAdmin();
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -449,6 +520,10 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState(null);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingError, setPendingError] = useState('');
+  const [requestBusyKey, setRequestBusyKey] = useState('');
   const debounceRef = useRef(null);
 
   const fetchData = useCallback(async (opts = {}) => {
@@ -465,6 +540,50 @@ export default function AdminUsers() {
     }
   }, [filters, sort, page]);
 
+  const fetchVerificationRequests = useCallback(async () => {
+    setPendingLoading(true); setPendingError('');
+    try {
+      const r = await Admin.verificationRequests('pending');
+      setPendingRequests(Array.isArray(r?.requests) ? r.requests : []);
+    } catch (e) {
+      setPendingError(e?.status === 403 ? 'Admin access required.' : (e?.message || 'Could not load verification requests.'));
+      setPendingRequests([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
+  const refreshAll = useCallback(() => {
+    fetchData();
+    fetchVerificationRequests();
+  }, [fetchData, fetchVerificationRequests]);
+
+  const decideRequest = useCallback(async (request, action) => {
+    const id = request?.id || request?.userId;
+    const email = request?.email;
+    if (!id && !email) {
+      setPendingError('This request does not have a user id or email to approve.');
+      return;
+    }
+    const key = `${id || email}:${request?.status || 'pending'}`;
+    setRequestBusyKey(key); setPendingError('');
+    try {
+      await Admin.verifyUser(id || email, {
+        email,
+        action,
+        accountType: request?.requestedType || request?.accountType || '',
+        organizationId: request?.organizationId || '',
+        collegeId: request?.collegeId || '',
+      });
+      await fetchVerificationRequests();
+      await fetchData();
+    } catch (e) {
+      setPendingError(e?.message || `Could not ${action} this request.`);
+    } finally {
+      setRequestBusyKey('');
+    }
+  }, [fetchData, fetchVerificationRequests]);
+
   // Debounced refetch on filter/sort/page change.
   useEffect(() => {
     if (!isAdmin) return;
@@ -473,11 +592,16 @@ export default function AdminUsers() {
     return () => debounceRef.current && clearTimeout(debounceRef.current);
   }, [fetchData, isAdmin]);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetchVerificationRequests();
+  }, [fetchVerificationRequests, isAdmin]);
+
   const setFilter = (k, v) => { setPage(1); setFilters((f) => ({ ...f, [k]: v })); };
   const reset = () => { setPage(1); setFilters(EMPTY_FILTERS); setSort('xp'); };
 
   const stats = data?.stats || {};
-  const users = data?.users || [];
+  const users = data?.users || data?.items || [];
   const totalPages = data?.totalPages || 1;
   const activeFilterCount = useMemo(
     () => Object.entries(filters).filter(([k, v]) => k !== 'q' && v !== '' && v !== false && v !== 0).length,
@@ -496,6 +620,17 @@ export default function AdminUsers() {
             <ShieldCheck size={14} /> Admin
           </span>
         }
+      />
+
+      <PendingVerificationPanel
+        requests={pendingRequests}
+        loading={pendingLoading}
+        error={pendingError}
+        busyKey={requestBusyKey}
+        onRefresh={fetchVerificationRequests}
+        onApprove={(r) => decideRequest(r, 'approve')}
+        onReject={(r) => decideRequest(r, 'reject')}
+        onOpen={setSelectedId}
       />
 
       {/* Stat summary cards */}
@@ -532,7 +667,7 @@ export default function AdminUsers() {
         >
           <SlidersHorizontal size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ''}
         </button>
-        <button onClick={() => fetchData()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/25" aria-label="Refresh">
+        <button onClick={() => refreshAll()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/25" aria-label="Refresh">
           <RefreshCw size={15} className={loading ? 'animate-spin-slow' : ''} />
         </button>
       </div>
@@ -590,7 +725,7 @@ export default function AdminUsers() {
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-44 w-full rounded-2xl" />)}
         </div>
       ) : error ? (
-        <EmptyState icon={AlertTriangle} title="Couldn't load the directory" hint={error} action={<Button onClick={() => fetchData()}><RefreshCw size={14} /> Retry</Button>} />
+        <EmptyState icon={AlertTriangle} title="Couldn't load the directory" hint={error} action={<Button onClick={() => refreshAll()}><RefreshCw size={14} /> Retry</Button>} />
       ) : users.length === 0 ? (
         <EmptyState
           icon={UserSearch}
@@ -630,7 +765,7 @@ export default function AdminUsers() {
 
       <AnimatePresence>
         {selectedId && (
-          <DetailDrawer key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} onMutated={() => fetchData()} />
+          <DetailDrawer key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} onMutated={() => refreshAll()} />
         )}
       </AnimatePresence>
     </div>

@@ -106,22 +106,55 @@ const NAV_GROUPS = [
 ];
 const MORE_IDS = ['growth', 'settings'];
 
+const TOP_NAV_PRIORITIES = {
+  admin: ['Overview', 'Admin', 'Recruiting', 'Placement Cell', 'Project OS', 'Profile / XP'],
+  recruiter: ['Overview', 'Recruiting', 'Community', 'Project OS'],
+  college_admin: ['Overview', 'Placement Cell', 'Profile / XP'],
+  student_early: ['Overview', 'Project OS', 'Profile / XP', 'Community'],
+  student_placement: ['Overview', 'Resume OS', 'Job Match', 'Applications', 'Project OS', 'Profile / XP', 'Community'],
+};
+const MAX_TOP_NAV_GROUPS = 7;
+
+function orderGroupsForTopNav(groups, role) {
+  const priority = TOP_NAV_PRIORITIES[role] || TOP_NAV_PRIORITIES.student_placement;
+  const score = (g) => {
+    const idx = priority.indexOf(g.label);
+    return idx === -1 ? 100 + NAV_GROUPS.findIndex((x) => x.label === g.label) : idx;
+  };
+  return groups.slice().sort((a, b) => score(a) - score(b));
+}
+
 function groupsForRole(role) {
   const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
   const keep = (id) => !!byId[id] && canSeeScreen(role, id) && (!byId[id].adminOnly || role === 'admin');
 
-  const placed = new Set();
-  const primary = NAV_GROUPS
-    .map((g) => ({ label: g.label, short: g.short, items: g.ids.filter(keep).map((id) => { placed.add(id); return byId[id]; }) }))
+  const grouped = NAV_GROUPS
+    .map((g) => ({ label: g.label, short: g.short, items: g.ids.filter(keep).map((id) => byId[id]) }))
     .filter((g) => g.items.length);
 
-  const moreOrder = [...MORE_IDS, ...NAV.map((n) => n.id)];
+  // Keep the desktop bar readable. Admin in particular has many modules, so
+  // low-priority groups are flattened into More instead of overflowing beside
+  // the plan chip/search/avatar controls.
+  const ordered = orderGroupsForTopNav(grouped, role);
+  const primary = ordered.slice(0, MAX_TOP_NAV_GROUPS);
+  const placed = new Set(primary.flatMap((g) => g.items.map((it) => it.id)));
+
   const seen = new Set();
-  const more = moreOrder.filter((id) => {
-    if (seen.has(id) || placed.has(id) || !keep(id)) return false;
+  const more = [];
+  const push = (id) => {
+    if (seen.has(id) || placed.has(id) || !keep(id)) return;
     seen.add(id);
-    return true;
-  }).map((id) => byId[id]);
+    more.push(byId[id]);
+  };
+
+  // First add hidden top-level groups in the same role-aware order, then the
+  // utility ids. This keeps Admin/College/Recruiting prominent while all other
+  // features stay reachable from More.
+  for (const g of ordered.slice(MAX_TOP_NAV_GROUPS)) {
+    for (const it of g.items) push(it.id);
+  }
+  for (const id of MORE_IDS) push(id);
+  for (const n of NAV) push(n.id);
 
   return { primary, more };
 }
@@ -311,22 +344,22 @@ export default function Shell({ active, onPick, title, children }) {
             <span className="hidden font-display text-[16px] font-extrabold tracking-tight text-white sm:block">Career Autopilot</span>
           </button>
 
-          <nav className="ml-3 hidden items-center gap-0.5 lg:flex">
+          <nav className="ml-3 hidden min-w-0 flex-1 items-center gap-0.5 lg:flex">
             {primary.map((g) => <NavMenu key={g.label} group={g} active={active} onPick={pick} />)}
             {more.length > 0 && <NavMenu group={{ label: 'More', short: 'More', items: more }} active={active} onPick={pick} />}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-3 flex shrink-0 items-center gap-2">
             <PlanChip plan={plan} />
             <button
               onClick={() => setPalette(true)}
-              className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 transition hover:border-aurora-violet/30 hover:bg-white/[0.06] md:flex"
+              className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 transition hover:border-aurora-violet/30 hover:bg-white/[0.06] 2xl:flex"
               aria-label="Search"
             >
               <Search size={15} /> <span className="text-slate-500">Search…</span>
               <kbd className="ml-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-500">{shortcut.label}</kbd>
             </button>
-            <button onClick={() => setPalette(true)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/8 bg-white/[0.03] text-slate-300 transition hover:bg-white/6 md:hidden" aria-label="Search">
+            <button onClick={() => setPalette(true)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/8 bg-white/[0.03] text-slate-300 transition hover:bg-white/6 2xl:hidden" aria-label="Search">
               <Search size={16} />
             </button>
             <Dropdown
