@@ -150,6 +150,9 @@ export default function App() {
   const [active, setActive] = useState('dash');
   const [viewParams, setViewParams] = useState({});
   const [onboarded, setOnboarded] = useState(!needsOnboarding());
+  // Bumped on every profile change so App re-resolves the effective role,
+  // navigation and default landing immediately when the persona is switched.
+  const [, setProfileTick] = useState(0);
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [publicId, setPublicId] = useState(() => parseProfileHash());
   const prevUserIdRef = useRef(null);
@@ -213,7 +216,7 @@ export default function App() {
     return () => { live = false; };
   }, [user]);
   useEffect(() => {
-    const f = () => setOnboarded(!needsOnboarding());
+    const f = () => { setOnboarded(!needsOnboarding()); setProfileTick((t) => t + 1); };
     window.addEventListener(PROFILE_EVENT, f);
     return () => window.removeEventListener(PROFILE_EVENT, f);
   }, []);

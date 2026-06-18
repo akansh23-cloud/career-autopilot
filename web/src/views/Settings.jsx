@@ -4,6 +4,7 @@ import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Field, Badge, Avatar, Spinner } from '../components/ui/kit.jsx';
 import { Profile, Auth } from '../lib/api.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
+import { getUserRole, patchProfile, ONBOARDING_CHOICES, ROLE_LABELS } from '../lib/userProfile.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSupport } from '../support/SupportProvider.jsx';
 
@@ -25,6 +26,20 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
+
+  // Persona / account type. This is the single source of truth for which UI a
+  // user gets. Changing it here lets a mis-set account (e.g. someone who picked
+  // "College / Placement Cell" during onboarding but is actually a student) move
+  // back to the student/professional build surface — Project OS, Resume OS, Jobs.
+  const [role, setRole] = useState(() => getUserRole());
+  const [roleSaved, setRoleSaved] = useState(false);
+  const changeRole = (r) => {
+    if (r === role) return;
+    setRole(r);
+    patchProfile({ role: r }); // fires PROFILE_EVENT → nav + landing re-resolve immediately
+    setRoleSaved(true);
+    setTimeout(() => setRoleSaved(false), 3000);
+  };
 
   useEffect(() => {
     Profile.getCareer().then((d) => {
@@ -67,10 +82,36 @@ export default function Settings() {
 
   return (
     <>
-      <PageIntro title="Settings" sub="Tune your job preferences, connections and account." />
+      <PageIntro title="Settings" sub="Switch your account type, and tune your job preferences, connections and account." />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
+          <SectionCard title="Account type" eyebrow="Persona">
+            <p className="mb-3 text-[13px] leading-relaxed text-slate-400">
+              This controls your entire workspace. Choose <span className="text-slate-200">Student</span> or <span className="text-slate-200">Working Professional</span> to build projects, create resumes and apply to jobs (Project OS, Resume OS, Jobs). <span className="text-slate-200">Recruiter</span> and <span className="text-slate-200">College / Placement Cell</span> are separate staff workspaces that require admin verification. You can switch any time.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {ONBOARDING_CHOICES.map((c) => {
+                const on = role === c.role;
+                return (
+                  <button
+                    key={c.role}
+                    onClick={() => changeRole(c.role)}
+                    className={`rounded-2xl border p-3 text-left transition ${on ? 'border-aurora-violet/50 bg-aurora-violet/[0.08] ring-1 ring-aurora-violet/25' : 'border-white/10 bg-white/[0.02] hover:border-white/25'}`}
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-white">{c.label}{on && <Check size={14} className="text-aurora-mint" />}</span>
+                    <span className="mt-0.5 block text-xs text-slate-400">{c.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {roleSaved && (
+              <p className="mt-3 flex items-center gap-1.5 text-[13px] text-aurora-mint">
+                <Check size={14} /> Saved — your workspace switched to {ROLE_LABELS[role] || role}. Use the top navigation to open Project OS, Resume OS and Jobs.
+              </p>
+            )}
+          </SectionCard>
+
           <SectionCard title="Job preferences">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Target roles" hint="comma separated · pick from suggestions or type your own"><Input list="role-suggestions" value={prefs.titles} onChange={(e) => setPrefs({ ...prefs, titles: e.target.value })} placeholder="DevOps Engineer, Platform Engineer" /></Field>
