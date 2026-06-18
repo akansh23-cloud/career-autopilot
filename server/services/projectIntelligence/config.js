@@ -14,7 +14,7 @@ export const pjConfig = (env = process.env) => {
     enabled: env.PROJECT_INTELLIGENCE_ENABLED !== '0',
     anthropicKey,
     aiProvider: provider,
-    aiModel: env.AI_MODEL || 'claude-sonnet-4-20250514',
+    aiModel: (env.AI_MODEL || env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'),
     // Recommendation knobs.
     maxRecommendations: Number(env.PROJECT_INTELLIGENCE_MAX_RECS) || 6,
     similarityThreshold: Number(env.PROJECT_INTELLIGENCE_SIMILARITY) || 0.55,

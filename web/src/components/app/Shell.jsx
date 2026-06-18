@@ -7,7 +7,6 @@ import {
   LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge, Sparkles, GraduationCap,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
-import CommandPalette from './CommandPalette.jsx';
 import { useSupport } from '../../support/SupportProvider.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { openPricing } from '../PricingModal.jsx';
@@ -15,13 +14,6 @@ import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
 import { getProfile, PROFILE_EVENT } from '../../lib/userProfile.js';
 import { getEffectiveRole, canSeeScreen } from '../../lib/roleCapabilities.js';
 import { ACCESS_CONTEXT_EVENT, getAccessContext, useAccountAccessContext } from '../../lib/accessContext.js';
-
-function detectShortcut() {
-  if (typeof navigator === 'undefined') return { isMac: false, label: 'Ctrl K' };
-  const ua = `${navigator.platform || ''} ${navigator.userAgent || ''}`;
-  const isMac = /Mac|iPhone|iPad|iPod/i.test(ua);
-  return { isMac, label: isMac ? '\u2318K' : 'Ctrl K' };
-}
 
 function usePlanId() {
   const [p, setP] = useState(getPlan());
@@ -279,7 +271,7 @@ function MobileNav({ primary, more, active, onPick, onSupport }) {
       ))}
       {(more.length > 0 || onSupport) && (
         <div className="space-y-1">
-          <p className="px-3 pb-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">More</p>
+          <p className="px-3 pb-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">Tools &amp; settings</p>
           {more.map((it) => <NavBtn key={it.id} it={it} />)}
           {onSupport && (
             <button onClick={onSupport} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05]">
@@ -321,9 +313,7 @@ export default function Shell({ active, onPick, title, children }) {
   const role = useRole();
   const support = useSupport();
   const [drawer, setDrawer] = useState(false);
-  const [palette, setPalette] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [shortcut] = useState(detectShortcut);
   const { primary, more } = groupsForRole(role);
   const pick = (id) => { onPick(id); setDrawer(false); };
   const openSupportChat = () => { support?.openSupport?.({ tab: 'chat' }); setDrawer(false); };
@@ -333,20 +323,6 @@ export default function Shell({ active, onPick, title, children }) {
     f();
     window.addEventListener('scroll', f, { passive: true });
     return () => window.removeEventListener('scroll', f);
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-        const el = document.activeElement;
-        const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-        if (typing) return;
-        e.preventDefault();
-        setPalette((p) => !p);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   return (
@@ -366,22 +342,10 @@ export default function Shell({ active, onPick, title, children }) {
 
           <nav className="ml-3 hidden min-w-0 flex-1 items-center gap-0.5 xl:flex">
             {primary.map((g) => <NavMenu key={g.label} group={g} active={active} onPick={pick} />)}
-            {more.length > 0 && <NavMenu group={{ label: 'More', short: 'More', items: more }} active={active} onPick={pick} />}
           </nav>
 
           <div className="ml-3 flex shrink-0 items-center gap-2">
             <PlanChip plan={plan} />
-            <button
-              onClick={() => setPalette(true)}
-              className="hidden items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-sm text-slate-400 transition hover:border-aurora-violet/30 hover:bg-white/[0.06] 2xl:flex"
-              aria-label="Search"
-            >
-              <Search size={15} /> <span className="text-slate-500">Search…</span>
-              <kbd className="ml-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-slate-500">{shortcut.label}</kbd>
-            </button>
-            <button onClick={() => setPalette(true)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/8 bg-white/[0.03] text-slate-300 transition hover:bg-white/6 2xl:hidden" aria-label="Search">
-              <Search size={16} />
-            </button>
             <Dropdown
               trigger={
                 <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] py-1 pl-1 pr-2 transition hover:bg-white/6">
@@ -455,8 +419,6 @@ export default function Shell({ active, onPick, title, children }) {
           </div>
         </div>
       </footer>
-
-      <CommandPalette open={palette} setOpen={setPalette} onPick={pick} />
     </div>
   );
 }

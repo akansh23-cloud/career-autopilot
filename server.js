@@ -59,6 +59,32 @@ import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
 
+/* ============================================================
+   SAFE AI MODEL RESOLVER  (single source of truth for the model id)
+   ------------------------------------------------------------
+   The previous build hardcoded `claude-sonnet-4-20250514` everywhere. That
+   snapshot was retired from the Claude API, so every AI call started failing
+   with an upstream `not_found_error: model: claude-sonnet-4-20250514`, which
+   surfaced as a raw technical error in the UI (e.g. the Tailor & Apply modal).
+
+   resolveAiModel() reads the model from the environment when provided and
+   validates it; otherwise it returns a supported default. The /ai/messages
+   proxy and every server-side Anthropic call use this, so a stale/invalid
+   client-supplied model can never reach the API again. If the model env var
+   is absent we simply use the default — a missing/invalid model never breaks
+   a feature on its own.
+   ============================================================ */
+const DEFAULT_AI_MODEL = 'claude-sonnet-4-6';
+// Accept canonical Anthropic ids like `claude-sonnet-4-6`, `claude-opus-4-8`,
+// or dated snapshots like `claude-haiku-4-5-20251001`. Anything that doesn't
+// look like a model id (or is blank) is ignored in favour of the default.
+const AI_MODEL_PATTERN = /^claude-[a-z0-9.-]+$/i;
+function resolveAiModel() {
+  const fromEnv = String(process.env.AI_MODEL || process.env.ANTHROPIC_MODEL || '').trim();
+  if (fromEnv && AI_MODEL_PATTERN.test(fromEnv)) return fromEnv;
+  return DEFAULT_AI_MODEL;
+}
+
 // Validate environment up front. In production this exits on fatal misconfig
 // (missing MONGODB_URI / SESSION_SECRET) so the app never silently runs without
 // persistence or with a throwaway session secret.
@@ -1842,7 +1868,7 @@ async function aiResumeFeedback({ resumeText, scoredRole, deterministic }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: resolveAiModel(),
         max_tokens: 1100,
         temperature: 0, // determinism for the explanation too
         system: sys,
@@ -3726,18 +3752,22 @@ app.get('/contacts/providers', (req, res) => {
    ============================================================ */
 app.post('/ai/messages', aiLimiter, validateBody(aiMessagesSchema), async (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.status(400).json({ error: { message: 'ANTHROPIC_API_KEY is not set on the server. Add it to .env or paste a key in Settings.' } });
+  if (!key) return res.status(400).json({ error: { code: 'ai_not_configured', message: 'AI tailoring is not configured on the server (no ANTHROPIC_API_KEY). The app still works with deterministic fallbacks.' } });
   try {
+    // Always force the server-resolved, supported model. The client may send a
+    // stale/hardcoded model id (older builds sent a now-retired snapshot); we
+    // override it so an invalid client model can never reach the API.
+    const body = { ...(req.body || {}), model: resolveAiModel() };
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify(req.body || {})
+      body: JSON.stringify(body)
     });
     const data = await r.json().catch(() => ({ error: { message: 'Bad upstream response' } }));
     res.status(r.status).json(data);
   } catch (err) {
     logger.error('AI proxy failed', { message: err.message });
-    res.status(502).json({ error: { message: err.message || 'AI proxy failed' } });
+    res.status(502).json({ error: { code: 'ai_unavailable', message: err.message || 'AI proxy failed' } });
   }
 });
 
@@ -3790,7 +3820,7 @@ app.post('/support/chat', supportChatLimiter, validateBody(supportChatSchema), a
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
+            model: resolveAiModel(),
             max_tokens: 400,
             system,
             messages: [{ role: 'user', content: message }],
@@ -4462,7 +4492,7 @@ async function anthropicJSON(prompt, max_tokens = 1500) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: resolveAiModel(), max_tokens, messages: [{ role: 'user', content: prompt }] }),
     });
     if (!r.ok) return null;
     const data = await r.json().catch(() => null);
@@ -5426,7 +5456,7 @@ app.post('/api/templates/analyze-custom-template', requireAuth, generationLimite
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 900, messages: [{ role: 'user', content: [
+      body: JSON.stringify({ model: resolveAiModel(), max_tokens: 900, messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data } },
         { type: 'text', text: prompt },
       ] }] }),

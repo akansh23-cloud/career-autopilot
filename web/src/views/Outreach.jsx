@@ -28,7 +28,7 @@ export default function Outreach() {
     const prompt = `Write a short, warm, personalised LinkedIn/email outreach message to ${c.name || 'a recruiter'}${c.title ? ` (${c.title})` : ''} at ${company || c.company || 'the company'}.
 I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 90 words, specific, no fluff, friendly. Output the message only.`;
     try {
-      const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
+      const r = await AI.message({ max_tokens: 400, messages: [{ role: 'user', content: prompt }] });
       const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
       useMeter('outreach');
       setDraft((d) => ({ ...d, text, loading: false }));

@@ -18,7 +18,7 @@ async function postJSON(url, headers, body, timeoutMs) {
 
 export function createAnthropicClient(cfg) {
   const key = cfg.anthropicKey;
-  const model = cfg.aiModel || 'claude-sonnet-4-20250514';
+  const model = cfg.aiModel || (process.env.AI_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6');
   const timeoutMs = Math.max(cfg.timeoutMs || 0, 20000);
   return {
     name: 'anthropic',

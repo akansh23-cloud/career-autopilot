@@ -347,13 +347,19 @@ Optimise for ATS, lead with quantified impact, mirror the JD language, and outpu
 Keep clear ALL-CAPS section headings (e.g. SUMMARY, EXPERIENCE, SKILLS, EDUCATION, PROJECTS) and use "•" for bullets.
 JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000)}"""`;
     try {
-      const d = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 2600, messages: [{ role: 'user', content: prompt }] });
+      const d = await AI.message({ max_tokens: 2600, messages: [{ role: 'user', content: prompt }] });
       const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const next = text.trim();
       setOut(next); setStatus('done');
       useMeter('tailoring');
       safeWrite({ resume, jd, tpl: tplId, len, out: next, updatedAt: new Date().toISOString() });
-    } catch (e) { setErr(e.message || 'Tailoring failed.'); setStatus('error'); }
+    } catch (e) {
+      const code = e?.data?.error?.code || '';
+      setErr(code === 'ai_not_configured'
+        ? 'AI rewrite isn’t configured yet. Use the deterministic “Tailor resume for a job” tool in Resume OS — it works without AI.'
+        : 'Tailoring is temporarily unavailable. Please try again in a moment.');
+      setStatus('error');
+    }
   };
 
   const copy = () => { navigator.clipboard?.writeText(activeText); setCopied(true); setTimeout(() => setCopied(false), 1500); };

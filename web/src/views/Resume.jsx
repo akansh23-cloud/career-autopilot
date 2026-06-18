@@ -7,6 +7,7 @@ import { ResumeApi } from '../lib/api.js';
 import { extractResumeText, ACCEPT } from '../lib/resume.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
 import { clearStoredResume, getStoredResume, queueResumeJobSearch, saveResumeAnalysis, saveStoredResume } from '../lib/resumeStore.js';
+import { getProfile } from '../lib/userProfile.js';
 
 // Human-readable labels + max points for each deterministic scoring category.
 const BREAKDOWN_LABELS = {
@@ -162,9 +163,28 @@ export default function Resume({ go }) {
   const scoredRole = result?.scoredRole || result?.targetRole || (role || 'General');
   const showRecommendation = result?.recommendedRole && result.recommendedRole !== scoredRole;
 
+  // Advisory only — a sparse profile means weaker role/keyword recommendations,
+  // but it must NEVER block resume analysis or tailoring. Purely informational.
+  const profile = getProfile();
+  const profileIncomplete = !(
+    (profile.targetRole && String(profile.targetRole).trim()) ||
+    (profile.skills && String(profile.skills).trim()) ||
+    (role && role.trim())
+  );
+
   return (
     <>
       <PageIntro title="Resume intelligence" sub="Upload a PDF/DOCX or paste your resume to get a deterministic ATS score with a full breakdown and concrete fixes." />
+
+      {profileIncomplete && (
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-aurora-violet/25 bg-aurora-violet/[0.07] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="flex items-center gap-2 text-sm text-slate-200">
+            <Target size={15} className="text-aurora-violet" /> Complete your profile for better recommendations.
+          </p>
+          {go && <Button size="sm" variant="soft" onClick={() => go('careerprofile')}>Update profile</Button>}
+        </div>
+      )}
+
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <SectionCard title="Your resume">

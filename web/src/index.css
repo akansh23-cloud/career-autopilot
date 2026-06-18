@@ -25,7 +25,12 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; }
+/* html anchors a full-viewport height for the fixed gradient backdrops, while
+   body and #root use min-height so tall pages (e.g. the Admin console) grow with
+   their content and the document scrolls with a single scrollbar — no clamped
+   container clipping content below the fold. */
+html { height: 100%; }
+html, body, #root { min-height: 100%; }
 html { scroll-behavior: smooth; scrollbar-gutter: stable; }
 
 body {

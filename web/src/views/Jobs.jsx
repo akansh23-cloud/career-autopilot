@@ -48,6 +48,73 @@ function enrichJob(j, resume) {
   return { ...j, _match: match, _backup: backup, _matched: matched, _missing: missing, _why: why.length ? why : ['Relevant role/title'] };
 }
 
+// Deterministic, no-AI tailored package. Built purely from the resume text and
+// job posting so the Tailor & Apply modal ALWAYS produces a usable kit — even
+// when the server has no ANTHROPIC_API_KEY or the AI call fails. It never
+// fabricates employers/dates/metrics: the tailored resume keeps the candidate's
+// real resume text and the change notes describe what to adjust manually.
+function buildFallbackKit(job, resume, { template = 'Jake ATS Compact', length = 'Auto' } = {}) {
+  const e = enrichJob(job, resume);
+  const matched = e._matched || [];
+  const missing = e._missing || [];
+  const company = job.company || 'the company';
+  const title = job.title || 'this role';
+  const baseSummary = (resume.analysis?.summary || '').trim();
+  const firstLines = String(resume.text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean).slice(0, 3).join(' ');
+  const summary = baseSummary || firstLines || `Candidate targeting ${title} roles.`;
+  const strengths = matched.length ? matched.slice(0, 6) : (resume.analysis?.strengths || []).slice(0, 6);
+
+  const coverLetter =
+`Dear ${company} Hiring Team,
+
+I'm excited to apply for the ${title} role at ${company}. ${summary}
+
+Based on the job description, my background lines up well with what you're looking for${strengths.length ? `, especially ${strengths.slice(0, 3).join(', ')}` : ''}. I'd welcome the chance to show how I can contribute to your team.
+
+Thank you for your consideration.
+
+Best regards,
+${resume.analysis?.name || '[Your name]'}`;
+
+  const recruiterMessage =
+`Hi — I noticed the ${title} opening at ${company} and believe I'm a strong fit${strengths.length ? ` given my experience with ${strengths.slice(0, 2).join(' and ')}` : ''}. I'd love to share how my background maps to the role. Would you be open to a quick chat?`;
+
+  const linkedinNote =
+`Hi, I'm applying for the ${title} role at ${company} and would value connecting${strengths.length ? `. My background includes ${strengths.slice(0, 2).join(' and ')}.` : '.'} Thanks!`;
+
+  const applyChecklist = uniq([
+    `Mirror the exact job title ("${title}") near the top of your resume.`,
+    missing.length ? `Add or strengthen these keywords if they reflect real experience: ${missing.slice(0, 6).join(', ')}.` : 'Confirm the top job keywords appear in your resume.',
+    'Quantify 2–3 achievements with concrete numbers (%, ₹, time saved).',
+    'Tailor your summary to this role in the first 2 lines.',
+    `Apply via the official posting${job.url ? '' : ' link'} and save it to your tracker.`,
+    'Follow up with the recruiter 5 days after applying.',
+  ]).filter(Boolean);
+
+  const changeNotes = uniq([
+    matched.length ? `Lead with your matching strengths: ${matched.slice(0, 4).join(', ')}.` : 'Surface the skills the posting emphasises in your top third.',
+    missing.length ? `Gaps to address (only if true): ${missing.slice(0, 6).join(', ')}.` : 'No major keyword gaps detected against this posting.',
+    'Reorder bullets so the most relevant experience appears first.',
+    `Keep formatting ATS-safe (${template}); avoid tables/columns that break parsers.`,
+  ]).filter(Boolean);
+
+  return {
+    atsBefore: clamp(e._backup || 45),
+    atsAfter: clamp(e._match || 70),
+    matchedKeywords: matched,
+    stillMissing: missing,
+    summary,
+    whyFit: e._why || [],
+    riskNotes: missing.length ? [`Resume may be missing: ${missing.slice(0, 4).join(', ')}`] : [],
+    changeNotes,
+    tailoredResume: resume.text || '',
+    latexResume: '',
+    docs: { coverLetter, recruiterMessage, linkedinNote, applicationEmail: { subject: `Application: ${title} — ${resume.analysis?.name || ''}`.trim(), body: coverLetter }, followUp3: '', followUp5: '', followUp7: '', salaryNegotiation: '', applyChecklist },
+    template, length, deterministic: true,
+    createdAt: new Date().toISOString(), job,
+  };
+}
+
 function KitTabs({ kit, tab, setTab }) {
   const tabs = [
     ['resume', 'Resume'], ['latex', 'Resume (LaTeX)'], ['cover', 'Cover Letter'], ['recruiter', 'Recruiter'], ['linkedin', 'LinkedIn'], ['email', 'Email'], ['follow', 'Follow-up'], ['negotiation', 'Negotiation'], ['checklist', 'Checklist'], ['changes', 'Changes'],
@@ -75,6 +142,7 @@ function TailorModal({ open, job, go, onClose }) {
   const [status, setStatus] = useState('idle');
   const [kit, setKit] = useState(null);
   const [err, setErr] = useState('');
+  const [notice, setNotice] = useState('');
   const [tab, setTab] = useState('resume');
   const [template, setTemplate] = useState('Jake ATS Compact');
   const [length, setLength] = useState('Auto');
@@ -82,15 +150,15 @@ function TailorModal({ open, job, go, onClose }) {
 
   useEffect(() => {
     if (!open || !job) return;
-    setErr(''); setTab('resume');
+    setErr(''); setNotice(''); setTab('resume');
     const cached = safeRead(KIT_KEY, {})[keyForJob(job)];
     if (cached) { setKit(cached); setStatus('done'); } else { setKit(null); setStatus('idle'); }
   }, [open, job]);
 
   const generate = async () => {
     if (!job) return;
-    if (!resume.text || resume.text.length < 40) { setErr('Upload and analyze a resume first.'); return; }
-    setStatus('loading'); setErr('');
+    if (!resume.text || resume.text.length < 40) { setErr('Upload and analyze a resume first, then come back to tailor it for this job.'); return; }
+    setStatus('loading'); setErr(''); setNotice('');
     const prompt = `You are an expert job application assistant. Build a truthful tailored application kit.
 Return ONLY valid JSON with this shape:
 {"atsBefore":0,"atsAfter":0,"matchedKeywords":[],"stillMissing":[],"summary":"","whyFit":[],"riskNotes":[],"changeNotes":[],"tailoredResume":"plain text resume","latexResume":"Jake's Resume LaTeX if possible","docs":{"coverLetter":"","recruiterMessage":"","linkedinNote":"","applicationEmail":{"subject":"","body":""},"followUp3":"","followUp5":"","followUp7":"","salaryNegotiation":"","applyChecklist":[]}}
@@ -98,11 +166,20 @@ Rules: never invent employers, dates, certifications, tools or metrics. Use only
 RESUME:\n"""${resume.text.slice(0, 9000)}"""
 ANALYSIS:\n${JSON.stringify(resume.analysis || {}).slice(0, 2500)}
 JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
+
+    // If the AI call can't be used, fall back to a deterministic kit so the
+    // modal still produces a usable package — never a raw technical error.
+    const degrade = (message) => {
+      const fb = buildFallbackKit(job, resume, { template, length });
+      const all = safeRead(KIT_KEY, {}); all[keyForJob(job)] = fb; safeWrite(KIT_KEY, all);
+      setKit(fb); setNotice(message); setStatus('done');
+    };
+
     try {
-      const d = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 3600, messages: [{ role: 'user', content: prompt }] });
+      const d = await AI.message({ max_tokens: 3600, messages: [{ role: 'user', content: prompt }] });
       const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const parsed = extractJSON(text);
-      if (!parsed) throw new Error('AI returned an unreadable tailoring response.');
+      if (!parsed) { degrade('We couldn’t read the AI response, so this is a deterministic starter kit you can edit. You can still use the checklist and gap analysis.'); return; }
       const next = {
         atsBefore: clamp(parsed.atsBefore || job._backup || 45), atsAfter: clamp(parsed.atsAfter || job._match || 70),
         matchedKeywords: parsed.matchedKeywords || job._matched || [], stillMissing: parsed.stillMissing || job._missing || [],
@@ -112,7 +189,17 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       };
       const all = safeRead(KIT_KEY, {}); all[keyForJob(job)] = next; safeWrite(KIT_KEY, all);
       setKit(next); setStatus('done');
-    } catch (e) { setErr(e.message || 'Tailoring failed.'); setStatus('error'); }
+    } catch (e) {
+      // No raw error for the student. If AI simply isn't configured, say so
+      // clearly; otherwise note it's temporarily unavailable. Either way we
+      // still hand back a working deterministic package.
+      const code = e?.data?.error?.code || '';
+      if (code === 'ai_not_configured') {
+        degrade('AI tailoring is not configured yet. You can still use the job checklist and project gap analysis below.');
+      } else {
+        degrade('AI tailoring is temporarily unavailable, so here’s a deterministic starter kit you can edit. You can still use the checklist and gap analysis.');
+      }
+    }
   };
 
   const openEditor = () => {
@@ -139,6 +226,7 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       <Button onClick={generate}><Wand2 size={16} /> Generate tailored package</Button>
     </div>}
     {status === 'done' && kit && <div>
+      {notice && <p className="mb-4 rounded-xl border border-amber-300/30 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</p>}
       <div className="rounded-2xl border border-aurora-mint/30 bg-aurora-mint/10 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div><div className="text-xs font-semibold uppercase tracking-[0.3em] text-aurora-mint">Tailored application kit</div><h3 className="font-display text-2xl text-white">{job?.title} <span className="text-slate-500">· {job?.company}</span></h3></div>
@@ -340,7 +428,7 @@ export default function JobsView({ go }) {
     }
     catch (err) { setPeople((p) => ({ ...p, status: 'error', err: err.message || 'Lookup failed.' })); }
   };
-  const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ model: 'claude-sonnet-4-20250514', max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
+  const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
   const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'buildproject') { const ej = enrichJob(j, getStoredResume()); setBuildConfirm({ job: ej, gaps: (ej._missing || []).slice(0, 12) }); return; } if (type === 'details') { const ej = enrichJob(j, getStoredResume()); const body = [
       ej.title ? `Role: ${ej.title}` : '',
