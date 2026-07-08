@@ -166,7 +166,7 @@ function FlowSvg({ data }) {
         const lines = wrap(node.label);
         return (
           <g key={node.id} transform={`translate(${p.x - 65}, ${p.y - 30})`}>
-            <rect width="130" height="60" rx="14" fill="rgba(30,41,59,0.95)" stroke="#f5c76b" strokeOpacity="0.55" />
+            <rect width="130" height="60" rx="14" fill="rgba(30,41,59,0.95)" stroke="#c9b8ff" strokeOpacity="0.55" />
             {lines.map((line, i) => <text key={i} x="65" y={22 + i * 14} textAnchor="middle" fill="#e5e7eb" fontSize="11" fontWeight="600">{line}</text>)}
           </g>
         );
@@ -184,7 +184,7 @@ function SequenceSvg({ data }) {
       <rect width={width} height={height} rx="18" fill="rgba(15,23,42,0.35)" />
       {participants.map((id) => {
         const x = xFor(id);
-        return <g key={id}><rect x={x - 58} y="22" width="116" height="42" rx="12" fill="rgba(30,41,59,0.95)" stroke="#f5c76b" strokeOpacity="0.55" /><text x={x} y="48" textAnchor="middle" fill="#e5e7eb" fontSize="11" fontWeight="600">{aliases.get(id) || id}</text><line x1={x} y1="64" x2={x} y2={height - 24} stroke="#64748b" strokeDasharray="4 5" opacity="0.7" /></g>;
+        return <g key={id}><rect x={x - 58} y="22" width="116" height="42" rx="12" fill="rgba(30,41,59,0.95)" stroke="#c9b8ff" strokeOpacity="0.55" /><text x={x} y="48" textAnchor="middle" fill="#e5e7eb" fontSize="11" fontWeight="600">{aliases.get(id) || id}</text><line x1={x} y1="64" x2={x} y2={height - 24} stroke="#64748b" strokeDasharray="4 5" opacity="0.7" /></g>;
       })}
       {messages.map((m, i) => {
         const y = 100 + i * 52; const x1 = xFor(m.from); const x2 = xFor(m.to); const mid = (x1 + x2) / 2;

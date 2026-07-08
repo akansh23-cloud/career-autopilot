@@ -56,10 +56,10 @@ export function Card({ className, hover, glow, spotlight, children, onMouseMove,
 export function Badge({ tone = 'default', className, children }) {
   const tones = {
     default: 'bg-white/6 text-slate-300 border-white/10',
-    violet: 'bg-aurora-violet/14 text-[#FFD49A] border-aurora-violet/35',
-    cyan: 'bg-aurora-cyan/12 text-[#9DEDE2] border-aurora-cyan/30',
-    mint: 'bg-aurora-mint/12 text-[#A7F2CE] border-aurora-mint/30',
-    amber: 'bg-amber-glow/14 text-[#FFE0A0] border-amber-glow/35',
+    violet: 'bg-aurora-violet/14 text-[#E4DCFF] border-aurora-violet/35',
+    cyan: 'bg-aurora-cyan/12 text-[#C3F0FA] border-aurora-cyan/30',
+    mint: 'bg-aurora-mint/12 text-[#BDF5DC] border-aurora-mint/30',
+    amber: 'bg-amber-glow/14 text-[#F3E3B2] border-amber-glow/35',
     rose: 'bg-rose-500/12 text-rose-300 border-rose-400/30',
   };
   return (

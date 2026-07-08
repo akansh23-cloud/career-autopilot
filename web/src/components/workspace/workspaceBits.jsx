@@ -56,7 +56,7 @@ export function SectionTitle({ children, hint }) {
 
 export function NoticeBar({ tone = 'default', children }) {
   const cls = tone === 'warn'
-    ? 'border-amber-glow/30 bg-amber-glow/8 text-[#FFE0A0]'
+    ? 'border-amber-glow/30 bg-amber-glow/8 text-[#F3E3B2]'
     : 'border-white/10 bg-white/[0.04] text-slate-400';
   return <div className={`rounded-xl border px-3.5 py-2.5 text-[12.5px] leading-relaxed ${cls}`}>{children}</div>;
 }

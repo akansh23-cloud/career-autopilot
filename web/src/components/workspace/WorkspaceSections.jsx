@@ -53,7 +53,7 @@ export function WorkspaceOverview({ plan }) {
         <SectionTitle>Progress</SectionTitle>
         <div className="flex flex-wrap gap-x-8 gap-y-3 text-[13px] text-slate-300">
           <span>{prog.percentDone}% done</span>
-          <span className="text-[#C9B7FF]">{prog.percentVerified}% verified</span>
+          <span className="text-[#C9B8FF]">{prog.percentVerified}% verified</span>
           <span>{prog.doneTasks} done / {prog.verifiedTasks} verified / {prog.blockedTasks} blocked of {prog.totalTasks} tasks</span>
         </div>
         <p className="mt-2 text-[11.5px] text-slate-600">Done = you marked it complete. Verified = the system confirmed evidence. They are tracked separately.</p>

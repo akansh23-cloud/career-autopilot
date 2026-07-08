@@ -190,10 +190,10 @@ export function layoutView(view = {}, opts = {}) {
 
 /* ---- presentation helpers ---- */
 export const NODE_TYPE_COLORS = {
-  actor: '#FFC85A',
-  external: '#FFC85A',
-  service: '#37D6C4',
-  datastore: '#46E6A6',
+  actor: '#EAC97C',
+  external: '#EAC97C',
+  service: '#6EE0F2',
+  datastore: '#57E6A8',
   queue: '#A78BFA',
   pipeline: '#A78BFA',
   security: '#FB7185',

@@ -18,7 +18,7 @@ export default function WorkspaceHeader({ plan, busy = {}, onPreviewPack, onDown
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12.5px]">
             <span className="text-slate-400"><span className="font-semibold text-white">{prog.percentDone}%</span> done ({prog.doneTasks + prog.verifiedTasks}/{prog.totalTasks} tasks)</span>
-            <span className="text-slate-400"><span className="font-semibold text-[#C9B7FF]">{prog.percentVerified}%</span> verified</span>
+            <span className="text-slate-400"><span className="font-semibold text-[#C9B8FF]">{prog.percentVerified}%</span> verified</span>
             {prog.blockedTasks > 0 && <span className="text-rose-300">{prog.blockedTasks} blocked</span>}
             {score != null && (
               <span className="text-slate-400" title="Quality of the proposed architecture — not implementation proof.">

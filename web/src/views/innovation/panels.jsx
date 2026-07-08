@@ -125,7 +125,7 @@ export function FeasibilityCostPanel({ project, projectId, persisted }) {
             {c.cloudApiHardwareNotes && <Block title="Cloud / API / hardware"><p className="text-slate-300">{c.cloudApiHardwareNotes}</p></Block>}
             {c.executionRisks?.length > 0 && <Block title="Execution risks"><List items={c.executionRisks} /></Block>}
             {c.mvpVsAdvanced && <Block title="MVP vs advanced"><p className="text-slate-300">{c.mvpVsAdvanced}</p></Block>}
-            {c.shouldYouBuildVerdict && <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/[0.05] p-3 text-[#A7F2CE]"><span className="font-semibold">Should you build this? </span>{c.shouldYouBuildVerdict}</div>}
+            {c.shouldYouBuildVerdict && <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/[0.05] p-3 text-[#BDF5DC]"><span className="font-semibold">Should you build this? </span>{c.shouldYouBuildVerdict}</div>}
           </div>
         )}
     </SectionCard>
@@ -163,7 +163,7 @@ export function IPReadinessPanel({ project, projectId, persisted, refreshKey }) 
               <Badge tone="violet">Route: {ip.recommendedIPRoute}</Badge>
             </div>
             {ip.capApplied != null && (
-              <div className="rounded-lg border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">
+              <div className="rounded-lg border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">
                 Score capped at {ip.capApplied}. {ip.appliedCaps.map((c) => c.reason).join('; ')}.
               </div>
             )}
@@ -450,7 +450,7 @@ export function PriorArtSearchPlanPanel({ project, projectId, persisted }) {
       {!d ? <EmptyState icon={Search} title="No search plan yet" hint="Generate patent / paper / product / GitHub search queries and a differentiation checklist." />
         : (
           <div className="space-y-4 text-[13px]">
-            <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">{d.disclaimer}</div>
+            <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">{d.disclaimer}</div>
             <Grid>
               <Block title="Patent search queries"><List items={d.patentSearchQueries} /></Block>
               <Block title="Paper / arXiv queries"><List items={d.paperSearchQueries} /></Block>
@@ -752,7 +752,7 @@ export function SimilarMemoryPanel({ projectId }) {
       {!d ? <EmptyState icon={Search} title="Not searched yet" hint="Find similar past projects/ideas from your innovation memory." />
         : (d.results?.length ? (
           <div className="space-y-2 text-[13px]">
-            {d.similarityWarnings?.length > 0 && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">{d.similarityWarnings.join(' ')}</div>}
+            {d.similarityWarnings?.length > 0 && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">{d.similarityWarnings.join(' ')}</div>}
             {d.results.map((r, i) => (
               <div key={i} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
                 <Badge tone={r.similarity >= 78 ? 'rose' : r.similarity >= 50 ? 'amber' : 'cyan'}>{r.similarity}%</Badge>

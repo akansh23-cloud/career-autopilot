@@ -142,7 +142,7 @@ function Stat({ value, suffix = '', label }) {
   const fmt = (x) => (value >= 10000 ? Math.round(x).toLocaleString('en-IN') : (Number.isInteger(value) ? String(Math.round(x)) : x.toFixed(0)));
   return (
     <div ref={ref}>
-      <div className="font-display text-3xl font-extrabold drop-shadow-[0_0_24px_rgba(255,178,62,0.25)] sm:text-4xl">
+      <div className="font-display text-3xl font-extrabold drop-shadow-[0_0_24px_rgba(188,168,255,0.25)] sm:text-4xl">
         <span className="text-aurora">{fmt(n)}{suffix}</span>
       </div>
       <div className="mt-1.5 text-[13px] text-muted">{label}</div>
@@ -153,8 +153,8 @@ function Stat({ value, suffix = '', label }) {
 function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="grid h-9 w-9 place-items-center rounded-xl btn-primary shadow-glow">
-        <Zap size={18} strokeWidth={2.6} className="relative z-[2] text-ink-950" />
+      <span className="grid h-9 w-9 place-items-center rounded-full btn-primary shadow-glow ring-1 ring-white/25">
+        <ShieldCheck size={17} strokeWidth={2.5} className="relative z-[2] text-ink-950" />
       </span>
       <span className="font-display text-[17px] font-extrabold tracking-tight text-white">Career&nbsp;Autopilot</span>
     </div>
@@ -237,9 +237,9 @@ function Hero({ onSignIn }) {
         <div>
           <motion.span
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-3.5 py-1.5 text-xs font-semibold tracking-wide text-[#FFD49A]"
+            className="inline-flex items-center gap-2 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-3.5 py-1.5 text-xs font-semibold tracking-wide text-[#E4DCFF]"
           >
-            <span className="h-1.5 w-1.5 animate-ticker rounded-full bg-aurora-mint shadow-[0_0_8px_rgba(70,230,166,0.9)]" />
+            <span className="h-1.5 w-1.5 animate-ticker rounded-full bg-aurora-mint shadow-[0_0_8px_rgba(87,230,168,0.9)]" />
             Your career, on autopilot
           </motion.span>
 
@@ -273,7 +273,7 @@ function Hero({ onSignIn }) {
             className="mt-7 flex items-center gap-3 text-sm text-slate-400"
           >
             <div className="flex -space-x-2">
-              {['#FFB23E', '#37D6C4', '#46E6A6', '#FF7A2F'].map((c) => (
+              {['#BCA8FF', '#6EE0F2', '#57E6A8', '#7C6BF2'].map((c) => (
                 <span key={c} className="h-7 w-7 rounded-full border-2 border-ink-950" style={{ background: c }} />
               ))}
             </div>
@@ -352,7 +352,7 @@ function MatchRing({ pct = 96 }) {
         />
         <defs>
           <linearGradient id="mg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#FFC85A" /><stop offset="55%" stopColor="#FFB23E" /><stop offset="100%" stopColor="#FF7A2F" />
+            <stop offset="0%" stopColor="#EAC97C" /><stop offset="55%" stopColor="#BCA8FF" /><stop offset="100%" stopColor="#7C6BF2" />
           </linearGradient>
         </defs>
       </svg>
@@ -386,7 +386,7 @@ function Bento() {
                   <p className="mt-2 text-sm leading-relaxed text-slate-500 line-through decoration-rose-400/40">Worked on the backend and helped the team ship features.</p>
                 </div>
                 <div className="rounded-2xl border border-aurora-mint/25 bg-aurora-mint/[0.06] p-4">
-                  <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[#A7F2CE]"><Sparkles size={11} /> Tailored</div>
+                  <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[#BDF5DC]"><Sparkles size={11} /> Tailored</div>
                   <p className="mt-2 text-sm leading-relaxed text-slate-200">Shipped 6 Go microservices cutting p95 latency 38%, unblocking 4 product launches.</p>
                 </div>
               </div>
@@ -425,7 +425,7 @@ function Bento() {
               <p className="mt-1.5 text-sm text-slate-400">Generate projects, sync GitHub, earn evidence-based badges.</p>
               <div className="mt-auto flex flex-wrap gap-2 pt-4">
                 {['React', 'Node', 'Docker', '+ badge'].map((c) => (
-                  <span key={c} className="rounded-full border border-aurora-mint/25 bg-aurora-mint/10 px-2.5 py-1 text-[11px] font-medium text-[#A7F2CE]">{c}</span>
+                  <span key={c} className="rounded-full border border-aurora-mint/25 bg-aurora-mint/10 px-2.5 py-1 text-[11px] font-medium text-[#BDF5DC]">{c}</span>
                 ))}
               </div>
             </div>
@@ -507,7 +507,7 @@ function Deck() {
                     <Tele>Workspace · Live</Tele>
                     <div className="mt-1 font-display text-xl font-extrabold text-white">Good evening, Kamal</div>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-mint/30 bg-aurora-mint/12 px-2.5 py-1 text-[11px] font-medium text-[#A7F2CE]">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-mint/30 bg-aurora-mint/12 px-2.5 py-1 text-[11px] font-medium text-[#BDF5DC]">
                     <span className="h-1.5 w-1.5 rounded-full bg-aurora-mint" style={{ animation: 'blink 1.6s ease-in-out infinite' }} /> All systems go
                   </span>
                 </div>
@@ -532,9 +532,9 @@ function Deck() {
                     </div>
                     {/* sparkline */}
                     <svg viewBox="0 0 300 48" className="mt-4 h-12 w-full" preserveAspectRatio="none">
-                      <polyline fill="none" stroke="#37D6C4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points="0,38 40,30 80,33 120,20 160,24 200,12 240,16 300,6" opacity="0.9" />
+                      <polyline fill="none" stroke="#6EE0F2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points="0,38 40,30 80,33 120,20 160,24 200,12 240,16 300,6" opacity="0.9" />
                       <polyline fill="url(#spk)" stroke="none" points="0,38 40,30 80,33 120,20 160,24 200,12 240,16 300,6 300,48 0,48" opacity="0.18" />
-                      <defs><linearGradient id="spk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#37D6C4" /><stop offset="100%" stopColor="#37D6C4" stopOpacity="0" /></linearGradient></defs>
+                      <defs><linearGradient id="spk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6EE0F2" /><stop offset="100%" stopColor="#6EE0F2" stopOpacity="0" /></linearGradient></defs>
                     </svg>
                   </div>
                   <div className="rounded-2xl border border-aurora-violet/20 bg-aurora-violet/[0.06] p-4">

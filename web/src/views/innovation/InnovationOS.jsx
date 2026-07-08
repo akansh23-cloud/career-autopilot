@@ -84,7 +84,7 @@ export default function InnovationOS({ go }) {
           {discovery && (
             <SectionCard title="Problem clusters" eyebrow={`${(discovery.clusters || []).length} found${discovery.communitySignalsCount ? ` · ${discovery.communitySignalsCount} community` : ''}`}>
               {(discovery.rag && discovery.rag.duplicateWarnings && discovery.rag.duplicateWarnings.length > 0) && (
-                <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">{discovery.rag.duplicateWarnings.join(' ')}</div>
+                <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">{discovery.rag.duplicateWarnings.join(' ')}</div>
               )}
               <ProblemClusterList clusters={discovery.clusters || []} onOpen={openCluster} />
             </SectionCard>

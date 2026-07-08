@@ -31,8 +31,8 @@ export default function SignInModal({ open, onClose }) {
   return (
     <Modal open={open} onClose={onClose} width="max-w-md">
       <div className="text-center">
-        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl btn-primary text-white">
-          <Sparkles size={26} />
+        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full btn-primary ring-1 ring-white/25">
+          <Sparkles size={26} className="relative z-[2] text-ink-950" />
         </div>
         <h3 className="font-display text-2xl font-semibold text-white">Welcome to Career Autopilot</h3>
         <p className="mt-1.5 text-sm text-muted">Sign in to launch your AI career workspace.</p>

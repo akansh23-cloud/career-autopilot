@@ -33,7 +33,7 @@ const MATURITY_LABELS = {
 
 function Bar({ label, value, max }) {
   const pct = max ? Math.round((value / max) * 100) : 0;
-  const tone = pct >= 80 ? '#46E6A6' : pct >= 50 ? '#37D6C4' : '#FFC85A';
+  const tone = pct >= 80 ? '#57E6A8' : pct >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-slate-300">{label}</span><span className="tabular-nums text-slate-400">{value}/{max}</span></div>

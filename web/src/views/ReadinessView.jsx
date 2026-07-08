@@ -10,7 +10,7 @@ import { getPlan, PLAN_EVENT } from '../lib/plan.js';
 const CAT_TONE = { 'Placement Ready': 'mint', 'Interview Ready': 'cyan', 'Apply Ready': 'violet', 'Needs Improvement': 'amber', 'Not Ready': 'default' };
 
 function Bar({ label, value }) {
-  const tone = value >= 80 ? '#46E6A6' : value >= 50 ? '#37D6C4' : '#FFC85A';
+  const tone = value >= 80 ? '#57E6A8' : value >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-slate-300">{label}</span><span className="tabular-nums text-slate-400">{value}</span></div>

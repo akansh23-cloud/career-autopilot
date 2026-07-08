@@ -16,7 +16,7 @@ const TABS = [
 const FACTOR_LABELS = { novelty: 'Novelty', technicalDepth: 'Technical depth', specificity: 'Specificity', priorArtDistance: 'Prior-art distance', marketUtility: 'Market utility', feasibility: 'Feasibility', enforceability: 'Enforceability' };
 
 function Bar({ label, value }) {
-  const tone = value >= 75 ? '#46E6A6' : value >= 50 ? '#37D6C4' : '#FFC85A';
+  const tone = value >= 75 ? '#57E6A8' : value >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div><div className="mb-1 flex justify-between text-[12px]"><span className="text-slate-300">{label}</span><span className="tabular-nums text-slate-400">{value}</span></div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full" style={{ width: `${value}%`, background: tone }} /></div></div>

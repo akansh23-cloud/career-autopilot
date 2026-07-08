@@ -25,7 +25,7 @@ const BREAKDOWN_ORDER = ['atsParseability', 'contactInfo', 'sectionCompleteness'
 
 function Ring({ value }) {
   const r = 52, c = 2 * Math.PI * r, off = c - (value / 100) * c;
-  const tone = value >= 80 ? '#46E6A6' : value >= 60 ? '#37D6C4' : '#FFC85A';
+  const tone = value >= 80 ? '#57E6A8' : value >= 60 ? '#6EE0F2' : '#EAC97C';
   return (
     <div className="relative grid h-36 w-36 place-items-center">
       <svg width="136" height="136" className="-rotate-90">
@@ -53,7 +53,7 @@ function BreakdownBar({ label, value, max }) {
     );
   }
   const pct = Math.round((value / max) * 100);
-  const tone = pct >= 80 ? '#46E6A6' : pct >= 50 ? '#37D6C4' : '#FFC85A';
+  const tone = pct >= 80 ? '#57E6A8' : pct >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]">

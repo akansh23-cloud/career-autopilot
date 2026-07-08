@@ -52,7 +52,7 @@ export default function NetworkSphere() {
         const th = i * Math.PI * (3 - Math.sqrt(5));
         pts.push(new THREE.Vector3(Math.cos(th) * rad * R, y * R, Math.sin(th) * rad * R));
       }
-      const cA = new THREE.Color(0xffb23e), cB = new THREE.Color(0xff7a2f), cC = new THREE.Color(0x37d6c4);
+      const cA = new THREE.Color(0xbca8ff), cB = new THREE.Color(0x7c6bf2), cC = new THREE.Color(0x6ee0f2);
       const grad = (t) => (t < 0.5 ? cA.clone().lerp(cB, t * 2) : cB.clone().lerp(cC, (t - 0.5) * 2));
 
       const nPos = new Float32Array(N * 3), nCol = new Float32Array(N * 3);
@@ -84,7 +84,7 @@ export default function NetworkSphere() {
       const SP = 4;
       sparkGeo = new THREE.BufferGeometry();
       sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SP * 3), 3));
-      const spMat = new THREE.PointsMaterial({ size: 0.28, color: 0xffc85a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+      const spMat = new THREE.PointsMaterial({ size: 0.28, color: 0x8de8c0, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
       group.add(new THREE.Points(sparkGeo, spMat));
 
       const resize = () => {

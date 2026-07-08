@@ -258,7 +258,7 @@ function ContactCard({ c, onDraft }) {
   return (
     <Card className="flex flex-col gap-2.5 p-4">
       <div className="flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-white">{(c.name || c.title || 'P').trim()[0] || 'P'}</span>
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-ink-950">{(c.name || c.title || 'P').trim()[0] || 'P'}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-white">{c.name || 'Public profile'}</p>
           <p className="truncate text-xs text-slate-400">{c.title || c.position || c.contactType || 'Contact'}{c.company ? ` · ${c.company}` : ''}</p>
@@ -481,7 +481,7 @@ export default function JobsView({ go }) {
     <Modal open={mini.open} onClose={()=>setMini((m)=>({...m,open:false}))} title={mini.title} width="max-w-2xl"><pre className="whitespace-pre-wrap rounded-xl border border-white/10 bg-ink-950/70 p-4 text-sm leading-relaxed text-slate-200">{mini.body}</pre><div className="mt-4 flex gap-2"><Button onClick={()=>setTailorJob(enrichJob(mini.job, getStoredResume()))}><Sparkles size={14}/> Tailor package</Button>{mini.job?.url && <a href={mini.job.url} target="_blank" rel="noreferrer"><Button variant="soft"><ExternalLink size={14}/> Open posting</Button></a>}</div></Modal>
     <Modal open={people.open} onClose={() => setPeople((p)=>({...p,open:false}))} title={people.title} width="max-w-3xl">{people.status === 'loading' && <div className="grid gap-3 sm:grid-cols-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-36 rounded-xl" />)}</div>}{people.status === 'error' && <EmptyState icon={AlertTriangle} title="Lookup failed" hint={people.err} />}{people.status === 'done' && people.contacts.length === 0 && <EmptyState icon={Users} title="No people found" hint={people.err || 'Try again or add Hunter/PDL/Apollo keys for verified contacts.'} />}{people.status === 'done' && people.contacts.length > 0 && <>{people.note && <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-snug text-slate-400">{people.note}</p>}<div className="grid gap-3 sm:grid-cols-2">{people.contacts.map((c,i)=><ContactCard key={i} c={c} onDraft={makeDraft} />)}</div></>}{people.draft && <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="mb-2 flex items-center justify-between"><p className="text-sm font-medium text-white">Outreach draft</p><Button size="sm" variant="soft" onClick={copyDraft}>{people.copied ? <Check size={13}/> : <Copy size={13}/>} {people.copied ? 'Copied' : 'Copy'}</Button></div><textarea value={people.draft} onChange={(e)=>setPeople((p)=>({...p,draft:e.target.value}))} className="h-32 w-full resize-none rounded-lg border border-white/10 bg-ink-950/70 p-3 text-sm text-slate-200 outline-none"/></div>}</Modal>
     {toast && (
-      <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-aurora-mint/30 bg-ink-900/95 px-4 py-2.5 text-sm font-medium text-[#A7F2CE] shadow-lift backdrop-blur" role="status">
+      <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-aurora-mint/30 bg-ink-900/95 px-4 py-2.5 text-sm font-medium text-[#BDF5DC] shadow-lift backdrop-blur" role="status">
         {toast}
       </div>
     )}

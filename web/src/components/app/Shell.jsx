@@ -287,20 +287,20 @@ function MobileNav({ primary, more, active, onPick, onSupport }) {
 function PlanChip({ plan }) {
   if (plan.isAdmin) {
     return (
-      <button onClick={() => openPricing()} className="hidden items-center gap-1.5 rounded-xl border border-aurora-mint/40 bg-aurora-mint/10 px-3 py-2 text-xs font-semibold text-[#A7F2CE] transition hover:bg-aurora-mint/20 sm:flex">
+      <button onClick={() => openPricing()} className="hidden items-center gap-1.5 rounded-xl border border-aurora-mint/40 bg-aurora-mint/10 px-3 py-2 text-xs font-semibold text-[#BDF5DC] transition hover:bg-aurora-mint/20 sm:flex">
         <ShieldCheck size={14} /> Full Access
       </button>
     );
   }
   if (plan.planId === 'free') {
     return (
-      <button onClick={() => openPricing('pro')} className="hidden items-center gap-1.5 rounded-xl border border-aurora-violet/35 bg-aurora-violet/10 px-3 py-2 text-xs font-bold text-[#FFD49A] transition hover:bg-aurora-violet/20 sm:flex">
+      <button onClick={() => openPricing('pro')} className="hidden items-center gap-1.5 rounded-xl border border-aurora-violet/35 bg-aurora-violet/10 px-3 py-2 text-xs font-bold text-[#E4DCFF] transition hover:bg-aurora-violet/20 sm:flex">
         <Zap size={14} /> Upgrade
       </button>
     );
   }
   return (
-    <button onClick={() => openPricing()} className="hidden items-center gap-1.5 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-3 py-2 text-xs font-semibold text-[#A7F2CE] transition hover:bg-aurora-mint/20 sm:flex">
+    <button onClick={() => openPricing()} className="hidden items-center gap-1.5 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-3 py-2 text-xs font-semibold text-[#BDF5DC] transition hover:bg-aurora-mint/20 sm:flex">
       <Zap size={14} /> {PLAN_LABELS[plan.planId]}
     </button>
   );
@@ -334,8 +334,8 @@ export default function Shell({ active, onPick, title, children }) {
         <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-[-1px] h-px bg-gradient-to-r from-transparent via-aurora-violet/30 to-transparent" />
         <div className="mx-auto flex h-[var(--shell-topbar)] max-w-7xl items-center gap-3 px-4 sm:px-6">
           <button onClick={() => pick('dash')} className="flex shrink-0 items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl btn-primary shadow-glow">
-              <Zap size={18} strokeWidth={2.6} className="relative z-[2] text-ink-950" />
+            <span className="grid h-9 w-9 place-items-center rounded-full btn-primary shadow-glow ring-1 ring-white/25">
+              <ShieldCheck size={17} strokeWidth={2.5} className="relative z-[2] text-ink-950" />
             </span>
             <span className="hidden font-display text-[16px] font-extrabold tracking-tight text-white sm:block">Career Autopilot</span>
           </button>
@@ -409,7 +409,7 @@ export default function Shell({ active, onPick, title, children }) {
       <footer className="mt-auto border-t border-white/[0.06]">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-6 sm:flex-row sm:px-6">
           <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="grid h-6 w-6 place-items-center rounded-md btn-primary"><Zap size={12} className="relative z-[2] text-ink-950" /></span>
+            <span className="grid h-6 w-6 place-items-center rounded-full btn-primary"><ShieldCheck size={12} className="relative z-[2] text-ink-950" /></span>
             Career Autopilot
           </div>
           <div className="flex items-center gap-5 text-xs text-slate-600">

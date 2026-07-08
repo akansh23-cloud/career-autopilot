@@ -63,7 +63,7 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
           {state.contacts.map((c, i) => (
             <Card key={i} hover className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-white">{(c.name || 'R')[0]}</span>
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-ink-950">{(c.name || 'R')[0]}</span>
                 <div className="min-w-0">
                   <p className="truncate font-medium text-white">{c.name || 'Contact'}</p>
                   <p className="truncate text-xs text-slate-500">{c.title || c.position || title}</p>

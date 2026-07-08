@@ -1,0 +1,31 @@
+{
+  "rbac-pending-rec@example.com": {
+    "accountType": "recruiter",
+    "roleVerified": false,
+    "verificationStatus": "pending",
+    "organizationId": "org-1",
+    "collegeId": "",
+    "name": "Wannabe Rec",
+    "requestedType": "recruiter",
+    "email": "rbac-pending-rec@example.com",
+    "updatedAt": "2026-07-08T14:39:20.644Z"
+  },
+  "rbac-verified-rec@example.com": {
+    "accountType": "recruiter",
+    "roleVerified": true,
+    "verificationStatus": "approved",
+    "organizationId": "org-9",
+    "collegeId": "",
+    "email": "rbac-verified-rec@example.com",
+    "updatedAt": "2026-07-08T14:39:20.667Z"
+  },
+  "rbac-verified-college@example.com": {
+    "accountType": "college_admin",
+    "roleVerified": true,
+    "verificationStatus": "approved",
+    "organizationId": "",
+    "collegeId": "college-A",
+    "email": "rbac-verified-college@example.com",
+    "updatedAt": "2026-07-08T14:39:20.694Z"
+  }
+}

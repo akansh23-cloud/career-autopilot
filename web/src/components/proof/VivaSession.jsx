@@ -90,7 +90,7 @@ export function VivaSession({ open, onClose, repoFullName, skills = [], onResult
           <p className="text-xs text-slate-400 leading-relaxed">
             You'll answer a short set of questions drawn from <span className="text-slate-200">{repoFullName}</span>,
             one at a time and on the clock. Answers are scored deterministically on the server — there's no AI judge.
-            Passing earns a <span className="text-[#A7F2CE]">HIGH-confidence</span> credential, the tier recruiters
+            Passing earns a <span className="text-[#BDF5DC]">HIGH-confidence</span> credential, the tier recruiters
             trust most. Answering implausibly fast (looking things up / pasting) is flagged and can block a pass.
           </p>
           {error && <p className="text-xs text-rose-300">{error}</p>}
@@ -131,14 +131,14 @@ export function VivaSession({ open, onClose, repoFullName, skills = [], onResult
       {phase === 'done' && result && (
         <div className="space-y-4 text-center">
           {result.passed
-            ? <ShieldCheck size={40} className="mx-auto text-[#A7F2CE]" />
-            : <ShieldAlert size={40} className="mx-auto text-[#FFE0A0]" />}
+            ? <ShieldCheck size={40} className="mx-auto text-[#BDF5DC]" />
+            : <ShieldAlert size={40} className="mx-auto text-[#F3E3B2]" />}
           <div>
             <p className="font-display text-2xl font-semibold text-white">{result.comprehensionScore}/100</p>
             <p className="text-sm text-slate-400">{result.passed ? 'Passed' : 'Not passed'} · threshold {result.threshold}</p>
           </div>
           {result.passed
-            ? <p className="text-xs text-[#A7F2CE]">Minted {result.credentials?.length || 0} HIGH-confidence credential(s).</p>
+            ? <p className="text-xs text-[#BDF5DC]">Minted {result.credentials?.length || 0} HIGH-confidence credential(s).</p>
             : <p className="text-xs text-slate-400">{(result.sessionFlags || []).includes('many_fast_answers') ? 'Too many answers came in implausibly fast.' : 'Review the code and try again later.'}</p>}
           <Button variant="soft" onClick={onClose}>Close</Button>
         </div>

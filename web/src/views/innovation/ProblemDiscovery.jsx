@@ -101,7 +101,7 @@ export default function ProblemDiscovery({ onDiscover, busy, config = {} }) {
           ))}
         </div>
         {communitySelected && (
-          <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">
+          <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <span>{COMMUNITY_WARNING}</span>
           </div>

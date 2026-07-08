@@ -27,9 +27,9 @@ function resultTone(r) {
   return 'amber';
 }
 function ResultIcon({ r }) {
-  if (r.valid) return <ShieldCheck size={14} className="text-[#A7F2CE]" />;
+  if (r.valid) return <ShieldCheck size={14} className="text-[#BDF5DC]" />;
   if (r.tampered || r.revoked) return <ShieldAlert size={14} className="text-rose-300" />;
-  return <ShieldQuestion size={14} className="text-[#FFE0A0]" />;
+  return <ShieldQuestion size={14} className="text-[#F3E3B2]" />;
 }
 function resultLabel(r) {
   if (r.valid) return 'Authentic';

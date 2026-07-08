@@ -63,7 +63,7 @@ export default function Onboarding({ onDone }) {
         className="relative w-full max-w-2xl gradient-border p-6 sm:p-8"
       >
         <div className="mb-6 flex items-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-xl btn-primary text-white shadow-glow"><Zap size={18} strokeWidth={2.5} /></span>
+          <span className="grid h-9 w-9 place-items-center rounded-xl btn-primary text-ink-950 shadow-glow"><Zap size={18} strokeWidth={2.5} /></span>
           <span className="font-display text-[16px] font-semibold tracking-tight text-white">Career Autopilot</span>
         </div>
 

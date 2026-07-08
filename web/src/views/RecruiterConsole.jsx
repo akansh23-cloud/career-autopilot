@@ -190,7 +190,7 @@ export default function RecruiterConsole() {
             ['Live demo verified', reqLive, () => setReqLive((v) => !v)],
             ['Open to recruiters', reqAvail, () => setReqAvail((v) => !v)],
           ].map(([label, on, toggle]) => (
-            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#A7ECF8]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>{label}</button>
+            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#B9EFFA]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>{label}</button>
           ))}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">

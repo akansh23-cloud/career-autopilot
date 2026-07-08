@@ -93,7 +93,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
               : distinctTypes >= 2 ? <Badge tone="mint">Corroborated across sources</Badge> : null}
           </div>
           {communityOnly && (
-            <p className="mt-2 text-[12px] text-[#FFE0A0]">Community discussions are early signals, not verified evidence. Validate with technical sources, a prior-art search, and prototype evidence before treating this as IP-worthy. IP-readiness is capped at 55 while evidence is community-only.</p>
+            <p className="mt-2 text-[12px] text-[#F3E3B2]">Community discussions are early signals, not verified evidence. Validate with technical sources, a prior-art search, and prototype evidence before treating this as IP-worthy. IP-readiness is capped at 55 while evidence is community-only.</p>
           )}
           {typeof buildClarity === 'number' && (
             <div className="mt-3 max-w-xs"><ScoreBar label="Build clarity" value={buildClarity} /></div>
@@ -176,7 +176,7 @@ function ProblemEvidence({ cites = [], project }) {
 function CommunitySignals({ cites = [] }) {
   return (
     <SectionCard title="Community signals" eyebrow="Early signals — not verified facts">
-      <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#FFE0A0]">
+      <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">
         Community discussions are early pain signals, never verified market proof. Usernames are never stored or shown. Strong recommendations require corroboration from technical sources.
       </div>
       {cites.length === 0

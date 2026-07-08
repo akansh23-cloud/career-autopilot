@@ -260,7 +260,7 @@ function Stepper({ step, setStep, selected }) {
                 : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/8'
             }`}
           >
-            <span className={`grid h-6 w-6 place-items-center rounded-lg text-[11px] ${on ? 'bg-aurora-cta text-white' : 'bg-white/8 text-slate-400'}`}>{i + 1}</span>
+            <span className={`grid h-6 w-6 place-items-center rounded-lg text-[11px] ${on ? 'bg-aurora-cta text-ink-950' : 'bg-white/8 text-slate-400'}`}>{i + 1}</span>
             <Icon size={14} className={on ? 'text-aurora-cyan' : ''} /> {s.label}
             {locked && <Lock size={11} className="text-slate-600" />}
           </button>
@@ -343,7 +343,7 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
         <div className="flex flex-wrap gap-2">
           {START_SOURCES.map((s) => (
             <button key={s.id} onClick={() => { setSource(s.id); if (s.id === 'github' || s.id === 'producthunt') { setTab('marketplace'); loadTrends(); } }}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${source === s.id ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#A7ECF8]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${source === s.id ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#B9EFFA]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>
               {s.label}
             </button>
           ))}
@@ -582,7 +582,7 @@ function ValidateStep({ selected, isPremium, setStep, pickProject }) {
         title="AI validation suggestions"
         action={<Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={loading || (det && !det.requiredOk)}>{loading ? 'Validating…' : data ? <><RefreshCw size={14} /> Re-run</> : <><Wand2 size={14} /> Get AI suggestions</>}</Button>}
       >
-        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#FFD49A]">
+        <div className="mb-3 flex gap-2 rounded-xl border border-aurora-violet/25 bg-aurora-violet/10 px-3 py-2 text-[12px] text-[#E4DCFF]">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>These are AI-generated <strong>suggestions</strong>, not verified facts. Scores are estimates to guide thinking — treat them as prompts to research, not proof.</span>
         </div>
@@ -914,7 +914,7 @@ function PatentPipeline({ stageId, onSet }) {
     <div className="flex flex-wrap items-center gap-1.5">
       {PATENT_STAGES.map((s, i) => (
         <button key={s.id} onClick={() => onSet(s.id)}
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${i <= idx ? 'border-aurora-mint/40 bg-aurora-mint/12 text-[#A7F2CE]' : 'border-white/12 bg-white/[0.03] text-slate-400 hover:bg-white/8'}`}>
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${i <= idx ? 'border-aurora-mint/40 bg-aurora-mint/12 text-[#BDF5DC]' : 'border-white/12 bg-white/[0.03] text-slate-400 hover:bg-white/8'}`}>
           {i < idx ? <Check size={10} className="mr-1 inline" /> : null}{s.label}
         </button>
       ))}

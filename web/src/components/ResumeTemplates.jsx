@@ -79,8 +79,8 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
           <button
             onClick={() => onSelect(tpl.id)}
             className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${
-              selected ? 'bg-aurora-violet/25 text-white ring-1 ring-aurora-violet/40'
-                       : 'btn-primary text-white hover:brightness-110'
+              selected ? 'bg-aurora-violet/25 text-ink-950 ring-1 ring-aurora-violet/40'
+                       : 'btn-primary text-ink-950 hover:brightness-110'
             }`}
           >
             {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this'}

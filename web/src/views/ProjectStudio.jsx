@@ -121,7 +121,7 @@ function MilestoneCard({ index, phase, tasks, last, defaultOpen }) {
   return (
     <div className="relative pl-9 sm:pl-12">
       {/* timeline rail */}
-      <span className="absolute left-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full bg-aurora-cta text-[12px] font-semibold text-white shadow-glow sm:left-3">{index + 1}</span>
+      <span className="absolute left-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full bg-aurora-cta text-[12px] font-semibold text-ink-950 shadow-glow sm:left-3">{index + 1}</span>
       {!last && <span className="absolute left-[1.37rem] top-9 h-[calc(100%-1.25rem)] w-px bg-white/10 sm:left-[1.62rem]" />}
       <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-ink-950/55">
         <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03]">

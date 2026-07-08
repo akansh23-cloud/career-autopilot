@@ -3,22 +3,26 @@
 @tailwind utilities;
 
 /* ============================================================
-   SOLAR FLIGHT DECK — design system (v2, high-craft)
-   Warm mission-control aesthetic + premium materiality:
-   cursor-reactive aurora, glossy light-sweeps, spotlight/tilt
-   cards, kinetic gradients, editorial ghost-type.
-   Class NAMES preserved so all 25 views inherit automatically.
+   PROVENANCE — design system (v3)
+   Archival security-print aesthetic for a verified proof-of-work
+   platform: deep green-cast ink, engraved guilloché line-work,
+   print-proof registration marks, serial-number typography, and
+   a holographic verification foil reserved for CTAs, brand text
+   and "verified" moments.
+   Class NAMES preserved so all views inherit automatically.
    ============================================================ */
 :root {
   color-scheme: dark;
   --shell-sidebar: 268px;
   --shell-topbar: 66px;
-  --solar: #FFB23E;
-  --ember: #FF7A2F;
-  --gold: #FFC85A;
-  --teal: #37D6C4;
-  --mint: #46E6A6;
-  --paper: #F5F0E8;
+  --foil-a: #8DE8C0;   /* jade facet */
+  --foil-b: #7DDCF5;   /* ice facet */
+  --foil-c: #BCA8FF;   /* lilac facet — primary */
+  --foil-d: #F0A6D8;   /* rose facet */
+  --gold: #EAC97C;     /* champagne foil */
+  --teal: #6EE0F2;
+  --mint: #57E6A8;
+  --paper: #EDF2EE;
   /* cursor position (updated by Atmosphere) */
   --cursor-x: 50%;
   --cursor-y: 22%;
@@ -36,32 +40,31 @@ html { scroll-behavior: smooth; scrollbar-gutter: stable; }
 body {
   margin: 0;
   overflow-x: hidden;
-  background: #08080A;
+  background: #070908;
   color: var(--paper);
-  font-family: 'General Sans', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Switzer', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: 'ss01' on;
 }
 
 h1, h2, h3, h4, .font-display {
-  font-family: 'Cabinet Grotesk', sans-serif;
-  letter-spacing: -0.025em;
-  font-weight: 800;
+  font-family: 'Zodiak', Georgia, serif;
+  letter-spacing: -0.015em;
+  font-weight: 700;
 }
 
-::selection { background: rgba(255,178,62,0.34); color: #fff; }
+::selection { background: rgba(188,168,255,0.34); color: #fff; }
 
 /* ---- Single premium scrollbar ---- */
 ::-webkit-scrollbar { width: 11px; height: 11px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(#40392c, #221f1a);
-  border: 3px solid #08080A;
+  background: linear-gradient(#2b342e, #191f1b);
+  border: 3px solid #070908;
   border-radius: 999px;
 }
-::-webkit-scrollbar-thumb:hover { background: linear-gradient(#60533a, #2e2a22); }
-* { scrollbar-width: thin; scrollbar-color: #40392c transparent; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(#3d4a42, #232b26); }
+* { scrollbar-width: thin; scrollbar-color: #2b342e transparent; }
 
 @layer components {
   /* Frosted utility surface */
@@ -71,59 +74,63 @@ h1, h2, h3, h4, .font-display {
     border: 1px solid rgba(255,255,255,0.09);
   }
 
-  /* Instrument panel surface */
+  /* Archive-plate surface — matte ink with a cool top light */
   .panel {
     position: relative;
     background:
-      radial-gradient(130% 100% at 0% 0%, rgba(255,178,62,0.06), transparent 44%),
-      linear-gradient(180deg, rgba(24,24,29,0.97), rgba(12,12,15,0.97));
+      radial-gradient(130% 100% at 0% 0%, rgba(188,168,255,0.055), transparent 44%),
+      linear-gradient(180deg, rgba(20,25,22,0.97), rgba(10,13,11,0.97));
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 1.15rem;
+    border-radius: 0.9rem;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
   }
 
-  /* Hairline gradient-border card with warm top edge + inner glow */
+  /* Hairline foil-edged card — the credential plate */
   .gradient-border {
     position: relative;
-    border-radius: 1.15rem;
+    border-radius: 0.9rem;
     background:
-      radial-gradient(140% 95% at 0% 0%, rgba(255,178,62,0.06), transparent 42%),
-      linear-gradient(180deg, rgba(24,24,29,0.98), rgba(11,11,14,0.98)) padding-box;
+      radial-gradient(140% 95% at 0% 0%, rgba(141,232,192,0.045), transparent 42%),
+      linear-gradient(180deg, rgba(20,25,22,0.98), rgba(9,12,10,0.98)) padding-box;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
   }
   .gradient-border::before {
     content: '';
     position: absolute; inset: 0;
     border-radius: inherit; padding: 1px;
-    background: linear-gradient(150deg, rgba(255,178,62,0.6), rgba(255,122,47,0.24) 36%, rgba(255,255,255,0.06) 68%);
+    background: linear-gradient(150deg, rgba(188,168,255,0.55), rgba(125,220,245,0.22) 36%, rgba(141,232,192,0.10) 62%, rgba(255,255,255,0.05) 82%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor; mask-composite: exclude;
     pointer-events: none;
   }
 
-  /* Solar text gradient */
+  /* Holographic foil text */
   .text-aurora {
-    background: linear-gradient(100deg,#FFE6B0 0%,#FFB23E 34%,#FF7A2F 66%,#FFC85A 100%);
+    background: linear-gradient(105deg,#A9F0CE 0%,#8FE3F7 32%,#C9B8FF 62%,#F2B5DF 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  /* Animated flowing gradient text */
+  /* Animated shifting foil text */
   .text-flow {
-    background: linear-gradient(100deg,#FFE6B0,#FFB23E,#FF7A2F,#FFC85A,#FFE6B0);
+    background: linear-gradient(105deg,#A9F0CE,#8FE3F7,#C9B8FF,#F2B5DF,#A9F0CE);
     background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: text-flow 7s linear infinite;
+    animation: text-flow 8s linear infinite;
   }
 
-  /* Primary action — glossy solar fill with ink text + light sweep */
+  /* Primary action — holographic foil seal with ink text + light sweep */
   .btn-primary {
     position: relative; overflow: hidden;
-    color: #0A0A0C;
-    background-image: linear-gradient(100deg,#FFD074 0%,#FFB23E 46%,#FF7A2F 100%);
-    box-shadow: 0 14px 38px -12px rgba(255,122,47,0.7), inset 0 1px 0 rgba(255,255,255,0.5), inset 0 -8px 18px -10px rgba(120,50,0,0.6);
+    color: #081009;
+    background-image: linear-gradient(105deg,#8DE8C0 0%,#7DDCF5 30%,#BCA8FF 62%,#F0A6D8 100%);
+    background-size: 160% 100%;
+    background-position: 0% 50%;
+    transition: background-position .6s cubic-bezier(.2,.7,.2,1);
+    box-shadow: 0 14px 38px -12px rgba(124,107,242,0.55), inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -8px 18px -10px rgba(30,20,80,0.45);
   }
+  .btn-primary:hover { background-position: 100% 50%; }
   .btn-primary::after {
     content: ''; position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,0.65) 50%, transparent 68%);
+    background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,0.7) 50%, transparent 68%);
     mix-blend-mode: screen;
     transform: translateX(-130%);
     transition: transform .75s cubic-bezier(.2,.7,.2,1);
@@ -137,69 +144,84 @@ h1, h2, h3, h4, .font-display {
   .spotlight { position: relative; --mx: 50%; --my: 50%; }
   .spotlight::after {
     content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-    background: radial-gradient(420px circle at var(--mx) var(--my), rgba(255,178,62,0.16), transparent 42%);
+    background: radial-gradient(420px circle at var(--mx) var(--my), rgba(188,168,255,0.14), transparent 42%);
     opacity: 0; transition: opacity .4s; z-index: 1;
   }
   .spotlight:hover::after { opacity: 1; }
 
-  /* Pulsing glow ring (opt-in) */
+  /* Pulsing foil ring (opt-in) */
   .glow-ring { animation: glow-pulse 3.4s ease-in-out infinite; }
 
-  /* Decorative corner ticks */
+  /* Print-proof registration marks (crop ticks) */
   .ticks::before, .ticks::after {
     content: ''; position: absolute; width: 13px; height: 13px; pointer-events: none; z-index: 2;
-    border-color: rgba(255,178,62,0.6); border-style: solid;
+    border-color: rgba(188,168,255,0.55); border-style: solid;
   }
   .ticks::before { top: 9px; left: 9px; border-width: 1px 0 0 1px; }
   .ticks::after { bottom: 9px; right: 9px; border-width: 0 1px 1px 0; }
 
-  /* Editorial ghost / outline display text */
+  /* Engraved ghost / outline display text */
   .outline-text {
     color: transparent;
-    -webkit-text-stroke: 1px rgba(255,178,62,0.16);
-    text-stroke: 1px rgba(255,178,62,0.16);
+    -webkit-text-stroke: 1px rgba(188,168,255,0.16);
+    text-stroke: 1px rgba(188,168,255,0.16);
   }
 }
 
 /* ---- Background atmosphere helpers ---- */
 .bg-grid {
   background-image:
-    linear-gradient(rgba(255,178,62,0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,178,62,0.06) 1px, transparent 1px);
+    linear-gradient(rgba(188,168,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(188,168,255,0.05) 1px, transparent 1px);
   background-size: 58px 58px;
   -webkit-mask-image: radial-gradient(ellipse 80% 64% at 50% 0%, #000 30%, transparent 78%);
   mask-image: radial-gradient(ellipse 80% 64% at 50% 0%, #000 30%, transparent 78%);
 }
 .dotgrid {
-  background-image: radial-gradient(rgba(255,178,62,0.16) 1px, transparent 1.4px);
+  background-image: radial-gradient(rgba(141,232,192,0.14) 1px, transparent 1.4px);
   background-size: 26px 26px;
 }
 .noise {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
-  opacity: 0.035;
+  opacity: 0.04;
 }
 .glow-blob { filter: blur(90px); border-radius: 999px; will-change: transform; }
 .vignette {
   background: radial-gradient(120% 90% at 50% 0%, transparent 55%, rgba(0,0,0,0.55) 100%);
 }
-/* Cursor-reactive aurora layer */
+/* Cursor-reactive foil light (a light-table under the plate) */
 .aurora-field {
   background:
-    radial-gradient(640px circle at var(--cursor-x) var(--cursor-y), rgba(255,178,62,0.12), transparent 45%),
-    radial-gradient(900px circle at calc(var(--cursor-x) + 12%) calc(var(--cursor-y) + 18%), rgba(255,122,47,0.07), transparent 48%);
+    radial-gradient(640px circle at var(--cursor-x) var(--cursor-y), rgba(188,168,255,0.10), transparent 45%),
+    radial-gradient(900px circle at calc(var(--cursor-x) + 12%) calc(var(--cursor-y) + 18%), rgba(110,224,242,0.06), transparent 48%);
   transition: background .25s ease-out;
 }
+/* Press-roller light pass */
 .scanline {
   position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, transparent, rgba(255,178,62,0.10) 48%, rgba(255,178,62,0.2) 50%, transparent 52%, transparent);
+  background: linear-gradient(180deg, transparent, rgba(141,232,192,0.06) 48%, rgba(188,168,255,0.12) 50%, transparent 52%, transparent);
   mix-blend-mode: screen;
+}
+/* Guilloché engraving — fine concentric security line-work */
+.guilloche {
+  position: absolute; pointer-events: none;
+  background-image: repeating-radial-gradient(circle at 50% 50%, rgba(188,168,255,0.10) 0px, rgba(188,168,255,0.10) 1px, transparent 1px, transparent 9px);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 70%);
+  mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 70%);
+  border-radius: 999px;
+}
+/* Security microtext rule */
+.microtext {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px; letter-spacing: 0.35em; text-transform: uppercase;
+  color: rgba(237,242,238,0.18); white-space: nowrap; overflow: hidden;
 }
 
 /* ---- Keyframes ---- */
 @keyframes text-flow { to { background-position: 250% center; } }
 @keyframes glow-pulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(255,178,62,0.0), 0 18px 50px -16px rgba(255,122,47,0.6); }
-  50%     { box-shadow: 0 0 0 6px rgba(255,178,62,0.10), 0 26px 70px -16px rgba(255,122,47,0.85); }
+  0%,100% { box-shadow: 0 0 0 0 rgba(188,168,255,0.0), 0 18px 50px -16px rgba(124,107,242,0.55); }
+  50%     { box-shadow: 0 0 0 6px rgba(188,168,255,0.10), 0 26px 70px -16px rgba(124,107,242,0.8); }
 }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
@@ -210,8 +232,8 @@ h1, h2, h3, h4, .font-display {
 }
 
 /* Native select menus stay readable on dark. */
-select, select option, select optgroup { background-color: #0C0C0F; color: var(--paper); }
-select option:checked { background-color: #4A2E0E; color: #fff; }
+select, select option, select optgroup { background-color: #0B0E0C; color: var(--paper); }
+select option:checked { background-color: #2A2450; color: #fff; }
 
 /* ============================================================
    LANDING motion utilities (ca-* namespaced, reduced-motion safe).

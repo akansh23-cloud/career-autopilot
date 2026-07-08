@@ -5,7 +5,7 @@ import { SCORE_CATEGORIES, scoreTone, checkTone } from '../../lib/architectureSp
 
 function ScoreBar({ label, value }) {
   const pct = Math.max(0, Math.min(100, Math.round(value || 0)));
-  const tone = pct >= 75 ? '#46E6A6' : pct >= 50 ? '#37D6C4' : '#FFC85A';
+  const tone = pct >= 75 ? '#57E6A8' : pct >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]">

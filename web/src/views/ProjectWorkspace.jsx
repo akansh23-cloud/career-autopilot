@@ -328,7 +328,7 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
       />
       {error && <Card className="border-rose-400/30 bg-rose-500/8 p-3.5 text-[12.5px] text-rose-200">{error}</Card>}
       {notice && (
-        <Card className="flex items-center justify-between gap-3 border-amber-glow/25 bg-amber-glow/8 p-3.5 text-[12.5px] text-[#FFE0A0]">
+        <Card className="flex items-center justify-between gap-3 border-amber-glow/25 bg-amber-glow/8 p-3.5 text-[12.5px] text-[#F3E3B2]">
           <span>{notice}</span>
           <div className="flex shrink-0 gap-2">
             <Button size="sm" variant="ghost" onClick={() => { setNotice(''); recalculate(); }}>Recalculate now</Button>

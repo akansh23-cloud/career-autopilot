@@ -176,7 +176,7 @@ export default function PricingModal() {
           return (
             <div key={p.id} className={`relative flex flex-col rounded-2xl border p-5 ${p.highlight && !isCurrent && !isAdmin ? 'border-aurora-violet/50 bg-aurora-violet/[0.07] ring-1 ring-aurora-violet/25' : isCurrent ? 'border-aurora-mint/40 bg-aurora-mint/[0.05]' : 'border-white/10 bg-white/[0.02]'}`}>
               {p.highlight && !isCurrent && !isAdmin && (
-                <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-aurora-cta px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-glow">Most popular</span>
+                <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-aurora-cta px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-950 shadow-glow">Most popular</span>
               )}
               {isCurrent && (
                 <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-aurora-mint px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-950">Current plan</span>

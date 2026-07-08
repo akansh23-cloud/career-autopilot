@@ -32,7 +32,7 @@ function Bubble({ from, children }) {
     >
       <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
         me
-          ? 'bg-aurora-cta text-white shadow-glow'
+          ? 'bg-aurora-cta text-ink-950 shadow-glow'
           : 'border border-white/10 bg-white/[0.04] text-slate-200'
       }`}>
         {children}
@@ -159,7 +159,7 @@ function ChatTab({ quickActions, onTicket, prefillUser }) {
             className="h-11 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-100 outline-none focus:border-aurora-violet/50"
           />
           <button onClick={() => ask()} disabled={busy || !input.trim()}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-aurora-cta text-white shadow-glow transition disabled:opacity-40">
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-aurora-cta text-ink-950 shadow-glow transition disabled:opacity-40">
             {busy ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
           </button>
         </div>
@@ -301,7 +301,7 @@ function TicketTab({ draft, clearDraft, authed, onClose }) {
           <button onClick={() => setState({ status: 'idle', result: null, err: '' })}
             className="rounded-xl border border-white/12 px-4 py-2 text-sm text-slate-200 hover:bg-white/5">Create another</button>
           <button onClick={() => { setState({ status: 'idle', result: null, err: '' }); onClose?.(); }}
-            className="rounded-xl bg-aurora-cta px-4 py-2 text-sm font-medium text-white shadow-glow hover:brightness-110">Done</button>
+            className="rounded-xl bg-aurora-cta px-4 py-2 text-sm font-medium text-ink-950 shadow-glow hover:brightness-110">Done</button>
         </div>
       </div>
     );
@@ -339,7 +339,7 @@ function TicketTab({ draft, clearDraft, authed, onClose }) {
           className="h-32 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-100 outline-none focus:border-aurora-violet/50" />
         {state.err && <p className="flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {state.err}</p>}
         <button onClick={submit} disabled={state.status === 'loading'}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-aurora-cta font-medium text-white shadow-glow transition disabled:opacity-50">
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-aurora-cta font-medium text-ink-950 shadow-glow transition disabled:opacity-50">
           {state.status === 'loading' ? <><Loader2 size={16} className="animate-spin" /> Submitting…</> : <><TicketIcon size={16} /> Submit ticket</>}
         </button>
       </div>

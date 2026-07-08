@@ -4,39 +4,40 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // "Solar Flight Deck" type system — distinctive Fontshare faces.
-        display: ['"Cabinet Grotesk"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        sans: ['"General Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // "PROVENANCE" type system — certificate-grade serif display,
+        // Swiss-precision body, mono for serials & telemetry.
+        display: ['"Zodiak"', 'Georgia', 'ui-serif', 'serif'],
+        sans: ['"Switzer"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        // Warm near-black charcoals (token names kept for drop-in compatibility).
+        // Archival green-cast inks (token names kept for drop-in compatibility).
         ink: {
-          950: '#08080A',
-          900: '#0C0C0F',
-          850: '#111114',
-          800: '#17171C',
-          700: '#212128',
-          600: '#2D2D36',
+          950: '#070908',
+          900: '#0B0E0C',
+          850: '#101413',
+          800: '#161B19',
+          700: '#212824',
+          600: '#2C3530',
         },
-        // Brand/signal ramp (names kept; values are the new solar palette).
+        // Brand/signal ramp (names kept; values are the new foil palette).
         aurora: {
-          violet: '#FFB23E', // PRIMARY — cockpit solar amber
-          indigo: '#FF7A2F', // deep ember
-          cyan: '#37D6C4',   // cool accent / verified-info teal
-          mint: '#46E6A6',   // success / "go" green-teal
+          violet: '#BCA8FF', // PRIMARY — holographic foil lilac
+          indigo: '#7C6BF2', // deep violet, secondary
+          cyan: '#6EE0F2',   // ice — informational
+          mint: '#57E6A8',   // jade — verified / success
         },
-        amber: { glow: '#FFC85A' },
-        muted: '#968F84',
+        amber: { glow: '#EAC97C' }, // champagne gold foil — premium/warn, sparing
+        muted: '#8A958D',
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(255,178,62,0.20), 0 22px 60px -18px rgba(255,122,47,0.45)',
+        glow: '0 0 0 1px rgba(188,168,255,0.22), 0 22px 60px -18px rgba(124,107,242,0.45)',
         card: '0 1px 0 0 rgba(255,255,255,0.05) inset, 0 30px 70px -34px rgba(0,0,0,0.9)',
         lift: '0 40px 90px -34px rgba(0,0,0,0.95)',
       },
       backgroundImage: {
-        'aurora-text': 'linear-gradient(100deg,#FFE2A8 0%,#FFB23E 38%,#FF7A2F 72%,#FFC85A 100%)',
-        'aurora-cta': 'linear-gradient(100deg,#FFC85A 0%,#FFB23E 46%,#FF7A2F 100%)',
+        'aurora-text': 'linear-gradient(105deg,#A9F0CE 0%,#8FE3F7 32%,#C9B8FF 62%,#F2B5DF 100%)',
+        'aurora-cta': 'linear-gradient(105deg,#8DE8C0 0%,#7DDCF5 30%,#BCA8FF 62%,#F0A6D8 100%)',
       },
       keyframes: {
         float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-14px)' } },
@@ -50,8 +51,8 @@ export default {
         float: 'float 7s ease-in-out infinite',
         shimmer: 'shimmer 1.6s infinite',
         'spin-slow': 'spin-slow 22s linear infinite',
-        scan: 'scan 7s linear infinite',
-        sweep: 'sweep 14s linear infinite',
+        scan: 'scan 9s linear infinite',
+        sweep: 'sweep 16s linear infinite',
         ticker: 'ticker 2.4s ease-in-out infinite',
       },
     },

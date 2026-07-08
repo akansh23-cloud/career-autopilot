@@ -244,7 +244,7 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
         <div className="mt-auto flex flex-wrap gap-2 pt-1">
           {status === 'done' ? (
             <>
-              <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-aurora-violet/25 text-white ring-1 ring-aurora-violet/40' : 'btn-primary text-white hover:brightness-110'}`}>
+              <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-aurora-violet/25 text-ink-950 ring-1 ring-aurora-violet/40' : 'btn-primary text-ink-950 hover:brightness-110'}`}>
                 {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this custom template'}
               </button>
               <button onClick={reAnalyze} title="Re-analyse template" className="rounded-lg border border-white/12 px-2.5 py-1.5 text-[11px] text-slate-300 hover:bg-white/10"><RefreshCw size={12} /></button>
@@ -438,7 +438,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
           <SectionCard
             title="Resume template"
             action={recommendedId && activeRole && tplId !== 'custom'
-              ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#46E6A6" /> Best for {activeRole}</span>
+              ? <span className="flex items-center gap-1 text-[11px] text-aurora-mint"><Star size={10} fill="#57E6A8" /> Best for {activeRole}</span>
               : tplId === 'custom' ? <span className="flex items-center gap-1 text-[11px] text-aurora-violet"><ImagePlus size={10} /> Custom active</span> : null}
           >
             <TemplateGallery

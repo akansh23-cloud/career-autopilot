@@ -130,7 +130,7 @@ function ProfileAdoptionPanel({ go }) {
               <ArrowRight size={14} className="text-slate-600" />
             </button>
           )) : (
-            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 px-3 py-2.5 text-[13px] text-[#A7F2CE]">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
+            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 px-3 py-2.5 text-[13px] text-[#BDF5DC]">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
           )}
         </div>
       </div>

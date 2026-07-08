@@ -11,7 +11,7 @@ const SOURCE_LABEL = { github: 'GitHub', producthunt: 'Product Hunt', hackernews
 const SOURCE_TONE = { github: 'default', producthunt: 'amber', hackernews: 'violet', seed: 'cyan' };
 
 function Meter({ icon: Icon, label, value }) {
-  const tone = value >= 75 ? '#46E6A6' : value >= 50 ? '#37D6C4' : '#FFC85A';
+  const tone = value >= 75 ? '#57E6A8' : value >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div className="flex-1">
       <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500"><span className="inline-flex items-center gap-1"><Icon size={10} /> {label}</span><span>{value}</span></div>
