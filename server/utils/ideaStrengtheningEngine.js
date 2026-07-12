@@ -12,17 +12,25 @@ const lc = (s) => String(s || '').toLowerCase();
 const has = (s) => lc(s).trim().length > 0;
 const titleCase = (s) => String(s || '').replace(/\b\w/g, (c) => c.toUpperCase());
 
-export function strengthenIdea(idea = {}, { feedback = [], priorArtRecords = [] } = {}) {
+export function strengthenIdea(idea = {}, { feedback = [], priorArtRecords = [], projectPackage = null } = {}) {
   const before = scorePatentIdea(idea, { priorArtRecords });
   const changes = [];
   const out = { ...idea };
   const domain = idea.domain || 'the domain';
   const tu = idea.targetUser || 'users';
 
-  // 1) Force a concrete technical mechanism if missing/thin.
+  // 1) Force a concrete technical mechanism if missing/thin. A synthesis
+  //    project package wins over generic boilerplate: its build brief carries
+  //    the domain-specific mechanism the student actually plans to build.
   if (lc(out.technicalMechanism).length < 60) {
-    out.technicalMechanism = `${titleCase(out.title || 'The system')} works by fusing multiple ${domain} data sources, weighting each by reliability, processing them through an adaptive scoring pipeline, and emitting a calibrated output with a confidence value. It detects anomalies and re-weights sources from downstream outcomes.`;
-    changes.push('Added a concrete technical mechanism (multi-source fusion + adaptive scoring + anomaly detection).');
+    const pkgMech = String(projectPackage?.buildBrief?.technicalMechanism || projectPackage?.projectOsPayload?.technicalMechanism || '');
+    if (pkgMech.trim().length >= 25) {
+      out.technicalMechanism = projectPackage.buildBrief?.technicalMechanism || pkgMech;
+      changes.push('Adopted the domain-specific technical mechanism from the synthesis project package.');
+    } else {
+      out.technicalMechanism = `${titleCase(out.title || 'The system')} works by fusing multiple ${domain} data sources, weighting each by reliability, processing them through an adaptive scoring pipeline, and emitting a calibrated output with a confidence value. It detects anomalies and re-weights sources from downstream outcomes.`;
+      changes.push('Added a concrete technical mechanism (multi-source fusion + adaptive scoring + anomaly detection).');
+    }
   }
   // 2) Add explicit I/O + processing if missing.
   if (!has(out.inputData)) { out.inputData = `Multiple ${domain} signals/records relevant to the problem.`; changes.push('Defined explicit inputs.'); }

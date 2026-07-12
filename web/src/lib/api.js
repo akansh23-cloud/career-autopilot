@@ -245,12 +245,45 @@ export const College = {
     return api.get('/api/college/students' + (qs ? `?${qs}` : ''));
   },
   student: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}`),
+  studentDetail: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}/detail`),
+  observability: (fresh = false) => api.get('/api/college/observability' + (fresh ? '?fresh=1' : '')),
   analytics: () => api.get('/api/college/analytics'),
   drives: () => api.get('/api/college/drives'),
   createDrive: (body) => api.post('/api/college/drives', body),
-  exportCsv: () => api.get('/api/college/export'),
-  notify: (studentIds) => api.post('/api/college/notify', { studentIds }),
+  exportCsv: (full = false) => api.get('/api/college/export' + (full ? '?full=1' : '')),
+  notify: (studentIds, { title = '', message = '' } = {}) => api.post('/api/college/notify', { studentIds, title, message }),
   assignTask: (body) => api.post('/api/college/tasks', body),
+  tasks: () => api.get('/api/college/tasks'),
+  // ---- Onboarding & tenancy (settings, roster, membership) ----
+  settings: () => api.get('/api/college/settings'),
+  updateSettings: (body) => api.post('/api/college/settings', body),
+  rotateJoinCode: () => api.post('/api/college/settings/rotate-code', {}),
+  roster: () => api.get('/api/college/roster'),
+  importRoster: (csv) => api.post('/api/college/roster/import', { csv }),
+  members: (status = '') => api.get('/api/college/members' + (status ? `?status=${encodeURIComponent(status)}` : '')),
+  approveMember: (id) => api.post(`/api/college/members/${encodeURIComponent(id)}/approve`, {}),
+  removeMember: (id) => api.del(`/api/college/members/${encodeURIComponent(id)}`),
+};
+
+/* Student self-service: my college binding, notifications, tasks, consent.
+   Everything here is the CURRENT user's own data — never another student's. */
+export const My = {
+  college: () => api.get('/api/my/college'),
+  registerCollege: (body) => api.post('/api/my/college/register', body),
+  joinCollege: (code) => api.post('/api/my/college/join', { code }),
+  leaveCollege: () => api.post('/api/my/college/leave', {}),
+  notifications: (unreadOnly = false) => api.get('/api/my/notifications' + (unreadOnly ? '?unread=1' : '')),
+  markNotificationsRead: (ids = null) => api.post('/api/my/notifications/read', ids ? { ids } : {}),
+  tasks: () => api.get('/api/my/tasks'),
+  completeTask: (taskId) => api.post(`/api/my/tasks/${encodeURIComponent(taskId)}/done`, {}),
+  consent: (body) => api.post('/api/my/consent', body),
+};
+
+/* Platform-admin college registry. */
+export const AdminColleges = {
+  list: (status = '') => api.get('/api/admin/colleges' + (status ? `?status=${encodeURIComponent(status)}` : '')),
+  approve: (key, body = {}) => api.post(`/api/admin/colleges/${encodeURIComponent(key)}/approve`, body),
+  seedDemo: (reset = false) => api.post('/api/admin/demo/seed', { reset }),
 };
 
 // Current caller's SERVER-CONTROLLED access context (verified privileges) and

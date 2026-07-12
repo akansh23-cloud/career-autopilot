@@ -24,6 +24,7 @@ import { generateArchitecture, ARCH_LEVELS } from './server/utils/architectureEn
 import { assessPatentReadiness, priorArtKeywords, inventionDisclosureDraft, PATENT_STATUSES, PATENT_DISCLAIMER } from './server/utils/patentEngine.js';
 import { generateApplicationPackage } from './server/utils/applicationPackageEngine.js';
 import { computeReadiness, READINESS_CATEGORIES } from './server/utils/readinessEngine.js';
+import collegeObservability from './server/utils/collegeObservability.js';
 import { scorePatentIdea } from './server/utils/patentScoringEngine.js';
 import { generateIdeasDeterministic, normalizeAIIdea, buildGenerationPrompt } from './server/utils/ideaGenerationEngine.js';
 import { strengthenIdea } from './server/utils/ideaStrengtheningEngine.js';
@@ -55,6 +56,13 @@ import { registerProjectIntelligenceRoutes } from './server/routes/projectIntell
 import { registerProjectBuilderRoutes } from './server/routes/projectBuilderRoutes.js';
 import { registerArchitectureRoutes } from './server/routes/architectureRoutes.js';
 import { registerWorkspaceRoutes } from './server/routes/workspaceRoutes.js';
+import { registerCareerIntelligenceRoutes } from './server/routes/careerIntelligenceRoutes.js';
+import { registerResumeOsRoutes } from './server/routes/resumeOsRoutes.js';
+import { registerProjectStoreRoutes } from './server/routes/projectStoreRoutes.js';
+import { registerOpsRoutes } from './server/routes/opsRoutes.js';
+import { registerCollegeRoutes } from './server/routes/collegeRoutes.js';
+import { requestIdMiddleware, createErrorHandler } from './server/utils/observability.js';
+import { createQuotaMiddleware } from './server/utils/quotaMiddleware.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
 
 dotenv.config();
@@ -95,6 +103,10 @@ const app = express();
 
 app.set('trust proxy', 1); // honor X-Forwarded-Proto (Vercel/Render/etc.) so Secure cookies work
 app.disable('x-powered-by'); // do not advertise Express
+
+/* Every response carries an X-Request-Id (honoring a well-formed upstream id)
+   so support tickets, error logs and load-balancer traces line up. */
+app.use(requestIdMiddleware());
 
 /* Cookie policy is centralised in config.js. Cross-site cookies
    (SameSite=None; Secure) are needed ONLY when the SPA is served from a
@@ -1590,6 +1602,10 @@ app.get('/auth/me', async (req, res) => {
     res.json({
       authenticated: !!u,
       user: u || null,
+      // DPDP: the client blocks feature use behind the consent modal until the
+      // current consent version is accepted (recorded server-side).
+      consentRequired: !!u && (!u.consent || u.consent.version !== db.CONSENT_VERSION),
+      consentVersion: db.CONSENT_VERSION,
       providers: { google: { enabled: googleEnabled() }, dev: { enabled: allowDevLogin() } },
     });
   } catch (e) {
@@ -2714,7 +2730,14 @@ app.post('/api/patents/ideas/generate', requireAuth, generationLimiter, validate
     // Attach full score (factors + suggestions + risks) to each before saving.
     ideas = ideas.map((i) => {
       const sc = scorePatentIdea(i);
-      return { ...i, score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel }, riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded/i.test(r)), strengtheningSuggestions: sc.improvementSuggestions };
+      return {
+        ...i,
+        score: { ...sc.factors, overall: sc.overall, grade: sc.grade, riskLevel: sc.riskLevel, triage: sc.triage, positioning: sc.positioning },
+        scoreDetail: sc,
+        triage: sc.triage,
+        riskWarnings: sc.reasons.filter((r) => /generic|business|weak|crowded|stuffing/i.test(r)),
+        strengtheningSuggestions: sc.improvementSuggestions,
+      };
     });
 
     const saved = await db.createPatentIdeas({ userId: u?.id, email: u?.email, ideas, generationWhy: why });
@@ -2894,11 +2917,43 @@ app.get('/api/patents/disclosures', requireAuth, async (req, res) => {
    user-scoped. Degrades to a clearly-labelled limited mode when
    API keys / DB are missing — it never crashes the app.
    ============================================================ */
+/* Per-plan DAILY quotas on the expensive route families (distinct from the
+   per-minute burst limiters in security.js). Fails open — quota accounting
+   can never take the API down. Registered before the metered routes. */
+app.use(createQuotaMiddleware({ currentUser, planFor: (req) => planForReq(req), db, logger }));
+
 registerProblemIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, persistenceStatus, db });
 registerProjectIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter });
 registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerCareerIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerResumeOsRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerProjectStoreRoutes(app, { requireAuth, currentUser, db });
+registerOpsRoutes(app, { requireAuth, requireAdmin, currentUser, db, logger });
+
+/* ---- Public legal metadata (no auth): the single source the in-app legal
+   pages, Razorpay policy URLs and DPDP grievance notice all read from.
+   Contacts come from env (LEGAL_* → SUPPORT/ADMIN fallbacks) so the
+   deployment owner is the named entity, never a hardcoded placeholder. */
+app.get('/api/legal', (req, res) => {
+  const firstAdmin = String(config.ADMIN_EMAILS || process.env.ADMIN_EMAILS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)[0] || 'support@careerautopilot.in';
+  res.json({
+    ok: true,
+    entityName: process.env.LEGAL_ENTITY_NAME || 'Career Autopilot',
+    entityLocation: process.env.LEGAL_ENTITY_LOCATION || 'Pune, Maharashtra, India',
+    supportEmail: process.env.SUPPORT_EMAIL || firstAdmin,
+    grievanceEmail: process.env.GRIEVANCE_EMAIL || process.env.SUPPORT_EMAIL || firstAdmin,
+    grievanceResponseDays: 7, // DPDP-aligned response commitment
+    consentVersion: db.CONSENT_VERSION,
+    policies: {
+      terms: { effective: '2026-07-12', path: '#/legal/terms' },
+      privacy: { effective: '2026-07-12', path: '#/legal/privacy' },
+      refunds: { effective: '2026-07-12', path: '#/legal/refunds' },
+    },
+  });
+});
 
 /* ============================================================
    APPLICATION PACKAGE GENERATOR
@@ -2976,95 +3031,15 @@ app.get('/api/readiness', requireAuth, async (req, res) => {
    ============================================================ */
 app.use('/api/college', requireAuth, requireRole('college_admin', 'admin'));
 
-/* ---- College / placement-cell APIs (verified college_admin or admin) --------
-   All listings are scoped to the caller's own collegeId. requireCollegeScope
-   blocks any attempt to target another college via an explicit collegeId. ---- */
-const collegeScopeFromQuery = (req) => req.query.collegeId || req.body?.collegeId || null;
-function callerCollegeId(req) {
-  const ctx = req.userRole || {};
-  // Admin may target any college via ?collegeId=; college_admin is pinned to own.
-  if (ctx.isAdmin) return String(req.query.collegeId || req.body?.collegeId || '').trim() || ctx.collegeId || '';
-  return ctx.collegeId || '';
-}
-
-app.get('/api/college/overview', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const collegeId = callerCollegeId(req);
-  const students = await db.listCollegeStudents({ collegeId });
-  const n = students.length;
-  const avg = (key) => (n ? Math.round(students.reduce((s, x) => s + (Number(x[key]) || 0), 0) / n) : 0);
-  const placementReady = students.filter((s) => Number(s.readinessScore || 0) >= 70).length;
-  res.json({
-    ok: true, collegeId,
-    summary: { students: n, avgReadiness: avg('readinessScore'), avgResume: avg('resumeScore'), placementReady, withVerifiedProjects: students.filter((s) => s.verifiedProjects > 0).length },
-    db: db.dbEnabled(),
-  });
-});
-
-app.get('/api/college/students', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const collegeId = callerCollegeId(req);
-  const filters = {
-    branch: req.query.branch || '', batch: req.query.batch || '', year: req.query.year || '',
-    skill: req.query.skill || '', minReadiness: req.query.minReadiness || '', minResume: req.query.minResume || '',
-    verifiedOnly: req.query.verifiedOnly === 'true' || req.query.verifiedOnly === '1',
-  };
-  const students = await db.listCollegeStudents({ collegeId, filters });
-  res.json({ ok: true, collegeId, students, count: students.length, db: db.dbEnabled() });
-});
-
-app.get('/api/college/students/:id', requireAuth, requireRole('college_admin', 'admin'), async (req, res) => {
-  const collegeId = callerCollegeId(req);
-  const students = await db.listCollegeStudents({ collegeId });
-  const student = students.find((s) => s.id === req.params.id);
-  if (!student) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
-  res.json({ ok: true, student, db: db.dbEnabled() });
-});
-
-app.get('/api/college/analytics', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const collegeId = callerCollegeId(req);
-  const students = await db.listCollegeStudents({ collegeId });
-  const byKey = (key) => {
-    const m = {};
-    for (const s of students) { const k = String(s[key] || 'Unknown'); (m[k] ||= { count: 0, readiness: 0 }); m[k].count++; m[k].readiness += Number(s.readinessScore || 0); }
-    return Object.entries(m).map(([k, v]) => ({ key: k, count: v.count, avgReadiness: Math.round(v.readiness / v.count) }));
-  };
-  const skillHeat = {};
-  for (const s of students) for (const sk of (s.skills || [])) skillHeat[sk] = (skillHeat[sk] || 0) + 1;
-  res.json({
-    ok: true, collegeId,
-    batch: byKey('batch'), branch: byKey('branch'),
-    skillHeatmap: Object.entries(skillHeat).map(([skill, count]) => ({ skill, count })).sort((a, b) => b.count - a.count).slice(0, 40),
-    resumeReadiness: { withResume: students.filter((s) => s.resumeScore != null).length, total: students.length, avgResume: students.length ? Math.round(students.reduce((a, s) => a + (Number(s.resumeScore) || 0), 0) / students.length) : 0 },
-    db: db.dbEnabled(),
-  });
-});
-
-app.get('/api/college/drives', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const drives = await db.listPlacementDrives({ collegeId: callerCollegeId(req) });
-  res.json({ ok: true, drives, db: db.dbEnabled() });
-});
-app.post('/api/college/drives', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const b = req.body || {};
-  const drive = { title: String(b.title || 'Untitled drive').slice(0, 160), company: String(b.company || '').slice(0, 160), eligibility: b.eligibility || {}, status: 'open' };
-  const result = await db.createPlacementDrive({ collegeId: callerCollegeId(req), drive });
-  res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
-});
-
-app.get('/api/college/export', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const students = await db.listCollegeStudents({ collegeId: callerCollegeId(req) });
-  const cols = ['id', 'name', 'email', 'branch', 'batch', 'readinessScore', 'resumeScore', 'verifiedProjects'];
-  const csv = [cols.join(','), ...students.map((s) => cols.map((c) => JSON.stringify(s[c] ?? '')).join(','))].join('\n');
-  res.json({ ok: true, format: 'csv', rows: students.length, csv, db: db.dbEnabled() });
-});
-
-/* Notify / assign-task: safe placeholders — the current repo has no batch
-   notification or task-assignment subsystem, so these record intent and return
-   ok without inventing a fake delivery pipeline. */
-app.post('/api/college/notify', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  const n = Array.isArray(req.body?.studentIds) ? req.body.studentIds.length : 0;
-  res.json({ ok: true, queued: n, placeholder: true, message: 'Notifications recorded (delivery pipeline not yet configured).' });
-});
-app.post('/api/college/tasks', requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery), async (req, res) => {
-  res.json({ ok: true, placeholder: true, message: 'Improvement task recorded (task subsystem not yet configured).' });
+/* ---- College / placement-cell APIs — extracted to a dedicated module ------
+   All TPO routes (/api/college/*), student self-service (/api/my/*), and the
+   platform-admin college registry live in server/routes/collegeRoutes.js:
+   multi-tenant membership (roster/domain/code/admin binding), roster CSV
+   import, real notifications (in-app + optional email), task assignments,
+   DPDP consent, 60s-cached observability, and the demo-college seed. ---- */
+registerCollegeRoutes(app, {
+  requireAuth, requireRole, requireCollegeScope, requireAdmin,
+  currentUser, db, logger, computeReadiness,
 });
 
 /* Recruiter candidate shortlist — ranked by VERIFIED signals only. */
@@ -5489,23 +5464,10 @@ app.get(/^\/(?!jobs|auth|apply|ai|api|health|contacts|opportunities|support|dash
    NEVER leaks stack traces or secrets in production.
    ------------------------------------------------------------------ */
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  const status = err.status || err.statusCode || 500;
-  logger.error('Unhandled request error', {
-    method: req.method,
-    path: req.path,
-    status,
-    message: err.message,
-    stack: config.IS_PROD ? undefined : err.stack,
-  });
-  if (res.headersSent) return;
-  res.status(status >= 400 && status < 600 ? status : 500).json({
-    error: 'server_error',
-    message: config.IS_PROD
-      ? 'Something went wrong on our end. Please try again.'
-      : err.message || 'Internal server error',
-  });
-});
+/* Final error handler: same response contract as before, PLUS the request id
+   in the payload and a best-effort persist into the TTL'd error_logs
+   collection (surfaced at /api/admin/errors). */
+app.use(createErrorHandler({ logger, db, isProd: config.IS_PROD }));
 
 const port = process.env.PORT || 3000;
 

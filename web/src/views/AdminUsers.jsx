@@ -8,6 +8,7 @@ import {
 import { PageIntro, StatCard, SectionCard } from './common.jsx';
 import { Button, Badge, EmptyState, Input, Field, Spinner, Skeleton, Avatar } from '../components/ui/kit.jsx';
 import { Admin } from '../lib/api.js';
+import AdminCollegesPanel from './AdminCollegesPanel.jsx';
 import { getPlan, PLAN_EVENT } from '../lib/plan.js';
 
 /* Resolve admin status from the synced plan (server is the source of truth via
@@ -632,6 +633,8 @@ export default function AdminUsers() {
         onReject={(r) => decideRequest(r, 'reject')}
         onOpen={setSelectedId}
       />
+
+      <AdminCollegesPanel />
 
       {/* Stat summary cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

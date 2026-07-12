@@ -8,11 +8,15 @@ export function AuthProvider({ children }) {
   const [providers, setProviders] = useState({ google: { enabled: false }, dev: { enabled: false } });
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(false); // true when /auth/me itself is unreachable (500/503/network)
+  const [consentRequired, setConsentRequired] = useState(false); // DPDP: current consent version not yet accepted
+  const [consentVersion, setConsentVersion] = useState('');
 
   const refresh = useCallback(async () => {
     try {
       const me = await Auth.me();
       setUser(me.authenticated ? me.user : null);
+      setConsentRequired(!!me.authenticated && !!me.consentRequired);
+      setConsentVersion(me.consentVersion || '');
       if (me.providers) setProviders(me.providers);
       setAuthError(false);
     } catch (e) {
@@ -47,7 +51,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, providers, loading, authError, refresh, logout, devLogin }}>
+    <AuthCtx.Provider value={{ user, providers, loading, authError, consentRequired, consentVersion, refresh, logout, devLogin }}>
       {children}
     </AuthCtx.Provider>
   );

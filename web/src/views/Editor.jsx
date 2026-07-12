@@ -224,7 +224,7 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="flex items-center justify-between">
           <p className="text-[13px] font-semibold text-white">My Uploaded Template</p>
-          {tpl ? <Badge tone={tpl.atsScore >= 85 ? 'mint' : tpl.atsScore >= 65 ? 'cyan' : 'amber'} className="text-[9px]">ATS {tpl.atsScore}</Badge> : <Badge tone="violet" className="text-[9px]">From upload</Badge>}
+          {tpl ? <Badge tone={tpl.atsSafe ? 'mint' : 'amber'} className="text-[9px]">{tpl.atsLabel || (tpl.atsSafe ? 'ATS-safe' : 'Visual')}</Badge> : <Badge tone="violet" className="text-[9px]">From upload</Badge>}
         </div>
 
         {status === 'reading' && <p className="flex items-center gap-1.5 text-[11px] text-aurora-cyan"><Loader2 size={12} className="animate-spin" /> Reading file…</p>}

@@ -645,9 +645,9 @@ function FinalCTA({ onSignIn }) {
 
 function Footer() {
   const cols = [
-    ['Product', ['Systems', 'Sequence', 'Mission control', 'Pricing']],
-    ['Company', ['About', 'Careers', 'Blog', 'Contact']],
-    ['Legal', ['Privacy', 'Terms', 'Security', 'Status']],
+    ['Product', [['Systems', '#'], ['Sequence', '#'], ['For placement cells', '#colleges'], ['Pricing', '#']]],
+    ['Company', [['About', '#'], ['Contact', '#/legal/contact'], ['Blog', '#'], ['Careers', '#']]],
+    ['Legal', [['Privacy', '#/legal/privacy'], ['Terms', '#/legal/terms'], ['Refunds & Cancellation', '#/legal/refunds'], ['Grievance', '#/legal/contact']]],
   ];
   return (
     <footer className="border-t border-white/8 px-4 py-14 sm:px-6">
@@ -665,7 +665,7 @@ function Footer() {
           <div key={h}>
             <h4 className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">{h}</h4>
             <ul className="space-y-2.5">
-              {items.map((it) => <li key={it}><a href="#" className="text-sm text-slate-500 transition hover:text-white">{it}</a></li>)}
+              {items.map(([label, href]) => <li key={label}><a href={href} className="text-sm text-slate-500 transition hover:text-white">{label}</a></li>)}
             </ul>
           </div>
         ))}
@@ -674,6 +674,46 @@ function Footer() {
         © {new Date().getFullYear()} Career Autopilot. Cleared for takeoff.
       </div>
     </footer>
+  );
+}
+
+/* ---- For placement cells: the TPO-facing pitch, anchor #colleges.
+        Cold-outreach links land here instead of a student-only page. ---- */
+function CollegesSection({ onSignIn }) {
+  const props = [
+    ['Live readiness command center', 'Funnel, at-risk register, branch/batch matrices and skill coverage across your whole cohort — in August, not December.'],
+    ['Verified, not self-claimed', 'Projects are GitHub-linked and viva-checked; resume scores are deterministic. Your recruiters see proof, and your NAAC Criterion 5 export writes itself.'],
+    ['Onboard a batch in an afternoon', 'Import your roster CSV, share one join code, or verify your email domain — students link automatically, with DPDP-compliant consent built in.'],
+  ];
+  return (
+    <section id="colleges" className="relative px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-aurora-cyan">For placement cells</p>
+        <h2 className="mt-3 max-w-2xl font-display text-3xl font-semibold text-white sm:text-4xl">
+          Find out who isn't ready in week 4 — not in placement week.
+        </h2>
+        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-slate-400">
+          Career Autopilot gives Training &amp; Placement teams a live, consent-gated view of every student's verified readiness, with nudges and task assignments that actually reach them.
+        </p>
+        <div className="mt-9 grid gap-4 md:grid-cols-3">
+          {props.map(([h, p]) => (
+            <div key={h} className="rounded-2xl border border-white/8 bg-white/[0.02] p-5 transition hover:border-aurora-violet/30">
+              <h3 className="font-display text-[15px] font-semibold text-white">{h}</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{p}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-9 flex flex-wrap items-center gap-3">
+          <button onClick={onSignIn} className="rounded-xl btn-primary px-5 py-2.5 text-sm font-semibold text-ink-950">
+            Register your college — free pilot
+          </button>
+          <a href="#/legal/contact" className="rounded-xl border border-white/12 px-5 py-2.5 text-sm text-slate-300 transition hover:border-white/25 hover:text-white">
+            Talk to us first
+          </a>
+          <span className="text-[12px] text-slate-500">8-week pilot · one branch · written success criteria · no payment details.</span>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -689,6 +729,7 @@ export default function Landing({ onSignIn }) {
       <Sequence />
       <Deck />
       <Personas />
+      <CollegesSection onSignIn={onSignIn} />
       <Numbers />
       <Quote />
       <FinalCTA onSignIn={onSignIn} />

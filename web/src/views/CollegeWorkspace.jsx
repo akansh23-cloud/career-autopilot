@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Users, GraduationCap, BarChart3, Flame, FolderCheck, FileText,
-  CalendarClock, Download, Search, Plus, Bell, ClipboardList,
+  CalendarClock, Download, Search, Plus, Bell, ClipboardList, Gauge, Eye,
 } from 'lucide-react';
 import { PageIntro, SectionCard, StatCard, BarChart } from './common.jsx';
 import { Button, Badge, Spinner, EmptyState, Input, Field, Modal } from '../components/ui/kit.jsx';
 import { College } from '../lib/api.js';
 import { getEffectiveRole } from '../lib/roleCapabilities.js';
+import CommandCenter from '../components/college/CommandCenter.jsx';
+import OnboardingPanel from '../components/college/OnboardingPanel.jsx';
+import StudentDrilldown from '../components/college/StudentDrilldown.jsx';
 
 const TABS = [
+  { id: 'command', label: 'Command center', icon: Gauge },
+  { id: 'onboarding', label: 'Onboarding & roster', icon: ClipboardList },
   { id: 'overview', label: 'Overview', icon: GraduationCap },
   { id: 'directory', label: 'Student directory', icon: Users },
   { id: 'readiness', label: 'Placement readiness', icon: BarChart3 },
@@ -54,7 +59,7 @@ export default function CollegeWorkspace({ params = {}, go }) {
   const effectiveRole = getEffectiveRole();
   const allowed = effectiveRole === 'college_admin' || effectiveRole === 'admin';
 
-  const [tab, setTab] = useState(TABS.some((t) => t.id === params.tab) ? params.tab : 'overview');
+  const [tab, setTab] = useState(TABS.some((t) => t.id === params.tab) ? params.tab : 'command');
   useEffect(() => { if (params.tab && TABS.some((t) => t.id === params.tab)) setTab(params.tab); }, [params.tab]);
 
   if (!allowed) {
@@ -99,6 +104,8 @@ export default function CollegeWorkspace({ params = {}, go }) {
         ))}
       </div>
 
+      {tab === 'command' && <CommandCenterTab go={(t) => setTab(t)} />}
+      {tab === 'onboarding' && <OnboardingPanel />}
       {tab === 'overview' && <OverviewTab go={(t) => setTab(t)} />}
       {tab === 'directory' && <DirectoryTab go={go} />}
       {tab === 'readiness' && <ReadinessTab />}
@@ -110,6 +117,12 @@ export default function CollegeWorkspace({ params = {}, go }) {
       {tab === 'reports' && <ReportsTab />}
     </div>
   );
+}
+
+function CommandCenterTab({ go }) {
+  const [tick, setTick] = useState(0);
+  const { loading, error, data } = useAsync(() => College.observability(), [tick]);
+  return <CommandCenter data={data} loading={loading} error={error} onRetry={() => setTick((t) => t + 1)} go={go} />;
 }
 
 function OverviewTab({ go }) {
@@ -138,6 +151,7 @@ function OverviewTab({ go }) {
 const FILTER_DEFAULTS = { branch: '', batch: '', year: '', skill: '', minReadiness: '', minResume: '', verifiedOnly: false };
 
 function DirectoryTab({ go }) {
+  const [drill, setDrill] = useState(null);
   const [filters, setFilters] = useState(FILTER_DEFAULTS);
   const [applied, setApplied] = useState(FILTER_DEFAULTS);
   const { loading, error, data } = useAsync(() => College.students(applied), [JSON.stringify(applied)]);
@@ -170,7 +184,7 @@ function DirectoryTab({ go }) {
             <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-2 py-2">Name</th><th className="px-2 py-2">Branch</th><th className="px-2 py-2">Batch</th>
-                <th className="px-2 py-2">Readiness</th><th className="px-2 py-2">Resume</th><th className="px-2 py-2">Verified</th>
+                <th className="px-2 py-2">Readiness</th><th className="px-2 py-2">Resume</th><th className="px-2 py-2">Verified</th><th className="px-2 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -182,12 +196,14 @@ function DirectoryTab({ go }) {
                   <td className="px-2 py-2">{s.readinessScore ?? '—'}</td>
                   <td className="px-2 py-2">{s.resumeScore ?? '—'}</td>
                   <td className="px-2 py-2">{s.verifiedProjects > 0 ? <Badge tone="mint">{s.verifiedProjects}</Badge> : '—'}</td>
+                  <td className="px-2 py-2"><Button size="sm" variant="soft" onClick={() => setDrill(s.id)}><Eye size={12} /> View</Button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      <StudentDrilldown studentId={drill} open={Boolean(drill)} onClose={() => setDrill(null)} />
     </SectionCard>
   );
 }
@@ -324,6 +340,19 @@ function DrivesTab() {
 
 function ReportsTab() {
   const [status, setStatus] = useState('');
+  const exportFullCsv = async () => {
+    setStatus('Preparing full export…');
+    try {
+      const res = await College.exportCsv(true);
+      if (!res?.ok) { setStatus('Export failed.'); return; }
+      const blob = new Blob([res.csv || ''], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'college-observability.csv'; a.click();
+      URL.revokeObjectURL(url);
+      setStatus(`Exported ${res.rows} rows (extended columns).`);
+    } catch (e) { setStatus(e?.message || 'Export failed.'); }
+  };
   const exportCsv = async () => {
     setStatus('Preparing…');
     try {
@@ -342,6 +371,7 @@ function ReportsTab() {
       <p className="mb-3 text-sm text-muted">Export your college’s scoped student data as CSV for reporting. Only students linked to your institution are included.</p>
       <div className="flex items-center gap-3">
         <Button onClick={exportCsv}><Download size={15} /> Export student CSV</Button>
+        <Button variant="soft" onClick={exportFullCsv}><Download size={15} /> Full observability CSV</Button>
         {status && <span className="text-sm text-slate-400">{status}</span>}
       </div>
       <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">

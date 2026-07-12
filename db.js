@@ -56,6 +56,27 @@ const userSchema = new mongoose.Schema(
     collegeId: { type: String, default: '' },         // stable college id (scope key)
     verificationStatus: { type: String, default: 'none', enum: ['none', 'pending', 'approved', 'rejected'] },
     verificationRequestedAt: { type: Date, default: null },
+    // ---- DPDP data rights: account deletion with a grace window. When set,
+    // the account is scheduled for cascade purge DELETE_GRACE_DAYS after this
+    // timestamp. Signing back in during the window cancels it (upsertUser).
+    deletionScheduledAt: { type: Date, default: null, index: true },
+    // ---- Multi-college tenancy: HOW this user is bound to their collegeId.
+    // The binding itself stays in `collegeId` (indexed scope key). `via`:
+    // roster (TPO-imported), domain (verified email domain), code (join code),
+    // admin (verification flow), legacy (pre-tenancy typed college name).
+    collegeMembership: {
+      status: { type: String, default: '', enum: ['', 'pending', 'active'] },
+      via: { type: String, default: '', enum: ['', 'roster', 'domain', 'code', 'admin', 'legacy'] },
+      at: { type: Date, default: null },
+    },
+    // ---- DPDP consent: version-tracked acceptance recorded before feature
+    // use. `collegeVisibility` covers readiness data flowing to the bound
+    // college's placement cell.
+    consent: {
+      version: { type: String, default: '' },
+      acceptedAt: { type: Date, default: null },
+      collegeVisibility: { type: Boolean, default: false },
+    },
   },
   { timestamps: true } // createdAt + updatedAt
 );
@@ -584,6 +605,12 @@ export function publicUser(doc) {
     roleVerified: !!doc.roleVerified,
     organizationId: doc.organizationId || '',
     collegeId: doc.collegeId || '',
+    collegeMembership: doc.collegeMembership && doc.collegeMembership.status
+      ? { status: doc.collegeMembership.status, via: doc.collegeMembership.via || '', at: doc.collegeMembership.at || null }
+      : null,
+    consent: doc.consent && doc.consent.version
+      ? { version: doc.consent.version, acceptedAt: doc.consent.acceptedAt || null, collegeVisibility: !!doc.consent.collegeVisibility }
+      : null,
     verificationStatus: doc.verificationStatus || 'none',
   };
 }
@@ -611,7 +638,13 @@ export async function upsertUser({ googleId, email, name, avatar, provider }) {
       user.lastLoginAt = new Date();
       user.loginCount = (user.loginCount || 0) + 1;
       user.isActive = true;
+      // Signing back in inside the grace window cancels a scheduled deletion.
+      if (user.deletionScheduledAt) user.deletionScheduledAt = null;
       await user.save();
+      // Multi-college: bind unattached users via roster (TPO-imported) or a
+      // verified college email domain. Best-effort — a bind failure must
+      // never block sign-in.
+      if (!user.collegeId) await autoBindCollege(user).catch(() => {});
     } else {
       user = await User.create({
         googleId: googleId || undefined,
@@ -619,6 +652,9 @@ export async function upsertUser({ googleId, email, name, avatar, provider }) {
         name, avatar: avatar || null, provider: provider || 'google',
         lastLoginAt: new Date(), loginCount: 1,
       });
+      // First sign-in: bind to a college immediately when a roster entry or a
+      // verified email domain already claims this address.
+      await autoBindCollege(user).catch(() => {});
     }
     return publicUser(user);
   } catch (err) {
@@ -1256,23 +1292,65 @@ export async function listVerificationRequests({ status = 'pending' } = {}) {
   }
 }
 
-/* College-scoped student directory. Returns ONLY students whose stable college
-   key matches the placement cell's collegeId. Applies optional filters. Returns
-   [] (honest empty state) when no DB is configured. */
+/* College-scoped student directory. Multi-tenant resolution, in trust order:
+   1) BOUND — User.collegeId === scope (indexed; roster/domain/code/admin).
+   2) LEGACY — unbound users whose typed profile.college slugs to the scope or
+      to one of the College doc's aliases (bounded scan; keeps pre-tenancy
+      pilot data visible while it migrates).
+   Returns [] (honest empty state) when no DB is configured. */
+async function collegeScopeMembers(scope, { readinessData = true } = {}) {
+  /* DPDP consent gate: readiness data flows to the placement cell ONLY for
+     students who accepted the current consent with collegeVisibility on.
+     Membership administration (approve/remove) is NOT readiness data, so
+     callers pass readinessData:false to manage accounts that haven't
+     consented yet. */
+  const consentFilter = readinessData ? { 'consent.collegeVisibility': true } : {};
+  const bound = await User.find({ collegeId: scope, isActive: { $ne: false }, ...consentFilter })
+    .select('name email collegeId collegeMembership targetRole createdAt lastLoginAt updatedAt consent')
+    .limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
+
+  const collegeDoc = await College.findOne({ key: scope }).select('aliases').lean().catch(() => null);
+  const aliasSet = new Set([scope, ...((collegeDoc && collegeDoc.aliases) || [])]);
+
+  const boundIds = new Set(bound.map((u) => String(u._id)));
+  const legacyCandidates = await User.find({ $or: [{ collegeId: '' }, { collegeId: null }], isActive: { $ne: false }, ...consentFilter })
+    .select('name email collegeId targetRole createdAt lastLoginAt updatedAt consent')
+    .limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
+
+  const all = [...bound, ...legacyCandidates];
+  const states = all.length
+    ? await UserState.find({ userId: { $in: all.map((u) => u._id) } }).select('userId profile resume readiness verifiedProjectCount updatedAt').lean()
+    : [];
+  const stateByUser = new Map(states.map((s) => [String(s.userId), s]));
+
+  const members = [];
+  for (const u of bound) {
+    const st = stateByUser.get(String(u._id)) || null;
+    const membership = u.collegeMembership && u.collegeMembership.status
+      ? { status: u.collegeMembership.status, via: u.collegeMembership.via || 'admin' }
+      : { status: 'active', via: 'admin' };
+    members.push({ user: u, state: st, profile: st?.profile || {}, membership });
+  }
+  for (const u of legacyCandidates) {
+    if (boundIds.has(String(u._id))) continue;
+    const st = stateByUser.get(String(u._id)) || null;
+    const profile = st?.profile || {};
+    if (!profile.college) continue;
+    if (!aliasSet.has(collegeKey({ college: profile.college }))) continue;
+    members.push({ user: u, state: st, profile, membership: { status: 'active', via: 'legacy' } });
+  }
+  return members;
+}
+
 export async function listCollegeStudents({ collegeId, filters = {} }) {
   const scope = String(collegeId || '').trim();
   if (!scope) return [];
   if (!URI) return [];
   try {
     await connectDB();
-    // Match either an explicit collegeId or the derived slug of a typed college.
-    const docs = await User.find({ isActive: { $ne: false } }).select('name email collegeId accountType').limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
+    const matched = await collegeScopeMembers(scope);
     const students = [];
-    for (const d of docs) {
-      const state = await getUserState({ userId: String(d._id), email: d.email }).catch(() => null);
-      const profile = state?.profile || {};
-      const key = collegeKey({ collegeId: d.collegeId, college: profile.college });
-      if (key !== scope) continue;
+    for (const { user: d, state, profile, membership } of matched) {
       const readiness = state?.readiness || null;
       const row = {
         id: String(d._id), name: d.name || '', email: d.email || '',
@@ -1280,6 +1358,7 @@ export async function listCollegeStudents({ collegeId, filters = {} }) {
         year: profile.yearSem || profile.year || '', skills: profile.skills || [],
         readinessScore: readiness?.score ?? null, resumeScore: state?.resume?.score ?? null,
         verifiedProjects: state?.verifiedProjectCount ?? 0,
+        membership,
       };
       if (matchesStudentFilters(row, filters)) students.push(row);
     }
@@ -1299,6 +1378,177 @@ function matchesStudentFilters(row, f = {}) {
   if (f.minResume != null && f.minResume !== '' && Number(row.resumeScore || 0) < Number(f.minResume)) return false;
   if (f.verifiedOnly && !(Number(row.verifiedProjects) > 0)) return false;
   return true;
+}
+
+/* ============================================================
+   COLLEGE DEEP OBSERVABILITY  (batched; scoped; verified-aware)
+   ------------------------------------------------------------
+   Rich per-student rows for the placement-cell command center.
+   Unlike listCollegeStudents (kept as-is for compatibility), these
+   run BATCHED queries ($in) instead of per-user lookups, and expose
+   the full signal set: skill XP (verified vs pending), submission
+   pipeline counts, resume sub-scores, last-activity and momentum
+   event timestamps. Readiness itself is computed in the route via
+   the shared readiness engine — never here, never by AI.
+   ============================================================ */
+async function collegeScopedUserStates(scope) {
+  // Multi-tenant resolution shared with listCollegeStudents: bound users by
+  // indexed collegeId, plus a bounded legacy alias scan (typed college names).
+  return collegeScopeMembers(scope);
+}
+
+export async function collegeStudentsDeep({ collegeId }) {
+  const scope = String(collegeId || '').trim();
+  const empty = { rows: [], events: [] };
+  if (!scope || !URI) return empty;
+  try {
+    await connectDB();
+    const matched = await collegeScopedUserStates(scope);
+    if (!matched.length) return empty;
+    const ids = matched.map((m) => m.user._id);
+
+    const [xpRows, subs, resumes, lastActivity] = await Promise.all([
+      SkillXp.find({ userId: { $in: ids } }).select('userId skillName verifiedXp pendingXp').lean(),
+      ProjectSubmission.find({ userId: { $in: ids } })
+        .select('userId verificationStatus githubUrl liveDemoUrl createdAt updatedAt').lean(),
+      ResumeAnalysis.find({ userId: { $in: ids } }).sort({ createdAt: -1 })
+        .select('userId score ats impact clarity createdAt').lean(),
+      Activity.aggregate([
+        { $match: { userId: { $in: ids } } },
+        { $group: { _id: '$userId', at: { $max: '$createdAt' } } },
+      ]),
+    ]);
+
+    const xpByUser = new Map(); // uid -> { verified:[skill], pending:[skill], verifiedXp, pendingXp }
+    for (const r of xpRows) {
+      const k = String(r.userId);
+      if (!xpByUser.has(k)) xpByUser.set(k, { verified: [], pending: [], verifiedXp: 0, pendingXp: 0 });
+      const e = xpByUser.get(k);
+      if ((r.verifiedXp || 0) > 0) { e.verified.push(r.skillName); e.verifiedXp += r.verifiedXp || 0; }
+      if ((r.pendingXp || 0) > 0) { e.pending.push(r.skillName); e.pendingXp += r.pendingXp || 0; }
+    }
+
+    const subsByUser = new Map();
+    const events = [];
+    for (const s of subs) {
+      const k = String(s.userId);
+      if (!subsByUser.has(k)) subsByUser.set(k, []);
+      subsByUser.get(k).push(s);
+      if (s.verificationStatus === 'verified' && s.updatedAt) {
+        events.push({ type: 'verification', at: new Date(s.updatedAt).toISOString() });
+      }
+    }
+
+    const latestResumeByUser = new Map(); // sorted desc → first seen wins
+    for (const r of resumes) {
+      const k = String(r.userId);
+      if (!latestResumeByUser.has(k)) latestResumeByUser.set(k, r);
+      if (r.createdAt) events.push({ type: 'resume', at: new Date(r.createdAt).toISOString() });
+    }
+
+    const activityByUser = new Map(lastActivity.map((a) => [String(a._id), a.at]));
+
+    const rows = matched.map(({ user, state, profile, membership }) => {
+      const k = String(user._id);
+      const xp = xpByUser.get(k) || { verified: [], pending: [], verifiedXp: 0, pendingXp: 0 };
+      const us = subsByUser.get(k) || [];
+      const byStatus = (st) => us.filter((s) => s.verificationStatus === st);
+      const pendingSubs = us.filter((s) => ['pending', 'needs_review'].includes(s.verificationStatus));
+      const oldestPendingAt = pendingSubs.length
+        ? new Date(Math.min(...pendingSubs.map((s) => new Date(s.createdAt || s.updatedAt || Date.now()).getTime()))).toISOString()
+        : null;
+      const resume = latestResumeByUser.get(k) || null;
+      const lastActive = [activityByUser.get(k), state?.updatedAt, user.lastLoginAt,
+        ...us.map((s) => s.updatedAt)].filter(Boolean)
+        .map((d) => new Date(d).getTime()).filter(Number.isFinite);
+      return {
+        id: k, name: user.name || '', email: user.email || '',
+        branch: profile.branch || profile.major || '', batch: profile.batch || profile.gradYear || '',
+        year: profile.yearSem || profile.year || '', targetRole: profile.targetRole || user.targetRole || '',
+        skills: profile.skills || [],
+        verifiedSkills: xp.verified, pendingSkills: xp.pending,
+        totalVerifiedXp: xp.verifiedXp, totalPendingXp: xp.pendingXp,
+        projectsTotal: us.length,
+        projectsVerified: byStatus('verified').length,
+        projectsPending: byStatus('pending').length,
+        projectsNeedsReview: byStatus('needs_review').length,
+        projectsRejected: byStatus('rejected').length,
+        recruiterReadyProjects: byStatus('verified').filter((s) => s.githubUrl || s.liveDemoUrl).length,
+        oldestPendingAt,
+        resumeScore: resume ? resume.score : (state?.resume?.score ?? null),
+        resumeAts: resume?.ats ?? null, resumeImpact: resume?.impact ?? null, resumeClarity: resume?.clarity ?? null,
+        lastActiveAt: lastActive.length ? new Date(Math.max(...lastActive)).toISOString() : null,
+        memberSince: user.createdAt ? new Date(user.createdAt).toISOString() : null,
+        membership: membership || { status: 'active', via: 'admin' },
+      };
+    });
+    return { rows, events };
+  } catch (err) {
+    console.error('[db] collegeStudentsDeep failed:', err.message);
+    return empty;
+  }
+}
+
+/* Single-student drill-down: everything the command center shows for the
+   cohort, plus full project list, per-skill XP ledger, resume score history
+   and a recent activity feed. Scope-checked against the caller's college. */
+export async function collegeStudentDetail({ collegeId, studentId }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope || !URI) return null;
+  try {
+    await connectDB();
+    if (!mongoose.Types.ObjectId.isValid(String(studentId))) return null;
+    const user = await User.findOne({ _id: studentId, isActive: { $ne: false } })
+      .select('name email collegeId targetRole createdAt lastLoginAt').lean();
+    if (!user) return null;
+    const state = await UserState.findOne({ userId: user._id }).select('profile resume updatedAt').lean();
+    const profile = state?.profile || {};
+    // In scope when BOUND to this college, or (legacy) unbound with a typed
+    // college name slugging to the scope or one of its aliases.
+    let inScope = user.collegeId === scope;
+    if (!inScope && !user.collegeId) {
+      const collegeDoc = await College.findOne({ key: scope }).select('aliases').lean().catch(() => null);
+      const aliasSet = new Set([scope, ...((collegeDoc && collegeDoc.aliases) || [])]);
+      inScope = !!profile.college && aliasSet.has(collegeKey({ college: profile.college }));
+    }
+    if (!inScope) return null; // out of scope
+
+    const [xpRows, subs, resumeHistory, activity] = await Promise.all([
+      SkillXp.find({ userId: user._id }).sort({ verifiedXp: -1 })
+        .select('skillName verifiedXp pendingXp updatedAt').lean(),
+      ProjectSubmission.find({ userId: user._id }).sort({ updatedAt: -1 }).limit(50)
+        .select('title verificationStatus verifiedSkills claimedSkills technologies githubUrl liveDemoUrl complexityLevel createdAt updatedAt').lean(),
+      ResumeAnalysis.find({ userId: user._id }).sort({ createdAt: -1 }).limit(6)
+        .select('score ats impact clarity targetRole createdAt').lean(),
+      Activity.find({ userId: user._id }).sort({ createdAt: -1 }).limit(15)
+        .select('text tone createdAt').lean(),
+    ]);
+
+    return {
+      id: String(user._id), name: user.name || '', email: user.email || '',
+      branch: profile.branch || profile.major || '', batch: profile.batch || profile.gradYear || '',
+      year: profile.yearSem || profile.year || '', targetRole: profile.targetRole || user.targetRole || '',
+      skills: profile.skills || [],
+      memberSince: user.createdAt ? new Date(user.createdAt).toISOString() : null,
+      lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+      skillLedger: xpRows.map((r) => ({ skill: r.skillName, verifiedXp: r.verifiedXp || 0, pendingXp: r.pendingXp || 0 })),
+      projects: subs.map((s) => ({
+        id: String(s._id), title: s.title || 'Untitled project', status: s.verificationStatus,
+        verifiedSkills: s.verifiedSkills || [], claimedSkills: s.claimedSkills || [],
+        technologies: s.technologies || [], githubUrl: s.githubUrl || '', liveDemoUrl: s.liveDemoUrl || '',
+        complexity: s.complexityLevel || '', submittedAt: s.createdAt ? new Date(s.createdAt).toISOString() : null,
+        updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString() : null,
+      })),
+      resumeHistory: resumeHistory.map((r) => ({
+        score: r.score ?? null, ats: r.ats ?? null, impact: r.impact ?? null, clarity: r.clarity ?? null,
+        targetRole: r.targetRole || '', at: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+      })),
+      activity: activity.map((a) => ({ text: a.text, tone: a.tone || 'cyan', at: a.createdAt ? new Date(a.createdAt).toISOString() : null })),
+    };
+  } catch (err) {
+    console.error('[db] collegeStudentDetail failed:', err.message);
+    return null;
+  }
 }
 
 /* Placement drives (college-scoped). Memory-backed when no DB is configured. */
@@ -3627,4 +3877,1138 @@ export async function saveWorkspaceStarterPackMeta({ userId, email, projectId, s
     );
     return { ok: true };
   } catch (err) { console.error('[db] saveWorkspaceStarterPackMeta failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ============================================================
+   MARKET-READINESS GAP SPRINT — persistence layer
+   ------------------------------------------------------------
+   1) Project store: server-side source of truth for user projects
+      (last-write-wins per project by client updatedAt).
+   2) Error log: capped best-effort store behind /api/admin/errors.
+   3) Daily usage counters: atomic per user/bucket/UTC-day, used by
+      the quota middleware.
+   4) DPDP data rights: EXPORT_SOURCES powers BOTH /api/account/export
+      and the deletion cascade, so completeness of one is completeness
+      of the other. DELETE /api/account soft-deletes with a
+      DELETE_GRACE_DAYS window; purgeExpiredDeletions cascades.
+   ============================================================ */
+
+const userProjectSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true },
+    projectId: { type: String, required: true, index: true },
+    project: { type: mongoose.Schema.Types.Mixed, default: {} },     // full client project object
+    workspacePlan: { type: mongoose.Schema.Types.Mixed, default: null },
+    taskProgress: { type: mongoose.Schema.Types.Mixed, default: {} }, // { taskId: {status, at} }
+    clientUpdatedAt: { type: Date, default: null },                   // client's own clock (LWW key)
+  },
+  { timestamps: true }
+);
+userProjectSchema.index({ userId: 1, projectId: 1 }, { unique: true });
+const UserProject = mongoose.models.UserProject || mongoose.model('UserProject', userProjectSchema);
+
+const errorLogSchema = new mongoose.Schema(
+  {
+    requestId: { type: String, default: '' },
+    method: { type: String, default: '' },
+    path: { type: String, default: '' },
+    status: { type: Number, default: 500 },
+    message: { type: String, default: '' },
+    stack: { type: String, default: '' },
+    userEmail: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // TTL: 30 days
+  },
+  { versionKey: false }
+);
+const ErrorLog = mongoose.models.ErrorLog || mongoose.model('ErrorLog', errorLogSchema);
+
+const dailyUsageSchema = new mongoose.Schema(
+  {
+    userKey: { type: String, required: true },
+    bucket: { type: String, required: true },
+    day: { type: String, required: true }, // YYYY-MM-DD (UTC)
+    count: { type: Number, default: 0 },
+    createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 3 }, // TTL: 3 days
+  },
+  { versionKey: false }
+);
+dailyUsageSchema.index({ userKey: 1, bucket: 1, day: 1 }, { unique: true });
+const DailyUsage = mongoose.models.DailyUsage || mongoose.model('DailyUsage', dailyUsageSchema);
+
+/* ---------------- project store ---------------- */
+
+const projectRecordShape = (d) => ({
+  projectId: d.projectId,
+  project: d.project || {},
+  workspacePlan: d.workspacePlan ?? null,
+  taskProgress: d.taskProgress || {},
+  clientUpdatedAt: d.clientUpdatedAt ? new Date(d.clientUpdatedAt).toISOString() : null,
+  updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : null,
+});
+
+export async function listUserProjects({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await UserProject.find({ userId: uid }).sort({ clientUpdatedAt: -1, updatedAt: -1 }).limit(500).lean();
+    return docs.map(projectRecordShape);
+  } catch (err) { console.error('[db] listUserProjects failed:', err.message); return []; }
+}
+
+export async function getUserProject({ userId, email, projectId }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return null;
+    const doc = await UserProject.findOne({ userId: uid, projectId: String(projectId) }).lean();
+    return doc ? projectRecordShape(doc) : null;
+  } catch (err) { console.error('[db] getUserProject failed:', err.message); return null; }
+}
+
+export async function saveUserProject({ userId, email, projectId, project, workspacePlan, taskProgress, clientUpdatedAt }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'not_found' };
+    const pid = String(projectId || project?.id || '').trim();
+    if (!pid) return { ok: false, reason: 'invalid_project_id' };
+    const set = {
+      email: email ? String(email).toLowerCase() : undefined,
+      project: project || {},
+      clientUpdatedAt: clientUpdatedAt ? new Date(clientUpdatedAt) : new Date(),
+    };
+    if (workspacePlan !== undefined) set.workspacePlan = workspacePlan;
+    if (taskProgress !== undefined) set.taskProgress = taskProgress;
+    const doc = await UserProject.findOneAndUpdate(
+      { userId: uid, projectId: pid },
+      { $set: set, $setOnInsert: { userId: uid, projectId: pid } },
+      { upsert: true, new: true }
+    ).lean();
+    return { ok: true, record: projectRecordShape(doc) };
+  } catch (err) { console.error('[db] saveUserProject failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Last-write-wins per project by the client's updatedAt. A fresh server set
+   means every local project simply uploads (first-login migration). Returns
+   the full merged set so the client can adopt it as truth. */
+export async function syncUserProjects({ userId, email, projects = [] }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'not_found' };
+    let uploaded = 0; let kept = 0;
+    for (const p of projects.slice(0, 300)) {
+      const pid = String(p.id || p.projectId || '').trim();
+      if (!pid) continue;
+      const incomingAt = p.updatedAt ? new Date(p.updatedAt) : new Date(0);
+      const existing = await UserProject.findOne({ userId: uid, projectId: pid }).select('clientUpdatedAt').lean();
+      if (!existing || !existing.clientUpdatedAt || new Date(existing.clientUpdatedAt) <= incomingAt) {
+        await UserProject.updateOne(
+          { userId: uid, projectId: pid },
+          { $set: { project: p, clientUpdatedAt: incomingAt, email: email ? String(email).toLowerCase() : undefined }, $setOnInsert: { userId: uid, projectId: pid } },
+          { upsert: true }
+        );
+        uploaded += 1;
+      } else kept += 1;
+    }
+    const merged = await listUserProjects({ userId: uid });
+    return { ok: true, uploaded, keptServer: kept, projects: merged.map((r) => r.project).filter(Boolean), records: merged };
+  } catch (err) { console.error('[db] syncUserProjects failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function updateUserProjectProgress({ userId, email, projectId, taskProgress, taskPatch }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return { ok: false, reason: 'not_found' };
+    const doc = await UserProject.findOne({ userId: uid, projectId: String(projectId) });
+    if (!doc) return { ok: false, reason: 'not_found' };
+    if (taskProgress !== undefined && taskProgress !== null) doc.taskProgress = taskProgress;
+    if (taskPatch && typeof taskPatch === 'object') {
+      doc.taskProgress = { ...(doc.taskProgress || {}) };
+      for (const [taskId, patch] of Object.entries(taskPatch)) {
+        doc.taskProgress[taskId] = { ...(doc.taskProgress[taskId] || {}), ...patch, at: new Date().toISOString() };
+      }
+      doc.markModified('taskProgress');
+    }
+    doc.clientUpdatedAt = new Date();
+    await doc.save();
+    return { ok: true, record: projectRecordShape(doc.toObject()) };
+  } catch (err) { console.error('[db] updateUserProjectProgress failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function deleteUserProject({ userId, email, projectId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid || !projectId) return { ok: false, reason: 'not_found' };
+    const r = await UserProject.deleteOne({ userId: uid, projectId: String(projectId) });
+    return { ok: true, deleted: r.deletedCount || 0 };
+  } catch (err) { console.error('[db] deleteUserProject failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ---------------- error log ---------------- */
+
+export async function saveErrorLog(entry = {}) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    await ErrorLog.create({
+      requestId: String(entry.requestId || '').slice(0, 64),
+      method: String(entry.method || '').slice(0, 10),
+      path: String(entry.path || '').slice(0, 300),
+      status: Number(entry.status) || 500,
+      message: String(entry.message || '').slice(0, 2000),
+      stack: String(entry.stack || '').slice(0, 8000),
+      userEmail: String(entry.userEmail || '').slice(0, 200),
+    });
+    return { ok: true };
+  } catch (err) { console.error('[db] saveErrorLog failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function listErrorLogs({ page = 1, pageSize = 50 } = {}) {
+  if (!URI) return { ok: false, reason: 'db_off', errors: [], total: 0 };
+  try {
+    await connectDB();
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.min(200, Math.max(1, Number(pageSize) || 50));
+    const [errors, total] = await Promise.all([
+      ErrorLog.find({}).sort({ createdAt: -1 }).skip((p - 1) * size).limit(size).lean(),
+      ErrorLog.countDocuments({}),
+    ]);
+    return { ok: true, errors, total, page: p, pageSize: size };
+  } catch (err) { console.error('[db] listErrorLogs failed:', err.message); return { ok: false, reason: 'db_error', errors: [], total: 0 }; }
+}
+
+/* ---------------- daily usage counters (quota middleware) ---------------- */
+
+export async function incrementDailyUsage({ userKey, bucket, day }) {
+  if (!URI) return null; // caller falls back to its in-memory counter
+  try {
+    await connectDB();
+    const doc = await DailyUsage.findOneAndUpdate(
+      { userKey: String(userKey), bucket: String(bucket), day: String(day) },
+      { $inc: { count: 1 }, $setOnInsert: { createdAt: new Date() } },
+      { upsert: true, new: true }
+    ).lean();
+    return doc?.count ?? null;
+  } catch (err) { console.error('[db] incrementDailyUsage failed:', err.message); return null; }
+}
+
+/* ---------------- DPDP data rights: export + delete cascade ---------------- */
+
+export const DELETE_GRACE_DAYS = 7;
+
+/* EXPORT_SOURCES powers BOTH /api/account/export and the deletion cascade,
+   so completeness of one is completeness of the other. Models resolve lazily
+   so this array can sit below every schema definition. `key` is the field
+   that scopes a document to a user ('_id' only for the User doc itself). */
+export const EXPORT_SOURCES = [
+  { name: 'profile',            model: () => User,             key: '_id' },
+  { name: 'userState',          model: () => UserState,        key: 'userId' },
+  { name: 'resumes',            model: () => Resume,           key: 'userId' },
+  { name: 'resumeAnalyses',     model: () => ResumeAnalysis,   key: 'userId' },
+  { name: 'resumeVersions',     model: () => ResumeVersion,    key: 'userId' },
+  { name: 'projects',           model: () => UserProject,      key: 'userId' },
+  { name: 'projectWorkspaces',  model: () => ProjectWorkspace, key: 'userId' },
+  { name: 'projectSubmissions', model: () => ProjectSubmission, key: 'userId' },
+  { name: 'projectRoadmaps',    model: () => ProjectRoadmap,   key: 'userId' },
+  { name: 'architectureSpecs',  model: () => ProjectArchitectureSpec, key: 'userId' },
+  { name: 'skillXp',            model: () => SkillXp,          key: 'userId' },
+  { name: 'applications',       model: () => Application,      key: 'userId' },
+  { name: 'outreach',           model: () => Outreach,         key: 'userId' },
+  { name: 'activity',           model: () => Activity,         key: 'userId' },
+  { name: 'patentIdeas',        model: () => PatentIdea,       key: 'userId' },
+  { name: 'patentRecords',      model: () => PatentRecord,     key: 'userId' },
+  { name: 'priorArtRecords',    model: () => PriorArtRecord,   key: 'userId' },
+  { name: 'patentDisclosures',  model: () => PatentDisclosure, key: 'userId' },
+  { name: 'patentFeedback',     model: () => PatentFeedback,   key: 'userId' },
+  { name: 'patentActivity',     model: () => PatentActivity,   key: 'userId' },
+  { name: 'githubRepositories', model: () => GithubRepository, key: 'userId' },
+  { name: 'githubConnections',  model: () => GithubConnection, key: 'userId' },
+  { name: 'networkProfile',     model: () => NetworkProfile,   key: 'userId' },
+  { name: 'notifications',      model: () => Notification,     key: 'userId' },
+  { name: 'supportTickets',     model: () => SupportTicket,    key: 'userId' },
+];
+
+const EXPORT_DOC_CAP = 2000; // per collection, keeps the JSON bounded
+
+export async function exportUserData({ userId, email }) {
+  if (!URI) return { ok: true, db: 'off', collections: {} };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, error: 'user_not_found', collections: {} };
+    const collections = {};
+    for (const src of EXPORT_SOURCES) {
+      try {
+        const Model = src.model();
+        const q = src.key === '_id' ? { _id: uid } : { [src.key]: uid };
+        const docs = await Model.find(q).limit(EXPORT_DOC_CAP).lean();
+        collections[src.name] = docs.map((d) => { const { __v, ...rest } = d; return rest; });
+      } catch (err) {
+        collections[src.name] = [];
+        console.error(`[db] export source ${src.name} failed:`, err.message);
+      }
+    }
+    return {
+      ok: true,
+      exportedAt: new Date().toISOString(),
+      format: 'career-autopilot-export-v1',
+      note: 'Complete server-side copy of your account data. Collections iterate the same list the deletion cascade uses.',
+      collections,
+    };
+  } catch (err) { console.error('[db] exportUserData failed:', err.message); return { ok: false, error: 'export_failed', collections: {} }; }
+}
+
+export async function softDeleteAccount({ userId, email }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'not_found' };
+    const scheduledAt = new Date();
+    const purgeAt = new Date(scheduledAt.getTime() + DELETE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+    await User.updateOne({ _id: uid }, { $set: { deletionScheduledAt: scheduledAt, isActive: false } });
+    return {
+      ok: true,
+      scheduled: true,
+      graceDays: DELETE_GRACE_DAYS,
+      purgeAt: purgeAt.toISOString(),
+      message: `Account deletion scheduled. All server-side data will be permanently removed after a ${DELETE_GRACE_DAYS}-day grace window. Signing back in before then cancels it.`,
+    };
+  } catch (err) { console.error('[db] softDeleteAccount failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Cascade purge of accounts whose grace window has expired. Runs
+   opportunistically (piggybacked on DELETE /api/account) so no cron is
+   required; safe to call from a scheduler too. */
+export async function purgeExpiredDeletions({ limit = 5 } = {}) {
+  if (!URI) return { ok: false, reason: 'db_disabled', purged: 0 };
+  try {
+    await connectDB();
+    const cutoff = new Date(Date.now() - DELETE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+    const victims = await User.find({ deletionScheduledAt: { $ne: null, $lte: cutoff } })
+      .select('_id email').limit(Math.max(1, Number(limit) || 5)).lean();
+    let purged = 0;
+    for (const v of victims) {
+      for (const src of EXPORT_SOURCES) {
+        if (src.key === '_id') continue; // the User doc goes last
+        try { await src.model().deleteMany({ [src.key]: v._id }); }
+        catch (err) { console.error(`[db] cascade ${src.name} failed:`, err.message); }
+      }
+      /* Tenancy leftovers EXPORT_SOURCES can't express: roster rows are keyed
+         by email (they may predate the account), and college tasks reference
+         the user inside arrays. Both are personal data — both go. */
+      try { if (v.email) await RosterEntry.deleteMany({ email: String(v.email).toLowerCase() }); }
+      catch (err) { console.error('[db] cascade rosterEntries failed:', err.message); }
+      try {
+        await CollegeTask.updateMany(
+          { 'assignments.userId': v._id },
+          { $pull: { assignments: { userId: v._id } } }
+        );
+        await CollegeTask.deleteMany({ assignments: { $size: 0 } });
+      } catch (err) { console.error('[db] cascade collegeTasks failed:', err.message); }
+      await User.deleteOne({ _id: v._id });
+      purged += 1;
+      console.warn(`[db] purged account ${String(v._id)} after ${DELETE_GRACE_DAYS}-day grace window`);
+    }
+    return { ok: true, purged };
+  } catch (err) { console.error('[db] purgeExpiredDeletions failed:', err.message); return { ok: false, reason: 'db_error', purged: 0 }; }
+}
+
+/* ============================================================
+   MULTI-COLLEGE TENANCY  (registry, membership, roster, comms)
+   ------------------------------------------------------------
+   The College registry replaces "students type a college name" with
+   server-verified membership. Binding paths, in trust order:
+     roster  — TPO-imported email list (strongest)
+     domain  — verified college email domain (e.g. @coep.ac.in)
+     code    — student enters the college join code (pending unless
+               settings.autoApproveCodeJoins)
+     admin   — platform-admin verification flow (TPOs themselves)
+     legacy  — pre-tenancy typed college names, matched via aliases
+   All college dashboards scope on User.collegeId (indexed), with a
+   bounded legacy scan for alias matches so existing pilot data keeps
+   working while it migrates.
+   ============================================================ */
+import {
+  slugCollegeKey, generateJoinCode, normalizeJoinCode,
+  domainMatches, sanitizeDomains, emailDomain as emailDomainOf,
+} from './server/utils/collegeOnboarding.js';
+
+const collegeSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, unique: true, index: true },      // canonical scope id
+    name: { type: String, required: true, trim: true },
+    status: { type: String, default: 'pending', enum: ['pending', 'active', 'suspended'], index: true },
+    domains: { type: [String], default: [] },                              // verified email domains
+    aliases: { type: [String], default: [] },                              // legacy collegeKey slugs
+    joinCode: { type: String, default: '', index: true },
+    settings: {
+      autoApproveDomainJoins: { type: Boolean, default: true },
+      autoApproveCodeJoins: { type: Boolean, default: false },
+    },
+    city: { type: String, default: '' },
+    createdByUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    createdByEmail: { type: String, default: '' },
+    approvedAt: { type: Date, default: null },
+    approvedBy: { type: String, default: '' },
+    demo: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+export const College = mongoose.models.College || mongoose.model('College', collegeSchema);
+
+const rosterEntrySchema = new mongoose.Schema(
+  {
+    collegeId: { type: String, required: true, index: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
+    name: { type: String, default: '' },
+    branch: { type: String, default: '' },
+    batch: { type: String, default: '' },
+    rollNo: { type: String, default: '' },
+    status: { type: String, default: 'invited', enum: ['invited', 'joined'] },
+    joinedUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    importedBy: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+rosterEntrySchema.index({ collegeId: 1, email: 1 }, { unique: true });
+rosterEntrySchema.index({ email: 1 });
+export const RosterEntry = mongoose.models.RosterEntry || mongoose.model('RosterEntry', rosterEntrySchema);
+
+const notificationSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    collegeId: { type: String, default: '', index: true },
+    type: { type: String, default: 'nudge', enum: ['nudge', 'task', 'system', 'membership'] },
+    title: { type: String, default: '' },
+    body: { type: String, default: '' },
+    actionView: { type: String, default: '' },                             // frontend screen id
+    createdByEmail: { type: String, default: '' },
+    readAt: { type: Date, default: null, index: true },
+    emailStatus: { type: String, default: 'not_configured', enum: ['not_configured', 'sent', 'failed', 'skipped'] },
+  },
+  { timestamps: true }
+);
+export const Notification = mongoose.models.Notification || mongoose.model('Notification', notificationSchema);
+
+const collegeTaskSchema = new mongoose.Schema(
+  {
+    collegeId: { type: String, required: true, index: true },
+    title: { type: String, required: true },
+    description: { type: String, default: '' },
+    dueAt: { type: Date, default: null },
+    createdByEmail: { type: String, default: '' },
+    assignments: [{
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+      status: { type: String, default: 'open', enum: ['open', 'done'] },
+      doneAt: { type: Date, default: null },
+    }],
+  },
+  { timestamps: true }
+);
+collegeTaskSchema.index({ 'assignments.userId': 1 });
+export const CollegeTask = mongoose.models.CollegeTask || mongoose.model('CollegeTask', collegeTaskSchema);
+
+/* ---------------- registry ---------------- */
+
+const publicCollege = (c, { includeCode = false } = {}) => c && ({
+  key: c.key, name: c.name, status: c.status, city: c.city || '',
+  domains: c.domains || [], aliases: c.aliases || [],
+  settings: c.settings || {}, demo: !!c.demo,
+  createdAt: c.createdAt || null, approvedAt: c.approvedAt || null,
+  createdByEmail: c.createdByEmail || '',
+  memberCounts: c.memberCounts, // attached by callers that computed it
+  ...(includeCode ? { joinCode: c.joinCode || '' } : {}),
+});
+
+export async function registerCollege({ name, city = '', domains = [], requestedByUserId, requestedByEmail }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  const cleanName = String(name || '').trim().slice(0, 160);
+  if (cleanName.length < 3) return { ok: false, reason: 'invalid_name' };
+  try {
+    await connectDB();
+    const key = slugCollegeKey(cleanName);
+    if (!key) return { ok: false, reason: 'invalid_name' };
+    const existing = await College.findOne({ key }).lean();
+    if (existing) return { ok: false, reason: 'already_exists', college: publicCollege(existing) };
+    const { domains: cleanDomains, rejected } = sanitizeDomains(domains);
+    const doc = await College.create({
+      key, name: cleanName, city: String(city || '').slice(0, 80),
+      status: 'pending', domains: cleanDomains,
+      aliases: ['cn_' + key], // pre-tenancy typed-name slug for this exact name
+      createdByUserId: requestedByUserId || null,
+      createdByEmail: String(requestedByEmail || '').toLowerCase(),
+    });
+    return { ok: true, college: publicCollege(doc), rejectedDomains: rejected };
+  } catch (err) { console.error('[db] registerCollege failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function getCollege({ key, joinCode } = {}) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const q = key ? { key: String(key) } : joinCode ? { joinCode: normalizeJoinCode(joinCode) } : null;
+    if (!q) return null;
+    return await College.findOne(q).lean();
+  } catch { return null; }
+}
+
+export async function listColleges({ status } = {}) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const q = status ? { status } : {};
+    const docs = await College.find(q).sort({ createdAt: -1 }).limit(500).lean();
+    const out = [];
+    for (const c of docs) {
+      const members = await User.countDocuments({ collegeId: c.key, isActive: { $ne: false } });
+      out.push({ ...publicCollege(c, { includeCode: true }), memberCounts: { bound: members } });
+    }
+    return out;
+  } catch (err) { console.error('[db] listColleges failed:', err.message); return []; }
+}
+
+/* Approve a pending college: activates it, mints the join code, binds the
+   requesting TPO as verified college_admin, and migrates legacy typed-name
+   students whose profile.college slugs to one of the aliases. */
+export async function approveCollege({ key, aliases = [], approverEmail = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const college = await College.findOne({ key: String(key) });
+    if (!college) return { ok: false, reason: 'not_found' };
+    const extraAliases = (aliases || []).map((a) => String(a).trim()).filter(Boolean).slice(0, 20);
+    college.aliases = Array.from(new Set([...(college.aliases || []), ...extraAliases]));
+    college.status = 'active';
+    if (!college.joinCode) college.joinCode = generateJoinCode();
+    college.approvedAt = new Date();
+    college.approvedBy = String(approverEmail || '').toLowerCase();
+    await college.save();
+
+    // Bind the requesting TPO (verified college_admin) if they exist.
+    if (college.createdByUserId) {
+      await User.updateOne({ _id: college.createdByUserId }, {
+        $set: {
+          accountType: 'college_admin', roleVerified: true, verificationStatus: 'approved',
+          collegeId: college.key,
+          collegeMembership: { status: 'active', via: 'admin', at: new Date() },
+        },
+      });
+    }
+    const migrated = await migrateLegacyCollegeMembers({ college });
+    return { ok: true, college: publicCollege(college.toObject(), { includeCode: true }), migrated };
+  } catch (err) { console.error('[db] approveCollege failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function updateCollegeSettings({ collegeId, domains, autoApproveDomainJoins, autoApproveCodeJoins, city }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const college = await College.findOne({ key: String(collegeId) });
+    if (!college) return { ok: false, reason: 'not_found' };
+    let rejectedDomains = [];
+    if (domains !== undefined) {
+      const clean = sanitizeDomains(domains);
+      college.domains = clean.domains;
+      rejectedDomains = clean.rejected;
+    }
+    if (autoApproveDomainJoins !== undefined) college.settings.autoApproveDomainJoins = !!autoApproveDomainJoins;
+    if (autoApproveCodeJoins !== undefined) college.settings.autoApproveCodeJoins = !!autoApproveCodeJoins;
+    if (city !== undefined) college.city = String(city || '').slice(0, 80);
+    await college.save();
+    return { ok: true, college: publicCollege(college.toObject(), { includeCode: true }), rejectedDomains };
+  } catch (err) { console.error('[db] updateCollegeSettings failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function rotateCollegeJoinCode({ collegeId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const joinCode = generateJoinCode();
+    const r = await College.updateOne({ key: String(collegeId) }, { $set: { joinCode } });
+    if (!r.matchedCount) return { ok: false, reason: 'not_found' };
+    return { ok: true, joinCode };
+  } catch (err) { console.error('[db] rotateCollegeJoinCode failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ---------------- membership ---------------- */
+
+async function bindUserToCollege(userDoc, college, { via, status }) {
+  userDoc.collegeId = college.key;
+  userDoc.collegeMembership = { status, via, at: new Date() };
+  await userDoc.save();
+  // Roster bookkeeping + profile prefill (only fills blanks; never overwrites).
+  const roster = await RosterEntry.findOne({ collegeId: college.key, email: userDoc.email });
+  if (roster) {
+    if (roster.status !== 'joined') { roster.status = 'joined'; roster.joinedUserId = userDoc._id; await roster.save(); }
+    if (roster.branch || roster.batch) {
+      const state = await UserState.findOne({ userId: userDoc._id }).select('profile').lean();
+      const profile = { ...(state?.profile || {}) };
+      let changed = false;
+      if (roster.branch && !profile.branch) { profile.branch = roster.branch; changed = true; }
+      if (roster.batch && !profile.batch) { profile.batch = roster.batch; changed = true; }
+      if (!profile.college) { profile.college = college.name; changed = true; }
+      if (changed) await UserState.updateOne({ userId: userDoc._id }, { $set: { profile } }, { upsert: true });
+    }
+  }
+}
+
+/* Roster first (strongest), then verified email domain. Called on sign-in
+   for unbound users; safe no-op when nothing matches. */
+export async function autoBindCollege(userDoc) {
+  if (!URI || !userDoc || userDoc.collegeId || !userDoc.email) return { bound: false };
+  const email = String(userDoc.email).toLowerCase();
+  const roster = await RosterEntry.findOne({ email }).sort({ createdAt: -1 });
+  if (roster) {
+    const college = await College.findOne({ key: roster.collegeId, status: 'active' });
+    if (college) {
+      await bindUserToCollege(userDoc, college, { via: 'roster', status: 'active' });
+      return { bound: true, via: 'roster', collegeId: college.key };
+    }
+  }
+  const domain = emailDomainOf(email);
+  if (domain) {
+    const colleges = await College.find({ status: 'active', domains: { $exists: true, $ne: [] } })
+      .select('key name domains settings').limit(500).lean();
+    const match = colleges.find((c) => domainMatches(email, c.domains));
+    if (match) {
+      const college = await College.findOne({ key: match.key });
+      const status = college.settings?.autoApproveDomainJoins !== false ? 'active' : 'pending';
+      await bindUserToCollege(userDoc, college, { via: 'domain', status });
+      return { bound: true, via: 'domain', collegeId: college.key, status };
+    }
+  }
+  return { bound: false };
+}
+
+export async function joinCollegeByCode({ userId, email, code }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const college = await College.findOne({ joinCode: normalizeJoinCode(code), status: 'active' });
+    if (!college) return { ok: false, reason: 'invalid_code' };
+    const userDoc = await User.findById(uid);
+    if (!userDoc) return { ok: false, reason: 'user_not_found' };
+    if (userDoc.collegeId && userDoc.collegeId !== college.key) {
+      return { ok: false, reason: 'already_member', collegeId: userDoc.collegeId };
+    }
+    // Roster/domain evidence upgrades a code join straight to active.
+    const roster = await RosterEntry.findOne({ collegeId: college.key, email: userDoc.email }).lean();
+    const domainOk = domainMatches(userDoc.email, college.domains);
+    const status = roster || domainOk || college.settings?.autoApproveCodeJoins ? 'active' : 'pending';
+    const via = roster ? 'roster' : domainOk ? 'domain' : 'code';
+    await bindUserToCollege(userDoc, college, { via, status });
+    return { ok: true, college: { key: college.key, name: college.name }, membership: { status, via } };
+  } catch (err) { console.error('[db] joinCollegeByCode failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function leaveCollege({ userId, email }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    await User.updateOne({ _id: uid }, { $set: { collegeId: '', collegeMembership: { status: '', via: '', at: null } } });
+    return { ok: true };
+  } catch (err) { console.error('[db] leaveCollege failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function getMyCollege({ userId, email }) {
+  if (!URI) return { ok: true, db: false, college: null, membership: null };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: true, college: null, membership: null };
+    const u = await User.findById(uid).select('email collegeId collegeMembership').lean();
+    if (!u) return { ok: true, college: null, membership: null };
+    if (!u.collegeId) {
+      // Surface a domain suggestion so the UI can offer one-tap joining.
+      const colleges = await College.find({ status: 'active', domains: { $exists: true, $ne: [] } })
+        .select('key name domains').limit(500).lean();
+      const match = colleges.find((c) => domainMatches(u.email, c.domains));
+      return { ok: true, college: null, membership: null, domainSuggestion: match ? { key: match.key, name: match.name } : null };
+    }
+    const college = await College.findOne({ key: u.collegeId }).select('key name status demo').lean();
+    return {
+      ok: true,
+      college: college ? { key: college.key, name: college.name, status: college.status, demo: !!college.demo } : { key: u.collegeId, name: u.collegeId },
+      membership: u.collegeMembership && u.collegeMembership.status ? u.collegeMembership : { status: 'active', via: 'admin', at: null },
+    };
+  } catch (err) { console.error('[db] getMyCollege failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function listCollegeMembers({ collegeId, status = '' }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const q = { collegeId: String(collegeId), isActive: { $ne: false } };
+    if (status) q['collegeMembership.status'] = status;
+    const docs = await User.find(q)
+      .select('name email accountType collegeMembership createdAt lastLoginAt')
+      .sort({ 'collegeMembership.at': -1 }).limit(2000).lean();
+    return docs.map((d) => ({
+      id: String(d._id), name: d.name || '', email: d.email || '',
+      accountType: d.accountType || 'student',
+      membership: d.collegeMembership && d.collegeMembership.status ? d.collegeMembership : { status: 'active', via: 'admin', at: null },
+      lastLoginAt: d.lastLoginAt || null, createdAt: d.createdAt || null,
+    }));
+  } catch (err) { console.error('[db] listCollegeMembers failed:', err.message); return []; }
+}
+
+export async function setMemberStatus({ collegeId, memberId, action }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const u = await User.findOne({ _id: memberId, collegeId: String(collegeId) });
+    if (!u) return { ok: false, reason: 'not_found_or_out_of_scope' };
+    if (action === 'approve') {
+      u.collegeMembership = { status: 'active', via: u.collegeMembership?.via || 'code', at: new Date() };
+      await u.save();
+      return { ok: true, membership: u.collegeMembership };
+    }
+    if (action === 'remove') {
+      u.collegeId = '';
+      u.collegeMembership = { status: '', via: '', at: null };
+      await u.save();
+      return { ok: true, removed: true };
+    }
+    return { ok: false, reason: 'invalid_action' };
+  } catch (err) { console.error('[db] setMemberStatus failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Legacy migration: users with no collegeId whose typed profile.college slugs
+   to one of the college's aliases are bound as active/legacy members. */
+export async function migrateLegacyCollegeMembers({ college }) {
+  if (!URI || !college) return 0;
+  const aliasSet = new Set([college.key, ...(college.aliases || [])]);
+  const unbound = await User.find({ $or: [{ collegeId: '' }, { collegeId: null }], isActive: { $ne: false } })
+    .select('_id email').limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
+  if (!unbound.length) return 0;
+  const states = await UserState.find({ userId: { $in: unbound.map((u) => u._id) } }).select('userId profile.college').lean();
+  const byUser = new Map(states.map((s) => [String(s.userId), s.profile?.college || '']));
+  let migrated = 0;
+  for (const u of unbound) {
+    const typed = byUser.get(String(u._id));
+    if (!typed) continue;
+    if (!aliasSet.has(collegeKey({ college: typed }))) continue;
+    await User.updateOne({ _id: u._id }, {
+      $set: { collegeId: college.key, collegeMembership: { status: 'active', via: 'legacy', at: new Date() } },
+    });
+    migrated += 1;
+  }
+  return migrated;
+}
+
+/* ---------------- roster ---------------- */
+
+export async function importRoster({ collegeId, rows = [], importedBy = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const scope = String(collegeId);
+    const college = await College.findOne({ key: scope });
+    let imported = 0; let updated = 0; let boundExisting = 0;
+    for (const r of rows) {
+      const email = String(r.email || '').toLowerCase();
+      if (!email) continue;
+      const res = await RosterEntry.updateOne(
+        { collegeId: scope, email },
+        {
+          $set: { name: r.name || '', branch: r.branch || '', batch: r.batch || '', rollNo: r.rollNo || '', importedBy: String(importedBy || '').toLowerCase() },
+          $setOnInsert: { collegeId: scope, email, status: 'invited' },
+        },
+        { upsert: true }
+      );
+      if (res.upsertedCount) imported += 1; else updated += 1;
+      // Bind an already-signed-up user immediately (roster = strongest proof).
+      const existing = await User.findOne({ email, $or: [{ collegeId: '' }, { collegeId: null }, { collegeId: scope }] });
+      if (existing && college && (!existing.collegeId || existing.collegeMembership?.status !== 'active')) {
+        await bindUserToCollege(existing, college, { via: 'roster', status: 'active' });
+        boundExisting += 1;
+      }
+    }
+    return { ok: true, imported, updated, boundExisting };
+  } catch (err) { console.error('[db] importRoster failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function listRoster({ collegeId }) {
+  if (!URI) return { rows: [], counts: { invited: 0, joined: 0 } };
+  try {
+    await connectDB();
+    const rows = await RosterEntry.find({ collegeId: String(collegeId) })
+      .select('email name branch batch rollNo status createdAt').sort({ createdAt: -1 }).limit(5000).lean();
+    const counts = { invited: 0, joined: 0 };
+    for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+    return { rows: rows.map((r) => ({ ...r, id: String(r._id), _id: undefined })), counts };
+  } catch (err) { console.error('[db] listRoster failed:', err.message); return { rows: [], counts: { invited: 0, joined: 0 } }; }
+}
+
+/* ---------------- notifications + tasks ---------------- */
+
+export async function createNotifications({ collegeId = '', userIds = [], type = 'nudge', title = '', body = '', actionView = '', createdByEmail = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled', created: 0 };
+  try {
+    await connectDB();
+    const docs = userIds.slice(0, 500).map((uid) => ({
+      userId: uid, collegeId: String(collegeId || ''), type,
+      title: String(title || '').slice(0, 200), body: String(body || '').slice(0, 2000),
+      actionView: String(actionView || '').slice(0, 40),
+      createdByEmail: String(createdByEmail || '').toLowerCase(),
+    }));
+    const created = await Notification.insertMany(docs, { ordered: false });
+    return { ok: true, created: created.length, ids: created.map((d) => String(d._id)) };
+  } catch (err) { console.error('[db] createNotifications failed:', err.message); return { ok: false, reason: 'db_error', created: 0 }; }
+}
+
+export async function setNotificationEmailStatus({ ids = [], status }) {
+  if (!URI || !ids.length) return { ok: false };
+  try {
+    await connectDB();
+    await Notification.updateMany({ _id: { $in: ids } }, { $set: { emailStatus: status } });
+    return { ok: true };
+  } catch { return { ok: false }; }
+}
+
+export async function listMyNotifications({ userId, email, unreadOnly = false, limit = 30 }) {
+  if (!URI) return { notifications: [], unread: 0 };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { notifications: [], unread: 0 };
+    const q = { userId: uid };
+    if (unreadOnly) q.readAt = null;
+    const [docs, unread] = await Promise.all([
+      Notification.find(q).sort({ createdAt: -1 }).limit(Math.min(100, limit)).lean(),
+      Notification.countDocuments({ userId: uid, readAt: null }),
+    ]);
+    return {
+      notifications: docs.map((d) => ({
+        id: String(d._id), type: d.type, title: d.title, body: d.body,
+        actionView: d.actionView || '', readAt: d.readAt || null, createdAt: d.createdAt,
+      })),
+      unread,
+    };
+  } catch (err) { console.error('[db] listMyNotifications failed:', err.message); return { notifications: [], unread: 0 }; }
+}
+
+export async function markNotificationsRead({ userId, email, ids = null }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const q = { userId: uid, readAt: null };
+    if (Array.isArray(ids) && ids.length) q._id = { $in: ids };
+    const r = await Notification.updateMany(q, { $set: { readAt: new Date() } });
+    return { ok: true, marked: r.modifiedCount || 0 };
+  } catch (err) { console.error('[db] markNotificationsRead failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function createCollegeTask({ collegeId, title, description = '', dueAt = null, studentIds = [], createdByEmail = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const cleanTitle = String(title || '').trim().slice(0, 200);
+    if (!cleanTitle) return { ok: false, reason: 'invalid_title' };
+    const assignments = studentIds.slice(0, 500).map((uid) => ({ userId: uid, status: 'open' }));
+    const doc = await CollegeTask.create({
+      collegeId: String(collegeId), title: cleanTitle,
+      description: String(description || '').slice(0, 2000),
+      dueAt: dueAt ? new Date(dueAt) : null,
+      createdByEmail: String(createdByEmail || '').toLowerCase(),
+      assignments,
+    });
+    return { ok: true, taskId: String(doc._id), assigned: assignments.length };
+  } catch (err) { console.error('[db] createCollegeTask failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function listCollegeTasks({ collegeId }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const docs = await CollegeTask.find({ collegeId: String(collegeId) }).sort({ createdAt: -1 }).limit(200).lean();
+    return docs.map((d) => ({
+      id: String(d._id), title: d.title, description: d.description, dueAt: d.dueAt,
+      createdAt: d.createdAt,
+      assigned: (d.assignments || []).length,
+      done: (d.assignments || []).filter((a) => a.status === 'done').length,
+    }));
+  } catch (err) { console.error('[db] listCollegeTasks failed:', err.message); return []; }
+}
+
+export async function listMyTasks({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await CollegeTask.find({ 'assignments.userId': uid }).sort({ createdAt: -1 }).limit(100).lean();
+    return docs.map((d) => {
+      const mine = (d.assignments || []).find((a) => String(a.userId) === String(uid)) || {};
+      return {
+        id: String(d._id), title: d.title, description: d.description,
+        dueAt: d.dueAt, createdAt: d.createdAt,
+        status: mine.status || 'open', doneAt: mine.doneAt || null,
+      };
+    });
+  } catch (err) { console.error('[db] listMyTasks failed:', err.message); return []; }
+}
+
+export async function completeMyTask({ userId, email, taskId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await CollegeTask.updateOne(
+      { _id: taskId, 'assignments.userId': uid },
+      { $set: { 'assignments.$.status': 'done', 'assignments.$.doneAt': new Date() } }
+    );
+    if (!r.matchedCount) return { ok: false, reason: 'not_found' };
+    return { ok: true };
+  } catch (err) { console.error('[db] completeMyTask failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ---------------- DPDP consent ---------------- */
+
+export const CONSENT_VERSION = '2026-07-dpdp-v1';
+
+export async function setUserConsent({ userId, email, version = CONSENT_VERSION, collegeVisibility = true }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const consent = { version: String(version), acceptedAt: new Date(), collegeVisibility: !!collegeVisibility };
+    await User.updateOne({ _id: uid }, { $set: { consent } });
+    return { ok: true, consent };
+  } catch (err) { console.error('[db] setUserConsent failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* ============================================================
+   DEMO COLLEGE SEED  (deterministic; safe to re-run)
+   ------------------------------------------------------------
+   Creates a fully-populated "Demo Institute of Technology" so every
+   demo shows a living command center: 120 students across all six
+   funnel stages, three branches, two batches, verified/pending/
+   rejected submissions, resume scores, 60 days of activity for the
+   engagement buckets and momentum series, a roster, two placement
+   drives and a verified TPO (tpo@demo-institute.test — usable with
+   dev login). Deterministic RNG: re-seeding produces the same world.
+   All demo docs are tagged (provider/emails end in .test, College.demo)
+   and `reset:true` wipes only those.
+   ============================================================ */
+
+export const DEMO_COLLEGE_KEY = 'demo-institute-of-technology';
+const DEMO_DOMAIN = 'demo-institute.test';
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function rng() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
+
+const DEMO_FIRST = ['Aarav', 'Ananya', 'Rohan', 'Priya', 'Vivaan', 'Isha', 'Aditya', 'Sneha', 'Kabir', 'Diya', 'Arjun', 'Meera', 'Dev', 'Kavya', 'Nikhil', 'Riya', 'Sahil', 'Tanvi', 'Yash', 'Pooja', 'Harsh', 'Nandini', 'Om', 'Shruti', 'Raghav', 'Aisha', 'Kunal', 'Divya', 'Manav', 'Sakshi'];
+const DEMO_LAST = ['Sharma', 'Patil', 'Deshmukh', 'Kulkarni', 'Verma', 'Iyer', 'Joshi', 'Reddy', 'Nair', 'Gupta', 'Singh', 'Mehta', 'Chavan', 'Pawar', 'Agarwal', 'Bhosale'];
+const DEMO_BRANCHES = ['CSE', 'IT', 'ENTC'];
+const DEMO_BATCHES = ['2026', '2027'];
+const DEMO_SKILL_POOL = ['Python', 'Java', 'JavaScript', 'React', 'Node.js', 'SQL', 'MongoDB', 'AWS', 'Docker', 'Kubernetes', 'Git', 'Linux', 'C++', 'Machine Learning', 'Data Structures', 'REST APIs', 'Spring Boot', 'Flask'];
+const DEMO_PROJECTS = ['Campus Event Portal', 'Attendance Anomaly Detector', 'Mess Menu Optimizer', 'Placement Prep Tracker', 'Smart Parking Allocator', 'Lab Inventory System', 'Bus Route Predictor', 'Alumni Connect Graph', 'Exam Seating Planner', 'Hostel Complaint Triage'];
+
+export async function seedDemoCollege({ reset = false } = {}) {
+  if (!URI) return { ok: false, reason: 'db_disabled', message: 'Demo seeding needs MongoDB (set MONGODB_URI).' };
+  try {
+    await connectDB();
+    if (reset) await wipeDemoCollege();
+    const existing = await College.findOne({ key: DEMO_COLLEGE_KEY }).lean();
+    if (existing && !reset) {
+      const members = await User.countDocuments({ collegeId: DEMO_COLLEGE_KEY });
+      return { ok: true, alreadySeeded: true, collegeKey: DEMO_COLLEGE_KEY, students: members, joinCode: existing.joinCode, tpoEmail: `tpo@${DEMO_DOMAIN}` };
+    }
+
+    const rng = mulberry32(20260711);
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    const college = await College.create({
+      key: DEMO_COLLEGE_KEY, name: 'Demo Institute of Technology', city: 'Pune',
+      status: 'active', domains: [DEMO_DOMAIN], aliases: ['cn_' + DEMO_COLLEGE_KEY],
+      joinCode: 'DEMO2026', settings: { autoApproveDomainJoins: true, autoApproveCodeJoins: true },
+      approvedAt: new Date(), approvedBy: 'seed', demo: true, createdByEmail: `tpo@${DEMO_DOMAIN}`,
+    });
+
+    // Verified TPO — dev-login with this email drops straight into the command center.
+    await User.create({
+      email: `tpo@${DEMO_DOMAIN}`, name: 'Prof. S. Kulkarni (TPO)', provider: 'demo',
+      accountType: 'college_admin', roleVerified: true, verificationStatus: 'approved',
+      collegeId: DEMO_COLLEGE_KEY, collegeMembership: { status: 'active', via: 'admin', at: new Date() },
+      consent: { version: CONSENT_VERSION, acceptedAt: new Date(), collegeVisibility: true },
+      lastLoginAt: new Date(now - 1 * DAY), loginCount: 12,
+    });
+
+    const STUDENTS = 120;
+    let created = 0;
+    for (let i = 0; i < STUDENTS; i++) {
+      const first = pick(rng, DEMO_FIRST);
+      const last = pick(rng, DEMO_LAST);
+      const name = `${first} ${last}`;
+      const email = `${first}.${last}.${String(i + 1).padStart(3, '0')}@${DEMO_DOMAIN}`.toLowerCase();
+      const branch = pick(rng, DEMO_BRANCHES);
+      const batch = pick(rng, DEMO_BATCHES);
+
+      // Funnel stage distribution: registered 12%, profile 18%, building 22%,
+      // submitted 15%, verified 20%, recruiter-ready 13%.
+      const roll = rng();
+      const stage = roll < 0.12 ? 0 : roll < 0.30 ? 1 : roll < 0.52 ? 2 : roll < 0.67 ? 3 : roll < 0.87 ? 4 : 5;
+
+      // Engagement: recruiter-ready & verified lean active; registered leans dormant/never.
+      const engRoll = rng() + stage * 0.08;
+      const lastActiveDaysAgo = engRoll > 0.85 ? Math.floor(rng() * 6) + 1
+        : engRoll > 0.55 ? Math.floor(rng() * 22) + 8
+        : engRoll > 0.3 ? Math.floor(rng() * 120) + 35
+        : null; // never active
+
+      const user = await User.create({
+        email, name, provider: 'demo', accountType: 'student',
+        collegeId: DEMO_COLLEGE_KEY,
+        collegeMembership: { status: 'active', via: pick(rng, ['roster', 'roster', 'domain', 'code']), at: new Date(now - Math.floor(rng() * 50) * DAY) },
+        consent: { version: CONSENT_VERSION, acceptedAt: new Date(now - Math.floor(rng() * 50) * DAY), collegeVisibility: true },
+        createdAt: new Date(now - (60 + Math.floor(rng() * 30)) * DAY),
+        lastLoginAt: lastActiveDaysAgo != null ? new Date(now - lastActiveDaysAgo * DAY) : null,
+        loginCount: lastActiveDaysAgo != null ? Math.floor(rng() * 40) + 1 : 0,
+      });
+
+      const skillCount = stage === 0 ? Math.floor(rng() * 2) : 2 + Math.floor(rng() * 6);
+      const skills = Array.from(new Set(Array.from({ length: skillCount }, () => pick(rng, DEMO_SKILL_POOL))));
+      const resumeScore = stage >= 2 ? 38 + Math.floor(rng() * 20) + stage * 8 : null;
+
+      await UserState.create({
+        userId: user._id, email,
+        profile: stage >= 1
+          ? { college: 'Demo Institute of Technology', branch, batch, skills, targetRole: pick(rng, ['SDE', 'Data Engineer', 'DevOps Engineer', 'Backend Developer']) }
+          : { college: 'Demo Institute of Technology', skills },
+        resume: resumeScore != null ? { score: resumeScore } : {},
+      });
+
+      if (resumeScore != null) {
+        await ResumeAnalysis.create({
+          userId: user._id, email, score: resumeScore,
+          ats: Math.min(100, resumeScore + Math.floor(rng() * 12) - 4),
+          impact: Math.max(10, resumeScore - Math.floor(rng() * 14)),
+          clarity: Math.min(100, resumeScore + Math.floor(rng() * 10)),
+          targetRole: 'SDE', resumeHash: `demo-${i}`,
+          createdAt: new Date(now - Math.floor(rng() * 30) * DAY),
+        });
+      }
+
+      // Submissions by stage: building=1 pending-less draft, submitted=+pending,
+      // verified/recruiter-ready=verified (+ github/live proof at stage 5).
+      const mkSub = (status, withProof) => ProjectSubmission.create({
+        userId: user._id, email,
+        title: pick(rng, DEMO_PROJECTS),
+        verificationStatus: status,
+        claimedSkills: skills.slice(0, 3), verifiedSkills: status === 'verified' ? skills.slice(0, 3) : [],
+        technologies: skills.slice(0, 4),
+        githubUrl: withProof ? `https://github.com/demo/${DEMO_COLLEGE_KEY}-${i}` : '',
+        liveDemoUrl: withProof && rng() > 0.5 ? `https://demo-${i}.${DEMO_DOMAIN}` : '',
+        createdAt: new Date(now - Math.floor(20 + rng() * 40) * DAY),
+        updatedAt: new Date(now - Math.floor(rng() * 20) * DAY),
+      });
+      if (stage === 2) await mkSub(rng() > 0.5 ? 'rejected' : 'needs_review', false);
+      if (stage === 3) { await mkSub('pending', false); if (rng() > 0.6) await mkSub('needs_review', false); }
+      if (stage === 4) { await mkSub('verified', rng() > 0.7); if (rng() > 0.5) await mkSub('pending', false); }
+      if (stage === 5) { await mkSub('verified', true); if (rng() > 0.4) await mkSub('verified', rng() > 0.5); }
+
+      if (stage >= 4) {
+        for (const skill of skills.slice(0, 3)) {
+          await SkillXp.create({ userId: user._id, email, skillName: skill, verifiedXp: 40 + Math.floor(rng() * 160), pendingXp: Math.floor(rng() * 40) });
+        }
+      } else if (stage === 3) {
+        await SkillXp.create({ userId: user._id, email, skillName: skills[0] || 'Python', verifiedXp: 0, pendingXp: 30 + Math.floor(rng() * 60) });
+      }
+
+      // Activity trail (drives engagement buckets + weekly momentum).
+      if (lastActiveDaysAgo != null) {
+        const events = 1 + Math.floor(rng() * 4);
+        for (let e = 0; e < events; e++) {
+          const daysAgo = e === 0 ? lastActiveDaysAgo : lastActiveDaysAgo + Math.floor(rng() * 40);
+          await Activity.create({
+            userId: user._id, email,
+            text: pick(rng, ['Updated resume', 'Submitted project for verification', 'Completed skill quiz', 'Explored job matches', 'Refined project workspace']),
+            tone: 'info', createdAt: new Date(now - daysAgo * DAY),
+          });
+        }
+      }
+
+      await RosterEntry.create({
+        collegeId: DEMO_COLLEGE_KEY, email, name, branch, batch,
+        rollNo: `DIT${batch}${String(i + 1).padStart(3, '0')}`,
+        status: 'joined', joinedUserId: user._id, importedBy: `tpo@${DEMO_DOMAIN}`,
+      });
+      created += 1;
+    }
+
+    // A few invited-but-not-joined roster rows (shows the funnel's front door).
+    for (let i = 0; i < 15; i++) {
+      await RosterEntry.create({
+        collegeId: DEMO_COLLEGE_KEY,
+        email: `invited.${String(i + 1).padStart(2, '0')}@${DEMO_DOMAIN}`,
+        name: `${pick(rng, DEMO_FIRST)} ${pick(rng, DEMO_LAST)}`,
+        branch: pick(rng, DEMO_BRANCHES), batch: pick(rng, DEMO_BATCHES),
+        rollNo: `DIT-INV-${i + 1}`, status: 'invited', importedBy: `tpo@${DEMO_DOMAIN}`,
+      });
+    }
+
+    const GenericDoc = genericDocModel();
+    for (const d of [
+      { title: 'TCS Ninja Campus Drive', company: 'TCS', eligibility: { minReadiness: 60 }, status: 'open' },
+      { title: 'Infosys SP Off-Campus Pool', company: 'Infosys', eligibility: { minReadiness: 70, branch: 'CSE' }, status: 'open' },
+    ]) {
+      await GenericDoc.create({ kind: 'placement_drive', collegeId: DEMO_COLLEGE_KEY, data: { id: 'drv_demo_' + d.company.toLowerCase(), createdAt: new Date().toISOString(), ...d } });
+    }
+
+    return { ok: true, seeded: true, collegeKey: DEMO_COLLEGE_KEY, students: created, joinCode: college.joinCode, tpoEmail: `tpo@${DEMO_DOMAIN}` };
+  } catch (err) {
+    console.error('[db] seedDemoCollege failed:', err.message);
+    return { ok: false, reason: 'db_error', error: err.message };
+  }
+}
+
+export async function wipeDemoCollege() {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  await connectDB();
+  const demoUsers = await User.find({ email: new RegExp(`@${DEMO_DOMAIN.replace('.', '\\.')}$`) }).select('_id').lean();
+  const ids = demoUsers.map((u) => u._id);
+  if (ids.length) {
+    for (const src of EXPORT_SOURCES) {
+      if (src.key === '_id') continue;
+      try { await src.model().deleteMany({ [src.key]: { $in: ids } }); } catch { /* best-effort */ }
+    }
+    await Notification.deleteMany({ userId: { $in: ids } }).catch(() => {});
+    await User.deleteMany({ _id: { $in: ids } });
+  }
+  await RosterEntry.deleteMany({ collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
+  await CollegeTask.deleteMany({ collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
+  await College.deleteMany({ key: DEMO_COLLEGE_KEY }).catch(() => {});
+  const GenericDoc = genericDocModel();
+  await GenericDoc.deleteMany({ kind: 'placement_drive', collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
+  return { ok: true, wiped: ids.length };
 }

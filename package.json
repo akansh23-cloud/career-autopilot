@@ -1,7 +1,7 @@
 {
   "name": "career-autopilot",
   "version": "4.0.0",
-  "description": "AI job-application assistant — premium React frontend (Vite) served by the existing Express backend. Jobs are real & verified-only; AI returns structured resume JSON only. Same-origin deploy keeps Google OAuth + session cookies intact.",
+  "description": "AI job-application assistant \u2014 premium React frontend (Vite) served by the existing Express backend. Jobs are real & verified-only; AI returns structured resume JSON only. Same-origin deploy keeps Google OAuth + session cookies intact.",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -17,8 +17,10 @@
     "test": "NODE_ENV=test ALLOW_DEV_LOGIN=1 JOB_FETCH_TIMEOUT=1500 JOB_VERIFY_TIMEOUT=1500 JOB_SEARCH_BUDGET=2500 node --test --test-concurrency=1 test/*.test.js",
     "test:e2e": "playwright test",
     "lint": "eslint server.js db.js access.js paymentsStore.js support-kb.js \"web/src/**/*.{js,jsx}\"",
-    "typecheck": "echo \"No TypeScript in this project — skipping typecheck.\"",
-    "audit:ci": "npm audit --omit=dev --audit-level=high"
+    "typecheck": "echo \"No TypeScript in this project \u2014 skipping typecheck.\"",
+    "audit:ci": "npm audit --omit=dev --audit-level=high",
+    "package": "node scripts/package.mjs",
+    "preflight": "node scripts/preflight.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -31,6 +33,7 @@
     "jspdf": "^4.2.1",
     "mammoth": "^1.12.0",
     "mongoose": "^8.24.0",
+    "nodemailer": "^9.0.3",
     "pdfjs-dist": "^4.7.76",
     "zod": "^3.24.1"
   },

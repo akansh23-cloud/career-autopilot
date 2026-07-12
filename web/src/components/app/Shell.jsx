@@ -10,6 +10,7 @@ import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useSupport } from '../../support/SupportProvider.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { openPricing } from '../PricingModal.jsx';
+import NotificationsBell from './NotificationsBell.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
 import { getProfile, PROFILE_EVENT } from '../../lib/userProfile.js';
 import { getEffectiveRole, canSeeScreen } from '../../lib/roleCapabilities.js';
@@ -345,6 +346,7 @@ export default function Shell({ active, onPick, title, children }) {
           </nav>
 
           <div className="ml-3 flex shrink-0 items-center gap-2">
+            <NotificationsBell onPick={pick} />
             <PlanChip plan={plan} />
             <Dropdown
               trigger={

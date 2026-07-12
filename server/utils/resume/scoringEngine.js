@@ -21,7 +21,7 @@ import { detectSections, sliceSections, detectExperienceLevel } from './sectionD
 import { extractContact } from './contactExtractor.js';
 import { presentSkills, countPresent, skillEvidence, skillPresent } from './skillMatcher.js';
 
-export const SCORING_VERSION = 'resume-score-v2';
+export const SCORING_VERSION = 'resume-score-v3'; // v3: adds deterministic qualityChecks (cache-invalidating)
 
 export const WEIGHTS = {
   atsParseability: 15,
@@ -248,8 +248,11 @@ export function scoreResume({ resumeText = '', targetRole = '' } = {}) {
     experienceText: sections.experienceProjects, skillsText: sections.skills, fullText: norm,
   });
 
+  const qualityChecks = buildQualityChecks({ raw, norm, keywords, antiStuffing });
+
   return {
     score,
+    qualityChecks,
     ats: clamp(atsPct, 0, 100),
     impact: clamp(impactPct, 0, 100),
     clarity: clamp(clarityPct, 0, 100),
@@ -266,4 +269,97 @@ export function scoreResume({ resumeText = '', targetRole = '' } = {}) {
   };
 }
 
-export default { SCORING_VERSION, WEIGHTS, scoreResume };
+/* ============================================================
+   QUALITY CHECKS  (deterministic; added in resume-score-v3)
+   ------------------------------------------------------------
+   Named, human-readable findings the score alone can't convey. Each
+   check: { type, severity: 'high'|'medium'|'info', detail }. Identical
+   input always produces identical checks. A strong resume produces an
+   empty (or info-only) list — checks exist to point at fixes, never to
+   pad the report.
+   ============================================================ */
+
+const WEAK_OPENERS = [
+  'responsible for', 'worked on', 'helped', 'involved in', 'assisted',
+  'participated in', 'tasked with', 'duties included', 'was part of',
+];
+
+function bulletLinesOf(raw) {
+  return String(raw || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^[•\-*–▪]\s+/.test(l))
+    .map((l) => l.replace(/^[•\-*–▪]\s+/, ''));
+}
+
+export function buildQualityChecks({ raw = '', norm = '', keywords = {}, antiStuffing = {} } = {}) {
+  const checks = [];
+  const bullets = bulletLinesOf(raw);
+
+  /* ---- weak bullet openers ---- */
+  const weak = bullets.filter((b) => {
+    const l = b.toLowerCase();
+    return WEAK_OPENERS.some((o) => l.startsWith(o));
+  });
+  if (weak.length) {
+    checks.push({
+      type: 'weak_bullets',
+      severity: weak.length >= 3 ? 'high' : 'medium',
+      detail: `${weak.length} bullet${weak.length > 1 ? 's' : ''} open with passive phrasing (e.g. "${weak[0].toLowerCase().slice(0, 80)}"). Lead with an action verb and the outcome instead.`,
+    });
+  }
+
+  /* ---- quantified impact ---- */
+  if (bullets.length >= 2) {
+    const withMetrics = bullets.filter((b) => /\d/.test(b));
+    if (withMetrics.length === 0) {
+      checks.push({
+        type: 'no_metrics',
+        severity: 'high',
+        detail: 'No bullet carries a number. Add scale, percentages, time or money (e.g. "cut runtime 40%", "processed 2TB daily") so claims are verifiable.',
+      });
+    } else if (withMetrics.length / bullets.length < 0.25) {
+      checks.push({
+        type: 'few_metrics',
+        severity: 'medium',
+        detail: `Only ${withMetrics.length} of ${bullets.length} bullets are quantified. Aim for a number in most experience bullets.`,
+      });
+    }
+  }
+
+  /* ---- required sections ---- */
+  const missing = [];
+  if (!/\bskills?\b/.test(norm)) missing.push('Skills');
+  if (!/\beducation\b/.test(norm)) missing.push('Education');
+  if (missing.length) {
+    checks.push({
+      type: 'missing_section',
+      severity: 'high',
+      detail: `Missing standard section${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}. ATS parsers and recruiters both look for these headings.`,
+    });
+  }
+
+  /* ---- keyword stuffing (skills claimed but never evidenced) ---- */
+  const evidencedRatio = Number(antiStuffing.evidencedRatio);
+  if (Number.isFinite(evidencedRatio) && evidencedRatio < 0.35 && (keywords.matched || []).length >= 6) {
+    checks.push({
+      type: 'keyword_stuffing',
+      severity: 'medium',
+      detail: `Only ${Math.round(evidencedRatio * 100)}% of listed skills appear in an experience or project bullet. Back each skill with a line that shows it in use, or drop it.`,
+    });
+  }
+
+  /* ---- length risk ---- */
+  const lines = String(raw || '').split(/\r?\n/).length;
+  if (raw.length > 14000 || lines > 180) {
+    checks.push({
+      type: 'length_risk',
+      severity: 'medium',
+      detail: `Resume is unusually long (${lines} lines). Recruiters skim — tighten to the strongest, most recent evidence.`,
+    });
+  }
+
+  return checks;
+}
+
+export default { SCORING_VERSION, WEIGHTS, scoreResume, buildQualityChecks };

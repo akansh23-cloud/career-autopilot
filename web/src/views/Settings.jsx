@@ -3,6 +3,7 @@ import { Save, Check, Linkedin, Plug, LogOut, User, Briefcase, AlertTriangle, Sh
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Field, Badge, Avatar, Spinner } from '../components/ui/kit.jsx';
 import { Profile, Auth } from '../lib/api.js';
+import MyCollegeCard from '../components/MyCollegeCard.jsx';
 import { ROLE_GROUPS } from '../lib/roles.js';
 import { getUserRole, getProfile, ROLE_LABELS } from '../lib/userProfile.js';
 import { getEffectiveRole } from '../lib/roleCapabilities.js';
@@ -86,6 +87,7 @@ export default function Settings() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
+          <MyCollegeCard />
           <SectionCard title="Account type" eyebrow="Persona">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-xl border border-aurora-violet/40 bg-aurora-violet/[0.08] px-3 py-1.5 text-sm font-semibold text-white">

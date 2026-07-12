@@ -26,8 +26,41 @@ const SYNONYMS = {
 
 const SOFTWARE = ['software', 'ml', 'ai', 'api', 'algorithm', 'pipeline', 'app', 'system'];
 
-export function priorArtPlan(idea = {}) {
-  const terms = keyTerms(idea);
+/* Best-available mechanism/domain text from a synthesis project package
+   (optional second argument). Keeps the engine dependency-free. */
+function packageContext(pkg) {
+  if (!pkg) return null;
+  const mech = String(pkg?.buildBrief?.technicalMechanism || pkg?.projectOsPayload?.technicalMechanism || '').slice(0, 600);
+  const domain = String(pkg?.classification?.domain || '');
+  const subdomain = String(pkg?.classification?.subdomain || '');
+  const title = String(pkg?.buildBrief?._meta?.title || pkg?.buildBrief?.title || '');
+  const query = String(pkg?.query || pkg?._meta?.query || '');
+  const es = pkg?.evidenceSummary || null;
+  const meta = es?._meta || {};
+  const communityOnly = !!meta.communityOnly || !!pkg?.sourceMix?.communityOnly;
+  const evidenceTotal = Number(meta.total ?? pkg?.sourcesUsed) || 0;
+  const lowConfidence = communityOnly || (meta.confidenceLevel ? meta.confidenceLevel === 'low' : (Number(pkg?.evidenceStrength) || 0) < 25);
+  return {
+    mech, domain, subdomain, title, query,
+    ipWeak: pkg?.classification?.ipAnalysisAppropriate === false,
+    communityOnly, evidenceTotal, lowConfidence,
+  };
+}
+
+export function priorArtPlan(idea = {}, { projectPackage = null } = {}) {
+  const pkgCtx = packageContext(projectPackage);
+  /* Fold package context into the term extraction so the plan reflects the
+     synthesized domain even when the raw idea is a bare title. */
+  const enriched = pkgCtx ? {
+    ...idea,
+    title: `${idea.title || ''} ${pkgCtx.title}`.trim(),
+    problem: `${idea.problem || ''} ${pkgCtx.query}`.trim(),
+    technicalMechanism: `${idea.technicalMechanism || ''} ${pkgCtx.mech}`.trim(),
+    domain: idea.domain || pkgCtx.domain,
+    tags: [...(idea.tags || []), pkgCtx.domain, pkgCtx.subdomain].filter(Boolean),
+  } : idea;
+  const terms = keyTerms(enriched);
+  idea = enriched;
   const phrase = terms.slice(0, 4).join(' ');
   const isSoftware = SOFTWARE.some((s) => lc(`${idea.technicalMechanism} ${idea.tags?.join(' ')} ${idea.proposedSolution}`).includes(s));
 
@@ -73,10 +106,13 @@ export function priorArtPlan(idea = {}) {
     classificationHints: classHints,
     similarCategories: [`${idea.domain || 'General'} ${terms[0] || 'tools'}`, `${terms[0] || ''} ${terms[1] || ''} platforms`.trim()],
     riskAreas: [
+      ...(pkgCtx && pkgCtx.ipWeak ? ['Domain classified as weak ground for IP (generic marketplace/workflow pattern) — a filing is unlikely to survive without a deeper technical core.'] : []),
+      ...(pkgCtx && (pkgCtx.lowConfidence || pkgCtx.evidenceTotal === 0) ? ['Evidence base is weak or community-only (or there is no source evidence yet) — treat prior-art distance with caution until a real search is recorded.'] : []),
       'Crowded space if the core idea is a common workflow without a unique mechanism.',
       'Business-method framing may face stricter examination — lead with the technical mechanism.',
     ],
     differentiationAngles: [
+      ...(pkgCtx && pkgCtx.mech ? [`Lead with the specific technical mechanism from the build brief: ${pkgCtx.mech.slice(0, 160)}.`] : []),
       'Emphasize the specific multi-source fusion + adaptive feedback combination.',
       'Highlight the measurable technical improvement over isolated tools.',
       'Stress any privacy-preserving / on-device / real-time aspect.',

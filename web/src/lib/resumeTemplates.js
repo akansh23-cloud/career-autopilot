@@ -593,8 +593,11 @@ export function buildCustomTemplate(spec = {}) {
   const a = normalizeTemplateSpec(spec);
   const atsSafe = !!spec.atsSafe;
 
-  let layout = a.columns === 2 ? 'twocol' : a.headerLayout === 'banner' ? 'darkheader' : 'single';
-  if (atsSafe) layout = a.headerLayout === 'banner' ? 'darkheader' : 'single';
+  /* The custom renderer NEVER rebuilds a two-column layout — that path
+     produced broken, unparseable exports. Uploads that look two-column are
+     rebuilt as single-column with the same colours, fonts and order. A dark
+     banner header is the only allowed visual variation. */
+  const layout = !atsSafe && a.headerLayout === 'banner' ? 'darkheader' : 'single';
 
   const sectionStyle = a.accentTitles
     ? (a.fontKind === 'serif' ? 'gold' : 'bar')
@@ -608,27 +611,37 @@ export function buildCustomTemplate(spec = {}) {
     rule: 'bar',
     nameSize: layout === 'darkheader' ? 26 : 24,
     sectionStyle,
-    skills: atsSafe ? 'inline' : (a.columns === 2 ? 'chips' : 'chips'),
+    skills: atsSafe ? 'inline' : 'chips',
     headerAlign: a.headerAlign,
     bullet,
     spacious: a.spacing === 'airy',
   };
   if (a.order && a.order.length) style.order = a.order;
   if (layout === 'darkheader') { style.headerBg = a.headerBg || '#111827'; style.headerText = '#ffffff'; }
-  if (layout === 'twocol') { style.sidebarBg = a.sidebarBg || a.accent || '#0f172a'; style.sidebarText = '#e2e8f0'; }
 
-  const ats = atsEstimate({ layout, atsSafe, analysisScore: a.atsScoreEstimate });
+  /* Registry-shaped metadata: labels and badges only — a template NEVER
+     carries a numeric score the UI could confuse with the resume score. */
+  const riskLevel = atsSafe ? 'low' : 'visual';
+  const badges = atsSafe
+    ? ['ATS-safe', 'Single-column', 'From your upload']
+    : ['Visual, not ATS-first', 'Single-column', 'From your upload'];
 
-  return {
-    id: 'custom',
+  const built = {
+    id: 'custom-upload',
     name: atsSafe ? `${a.name} (ATS-safe)` : a.name,
-    atsScore: ats.score, atsLabel: ats.label,
+    category: 'custom',
+    atsSafe,
+    layoutType: 'single-column',
+    riskLevel,
+    badges,
     pages: a.pages === 'multi' ? 'multi' : 'single',
     tone: 'violet', layout, style,
     fit: 'Based on your uploaded template',
     desc: a.note || 'Template-inspired layout built from your upload.',
     custom: true,
   };
+  built.atsLabel = atsEstimate(built).label;
+  return built;
 }
 
 /* Map both the rich analysis JSON and the legacy simple spec onto one shape. */
@@ -668,13 +681,15 @@ function normalizeTemplateSpec(spec = {}) {
   };
 }
 
-/* ATS estimate for the generated layout. Two-column/sidebar reduces parseability. */
-export function atsEstimate({ layout, atsSafe, analysisScore } = {}) {
-  let score = analysisScore && analysisScore > 0 ? Math.round(analysisScore) : 88;
-  if (!atsSafe && layout === 'twocol') score = Math.min(score, 62);
-  else if (!atsSafe && layout === 'darkheader') score = Math.min(score, 80);
-  if (atsSafe) score = Math.max(score, 90);
-  score = Math.max(30, Math.min(99, score));
-  const label = score >= 85 ? 'High' : score >= 65 ? 'Medium' : 'Low';
-  return { score, label };
+/* ATS estimate for a template: a LABEL, never a number. A fake numeric
+   template score reads like a resume score and misleads students — the only
+   real score comes from the backend scoring engine over actual content. */
+export function atsEstimate(tpl = {}) {
+  const atsSafe = !!tpl.atsSafe;
+  if (atsSafe) return { label: 'ATS-safe', note: 'Single-column, parser-friendly layout.' };
+  const layout = tpl.layout || (tpl.layoutType === 'single-column' ? 'single' : tpl.layoutType);
+  const note = layout === 'darkheader'
+    ? 'Dark banner headers can confuse older parsers — use the ATS-safe toggle when applying through portals.'
+    : 'Visual styling is preserved; switch on ATS-safe for portal submissions.';
+  return { label: 'Visual, not ATS-first', note };
 }

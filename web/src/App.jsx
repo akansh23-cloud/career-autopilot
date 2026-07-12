@@ -12,6 +12,8 @@ import SignInModal from './components/SignInModal.jsx';
 import Shell, { NAV } from './components/app/Shell.jsx';
 import { Spinner } from './components/ui/kit.jsx';
 import PricingModal from './components/PricingModal.jsx';
+import ConsentModal from './components/ConsentModal.jsx';
+import LegalView from './views/LegalView.jsx';
 import { hydrateResumeFromServer, setResumeStoreUser } from './lib/resumeStore.js';
 import { hydrateProjectsFromServer, setProjectStoreUser } from './lib/projectStore.js';
 import { setMissionUser } from './lib/missions.js';
@@ -130,6 +132,15 @@ function AccessFallback({ onHome }) {
   );
 }
 
+// Public legal pages: #/legal or #/legal/<terms|privacy|refunds|contact>.
+// Renders for signed-out visitors (payment reviewers, college admin offices)
+// and signed-in users alike — a truly public route, like #/profile/:id.
+function parseLegalHash() {
+  if (typeof window === 'undefined') return null;
+  const m = (window.location.hash || '').match(/^#\/legal(?:\/([a-z]+))?/);
+  return m ? (m[1] || 'terms') : null;
+}
+
 function parseProfileHash() {
   if (typeof window === 'undefined') return null;
   const m = (window.location.hash || '').match(/^#\/profile\/([^/?#]+)/);
@@ -155,13 +166,14 @@ export default function App() {
   const [, setProfileTick] = useState(0);
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [publicId, setPublicId] = useState(() => parseProfileHash());
+  const [legalSection, setLegalSection] = useState(() => parseLegalHash());
   const prevUserIdRef = useRef(null);
 
   // One-time cleanup of any pre-scoping legacy keys left by older builds.
   useEffect(() => { purgeLegacyUnscopedKeys(); }, []);
 
   useEffect(() => {
-    const f = () => setPublicId(parseProfileHash());
+    const f = () => { setPublicId(parseProfileHash()); setLegalSection(parseLegalHash()); };
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
   }, []);
@@ -224,6 +236,12 @@ export default function App() {
   const accessContextState = useAccountAccessContext(!!user && workspaceReady);
 
   if (loading || (user && !workspaceReady)) return <Splash />;
+
+  // Public legal pages render for everyone, before any auth gating.
+  if (legalSection) {
+    const back = () => { window.location.hash = ''; setLegalSection(null); };
+    return <LegalView section={legalSection} onBack={back} />;
+  }
 
   if (!user) {
     return (
@@ -297,6 +315,7 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
       <PricingModal />
+      <ConsentModal />
     </Shell>
   );
 }

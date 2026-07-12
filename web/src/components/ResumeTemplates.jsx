@@ -59,7 +59,7 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[13px] font-semibold leading-tight text-white">{tpl.name}</p>
-          <Badge tone={tpl.tone} className="shrink-0 text-[9px]">ATS {tpl.atsScore}</Badge>
+          <Badge tone={tpl.tone} className="shrink-0 text-[9px]">{tpl.atsSafe ? 'ATS-safe' : tpl.atsLabel || 'Visual'}</Badge>
         </div>
         <p className="text-[10.5px] leading-snug text-slate-500">{tpl.fit}</p>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -150,7 +150,7 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse })
     <Modal open={open} onClose={onClose} width="max-w-4xl" title={`Preview — ${tpl.name}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={tpl.tone}>ATS {tpl.atsScore} · {tpl.atsLabel}</Badge>
+          <Badge tone={tpl.tone}>{tpl.atsSafe ? 'ATS-safe' : tpl.atsLabel || 'Visual, not ATS-first'}</Badge>
           <Badge>{tpl.pages === 'multi' ? 'Multi-page' : 'Single-page'} layout</Badge>
         </div>
         <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">

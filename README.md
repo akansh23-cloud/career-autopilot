@@ -28,9 +28,31 @@ npm start
 ```
 
 ### Remaining risks (track before public launch)
-- **Session store** is in-memory (identity survives via the signed cookie, but OAuth *flow state* does not across instances). Back sessions with `connect-mongo` or move OAuth state to a signed cookie for multi-instance/serverless reliability.
-- **Live load test** (k6/Artillery + Playwright at 100/250/500 VUs) against staging with real MongoDB/AI/job/payment credentials is still recommended.
+- **Session store** is Mongo-backed automatically when `MONGODB_URI` is set (`sessionStore.js`), so sessions and OAuth flow state survive restarts and multiple instances. Only the DB-less dev mode falls back to in-memory sessions.
+- **Live load test** (k6/Artillery + Playwright at 100/250/500 VUs) against staging with real MongoDB/AI/job/payment credentials is still recommended before onboarding any college above ~500 students. The college observability endpoint is cached per college (60s TTL) to keep dashboards cheap.
 - **Heavy parser libs** (mammoth ~500 KB) are already dynamically imported; further route-level lazy-loading can shave first paint on slow mobile networks.
+
+---
+
+## Multi-college tenancy (how multiple colleges coexist safely)
+
+Career Autopilot is multi-tenant by college. The model, end to end:
+
+**The registry.** Every college is a `College` document: canonical `key`, `status` (`pending → active → suspended`), verified email `domains`, a rotatable 8-character `joinCode`, auto-approve settings, and legacy name `aliases`. Colleges register in-app (Settings → My College → "Register your college"), start `pending`, and go live only when a platform admin activates them (`/api/admin/colleges/:key/approve`) — activation also verifies the registrant as that college's `college_admin` (TPO) in one step.
+
+**How students bind (trust order, no self-declared names):**
+1. **Roster import** — the TPO uploads the placement-cell CSV (`email,name,branch,batch,rollno`); existing accounts link instantly, everyone else auto-links the moment they sign in with a listed email.
+2. **Verified email domains** — sign-ins from a listed domain (subdomains included) auto-bind; public providers (gmail.com etc.) are rejected as college domains so nobody can claim the internet.
+3. **Join code** — students enter the code from Settings; joins are auto-approved or held for TPO approval per college settings.
+Typing a college name into a profile no longer grants dashboard membership; a bounded legacy-alias scan keeps pre-tenancy pilot data visible while it migrates.
+
+**Sign-in handling with many colleges live:** one account, at most one college binding, resolved at login by `autoBindCollege` (roster match first, then domain match). TPO accounts are role-verified and pinned to their `collegeId`; every `/api/college/*` query filters on that scope server-side (`requireCollegeScope` + tenant filters in `db.js`), so College A can never read College B — enforced in data access, not just UI. The observability dashboard is cached per college (60s TTL, `?fresh=1` to bypass).
+
+**Consent (DPDP).** A blocking, versioned consent screen runs on first sign-in; college visibility is a separate explicit choice, and the placement-cell queries filter on it server-side. Students can export everything (`GET /api/account/export`), leave a college, or delete their account (7-day grace, full cascade). See `PRIVACY_POLICY.md` and `docs/DPDP_DATA_HANDLING.md` (the one-pager to hand colleges).
+
+**Comms.** Nudges and task assignments from the command center are real: in-app delivery is guaranteed (notifications bell), email is attempted when `SMTP_URL` is configured, and the API reports exactly what was delivered — never a fake success.
+
+**Demo.** `POST /api/admin/demo/seed` (or the "Seed demo college" button in Admin) creates *Demo Institute of Technology* — deterministic synthetic students across all funnel stages, join code `DEMO2026` — so sales demos never show an empty dashboard. `docs/GO_LIVE_RUNBOOK.md` has the full launch sequence.
 
 ---
 
