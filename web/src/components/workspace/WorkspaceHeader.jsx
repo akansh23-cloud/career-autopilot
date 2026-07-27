@@ -1,6 +1,8 @@
-// Guided Project Workspace — top header: progress, phase, design score, actions.
-import { Download, Eye, RefreshCw, Calculator, ShieldCheck, FileDown } from 'lucide-react';
-import { Button, Badge, Spinner } from '../ui/kit.jsx';
+// Guided Project Workspace — top header: progress, phase, and actions.
+// Beginner-first: the Starter Kit download is the hero; advanced plan
+// actions live in an overflow menu so the header isn't a wall of buttons.
+import { Download, Eye, RefreshCw, Calculator, ShieldCheck, FileDown, MoreHorizontal, Package } from 'lucide-react';
+import { Button, Badge, Spinner, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { progressOf, designScoreOf } from '../../lib/workspaceSelectors.js';
 
 export default function WorkspaceHeader({ plan, busy = {}, onPreviewPack, onDownloadPack, onRegenerate, onRecalculate, onVerify, onExport }) {
@@ -31,24 +33,22 @@ export default function WorkspaceHeader({ plan, busy = {}, onPreviewPack, onDown
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Hero: the guided starter kit — the thing a student actually needs. */}
+          <Button size="sm" onClick={onDownloadPack} disabled={busy.pack} title="A ready-to-run repo with a step-by-step guide, AI-tutor prompts, and a progress checker inside.">
+            {busy.pack ? <Spinner className="h-4 w-4" /> : <Package size={15} />} Download Starter Kit
+          </Button>
           <Button variant="ghost" size="sm" onClick={onPreviewPack} disabled={busy.pack}>
-            {busy.pack ? <Spinner className="h-4 w-4" /> : <Eye size={15} />} Preview Starter Pack
+            <Eye size={15} /> Preview
           </Button>
-          <Button size="sm" onClick={onDownloadPack} disabled={busy.pack}>
-            <Download size={15} /> Download Starter Pack
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onRegenerate} disabled={busy.regen} title="Rebuild the plan; your task progress is preserved.">
-            {busy.regen ? <Spinner className="h-4 w-4" /> : <RefreshCw size={15} />} Regenerate
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onRecalculate} disabled={busy.recalc}>
-            <Calculator size={15} /> Recalculate
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onVerify} disabled={busy.verify} title="Runs local checks only. GitHub/deployment verification coming next.">
-            {busy.verify ? <Spinner className="h-4 w-4" /> : <ShieldCheck size={15} />} Verify
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onExport}>
-            <FileDown size={15} /> Export plan
-          </Button>
+          {/* Everything power-usery folds away so beginners aren't overwhelmed. */}
+          <Dropdown align="right" trigger={
+            <Button variant="ghost" size="sm" title="More plan actions"><MoreHorizontal size={16} /></Button>
+          }>
+            <MenuItem icon={RefreshCw} onClick={onRegenerate} disabled={busy.regen}>Regenerate plan</MenuItem>
+            <MenuItem icon={Calculator} onClick={onRecalculate} disabled={busy.recalc}>Recalculate progress</MenuItem>
+            <MenuItem icon={ShieldCheck} onClick={onVerify} disabled={busy.verify}>Run verification</MenuItem>
+            <MenuItem icon={FileDown} onClick={onExport}>Export plan (JSON)</MenuItem>
+          </Dropdown>
         </div>
       </div>
     </div>

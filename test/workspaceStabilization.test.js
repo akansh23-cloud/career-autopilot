@@ -201,8 +201,10 @@ test('starter pack includes the required student-experience files and run comman
   }
   assert.ok(!rels.includes('.env'), 'no real .env in the pack');
   assert.ok(pack.setupCommands.some((c) => /npm install/.test(c)));
-  assert.ok(pack.setupCommands.some((c) => /npm test/.test(c)));
-  assert.ok(pack.warnings.some((w) => /starter skeleton, not a completed project/i.test(w)));
+  // The guided flow points at start-here first and the local checker instead of a bare npm test.
+  assert.ok(pack.setupCommands.some((c) => /guide\/00-start-here/.test(c)), 'setup points to the start-here guide');
+  assert.ok(pack.setupCommands.some((c) => /scripts\/check\.mjs/.test(c)), 'setup includes the local check command');
+  assert.ok(pack.warnings.some((w) => /starter skeleton/i.test(w)));
 });
 
 /* ---------- Fix 12: Done vs Verified stays enforced after this pass ---------- */

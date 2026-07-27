@@ -10,10 +10,12 @@
 import crypto from 'crypto';
 import { arr, str, obj, slug } from '../workspace/planUtils.js';
 import { generateForFile } from '../codegen/codegenEngine.js';
+import { planGuide, planChecks, guideEntryToMarkdown, guideFileName, promptFileName, startHereMarkdown } from '../workspace/guidePlanner.js';
+import { renderCheckRunner, renderDevcontainer } from './kitFiles.js';
 import { createZip, isSafeZipPath } from './zipWriter.js';
 
-const MAX_FILES = 80;
-const MAX_TOTAL_BYTES = 2 * 1024 * 1024; // 2MB of text is plenty for a skeleton
+const MAX_FILES = 140; // higher ceiling: the kit adds one guide + one prompt per task
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024; // 4MB — guides are text, still tiny
 
 const SECRET_PATTERNS = [/\.env$/i, /id_rsa/i, /\.pem$/i, /secret/i, /credential/i];
 
@@ -49,17 +51,47 @@ export function buildStarterPack(plan = {}) {
     files.push({ path: full, content: g.content, templateKey: g.templateKey });
   }
 
+  /* ---- Guided Build Kit: the layer that turns a skeleton into a
+     self-guided, learn-by-building journey. All deterministic, generated
+     from the same plan. A safe text-adder shared by every kit file. */
+  const addText = (relPath, content) => {
+    if (files.length >= MAX_FILES) { warnings.push(`File limit reached before adding "${relPath}".`); return; }
+    const full = `${root}/${relPath.replace(/^\/+/, '')}`;
+    if (!isSafeZipPath(full)) { warnings.push(`Skipped unsafe kit path "${relPath}".`); return; }
+    const bytes = Buffer.byteLength(content, 'utf8');
+    if (total + bytes > MAX_TOTAL_BYTES) { warnings.push(`Size limit reached before adding "${relPath}".`); return; }
+    total += bytes;
+    files.push({ path: full, content });
+  };
+
+  let guide;
+  try { guide = planGuide(p); }
+  catch (err) { warnings.push(`Guide generation failed (${err.message}); pack still includes the code skeleton.`); guide = { entries: [] }; }
+
+  if (guide.entries.length) {
+    addText('guide/00-start-here.md', startHereMarkdown(p, guide));
+    for (const entry of guide.entries) {
+      addText(guideFileName(entry), guideEntryToMarkdown(entry, { total: guide.entries.length }));
+      addText(promptFileName(entry), `# AI pair prompt — Task ${entry.no}: ${entry.title}\n\nCopy the block below into ChatGPT, Claude, or Gemini. It makes any chatbot a tutor that knows your exact task, files, and goal. Paste your errors in as you go.\n\n\`\`\`text\n${entry.aiPrompt}\n\`\`\`\n`);
+    }
+    // Machine-checkable acceptance manifest + the local runner.
+    try { addText('workspace/checks.json', JSON.stringify(planChecks(p), null, 2) + '\n'); }
+    catch (err) { warnings.push(`Checks manifest failed: ${err.message}`); }
+    addText('scripts/check.mjs', renderCheckRunner());
+    addText('.devcontainer/devcontainer.json', renderDevcontainer(root));
+  }
+
   const setupCommands = [
     `unzip ${root}.zip && cd ${root}`,
-    'cp .env.example backend/.env   # fill in values — never commit .env',
-    '(optional) docker compose up -d   # local MongoDB',
+    'open guide/00-start-here.md   # ← READ THIS FIRST: pick your lane, then follow guide/01, 02, …',
+    'cp .env.example backend/.env   # optional — leave MONGODB_URI empty to run in MEMORY MODE',
     'npm install --prefix backend && npm run dev --prefix backend',
     'npm install --prefix frontend && npm run dev --prefix frontend',
-    'npm test --prefix backend',
+    'node scripts/check.mjs 01   # check your progress on task 01 (then 02, 03, …)',
   ];
-  warnings.push('This is a starter skeleton, not a completed project. Generating or downloading it does not mark anything Done or Verified.');
+  warnings.push('This is a starter skeleton + guided kit, not a completed project. Downloading it does not mark anything Done or Verified. Follow guide/00-start-here.md and build it yourself.');
 
-  return { name: root, files, setupCommands, warnings };
+  return { name: root, files, setupCommands, warnings, guideTaskCount: guide.entries.length };
 }
 
 export function packToZip(pack) {

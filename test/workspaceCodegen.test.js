@@ -80,10 +80,14 @@ test('buildStarterPack includes only allowlisted template files and no secrets',
   const pack = buildStarterPack(plan);
   assert.ok(pack.files.length >= 10);
   const planned = new Set(plan.fileTree.filter((f) => f.starterPackIncluded && f.templateKey).map((f) => f.path));
+  // Guided Build Kit files are deterministic additions (not from the file tree):
+  // guides, AI prompts, the checks manifest, the local runner, the devcontainer.
+  const isKitFile = (rel) => rel.startsWith('guide/') || rel.startsWith('prompts/')
+    || rel === 'workspace/checks.json' || rel === 'scripts/check.mjs' || rel === '.devcontainer/devcontainer.json';
   const root = pack.name + '/';
   for (const f of pack.files) {
     const rel = f.path.startsWith(root) ? f.path.slice(root.length) : f.path;
-    assert.ok(planned.has(rel), `${f.path} not in the plan's starter allowlist`);
+    assert.ok(planned.has(rel) || isKitFile(rel), `${f.path} not in the plan's starter allowlist or kit`);
     if (rel !== '.env.example') {
       assert.ok(!/(api[_-]?key|secret)\s*=\s*['"][^'"]+/i.test(f.content), `possible secret in ${f.path}`);
     }
@@ -92,13 +96,39 @@ test('buildStarterPack includes only allowlisted template files and no secrets',
   assert.ok(pack.setupCommands.length >= 2);
 });
 
+test('starter pack ships the Guided Build Kit (start-here, one guide+prompt per task, runner, checks, devcontainer)', () => {
+  const plan = makePlan();
+  const pack = buildStarterPack(plan);
+  const root = pack.name + '/';
+  const names = pack.files.map((f) => (f.path.startsWith(root) ? f.path.slice(root.length) : f.path));
+  assert.ok(names.includes('guide/00-start-here.md'), 'start-here guide present');
+  assert.ok(names.includes('scripts/check.mjs'), 'local check runner present');
+  assert.ok(names.includes('workspace/checks.json'), 'checks manifest present');
+  assert.ok(names.includes('.devcontainer/devcontainer.json'), 'Codespaces devcontainer present');
+  assert.ok(names.includes('backend/lib/memoryStore.js'), 'memory-mode store present');
+  // Task guides are 01..NN; guide/00-start-here is the intro, not a task.
+  const guides = names.filter((n) => /^guide\/(?!00-)\d\d-/.test(n));
+  const prompts = names.filter((n) => /^prompts\/\d\d-/.test(n));
+  assert.equal(pack.guideTaskCount, guides.length, 'one guide file per task');
+  assert.equal(prompts.length, guides.length, 'one AI prompt per task');
+  // Every guide carries its structure + a copy-paste AI prompt.
+  const g1 = pack.files.find((f) => /guide\/01-/.test(f.path)).content;
+  for (const marker of ['## Why this matters', '## Open these files', '## Do this', '## Run this', '## Check yourself', '🤖 Your AI pair', '## What you just learned']) {
+    assert.ok(g1.includes(marker), `guide/01 missing "${marker}"`);
+  }
+  // Checks manifest and code speak the same TODO language.
+  const manifest = JSON.parse(pack.files.find((f) => /workspace\/checks\.json/.test(f.path)).content);
+  assert.ok(Array.isArray(manifest.tasks) && manifest.tasks.length === guides.length);
+  assert.ok(/Verified.*evidence|evidence.*Verified/i.test(manifest.note), 'manifest states local checks are not verification');
+});
+
 test('packToZip is deterministic for the same pack', () => {
   const plan = makePlan();
   const pack = buildStarterPack(plan);
   const z1 = packToZip(pack);
   const z2 = packToZip(pack);
   assert.equal(Buffer.compare(z1, z2), 0, 'ZIP bytes must be identical for identical plans');
-  assert.ok(z1.length < 2 * 1024 * 1024, 'ZIP stays under the 2MB cap');
+  assert.ok(z1.length < 4 * 1024 * 1024, "ZIP stays under the 4MB cap");
 });
 
 test('starter pack generation does not mutate plan progress or task statuses', () => {

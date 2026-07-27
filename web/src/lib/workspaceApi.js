@@ -11,6 +11,9 @@ export const WorkspaceApi = {
 
   get: (projectId) => api.get(`/api/workspace/${enc(projectId)}`),
 
+  // Guided Path — derives per-task steps, hints and AI prompts from the plan.
+  guide: (workspacePlan) => api.post('/api/workspace/guide', { workspacePlan }),
+
   patch: (projectId, { workspacePlan, patch, architecturePatch, currentTab, selectedItem } = {}) =>
     api.patch(`/api/workspace/${enc(projectId)}`, { workspacePlan, patch, architecturePatch, currentTab, selectedItem }),
 

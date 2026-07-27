@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import {
   buildWorkspacePlan, recalculatePlan, applyTaskPatch,
-  applyArchitecturePatch, normalizeCustomProject, runVerification,
+  applyArchitecturePatch, normalizeCustomProject, runVerification, planGuide,
 } from '../utils/workspace/index.js';
 import { generateArchitectureSpec } from '../utils/architecture/index.js';
 import { generateForFile, generateForTask } from '../utils/codegen/codegenEngine.js';
@@ -199,6 +199,21 @@ export function registerWorkspaceRoutes(app, deps = {}) {
     } catch (err) {
       console.error('[workspace] generate failed:', err.message);
       res.status(500).json({ success: false, error: 'generate_failed' });
+    }
+  });
+
+  /* ============ POST /api/workspace/guide ============
+     Derives the Guided Path (per-task steps, hints, AI prompts, learn
+     recaps) from a workspace plan. Stateless + deterministic, so the
+     guide can never drift from the plan and needs no storage. The client
+     sends the plan it already holds; we compute and return the guide. */
+  app.post('/api/workspace/guide', requireAuth, validate(z.object({ workspacePlan: planLike }).passthrough()), (req, res) => {
+    try {
+      const guide = planGuide(req.body.workspacePlan || {});
+      res.json({ success: true, guide });
+    } catch (err) {
+      console.error('[workspace] guide failed:', err.message);
+      res.status(500).json({ success: false, error: 'guide_failed' });
     }
   });
 

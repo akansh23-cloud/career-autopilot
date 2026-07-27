@@ -257,19 +257,27 @@ export async function storeUpload(file) {
 }
 `;
       }
-      return HDR(`${E(ctx)} service — all DB access for ${E(ctx)} lives here.`) + `import ${E(ctx)} from '../models/${E(ctx)}.js';
+      return HDR(`${E(ctx)} service — ALL data access for ${E(ctx)} lives here. Dual-mode: uses MongoDB via Mongoose when connected, else the in-memory store (memory mode) so the app runs with zero setup.`) + `import mongoose from 'mongoose';
+import ${E(ctx)} from '../models/${E(ctx)}.js';
+import { memoryCollection } from '../lib/memoryStore.js';
 ${(ctx.features || {}).upload ? `import { storeUpload } from './uploadService.js';\n` : ''}${(ctx.features || {}).ai ? `import { score${E(ctx)} as runScore } from './scoringService.js';\n` : ''}
+const mem = memoryCollection('${e(ctx)}s');
+const dbOn = () => mongoose.connection && mongoose.connection.readyState === 1;
+
 /* TODO: scope every query to the signed-in user once auth is wired
    (e.g. { userId: req.session.userId }). */
 export async function list${E(ctx)}s() {
+  if (!dbOn()) return mem.list();
   return ${E(ctx)}.find({}).sort({ createdAt: -1 }).limit(100).lean();
 }
 export async function create${E(ctx)}(data = {}) {
-  return ${E(ctx)}.create({ title: data.title, description: data.description || '', status: data.status || 'draft' });
+  if (!data || !String(data.title || '').trim()) { const err = new Error('title is required'); err.status = 400; throw err; }
+  const doc = { title: String(data.title).trim(), description: data.description || '', status: data.status || 'draft' };
+  return dbOn() ? ${E(ctx)}.create(doc) : mem.create(doc);
 }
-export async function get${E(ctx)}(id) { return ${E(ctx)}.findById(id).lean(); }
+export async function get${E(ctx)}(id) { return dbOn() ? ${E(ctx)}.findById(id).lean() : mem.get(id); }
 export async function update${E(ctx)}(id, patch = {}) {
-  return ${E(ctx)}.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean();
+  return dbOn() ? ${E(ctx)}.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean() : mem.update(id, patch);
 }
 ${(ctx.features || {}).upload ? `export async function upload${E(ctx)}(req = {}) {
   const fileMeta = await storeUpload(req.file);
@@ -292,7 +300,7 @@ ${(ctx.features || {}).upload ? `export async function upload${E(ctx)}(req = {})
   });
   return { ...result, note: 'STARTER deterministic score — replace rules deliberately.' };
 }
-` : ''}export async function delete${E(ctx)}(id) { return ${E(ctx)}.findByIdAndDelete(id); }
+` : ''}export async function delete${E(ctx)}(id) { return dbOn() ? ${E(ctx)}.findByIdAndDelete(id) : mem.remove(id); }
 `;
     },
   },
@@ -313,11 +321,13 @@ ${(ctx.features || {}).upload ? `export async function upload${E(ctx)}(req = {})
       const modelName = pascal(ctx.modelName || ctx.entity || 'Item');
       return HDR(`Mongoose model: ${modelName}`) + `import mongoose from 'mongoose';
 
+/* TODO: make these fields match your Database tab — add any missing field, and set required:true where a value must always exist. */
 const schema = new mongoose.Schema(
   {
 ${lines}
+    // TODO: add one more field your project needs (for example a dueDate or a tag).
   },
-  { timestamps: true }
+  { timestamps: true } // adds createdAt + updatedAt automatically
 );
 
 export default mongoose.models.${modelName} || mongoose.model('${modelName}', schema);
@@ -381,7 +391,7 @@ test('test harness runs (replace with a real ${E(ctx)} service test)', () => {
   envExample: {
     label: '.env.example', language: 'bash',
     render: (ctx) => HDRHASH('Copy to .env and fill in real values. NEVER commit .env.') + `PORT=5050
-MONGODB_URI=mongodb://localhost:27017/${slug(name(ctx))}
+# Leave MONGODB_URI empty to run in MEMORY MODE (zero setup, data resets on restart).\n# When ready for real persistence, paste a MongoDB Atlas URI here (its own task in guide/).\nMONGODB_URI=\n# Local Mongo alternative: mongodb://localhost:27017/${slug(name(ctx))}
 SESSION_SECRET=change-me-to-a-long-random-string
 ${obj(ctx.features).upload ? 'UPLOAD_DIR=./uploads\n' : ''}${obj(ctx.features).payments ? '# Payment gateway — SANDBOX keys only while building\nPAYMENT_KEY_ID=\nPAYMENT_KEY_SECRET=\n' : ''}${obj(ctx.features).ai ? '# Optional — scoring works deterministically without it\nAI_API_KEY=\n' : ''}`,
   },
@@ -429,7 +439,8 @@ async function start() {
     try { await mongoose.connect(MONGODB_URI); console.log('[db] connected'); }
     catch (err) { console.error('[db] connection failed:', err.message); }
   } else {
-    console.warn('[db] MONGODB_URI not set — API routes that touch the DB will fail.');
+    console.warn('[db] MONGODB_URI not set — running in MEMORY MODE: data lives in RAM and resets on restart.');
+    console.warn('[db] Perfect for learning and the browser/Codespaces lanes. Connect MongoDB Atlas later (its own task in guide/).');
   }
   app.listen(PORT, () => console.log('API listening on http://localhost:' + PORT));
 }
@@ -571,6 +582,40 @@ jobs:
         with: { node-version: 20 }
       - run: npm ci --prefix backend
       - run: npm test --prefix backend
+`,
+  },
+
+  memoryStore: {
+    label: 'backend/lib/memoryStore.js', language: 'js',
+    render: () => HDR('In-memory data store — powers MEMORY MODE so the app runs with zero setup. Data resets on restart by design; the real database path lives in the models + services.') + `const collections = new Map();
+let seq = 0;
+
+/* A tiny Map-backed collection with a Mongoose-ish surface, enough for the
+ * starter CRUD. Not for production — for learning without setup friction. */
+export function memoryCollection(name) {
+  if (!collections.has(name)) collections.set(name, new Map());
+  const docs = collections.get(name);
+  return {
+    list() {
+      return [...docs.values()].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1)).slice(0, 100);
+    },
+    get(id) { return docs.get(String(id)) || null; },
+    create(data = {}) {
+      const _id = 'mem_' + Date.now().toString(36) + '_' + (++seq);
+      const now = new Date().toISOString();
+      const doc = { _id, ...data, createdAt: now, updatedAt: now };
+      docs.set(_id, doc);
+      return doc;
+    },
+    update(id, patch = {}) {
+      const doc = docs.get(String(id));
+      if (!doc) return null;
+      Object.assign(doc, patch, { updatedAt: new Date().toISOString() });
+      return doc;
+    },
+    remove(id) { const doc = docs.get(String(id)) || null; docs.delete(String(id)); return doc; },
+  };
+}
 `,
   },
 

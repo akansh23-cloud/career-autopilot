@@ -4,3 +4,4 @@ export { normalizeCustomProject, derivePrimaryEntity, deriveFeatures } from './c
 export { calculateProgress, currentPhase, nextBestAction, detectRisks } from './progressCalculator.js';
 export { validateWorkspacePlan, runVerification } from './workspaceValidator.js';
 export { STATUS_LANGUAGE, TASK_STATUSES } from './planUtils.js';
+export { planGuide, planChecks } from './guidePlanner.js';

@@ -6,6 +6,7 @@
 // when the backend DB is disabled.
 // ============================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { PageIntro } from './common.jsx';
 import { Card, Spinner, Button } from '../components/ui/kit.jsx';
 import { getProject, saveProject, uid } from '../lib/projectStore.js';
@@ -15,6 +16,7 @@ import WorkspaceHeader from '../components/workspace/WorkspaceHeader.jsx';
 import WorkspaceSidebar from '../components/workspace/WorkspaceSidebar.jsx';
 import WorkspaceInspector from '../components/workspace/WorkspaceInspector.jsx';
 import WorkspaceTaskBoard from '../components/workspace/WorkspaceTaskBoard.jsx';
+import GuidedPath from '../components/workspace/GuidedPath.jsx';
 import WorkspaceArchitecture from '../components/workspace/WorkspaceArchitecture.jsx';
 import CustomProjectForm from '../components/workspace/CustomProjectForm.jsx';
 import { CodePreviewPanel, StarterPackPreview } from '../components/workspace/CodePreviewPanel.jsx';
@@ -28,6 +30,10 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
   const [project, setProject] = useState(() => (projectId ? getProject(projectId) : null));
   const [plan, setPlan] = useState(project?.workspacePlan || null);
   const [tab, setTab] = useState(initialTab || 'overview');
+  // Build = the beginner-first Guided Path (default). Blueprint = the
+  // 12-section planning workspace. Beginners live in Build; seniors and
+  // demos switch to Blueprint. Persisted per project via currentTab below.
+  const [mode, setMode] = useState('build');
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -337,26 +343,44 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
         </Card>
       )}
 
-      <div className="flex flex-col gap-5 lg:flex-row">
-        <WorkspaceSidebar active={tab} onSelect={changeTab} counts={counts} />
-        <main className="min-w-0 flex-1">
-          {tab === 'overview' && <WorkspaceOverview plan={plan} />}
-          {tab === 'visual' && <WorkspaceVisualPreview {...sectionProps} />}
-          {tab === 'architecture' && <WorkspaceArchitecture plan={plan} project={project} onProjectPatch={onProjectPatch} />}
-          {tab === 'roadmap' && <WorkspaceRoadmap {...sectionProps} />}
-          {tab === 'tasks' && <WorkspaceTaskBoard {...sectionProps} onTaskPatch={patchTask} onPreviewCode={previewCode} />}
-          {tab === 'files' && <WorkspaceFiles {...sectionProps} onPreviewCode={previewCode} />}
-          {tab === 'apis' && <WorkspaceApis {...sectionProps} />}
-          {tab === 'database' && <WorkspaceDatabase {...sectionProps} />}
-          {tab === 'tests' && <WorkspaceTests {...sectionProps} />}
-          {tab === 'deployment' && <WorkspaceDeployment plan={plan} />}
-          {tab === 'proof' && <WorkspaceProof {...sectionProps} />}
-          {tab === 'patent' && <WorkspacePatent plan={plan} />}
-        </main>
-        {tab !== 'architecture' && (
-          <WorkspaceInspector plan={plan} selected={selected} onClose={() => setSelected(null)} onPreviewCode={previewCode} />
-        )}
-      </div>
+      {mode === 'build' ? (
+        <GuidedPath
+          plan={plan}
+          project={project}
+          onTaskPatch={patchTask}
+          onPreviewCode={previewCode}
+          onOpenBlueprint={() => setMode('blueprint')}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setMode('build')}>
+              <ChevronLeft size={14} /> Back to guided build
+            </Button>
+            <span className="text-[11.5px] text-slate-500">Blueprint — the full plan behind your build. Explore freely; nothing here is required to finish.</span>
+          </div>
+          <div className="flex flex-col gap-5 lg:flex-row">
+            <WorkspaceSidebar active={tab} onSelect={changeTab} counts={counts} />
+            <main className="min-w-0 flex-1">
+              {tab === 'overview' && <WorkspaceOverview plan={plan} />}
+              {tab === 'visual' && <WorkspaceVisualPreview {...sectionProps} />}
+              {tab === 'architecture' && <WorkspaceArchitecture plan={plan} project={project} onProjectPatch={onProjectPatch} />}
+              {tab === 'roadmap' && <WorkspaceRoadmap {...sectionProps} />}
+              {tab === 'tasks' && <WorkspaceTaskBoard {...sectionProps} onTaskPatch={patchTask} onPreviewCode={previewCode} />}
+              {tab === 'files' && <WorkspaceFiles {...sectionProps} onPreviewCode={previewCode} />}
+              {tab === 'apis' && <WorkspaceApis {...sectionProps} />}
+              {tab === 'database' && <WorkspaceDatabase {...sectionProps} />}
+              {tab === 'tests' && <WorkspaceTests {...sectionProps} />}
+              {tab === 'deployment' && <WorkspaceDeployment plan={plan} />}
+              {tab === 'proof' && <WorkspaceProof {...sectionProps} />}
+              {tab === 'patent' && <WorkspacePatent plan={plan} />}
+            </main>
+            {tab !== 'architecture' && (
+              <WorkspaceInspector plan={plan} selected={selected} onClose={() => setSelected(null)} onPreviewCode={previewCode} />
+            )}
+          </div>
+        </>
+      )}
 
       <CodePreviewPanel {...codePreview} onClose={() => setCodePreview((s) => ({ ...s, open: false }))} />
       <StarterPackPreview

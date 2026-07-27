@@ -56,6 +56,7 @@ export function planFileTree(project = {}, stack = {}, { screens = [], apis = []
   add('backend/package.json', 'Backend dependencies + scripts.', { templateKey: 'packageBackend' });
   add('backend/server.js', 'Express entry: middleware, routes, health.', { templateKey: 'serverEntry' });
   add('backend/config/env.js', 'Env loading + validation.', { templateKey: 'envConfig' });
+  add('backend/lib/memoryStore.js', 'In-memory data store powering MEMORY MODE (zero-setup runs).', { templateKey: 'memoryStore' });
   add('backend/routes/health.routes.js', 'Health check route.', { templateKey: 'expressRoute' });
   add(`backend/routes/${e}s.routes.js`, `${E} CRUD routes.`, { templateKey: 'expressRoute', apis: apis.filter((a) => a.path.includes(`/${e}s`)).map((a) => a.id) });
   add(`backend/controllers/${camel(entity)}Controller.js`, `${E} request handlers.`, { templateKey: 'expressController' });

@@ -113,10 +113,31 @@ export function generateForFile(plan = {}, filePath = '', templateKeyOverride = 
   if (!hasTemplate(key)) return { generatedFiles: [], warnings: [`Template "${key}" is not in the registry — nothing generated.`] };
   const ctx = buildTemplateContext(plan, entry || { path: filePath });
   const rendered = renderTemplate(key, ctx);
+  const content = numberTodos(rendered.content, primaryTaskNo(plan, entry));
   return {
-    generatedFiles: [{ path: filePath, templateKey: key, language: rendered.language, content: rendered.content, label: rendered.label }],
+    generatedFiles: [{ path: filePath, templateKey: key, language: rendered.language, content, label: rendered.label }],
     warnings,
   };
+}
+
+/* The file's "primary" task: the earliest task (by order) that links it.
+   Its 2-digit number keys the numbered TODOs and the guide steps. */
+function primaryTaskNo(plan, entry) {
+  if (!entry?.id) return '';
+  const owners = arr(obj(plan).tasks)
+    .filter((t) => arr(t.linkedFiles).includes(entry.id))
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  return owners.length ? String(owners[0].order || 0).padStart(2, '0') : '';
+}
+
+/* Rewrite bare `TODO:` markers as `TODO(NN-k):` so the guide, the code and
+   `scripts/check.mjs` all speak about the exact same work items. Markers that
+   already carry a label (e.g. TODO(roles)) are left untouched. Deterministic:
+   same content + task number in → same tags out. */
+export function numberTodos(content = '', taskNo = '') {
+  if (!taskNo) return content;
+  let k = 0;
+  return String(content).replace(/TODO:/g, () => `TODO(${taskNo}-${++k}):`);
 }
 
 /* Generate the connected file set for a task (its linkedFiles). */

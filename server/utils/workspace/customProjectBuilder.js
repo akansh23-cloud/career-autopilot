@@ -57,17 +57,31 @@ export function normalizeCustomProject(input = {}, { now } = {}) {
    upload flow and starter files consistently across the whole plan. */
 const ENTITY_HINTS = [
   [/resume|cv/, 'Resume'], [/job|career/, 'Job'], [/task|todo/, 'Task'],
-  [/note/, 'Note'], [/recipe/, 'Recipe'], [/listing|market/, 'Listing'],
-  [/course|learn/, 'Course'], [/event/, 'Event'], [/expense|budget|finance/, 'Expense'],
-  [/post|blog|social/, 'Post'], [/ticket|support/, 'Ticket'], [/order|shop|commerce/, 'Order'],
-  [/patient|health|clinic/, 'Record'], [/student/, 'Student'], [/inventory|stock/, 'Item'],
-  [/document|doc/, 'Document'], [/project/, 'Project'],
+  [/habit|routine|streak/, 'Habit'], [/note/, 'Note'], [/recipe|meal/, 'Recipe'],
+  [/listing|market/, 'Listing'], [/course|learn|quiz|flashcard/, 'Course'],
+  [/event|booking|appointment/, 'Event'], [/expense|budget|finance|money|spend/, 'Expense'],
+  [/post|blog|social|feed/, 'Post'], [/ticket|support|helpdesk/, 'Ticket'],
+  [/order|shop|commerce|cart|store/, 'Order'], [/patient|health|clinic|fitness|workout/, 'Record'],
+  [/student|attendance|grade/, 'Student'], [/inventory|stock|asset/, 'Item'],
+  [/document|doc|file/, 'Document'], [/contact|crm|lead/, 'Contact'],
+  [/book|library|read/, 'Book'], [/movie|film|watch/, 'Title'],
+  [/habit|goal|track/, 'Entry'], [/project/, 'Project'],
 ];
+/* Generic words that must never become the entity name — if the title/category
+   reduces to one of these, we look harder for a real noun. */
+const GENERIC_ENTITY = new Set(['Web', 'App', 'Application', 'Site', 'Website', 'Platform', 'System', 'Tool', 'Dashboard', 'Portal', 'Service', 'Project', 'Mobile', 'Full', 'Fullstack', 'Online', 'My', 'The', 'A']);
+
 export function derivePrimaryEntity(project = {}) {
   const hay = [project.category, project.title, project.problemStatement, arr(project.mvpFeatures).join(' ')]
     .map((s) => str(s).toLowerCase()).join(' ');
   for (const [re, name] of ENTITY_HINTS) if (re.test(hay)) return name;
-  return pascal(str(project.category).split(/\s+/)[0] || 'Item');
+  // Fallback: pull the first meaningful word from the TITLE (what the student
+  // named their thing), skipping generic app-words, before the category.
+  const titleWords = str(project.title).split(/[\s\-_]+/).map((w) => pascal(w)).filter(Boolean);
+  const meaningful = titleWords.find((w) => w.length > 2 && !GENERIC_ENTITY.has(w));
+  if (meaningful) return meaningful.replace(/s$/, ''); // singularize a trailing plural
+  const catWord = pascal(str(project.category).split(/\s+/)[0] || '');
+  return catWord && !GENERIC_ENTITY.has(catWord) ? catWord : 'Item';
 }
 
 /* Stable feature descriptors from the MVP feature list (or sensible
