@@ -2871,7 +2871,7 @@ app.post('/api/patents/ideas/:id/convert-to-project', requireAuth, generationLim
   const u = currentUser(req);
   const idea = await db.getPatentIdea({ userId: u?.id, email: u?.email, id: req.params.id });
   if (!idea) return res.status(404).json({ error: 'not_found', message: 'Idea not found.' });
-  const plan = convertToProject(idea);
+  const plan = await convertToProject(idea, { audience: req.body?.audience || 'student' });
   await db.updatePatentIdea({ userId: u?.id, email: u?.email, id: req.params.id, patch: { linkedProjectPlan: plan, status: idea.status === 'raw_idea' || idea.status === 'shortlisted' ? 'poc_planned' : idea.status } });
   res.json({ ok: true, plan, db: db.dbEnabled() });
 });

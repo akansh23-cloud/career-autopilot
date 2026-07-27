@@ -126,6 +126,6 @@ export const PRIVACY_SUMMARY = [
   },
   {
     h: 'The full policy',
-    p: ['The complete policy — data table, retention periods, security posture, grievance timelines — ships with the application as PRIVACY_POLICY.md and is provided to every college in the data-handling pack. Ask us for a copy any time; it is the same document for everyone.'],
+    p: ['The complete policy — data table, retention periods, security posture, grievance timelines — ships with the application as docs/legal/PRIVACY_POLICY.md and is provided to every college in the data-handling pack. Ask us for a copy any time; it is the same document for everyone.'],
   },
 ];

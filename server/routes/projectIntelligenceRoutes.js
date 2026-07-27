@@ -24,6 +24,8 @@ import { taskBoard } from '../services/projectIntelligence/taskBoardService.js';
 import { resumeOutput } from '../services/projectIntelligence/resumeOutputService.js';
 import { detectDuplicate } from '../services/projectIntelligence/projectMemoryService.js';
 import { importInnovationProject } from '../services/projectIntelligence/innovationBridgeService.js';
+import { buildProjectBrief } from '../services/projectBrief/projectBriefService.js';
+import { detectDiscipline } from '../services/projectBrief/disciplineProfiles.js';
 
 const projectLike = z.object({}).passthrough();
 const recommendationLike = z.object({}).passthrough();
@@ -112,6 +114,23 @@ export function registerProjectIntelligenceRoutes(app, deps = {}) {
   /* ---- Task 3: explain this project ---- */
   app.post('/api/project-intelligence/explain', requireAuth, generationLimiter, validate(enrichSchema), guard(async (req, res) => {
     res.json({ ok: true, mode: mode(), explanation: explainProject(req.body) });
+  }));
+
+  /* ---- Project brief: "what am I actually building?" ----
+     AI-written prose (Gemini / Anthropic / OpenAI, whichever is configured)
+     over a deterministic, discipline-aware skeleton. Degrades to a complete
+     templated brief with no key set — `generatedBy` always says which. */
+  app.post('/api/project-intelligence/brief', requireAuth, generationLimiter, validate(enrichSchema), guard(async (req, res) => {
+    const project = req.body?.project || req.body?.recommendation || req.body || {};
+    const brief = await buildProjectBrief({ project, audience: req.body?.audience || 'student' });
+    res.json({ ok: true, mode: mode(), brief });
+  }));
+
+  /* ---- Discipline probe: cheap, deterministic, no AI ---- */
+  app.post('/api/project-intelligence/discipline', requireAuth, validate(enrichSchema), guard(async (req, res) => {
+    const project = req.body?.project || req.body?.recommendation || req.body || {};
+    const d = detectDiscipline(project);
+    res.json({ ok: true, discipline: { id: d.id, label: d.label, confidence: d.confidence, buildUnit: d.buildUnit, toolchain: d.toolchain, runMeans: d.runMeans } });
   }));
 
   /* ---- Task 6: build blueprint v2 ---- */

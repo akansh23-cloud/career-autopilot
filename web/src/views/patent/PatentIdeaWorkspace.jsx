@@ -7,6 +7,7 @@ import { SectionCard } from '../common.jsx';
 import { Button, Badge, Field, Input, EmptyState } from '../../components/ui/kit.jsx';
 import { PatentOS } from '../../lib/api.js';
 import { STATUS_LABELS, STATUS_ORDER, LOCKED_STATUSES, FEEDBACK_TYPES, ScorePill, riskTone, gradeTone, Disclaimer } from './shared.jsx';
+import ProjectBriefPanel from '../../components/project/ProjectBriefPanel.jsx';
 
 const TABS = [
   ['overview', 'Overview'], ['problem', 'Problem'], ['invention', 'Invention'], ['score', 'Score'],
@@ -25,6 +26,23 @@ function Bar({ label, value }) {
 function Detail({ label, value }) {
   if (!value) return null;
   return <div><div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div><p className="mt-0.5 whitespace-pre-wrap text-[13px] text-slate-300">{value}</p></div>;
+}
+
+function ListDetail({ label, items, ordered }) {
+  if (!items?.length) return null;
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <ol className="mt-1 space-y-1">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-2 text-[12px] text-slate-300">
+            <span className="shrink-0 text-slate-600">{ordered ? `${i + 1}.` : '•'}</span>
+            <span>{it}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 export default function PatentIdeaWorkspace({ ideaId, go }) {
@@ -181,18 +199,32 @@ export default function PatentIdeaWorkspace({ ideaId, go }) {
       )}
 
       {tab === 'poc' && (
-        <SectionCard title="POC / project plan" action={<Button size="sm" onClick={doConvert} disabled={busy === 'convert'}>{busy === 'convert' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} {proj ? 'Regenerate' : 'Convert to project'}</Button>}>
-          {!proj ? <p className="text-[13px] text-slate-500">Convert this invention into a buildable POC: architecture, APIs, schema, demo script, evidence checklist and resume bullets.</p> : (
-            <div className="space-y-3">
-              <Detail label="Project" value={proj.projectTitle} /><Detail label="MVP" value={proj.mvpDescription} /><Detail label="Architecture" value={proj.technicalArchitecture} />
-              {proj.coreFeatures?.length > 0 && <Detail label="Core features" value={proj.coreFeatures.join('  •  ')} />}
-              {proj.backendApis?.length > 0 && <Detail label="APIs" value={proj.backendApis.join('  •  ')} />}
-              {proj.databaseSchema?.length > 0 && <Detail label="Schema" value={proj.databaseSchema.join('  •  ')} />}
-              {proj.resumeBullets?.length > 0 && <div><div className="text-[11px] uppercase tracking-wide text-slate-500">Resume bullets</div><ul className="mt-1 space-y-1">{proj.resumeBullets.map((b, i) => <li key={i} className="text-[12px] text-slate-300">• {b}</li>)}</ul></div>}
-              <Button size="sm" variant="soft" onClick={() => go?.('marketplace')}><Sparkles size={13} /> Build & publish in Marketplace</Button>
-            </div>
-          )}
-        </SectionCard>
+        <div className="space-y-4">
+          {/* The brief comes FIRST — you should understand what you're building
+              before you're shown artifacts to build it with. */}
+          {proj?.brief && <ProjectBriefPanel brief={proj.brief} />}
+
+          <SectionCard title="POC / project plan" action={<Button size="sm" onClick={doConvert} disabled={busy === 'convert'}>{busy === 'convert' ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />} {proj ? 'Regenerate' : 'Convert to project'}</Button>}>
+            {!proj ? <p className="text-[13px] text-slate-500">Convert this invention into a buildable POC. You&apos;ll get a plain-language brief explaining what you&apos;re building and why, plus build steps, work products and an evidence checklist shaped for this project&apos;s discipline — not a generic web-app template.</p> : (
+              <div className="space-y-3">
+                <Detail label="Project" value={proj.projectTitle} />
+                {proj.whatYouAreBuilding && <Detail label="What this actually is" value={proj.whatYouAreBuilding} />}
+                <Detail label="MVP" value={proj.mvpDescription} />
+                <Detail label={proj.hasSoftwareComponent ? 'Architecture' : 'Build approach'} value={proj.technicalArchitecture} />
+                {proj.buildSteps?.length > 0 && <ListDetail label="Build steps" items={proj.buildSteps} ordered />}
+                {proj.workProducts?.length > 0 && <ListDetail label="What you must produce" items={proj.workProducts} />}
+                {proj.toolchain?.length > 0 && <Detail label="Tools you'll need" value={proj.toolchain.join('  •  ')} />}
+                {proj.backendApis?.length > 0 && <Detail label="APIs" value={proj.backendApis.join('  •  ')} />}
+                {proj.databaseSchema?.length > 0 && <Detail label="Schema" value={proj.databaseSchema.join('  •  ')} />}
+                {proj.testPlan?.length > 0 && <ListDetail label="How it gets tested" items={proj.testPlan} />}
+                {proj.howYouKnowItWorks && <Detail label="How you know it works" value={proj.howYouKnowItWorks} />}
+                {proj.costReality && <Detail label="Cost reality" value={proj.costReality} />}
+                {proj.resumeBullets?.length > 0 && <ListDetail label="Resume bullets" items={proj.resumeBullets} />}
+                <Button size="sm" variant="soft" onClick={() => go?.('marketplace')}><Sparkles size={13} /> Build &amp; publish in Marketplace</Button>
+              </div>
+            )}
+          </SectionCard>
+        </div>
       )}
 
       {tab === 'versions' && (

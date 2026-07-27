@@ -10,6 +10,7 @@ import Atmosphere from './components/Atmosphere.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
 import Shell, { NAV } from './components/app/Shell.jsx';
+import CommandPalette from './components/app/CommandPalette.jsx';
 import { Spinner } from './components/ui/kit.jsx';
 import PricingModal from './components/PricingModal.jsx';
 import ConsentModal from './components/ConsentModal.jsx';
@@ -167,10 +168,25 @@ export default function App() {
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [publicId, setPublicId] = useState(() => parseProfileHash());
   const [legalSection, setLegalSection] = useState(() => parseLegalHash());
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const prevUserIdRef = useRef(null);
 
   // One-time cleanup of any pre-scoping legacy keys left by older builds.
   useEffect(() => { purgeLegacyUnscopedKeys(); }, []);
+
+  // ⌘K / Ctrl-K opens the command palette. The palette component was built and
+  // RBAC-filtered but never mounted, so the shortcut did nothing — every
+  // workspace had to be reached through the top nav.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const f = () => { setPublicId(parseProfileHash()); setLegalSection(parseLegalHash()); };
@@ -303,6 +319,7 @@ export default function App() {
 
   return (
     <Shell active={renderActive} onPick={navigate} title={title}>
+      <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} onPick={(id) => { setPaletteOpen(false); navigate(id); }} />
       <AnimatePresence mode="wait">
         <motion.div
           key={renderActive}

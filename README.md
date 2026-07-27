@@ -14,7 +14,7 @@ This release hardens the app for real users. Highlights:
 - **Performance:** job search has shorter per-source timeouts, an overall budget, and a short result cache; the frontend bundle is code-split (main chunk ~1.15 MB → ~0.5 MB).
 - **Tests:** `npm test` (integration + unit), `npm run lint`, `npm run build`, `npm run typecheck`.
 
-Setup & operations docs: **`ENVIRONMENT.md`**, **`DEPLOYMENT.md`**, **`SECURITY.md`**, **`TESTING.md`**. Start from `.env.example`.
+Setup & operations docs live in **`docs/`** (`docs/ENVIRONMENT.md`, `docs/DEPLOYMENT.md`, `docs/TESTING.md`, `docs/AI_COST_SETUP.md`) plus **`SECURITY.md`** at the root. Internal build notes and changelogs are under `docs/internal/`. Start from `.env.example`.
 
 ### Quick production start
 ```bash
@@ -48,7 +48,7 @@ Typing a college name into a profile no longer grants dashboard membership; a bo
 
 **Sign-in handling with many colleges live:** one account, at most one college binding, resolved at login by `autoBindCollege` (roster match first, then domain match). TPO accounts are role-verified and pinned to their `collegeId`; every `/api/college/*` query filters on that scope server-side (`requireCollegeScope` + tenant filters in `db.js`), so College A can never read College B — enforced in data access, not just UI. The observability dashboard is cached per college (60s TTL, `?fresh=1` to bypass).
 
-**Consent (DPDP).** A blocking, versioned consent screen runs on first sign-in; college visibility is a separate explicit choice, and the placement-cell queries filter on it server-side. Students can export everything (`GET /api/account/export`), leave a college, or delete their account (7-day grace, full cascade). See `PRIVACY_POLICY.md` and `docs/DPDP_DATA_HANDLING.md` (the one-pager to hand colleges).
+**Consent (DPDP).** A blocking, versioned consent screen runs on first sign-in; college visibility is a separate explicit choice, and the placement-cell queries filter on it server-side. Students can export everything (`GET /api/account/export`), leave a college, or delete their account (7-day grace, full cascade). See `docs/legal/PRIVACY_POLICY.md` and `docs/DPDP_DATA_HANDLING.md` (the one-pager to hand colleges).
 
 **Comms.** Nudges and task assignments from the command center are real: in-app delivery is guaranteed (notifications bell), email is attempted when `SMTP_URL` is configured, and the API reports exactly what was delivered — never a fake success.
 
