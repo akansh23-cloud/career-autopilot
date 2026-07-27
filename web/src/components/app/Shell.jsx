@@ -5,6 +5,7 @@ import {
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
   Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake, Wand2,
   LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge, Sparkles, GraduationCap,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useSupport } from '../../support/SupportProvider.jsx';
@@ -13,7 +14,8 @@ import { openPricing } from '../PricingModal.jsx';
 import NotificationsBell from './NotificationsBell.jsx';
 import { getPlan, PLAN_LABELS, PLAN_EVENT } from '../../lib/plan.js';
 import { getProfile, PROFILE_EVENT } from '../../lib/userProfile.js';
-import { getEffectiveRole, canSeeScreen } from '../../lib/roleCapabilities.js';
+import { getEffectiveRole } from '../../lib/roleCapabilities.js';
+import { buildNavForRole } from '../../lib/navGroups.js';
 import { ACCESS_CONTEXT_EVENT, getAccessContext, useAccountAccessContext } from '../../lib/accessContext.js';
 
 function usePlanId() {
@@ -79,98 +81,11 @@ export const NAV = [
 // palette, dashboard cards and the App navigation guard. No per-nav role list
 // is maintained here, so a screen can never appear in the nav for a role that
 // isn't allowed to open it.
-
-// Journey groups -> top-level website menus. Short labels keep the bar clean.
-// Top-level information architecture (spec L). Every existing view id is kept;
-// they are regrouped into clean menus. Patents gets its own top-level entry;
-// Profile/XP consolidates identity + verified skills + readiness.
-const NAV_GROUPS = [
-  { label: 'Overview', short: 'Home', ids: ['dash', 'verification'] },
-  { label: 'Resume OS', short: 'Résumé', ids: ['resume', 'editor'] },
-  { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
-  { label: 'Applications', short: 'Apply', ids: ['applications'] },
-  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'projectcreator', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },
-  { label: 'Patent Engine', short: 'Patents', ids: ['innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
-  { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'skillsxp', 'readiness'] },
-  { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
-  { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },
-  { label: 'Placement Cell', short: 'College', ids: ['college'] },
-  { label: 'Admin', short: 'Admin', ids: ['adminusers'] },
-];
-const MORE_IDS = ['growth', 'settings'];
-
-const TOP_NAV_PRIORITIES = {
-  admin: ['Overview', 'Admin', 'Recruiting', 'Placement Cell', 'Project OS', 'Profile / XP'],
-  recruiter: ['Overview', 'Recruiting', 'Community', 'Verified Projects'],
-  college_admin: ['Overview', 'Placement Cell', 'Profile / XP', 'Verified Projects'],
-  student_early: ['Overview', 'Project OS', 'Profile / XP', 'Community'],
-  student_placement: ['Overview', 'Resume OS', 'Job Match', 'Applications', 'Project OS', 'Profile / XP', 'Community'],
-};
-// Cap chosen so the primary set fits the inline bar even in the tightest
-// case (2xl, where the search control expands to a full pill and the
-// centered container is already capped at max-w-7xl). Any extra groups —
-// most often for admin / student_placement, which generate the most menus —
-// flow into the existing "More" menu instead of overflowing onto the
-// right-side controls. Kept role-agnostic so the bar behaves identically
-// for every role.
-const MAX_TOP_NAV_GROUPS = 6;
-
-function orderGroupsForTopNav(groups, role) {
-  const priority = TOP_NAV_PRIORITIES[role] || TOP_NAV_PRIORITIES.student_placement;
-  const score = (g) => {
-    const idx = priority.indexOf(g.label);
-    return idx === -1 ? 100 + NAV_GROUPS.findIndex((x) => x.label === g.label) : idx;
-  };
-  return groups.slice().sort((a, b) => score(a) - score(b));
-}
-
-function groupsForRole(role) {
-  const byId = Object.fromEntries(NAV.map((n) => [n.id, n]));
-  const keep = (id) => !!byId[id] && canSeeScreen(role, id) && (!byId[id].adminOnly || role === 'admin');
-
-  // College / recruiter staff never get the student "Project OS" surface — the
-  // only project view they can reach is the read-only verified-project Sandbox.
-  // Relabel that group to "Verified Projects" so the top-level menu never shows
-  // a misleading "Project OS" entry for staff that just opens the Sandbox.
-  const staffVerifiedProjects = role === 'college_admin' || role === 'recruiter';
-
-  const grouped = NAV_GROUPS
-    .map((g) => {
-      const relabel = staffVerifiedProjects && g.label === 'Project OS';
-      return {
-        label: relabel ? 'Verified Projects' : g.label,
-        short: relabel ? 'Verified Projects' : g.short,
-        items: g.ids.filter(keep).map((id) => byId[id]),
-      };
-    })
-    .filter((g) => g.items.length);
-
-  // Keep the desktop bar readable. Admin in particular has many modules, so
-  // low-priority groups are flattened into More instead of overflowing beside
-  // the plan chip/search/avatar controls.
-  const ordered = orderGroupsForTopNav(grouped, role);
-  const primary = ordered.slice(0, MAX_TOP_NAV_GROUPS);
-  const placed = new Set(primary.flatMap((g) => g.items.map((it) => it.id)));
-
-  const seen = new Set();
-  const more = [];
-  const push = (id) => {
-    if (seen.has(id) || placed.has(id) || !keep(id)) return;
-    seen.add(id);
-    more.push(byId[id]);
-  };
-
-  // First add hidden top-level groups in the same role-aware order, then the
-  // utility ids. This keeps Admin/College/Recruiting prominent while all other
-  // features stay reachable from More.
-  for (const g of ordered.slice(MAX_TOP_NAV_GROUPS)) {
-    for (const it of g.items) push(it.id);
-  }
-  for (const id of MORE_IDS) push(id);
-  for (const n of NAV) push(n.id);
-
-  return { primary, more };
-}
+//
+// The GROUPING rules (which menus exist, which fit inline, which overflow into
+// "More") live in ../../lib/navGroups.js so they are unit-testable without a
+// browser — see test/navGroups.test.js, which asserts that every screen a role
+// may open is reachable from the rendered nav.
 
 /* ---- Calm in-app backdrop (echoes the landing, stays quiet) ---- */
 function AppBackdrop() {
@@ -184,20 +99,40 @@ function AppBackdrop() {
   );
 }
 
-/* ---- Desktop top-nav dropdown menu ---- */
-function NavMenu({ group, active, onPick }) {
+/* ---- Shared hover/click dropdown behaviour for the desktop bar ---- */
+function useNavDropdown() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const tRef = useRef(null);
-  const single = group.items.length === 1;
-  const activeHere = group.items.some((it) => it.id === active);
   useEffect(() => {
     const h = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
-  const enter = () => { clearTimeout(tRef.current); if (!single) setOpen(true); };
+  useEffect(() => () => clearTimeout(tRef.current), []);
+  const enter = () => { clearTimeout(tRef.current); setOpen(true); };
   const leave = () => { tRef.current = setTimeout(() => setOpen(false), 120); };
+  return { open, setOpen, ref, enter, leave };
+}
+
+function NavPanelItem({ it, active, onPick }) {
+  const on = active === it.id;
+  return (
+    <button
+      onClick={() => onPick(it.id)}
+      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${on ? 'bg-aurora-violet/12 text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}
+    >
+      <span className={`grid h-8 w-8 place-items-center rounded-lg ${on ? 'bg-aurora-violet/20 text-aurora-violet' : 'bg-white/[0.04] text-slate-400'}`}><it.icon size={16} /></span>
+      {it.label}
+    </button>
+  );
+}
+
+/* ---- Desktop top-nav dropdown menu ---- */
+function NavMenu({ group, active, onPick }) {
+  const { open, setOpen, ref, enter, leave } = useNavDropdown();
+  const single = group.items.length === 1;
+  const activeHere = group.items.some((it) => it.id === active);
 
   if (single) {
     const it = group.items[0];
@@ -229,19 +164,61 @@ function NavMenu({ group, active, onPick }) {
             className="absolute left-0 top-full z-50 mt-2 w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-ink-850/95 p-2 shadow-lift backdrop-blur-xl"
           >
             <p className="px-3 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">{group.label}</p>
-            {group.items.map((it) => {
-              const on = active === it.id;
-              return (
-                <button
-                  key={it.id}
-                  onClick={() => { onPick(it.id); setOpen(false); }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${on ? 'bg-aurora-violet/12 text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}
-                >
-                  <span className={`grid h-8 w-8 place-items-center rounded-lg ${on ? 'bg-aurora-violet/20 text-aurora-violet' : 'bg-white/[0.04] text-slate-400'}`}><it.icon size={16} /></span>
-                  {it.label}
-                </button>
-              );
-            })}
+            {group.items.map((it) => (
+              <NavPanelItem key={it.id} it={it} active={active} onPick={(id) => { onPick(id); setOpen(false); }} />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ---- Desktop "More" menu: overflow groups, LABELS PRESERVED ----
+   Without this, any group past MAX_TOP_NAV_GROUPS (Patent Engine, Resume OS,
+   Applications, Community, … depending on role) was computed but never
+   rendered on desktop — i.e. unreachable from the top bar entirely. */
+function MoreMenu({ groups, active, onPick, onSupport }) {
+  const { open, setOpen, ref, enter, leave } = useNavDropdown();
+  const activeHere = groups.some((g) => g.items.some((it) => it.id === active));
+  if (!groups.length && !onSupport) return null;
+  return (
+    <div ref={ref} className="relative" onMouseEnter={enter} onMouseLeave={leave}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`relative flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition ${activeHere || open ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+      >
+        <MoreHorizontal size={16} />
+        More
+        <ChevronDown size={14} className={`text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {activeHere && <motion.span layoutId="topnav" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-aurora-violet" />}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[300px] overflow-y-auto rounded-2xl border border-white/10 bg-ink-850/95 p-2 shadow-lift backdrop-blur-xl"
+          >
+            {groups.map((g) => (
+              <div key={g.label} className="pb-1">
+                <p className="px-3 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">{g.label}</p>
+                {g.items.map((it) => (
+                  <NavPanelItem key={it.id} it={it} active={active} onPick={(id) => { onPick(id); setOpen(false); }} />
+                ))}
+              </div>
+            ))}
+            {onSupport && (
+              <button
+                onClick={() => { onSupport(); setOpen(false); }}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white"
+              >
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/[0.04] text-slate-400"><LifeBuoy size={16} /></span>
+                Support
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -250,7 +227,7 @@ function NavMenu({ group, active, onPick }) {
 }
 
 /* ---- Mobile drawer nav ---- */
-function MobileNav({ primary, more, active, onPick, onSupport }) {
+function MobileNav({ primary, moreGroups, active, onPick, onSupport }) {
   const NavBtn = ({ it }) => {
     const on = active === it.id;
     return (
@@ -262,23 +239,22 @@ function MobileNav({ primary, more, active, onPick, onSupport }) {
       </button>
     );
   };
+  // Overflow groups keep their own heading on mobile too, so "Patent Engine"
+  // reads as a product surface instead of loose entries under "Tools".
+  const sections = [...primary, ...moreGroups];
   return (
     <nav className="flex flex-col gap-4 px-3 pb-6">
-      {primary.map((g, gi) => (
+      {sections.map((g, gi) => (
         <div key={g.label || gi} className="space-y-1">
           <p className="px-3 pb-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">{g.label}</p>
           {g.items.map((it) => <NavBtn key={it.id} it={it} />)}
         </div>
       ))}
-      {(more.length > 0 || onSupport) && (
+      {onSupport && (
         <div className="space-y-1">
-          <p className="px-3 pb-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">Tools &amp; settings</p>
-          {more.map((it) => <NavBtn key={it.id} it={it} />)}
-          {onSupport && (
-            <button onClick={onSupport} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05]">
-              <LifeBuoy size={18} className="text-slate-400" /> Support
-            </button>
-          )}
+          <button onClick={onSupport} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05]">
+            <LifeBuoy size={18} className="text-slate-400" /> Support
+          </button>
         </div>
       )}
     </nav>
@@ -315,7 +291,7 @@ export default function Shell({ active, onPick, title, children }) {
   const support = useSupport();
   const [drawer, setDrawer] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { primary, more } = groupsForRole(role);
+  const { primary, moreGroups } = buildNavForRole(role, NAV);
   const pick = (id) => { onPick(id); setDrawer(false); };
   const openSupportChat = () => { support?.openSupport?.({ tab: 'chat' }); setDrawer(false); };
 
@@ -343,6 +319,7 @@ export default function Shell({ active, onPick, title, children }) {
 
           <nav className="ml-3 hidden min-w-0 flex-1 items-center gap-0.5 xl:flex">
             {primary.map((g) => <NavMenu key={g.label} group={g} active={active} onPick={pick} />)}
+            <MoreMenu groups={moreGroups} active={active} onPick={pick} onSupport={openSupportChat} />
           </nav>
 
           <div className="ml-3 flex shrink-0 items-center gap-2">
@@ -387,7 +364,7 @@ export default function Shell({ active, onPick, title, children }) {
               <span className="font-display text-[15px] font-extrabold text-white">Menu</span>
               <button onClick={() => setDrawer(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/6"><X size={18} /></button>
             </div>
-            <MobileNav primary={primary} more={more} active={active} onPick={pick} onSupport={openSupportChat} />
+            <MobileNav primary={primary} moreGroups={moreGroups} active={active} onPick={pick} onSupport={openSupportChat} />
           </motion.aside>,
         ]}
       </AnimatePresence>
