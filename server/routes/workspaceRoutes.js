@@ -21,6 +21,7 @@ import { generateForFile, generateForTask } from '../utils/codegen/codegenEngine
 import { planPatch } from '../utils/codegen/patchPlanner.js';
 import { listTemplates } from '../utils/codegen/templateRegistry.js';
 import { buildStarterPack, packToZip, newPackId, sanitizeProjectName } from '../utils/starterPack/starterPackBuilder.js';
+import { gatherProofEvidence } from '../utils/workspace/proofVerification.js';
 
 const shortText = (max) => z.string().max(max);
 
@@ -59,6 +60,17 @@ const taskPatchSchema = z.object({
 
 const planBodySchema = z.object({
   workspacePlan: planLike.optional().nullable(),
+}).passthrough();
+
+/* Verify accepts optional evidence — the repo and deployment the student
+   wants checked. Both are plain URLs; the server does the fetching so no
+   token or origin restriction reaches the browser. */
+const verifyBodySchema = z.object({
+  workspacePlan: planLike.optional().nullable(),
+  evidence: z.object({
+    repoUrl: shortText(300).optional().default(''),
+    liveUrl: shortText(300).optional().default(''),
+  }).optional().nullable(),
 }).passthrough();
 
 const codegenPreviewSchema = z.object({
@@ -313,14 +325,29 @@ export function registerWorkspaceRoutes(app, deps = {}) {
   });
 
   /* ============ POST /api/workspace/:projectId/verify ============ */
-  app.post('/api/workspace/:projectId/verify', requireAuth, validate(planBodySchema), async (req, res) => {
+  app.post('/api/workspace/:projectId/verify', requireAuth, validate(verifyBodySchema), async (req, res) => {
     try {
       const projectId = String(req.params.projectId || '');
       const { plan } = await resolvePlan(req, projectId);
       if (!plan) return res.status(404).json({ success: false, error: 'workspace_not_found' });
 
-      const { proofRequirements, verificationSummary } = runVerification(plan);
-      const updated = recalculatePlan({ ...plan, proofRequirements });
+      // Evidence may come from the request or from what the workspace already
+      // has on file, so a student who attached a repo once does not have to
+      // re-paste it on every run.
+      const rawEvidence = {
+        repoUrl: req.body?.evidence?.repoUrl || plan?.proofEvidence?.repoUrl || '',
+        liveUrl: req.body?.evidence?.liveUrl || plan?.proofEvidence?.liveUrl || '',
+      };
+      const hasEvidence = !!(rawEvidence.repoUrl || rawEvidence.liveUrl);
+      const evidence = hasEvidence ? await gatherProofEvidence(rawEvidence) : null;
+
+      const { proofRequirements, verificationSummary } = runVerification(plan, evidence);
+      const updated = recalculatePlan({
+        ...plan,
+        proofRequirements,
+        proofEvidence: { ...rawEvidence, lastVerifiedAt: new Date().toISOString() },
+        verificationSummary,
+      });
       await savePlan(req, projectId, updated);
       res.json({ success: true, verificationSummary, updatedWorkspacePlan: updated });
     } catch (err) {

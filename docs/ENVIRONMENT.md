@@ -46,3 +46,17 @@ missing. Everything else degrades gracefully. Full template: `.env.example`.
 ## Validation behavior
 On startup the server logs warnings for missing optional services and, in
 production, **exits** on missing `SESSION_SECRET` / `MONGODB_URI`. See `config.js`.
+
+## Demo mode (recording / pitching without a database)
+
+| Var | Meaning |
+| --- | --- |
+| `DEMO_MODE` | `1` to serve the in-memory 50-student demo cohort when **no** `MONGODB_URI` is set. |
+
+`DEMO_MODE` is gated on two conditions at once: the flag must be on **and**
+there must be no database connected. With a real `MONGODB_URI` present the flag
+does nothing, so demo records can never mix with, mask, or overwrite live data.
+The cohort is generated per request and never written anywhere.
+
+Never set `DEMO_MODE=1` in production. See `docs/DEMO_RECORDING.md` for the
+full walkthrough.

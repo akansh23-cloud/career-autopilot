@@ -11,7 +11,8 @@ import { ScoreRing, StatusBadge } from '../components/proof/ProofViews.jsx';
 import ArchitectureStudioPanel from '../components/architecture/ArchitectureStudioPanel.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { getAccessForUser } from '../lib/access.js';
-import { canUse, useMeter, remaining, promptUpgrade } from '../lib/plan.js';
+import { canUse, useMeter, remaining, promptUpgrade, describeLimit } from '../lib/plan.js';
+import { describeApiError } from '../lib/quota.js';
 import { getProjects, getProject, saveProject } from '../lib/projectStore.js';
 import { WorkspaceCtaPanel } from '../components/workspace/WorkspaceCta.jsx';
 import { ensureWorkspaceForProject } from '../lib/workspaceEnsure.js';
@@ -285,14 +286,16 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
   const [recs, setRecs] = useState(state.recommendations || []);
   const [tab, setTab] = useState('recommendations');
   const [trends, setTrends] = useState(null);
+  const [buildNotice, setBuildNotice] = useState(null);
 
   const recLeft = remaining('creatorRecs');
 
   const run = async (override = null) => {
     if (!access.isAdmin && !canUse('creatorRecs')) {
-      promptUpgrade('You’ve used all your project recommendations for this month. Upgrade for more.', 'pro');
+      promptUpgrade(describeLimit('creatorRecs') + ' Upgrade for more recommendations this month.', 'pro');
       return;
     }
+    setBuildNotice(null);
     const ov = override && typeof override === 'object' && !override.nativeEvent ? override : null;
     setLoading(true);
     const ctx = assembleContext({
@@ -307,6 +310,10 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
       setRecs(recommendations);
       const s = saveCreatorState({ recommendations, context: ctx, lastSource: source, discoverSalt: salt });
       setState(s);
+    } catch (e) {
+      const d = describeApiError(e, 'Generating recommendations');
+      setBuildNotice({ tone: 'warn', text: d.message, upgrade: d.kind === 'quota' });
+      if (d.kind === 'quota' && d.suggestPlan) promptUpgrade(d.message, d.suggestPlan);
     } finally { setLoading(false); }
   };
 
@@ -324,10 +331,28 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
 
   const build = async (rec) => {
     setBusyId(rec.id);
+    setBuildNotice(null);
     try {
       const ctx = state.context && Object.keys(state.context).length ? state.context : assembleContext({ targetRole, difficulty, duration });
       const p = await createProjectFromRec(rec, ctx);
+      if (p.__merged) {
+        // The build matched an existing workspace and was folded into it.
+        // Say so — silence here is what made the app look broken.
+        setBuildNotice({
+          tone: 'info',
+          text: `This build matched your existing workspace “${p.__mergedWith?.title || 'saved project'}”, so it was merged there instead of creating a duplicate. Your progress is intact.`,
+        });
+      }
       pickProject(p.id, 'validate');
+    } catch (e) {
+      if (e?.code === 'workspace_limit') {
+        setBuildNotice({ tone: 'warn', text: e.message, upgrade: true });
+        promptUpgrade(e.message, 'pro');
+      } else {
+        const d = describeApiError(e, 'Building this project');
+        setBuildNotice({ tone: 'warn', text: d.message, upgrade: d.kind === 'quota' });
+        if (d.kind === 'quota' && d.suggestPlan) promptUpgrade(d.message, d.suggestPlan);
+      }
     } finally { setBusyId(null); }
   };
 
@@ -339,6 +364,15 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
 
   return (
     <div className="space-y-5">
+      {buildNotice && (
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-[13px] ${buildNotice.tone === 'warn' ? 'border-amber-300/30 bg-amber-400/10 text-amber-100' : 'border-aurora-cyan/30 bg-aurora-cyan/10 text-[#C6ECF7]'}`}>
+          <span className="min-w-0">{buildNotice.text}</span>
+          <div className="flex shrink-0 gap-2">
+            {buildNotice.upgrade && <Button size="sm" onClick={() => promptUpgrade(buildNotice.text, 'pro')}>See plans</Button>}
+            <Button size="sm" variant="ghost" onClick={() => setBuildNotice(null)}>Dismiss</Button>
+          </div>
+        </div>
+      )}
       <SectionCard title="Where do you want to start?" action={<Badge tone={recLeft === Infinity ? 'mint' : recLeft > 0 ? 'cyan' : 'amber'}>{recLeft === Infinity ? 'Unlimited' : `${recLeft} left`}</Badge>}>
         <div className="flex flex-wrap gap-2">
           {START_SOURCES.map((s) => (

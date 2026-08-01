@@ -28,7 +28,9 @@
 import { z } from 'zod';
 import collegeObservability from '../utils/collegeObservability.js';
 import { parseRosterCsv, isValidJoinCodeFormat, ROSTER_MAX_ROWS } from '../utils/collegeOnboarding.js';
+import { buildCsv } from '../utils/csvSafe.js';
 import { emailEnabled, sendMail, nudgeEmail } from '../utils/mailer.js';
+import { DEMO_COLLEGE_ID, demoModeEnabled } from '../utils/demoCollegeData.js';
 
 const OBSERVABILITY_CACHE_TTL_MS = 60 * 1000;
 
@@ -42,11 +44,21 @@ export function registerCollegeRoutes(app, deps = {}) {
   }
 
   const collegeScopeFromQuery = (req) => req.query.collegeId || req.body?.collegeId || null;
+
+  // With DEMO_MODE on and no database, no user carries a real collegeId, so
+  // every scoped read would resolve to '' and return empty. Fall back to the
+  // demo college so the command center has a cohort to render. Guarded on
+  // both flags — with a real DB this is never reached.
+  const demoScopeActive = () => demoModeEnabled() && !db.dbEnabled();
+
   function callerCollegeId(req) {
     const ctx = req.userRole || {};
     // Admin may target any college via ?collegeId=; college_admin is pinned to own.
-    if (ctx.isAdmin) return String(req.query.collegeId || req.body?.collegeId || '').trim() || ctx.collegeId || '';
-    return ctx.collegeId || '';
+    const resolved = ctx.isAdmin
+      ? String(req.query.collegeId || req.body?.collegeId || '').trim() || ctx.collegeId || ''
+      : ctx.collegeId || '';
+    if (resolved) return resolved;
+    return demoScopeActive() ? DEMO_COLLEGE_ID : '';
   }
   const guard = [requireAuth, requireRole('college_admin', 'admin'), requireCollegeScope(collegeScopeFromQuery)];
   const validate = (schema) => (req, res, next) => {
@@ -490,7 +502,7 @@ export function registerCollegeRoutes(app, deps = {}) {
     });
 
     app.post('/api/admin/demo/seed', requireAuth, requireAdmin, async (req, res) => {
-      const result = await db.seedDemoCollege({ reset: req.body?.reset === true });
+      const result = await db.seedDemoCollege({ reset: req.body?.reset === true, count: Number(req.body?.count) || 50 });
       res.status(result.ok ? 200 : 400).json(result);
     });
   }

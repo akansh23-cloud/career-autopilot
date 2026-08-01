@@ -5,8 +5,9 @@
 // engine, projectStatus, architecture/mermaid, githubSync) into a guided
 // 6-step flow: Discover -> Validate -> Blueprint -> Build -> Verify -> Publish.
 //
-// Server AI endpoints (/api/creator/*) enhance each step when ANTHROPIC_API_KEY
-// is set; every call falls back to deterministic output so the UI always works.
+// Server AI endpoints (/api/creator/*) enhance each step when the deployment has
+// AI credentials configured; every call falls back to deterministic output so
+// the UI always works.
 // AI keys never reach the client. Created projects are saved into the SAME
 // projectStore used by XP/badges/sandbox/recruiter, so all downstream features
 // keep working unchanged.
@@ -15,7 +16,8 @@ import { api } from './api.js';
 import { buildProject, generateRoadmap as genRoadmap } from './projectGen.js';
 import { getProfile } from './userProfile.js';
 import { getStoredResume, getSelectedJob } from './resumeStore.js';
-import { saveProject, getProject, uid, savePartnerRequest, findDuplicateProject } from './projectStore.js';
+import { saveProject, saveProjectDetailed, getProject, getProjects, uid, savePartnerRequest, findDuplicateProject } from './projectStore.js';
+import { canCreateWorkspace, workspaceAllowance, isUnlimited, effectivePlan, PLAN_LABELS_FULL } from './plan.js';
 import { calculateProjectStatus } from './projectStatus.js';
 import { proofBreakdown } from './proofScore.js';
 import { generateIdeas, bucketIdeas } from './ideaEngine.js';
@@ -253,7 +255,29 @@ export async function createProjectFromRec(rec = {}, ctx = {}) {
   };
   // keep a human summary used by sandbox cards
   project.summary = rec.summary;
-  return saveProject(project);
+
+  // Workspace cap: previously declared in plan.js and never checked, so a
+  // capped student got no project and no explanation. Now it fails loudly.
+  const existingCount = getProjects().length;
+  const wouldBeNew = !findDuplicateProject(project);
+  if (wouldBeNew && !canCreateWorkspace(existingCount)) {
+    const cap = workspaceAllowance();
+    const err = new Error(
+      `Your ${PLAN_LABELS_FULL[effectivePlan()] || 'current'} plan keeps ${isUnlimited(cap) ? 'unlimited' : cap} active project workspace${cap === 1 ? '' : 's'}. `
+      + 'Delete or archive one from Project Studio, or upgrade to build more in parallel.',
+    );
+    err.code = 'workspace_limit';
+    err.workspaceLimit = { cap, existingCount };
+    throw err;
+  }
+
+  const outcome = saveProjectDetailed(project);
+  // Surface the dedupe fold so the caller can tell the student their build
+  // went into an existing workspace rather than silently vanishing.
+  return Object.assign(outcome.project, {
+    __merged: outcome.merged,
+    __mergedWith: outcome.mergedWith,
+  });
 }
 function mapTypeToEngine(t = '') {
   const s = t.toLowerCase();

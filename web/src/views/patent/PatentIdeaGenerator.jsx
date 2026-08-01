@@ -69,7 +69,7 @@ export default function PatentIdeaGenerator({ go }) {
         </SectionCard>
 
         <div className="space-y-3">
-          {meta.why && <div className="rounded-lg border border-aurora-violet/25 bg-aurora-violet/5 px-3 py-2 text-[12px] text-slate-300"><span className="text-aurora-violet">Why these: </span>{meta.why}{meta.source === 'deterministic' && ' (template fallback — set ANTHROPIC_API_KEY for AI generation)'}</div>}
+          {meta.why && <div className="rounded-lg border border-aurora-violet/25 bg-aurora-violet/5 px-3 py-2 text-[12px] text-slate-300"><span className="text-aurora-violet">Why these: </span>{meta.why}{meta.source === 'deterministic' && ' (standard template version — AI generation is not enabled on this account)'}</div>}
           {!ideas.length && !busy && (
             <SectionCard><div className="py-10 text-center text-sm text-slate-500"><Wand2 size={26} className="mx-auto mb-2 text-slate-600" /> Generated ideas appear here. Save the strong ones to your portfolio.</div></SectionCard>
           )}

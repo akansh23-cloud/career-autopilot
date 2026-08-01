@@ -58,12 +58,43 @@ test('PATCH tasks: unknown task id returns 404', async () => {
   assert.equal(r.status, 404);
 });
 
-test('POST verify is honest: github/deployment stay pending', async () => {
+test('POST verify with no evidence: github/deployment stay pending', async () => {
   const r = await c.post(`/api/workspace/${pid}/verify`, { workspacePlan: plan });
   assert.equal(r.status, 200);
   const s = r.json.verificationSummary;
-  assert.equal(s.mode, 'local_v1');
-  assert.ok(s.checks.every((ch) => ch.result !== 'verified' || !/github|deploy/i.test(ch.note)));
+  // No repo/deploy URL attached => nothing network-backed can be observed.
+  assert.equal(s.mode, 'local_only');
+  const netChecks = s.checks.filter((ch) => ch.method === 'github' || ch.method === 'deployment');
+  assert.ok(netChecks.length >= 1, 'fixture should contain network-backed proof items');
+  assert.ok(netChecks.every((ch) => ch.result === 'pending'));
+  // The pending note must tell the student what to do, not just say "pending".
+  assert.ok(netChecks.every((ch) => /attach/i.test(ch.note)));
+  plan = r.json.updatedWorkspacePlan;
+});
+
+test('POST verify with unusable evidence never fakes a pass', async () => {
+  // Malformed URLs are rejected before any network call, so this stays fast
+  // and deterministic. The contract under test: a check that cannot run
+  // yields `pending`, never `verified` and never `failed`.
+  const r = await c.post(`/api/workspace/${pid}/verify`, {
+    workspacePlan: plan,
+    evidence: { repoUrl: 'definitely-not-a-repo', liveUrl: 'not a url' },
+  });
+  assert.equal(r.status, 200);
+  const s = r.json.verificationSummary;
+  assert.equal(s.mode, 'evidence_backed');
+  const netChecks = s.checks.filter((ch) => ch.method === 'github' || ch.method === 'deployment');
+  assert.ok(netChecks.every((ch) => ch.result === 'pending'));
+  assert.equal(s.evidenceUsed.repoUrl, 'definitely-not-a-repo');
+  assert.equal(s.evidenceUsed.githubReachable, false);
+  plan = r.json.updatedWorkspacePlan;
+});
+
+test('verify persists attached evidence so it need not be re-pasted', async () => {
+  const r = await c.post(`/api/workspace/${pid}/verify`, { workspacePlan: plan });
+  assert.equal(r.status, 200);
+  // The previous test attached a repoUrl; it should still be on the plan.
+  assert.equal(r.json.updatedWorkspacePlan.proofEvidence.repoUrl, 'definitely-not-a-repo');
   plan = r.json.updatedWorkspacePlan;
 });
 

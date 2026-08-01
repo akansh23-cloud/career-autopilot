@@ -73,10 +73,18 @@ export function findDuplicateProject(project, list = getProjects()) {
   const key = dedupeKey(project);
   return list.find((p) => p.id !== project.id && dedupeKey(p) === key) || null;
 }
-export function saveProject(project) {
+/* saveProjectDetailed — the real implementation.
+   Returns { project, merged, mergedWith, created } so callers can TELL THE
+   USER what happened. The old behaviour folded a new project into a matching
+   existing one and returned it as if it were new: the student clicked
+   "Build this" a second time, got silently redirected into project #1, and
+   concluded the app had stopped generating projects. The fold is still the
+   right default (it protects progress), but it must never be invisible. */
+export function saveProjectDetailed(project) {
   const now = new Date().toISOString();
   const list = getProjects();
   let idx = list.findIndex((p) => p.id === project.id);
+  let mergedWith = null;
   // A NEW project (no id match) that matches an existing one by normalized
   // title + target role + source job folds into that project rather than
   // creating a duplicate workspace. User progress (tasks/checklist) is kept.
@@ -84,6 +92,7 @@ export function saveProject(project) {
     const dup = findDuplicateProject(project, list);
     if (dup) {
       idx = list.findIndex((p) => p.id === dup.id);
+      mergedWith = { id: dup.id, title: dup.title || 'your existing project' };
       project = {
         ...dup, ...project, id: dup.id, createdAt: dup.createdAt,
         tasks: project.tasks || dup.tasks,
@@ -91,13 +100,39 @@ export function saveProject(project) {
       };
     }
   }
+  const existed = idx >= 0;
   const next = { ...project, updatedAt: now };
-  next.createdAt = next.createdAt || (idx >= 0 ? list[idx].createdAt : now) || now;
+  next.createdAt = next.createdAt || (existed ? list[idx].createdAt : now) || now;
   next.proofScore = computeProofScore(next);
-  if (idx >= 0) list[idx] = next; else list.unshift(next);
+  if (existed) list[idx] = next; else list.unshift(next);
   write(PROJECTS_KEY, list, EV.projects);
   patchServerState({ projects: list });
-  return next;
+  return {
+    project: next,
+    merged: !!mergedWith,
+    mergedWith,
+    created: !existed,
+  };
+}
+
+/* Back-compatible wrapper — returns the project, as every existing caller
+   expects. Callers that create NEW projects should prefer
+   saveProjectDetailed() so they can surface a merge. */
+export function saveProject(project) {
+  return saveProjectDetailed(project).project;
+}
+
+/* Force a genuinely separate workspace even when the title collides, by
+   disambiguating the title. Used by the "create it separately" escape hatch
+   offered when a build merges into an existing project. */
+export function saveProjectAsNew(project) {
+  const list = getProjects();
+  const base = String(project.title || 'Untitled project').trim();
+  let title = base;
+  let n = 2;
+  const taken = new Set(list.map((p) => String(p.title || '').trim().toLowerCase()));
+  while (taken.has(title.toLowerCase())) { title = `${base} (${n})`; n += 1; }
+  return saveProjectDetailed({ ...project, id: uid('proj'), title, createdAt: new Date().toISOString() }).project;
 }
 export function deleteProject(id) {
   const next = getProjects().filter((p) => p.id !== id);

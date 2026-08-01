@@ -4,6 +4,8 @@ import { SectionCard } from './common.jsx';
 import { Button, Badge, EmptyState, Field } from '../components/ui/kit.jsx';
 import { ResumeApi } from '../lib/api.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
+import { canUse, useMeter, remaining, promptUpgrade, describeLimit, isUnlimited } from '../lib/plan.js';
+import { describeApiError } from '../lib/quota.js';
 
 const MODES = [
   ['conservative', 'Conservative', 'Reorder & light rewrite only'],
@@ -39,6 +41,9 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
   const [err, setErr] = useState('');
   const [versions, setVersions] = useState([]);
   const [savedMsg, setSavedMsg] = useState('');
+  const [blocked, setBlocked] = useState(null); // { message, suggestPlan }
+
+  const tailorsLeft = remaining('tailoring');
 
   useEffect(() => { setRole(targetRole || ''); }, [targetRole]);
   useEffect(() => { loadVersions(); }, []);
@@ -50,13 +55,37 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
   const tailor = async () => {
     if (!resumeText || resumeText.trim().length < 40) { setErr('Add your resume above first.'); return; }
     if (jd.trim().length < 30) { setErr('Paste a fuller job description to tailor against.'); return; }
-    setStatus('loading'); setErr(''); setResult(null);
+
+    // Entitlement check FIRST. This screen previously called the API with no
+    // plan check at all, so a student out of tailoring runs saw a bare
+    // failure instead of an upgrade path.
+    if (!canUse('tailoring')) {
+      const msg = `${describeLimit('tailoring')} You've used them all for this month.`;
+      setBlocked({ message: msg, suggestPlan: 'pro' });
+      setErr(''); setStatus('idle');
+      promptUpgrade(msg, 'pro');
+      return;
+    }
+
+    setStatus('loading'); setErr(''); setBlocked(null); setResult(null);
     try {
       const data = await ResumeApi.tailor({ resumeText, jobDescription: jd, fileName, targetRole: role, mode });
+      useMeter('tailoring');
       setResult(data);
       setStatus('done');
     } catch (e) {
-      setErr(e?.message || 'Tailoring failed.'); setStatus('error');
+      const d = describeApiError(e, 'Resume tailoring');
+      if (d.kind === 'quota') {
+        // Daily server cap, distinct from the monthly entitlement above.
+        setBlocked({ message: d.message, suggestPlan: d.suggestPlan });
+        setErr('');
+        promptUpgrade(d.message, d.suggestPlan || 'pro');
+      } else if (d.kind === 'input') {
+        setErr(d.message);
+      } else {
+        setErr(d.message);
+      }
+      setStatus('error');
     }
   };
 
@@ -128,12 +157,25 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
 
         {err && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
 
-        <div className="mt-3 flex flex-wrap gap-2">
+        {blocked && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-400/10 p-3.5 text-[13px] text-amber-100">
+            <span className="min-w-0">{blocked.message}</span>
+            <div className="flex shrink-0 gap-2">
+              <Button size="sm" onClick={() => promptUpgrade(blocked.message, blocked.suggestPlan || 'pro')}>See plans</Button>
+              <Button size="sm" variant="soft" onClick={() => setBlocked(null)}>Dismiss</Button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={tailor} disabled={status === 'loading'}>
             {status === 'loading' ? <><Loader2 size={16} className="animate-spin" /> Tailoring…</> : <><Sparkles size={16} /> Tailor resume</>}
           </Button>
           <Button variant="soft" onClick={() => saveVersion('base')}><Save size={16} /> Save base version</Button>
           {role && <Button variant="soft" onClick={() => saveVersion('role')}><Save size={16} /> Save role version</Button>}
+          <span className="ml-auto text-[11.5px] text-slate-500">
+            {isUnlimited(tailorsLeft) ? 'Unlimited tailoring on your plan' : `${tailorsLeft} tailoring run${tailorsLeft === 1 ? '' : 's'} left this month`}
+          </span>
         </div>
       </SectionCard>
 

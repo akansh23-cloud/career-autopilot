@@ -13,7 +13,7 @@ import { ROLE_GROUPS, ALL_ROLES } from '../lib/roles.js';
 import { WorkspaceOpenButton } from '../components/workspace/WorkspaceCta.jsx';
 import { getStoredResume, saveStoredResume, getResumeSearchRole } from '../lib/resumeStore.js';
 import {
-  getProjects, saveProject, deleteProject, consumeStudioSeed, peekStudioSeed,
+  getProjects, saveProject, saveProjectDetailed, deleteProject, consumeStudioSeed, peekStudioSeed,
   computeProofScore, taskProgress, proofScoreBreakdown, getPublishedProjects,
 } from '../lib/projectStore.js';
 import {
@@ -24,7 +24,7 @@ import { projectXP } from '../lib/xp.js';
 import { deriveBadges } from '../lib/badges.js';
 import { roleConsistency } from '../lib/roleFit.js';
 import { getAccessForUser } from '../lib/access.js';
-import { isUnlimited, promptUpgrade } from '../lib/plan.js';
+import { isUnlimited, promptUpgrade, canCreateWorkspace, workspaceAllowance } from '../lib/plan.js';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { BadgePill, StatusBadge } from '../components/proof/ProofViews.jsx';
 // Architecture Diagram OS: full studio panel (tabs/validation/refine/export);
@@ -1008,7 +1008,24 @@ export default function ProjectStudio({ go, openProjectId }) {
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const saveWorkspace = () => { const saved = saveProject(project); setProjects(getProjects()); flash('Saved to workspaces.'); setOpenWs(saved); };
+  const saveWorkspace = () => {
+    // Enforce the workspace cap that plan.js declared but nothing checked,
+    // and report a dedupe fold instead of silently reopening an old project.
+    const isNew = !getProjects().some((p) => p.id === project.id);
+    if (isNew && !canCreateWorkspace(getProjects().length)) {
+      const cap = workspaceAllowance();
+      const msg = `Your ${access.effectivePlan} plan keeps ${isUnlimited(cap) ? 'unlimited' : cap} active project workspace${cap === 1 ? '' : 's'}. Delete one from below, or upgrade to run more in parallel.`;
+      flash(msg);
+      promptUpgrade(msg, 'pro');
+      return;
+    }
+    const outcome = saveProjectDetailed(project);
+    setProjects(getProjects());
+    flash(outcome.merged
+      ? `Merged into your existing workspace “${outcome.mergedWith?.title || 'saved project'}” — same title and role, so your progress stays in one place.`
+      : 'Saved to workspaces.');
+    setOpenWs(outcome.project);
+  };
   const addBullets = () => {
     const bullets = (project.resumeBullets || []).map((b) => '• ' + b).join('\n');
     const text = (resume.text || '').trimEnd();

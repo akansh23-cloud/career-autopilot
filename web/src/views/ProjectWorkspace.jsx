@@ -165,12 +165,19 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
     finally { setBusyKey('recalc', false); }
   };
 
-  const verify = async () => {
+  /* evidence: { repoUrl, liveUrl } from the Proof panel. Omitted (header
+     button) means "re-check whatever is already on file". */
+  const verify = async (evidence = null) => {
     if (!project || !plan) return;
     setBusyKey('verify', true);
+    setError('');
     try {
-      const r = await WorkspaceApi.verify(project.id, plan);
+      const r = await WorkspaceApi.verify(project.id, plan, evidence);
       if (r?.updatedWorkspacePlan) adoptPlan(r.updatedWorkspacePlan);
+      const s = r?.verificationSummary;
+      if (s && s.mode === 'local_only') {
+        setNotice('Verification ran on local rules only — attach a repository or deployed URL in the Proof tab to verify GitHub and deployment items.');
+      }
     } catch (e) { setError(e?.message || 'Verification failed.'); }
     finally { setBusyKey('verify', false); }
   };
@@ -330,7 +337,7 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
       <WorkspaceHeader
         plan={plan} busy={busy}
         onPreviewPack={previewPack} onDownloadPack={downloadPack}
-        onRegenerate={regenerate} onRecalculate={recalculate} onVerify={verify} onExport={exportPlan}
+        onRegenerate={regenerate} onRecalculate={recalculate} onVerify={() => verify(null)} onExport={exportPlan}
       />
       {error && <Card className="border-rose-400/30 bg-rose-500/8 p-3.5 text-[12.5px] text-rose-200">{error}</Card>}
       {notice && (
@@ -372,14 +379,35 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
               {tab === 'database' && <WorkspaceDatabase {...sectionProps} />}
               {tab === 'tests' && <WorkspaceTests {...sectionProps} />}
               {tab === 'deployment' && <WorkspaceDeployment plan={plan} />}
-              {tab === 'proof' && <WorkspaceProof {...sectionProps} />}
+              {tab === 'proof' && <WorkspaceProof {...sectionProps} onVerify={verify} verifying={busy.verify} />}
               {tab === 'patent' && <WorkspacePatent plan={plan} />}
             </main>
+            {/* The inspector used to be a permanent flex sibling from `xl` up,
+                which left the main column ~700px on a 1440px screen — that is
+                what squeezed the task board. It is now inline only on very
+                wide screens, and a slide-over everywhere else. */}
             {tab !== 'architecture' && (
-              <WorkspaceInspector plan={plan} selected={selected} onClose={() => setSelected(null)} onPreviewCode={previewCode} />
+              <div className="hidden 2xl:block">
+                <WorkspaceInspector plan={plan} selected={selected} onClose={() => setSelected(null)} onPreviewCode={previewCode} />
+              </div>
             )}
           </div>
         </>
+      )}
+
+      {/* Slide-over inspector below 2xl — full detail without stealing width
+          from the board. */}
+      {mode !== 'build' && tab !== 'architecture' && selected && (
+        <div className="fixed inset-0 z-40 flex justify-end 2xl:hidden">
+          <button
+            aria-label="Close inspector"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setSelected(null)}
+          />
+          <div className="relative h-full w-full max-w-[400px] overflow-y-auto border-l border-white/10 bg-ink-950 p-4 shadow-2xl">
+            <WorkspaceInspector plan={plan} selected={selected} onClose={() => setSelected(null)} onPreviewCode={previewCode} />
+          </div>
+        </div>
       )}
 
       <CodePreviewPanel {...codePreview} onClose={() => setCodePreview((s) => ({ ...s, open: false }))} />

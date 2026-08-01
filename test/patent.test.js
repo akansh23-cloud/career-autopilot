@@ -4,7 +4,7 @@ import { scorePatentIdea } from '../server/utils/patentScoringEngine.js';
 import { generateIdeasDeterministic } from '../server/utils/ideaGenerationEngine.js';
 import { strengthenIdea } from '../server/utils/ideaStrengtheningEngine.js';
 import { priorArtPlan } from '../server/utils/priorArtEngine.js';
-import { generateDisclosure, convertToProject } from '../server/utils/disclosureEngine.js';
+import { generateDisclosure, convertToProject, convertToProjectDeterministic } from '../server/utils/disclosureEngine.js';
 import { getUserPatentMemory, buildGenerationContext, suggestNextActions } from '../server/utils/patentMemoryEngine.js';
 import { startServer, stopServer, makeClient } from './helpers.js';
 
@@ -70,11 +70,24 @@ test('disclosure generation produces a structured draft with a disclaimer', () =
   assert.ok(d.disclaimer.includes('not legal advice'));
 });
 
-test('convert-to-project yields a buildable plan', () => {
-  const p = convertToProject({ title: 'Test engine', domain: 'AI', technicalMechanism: 'ml pipeline', tags: ['ml'] });
+// convertToProject is async since the project-brief upgrade — it awaits an
+// AI-written brief (falling back to a deterministic one with no key set) and
+// shapes its output to the project's discipline. A software/ML idea still gets
+// backend APIs; a hardware or lab idea deliberately does not.
+test('convert-to-project yields a buildable plan', async () => {
+  const p = await convertToProject({ title: 'Test engine', domain: 'AI', technicalMechanism: 'ml pipeline with a REST API and dashboard', tags: ['ml'] });
   assert.ok(p.backendApis.length > 0);
   assert.ok(p.resumeBullets.length > 0);
   assert.ok(Array.isArray(p.evidenceChecklist));
+  assert.ok(p.brief, 'plan should carry a project brief');
+  assert.ok(p.whatYouAreBuilding.length > 20);
+});
+
+test('convert-to-project has a synchronous, AI-free path', () => {
+  const p = convertToProjectDeterministic({ title: 'Test engine', domain: 'AI', technicalMechanism: 'ml pipeline with a REST API', tags: ['ml'] });
+  assert.ok(p.backendApis.length > 0);
+  assert.ok(p.resumeBullets.length > 0);
+  assert.equal(p.brief, undefined, 'the sync path must not attempt an AI call');
 });
 
 /* ---- Memory / self-learning context ---- */

@@ -8,7 +8,8 @@ import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume, get
 import { saveStudioSeed } from '../lib/projectStore.js';
 import { saveJobToTracker, getTrackedCount, getTrackerBoard, findCard, trackerJobIdentity } from '../lib/trackerStore.js';
 import { inferType } from '../lib/projectGen.js';
-import { canUse, useMeter, canTrack, promptUpgrade } from '../lib/plan.js';
+import { canUse, useMeter, canTrack, promptUpgrade, describeLimit } from '../lib/plan.js';
+import { describeApiError } from '../lib/quota.js';
 
 const FRESH = [['24h', '1d'], ['3 days', '3d'], ['Week', '7d'], ['Month', '30d'], ['Latest', 'latest']];
 const MODES = ['Any', 'Remote', 'On-site/Hybrid'];
@@ -50,7 +51,7 @@ function enrichJob(j, resume) {
 
 // Deterministic, no-AI tailored package. Built purely from the resume text and
 // job posting so the Tailor & Apply modal ALWAYS produces a usable kit — even
-// when the server has no ANTHROPIC_API_KEY or the AI call fails. It never
+// when AI is not enabled on the deployment or the AI call fails. It never
 // fabricates employers/dates/metrics: the tailored resume keeps the candidate's
 // real resume text and the change notes describe what to adjust manually.
 function buildFallbackKit(job, resume, { template = 'Jake ATS Compact', length = 'Auto' } = {}) {
@@ -144,21 +145,38 @@ function TailorModal({ open, job, go, onClose }) {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [tab, setTab] = useState('resume');
+  const [needsResume, setNeedsResume] = useState(false);
+  const [upgradeMsg, setUpgradeMsg] = useState('');
   const [template, setTemplate] = useState('Jake ATS Compact');
   const [length, setLength] = useState('Auto');
   const resume = getStoredResume();
 
   useEffect(() => {
     if (!open || !job) return;
-    setErr(''); setNotice(''); setTab('resume');
+    setErr(''); setNotice(''); setTab('resume'); setNeedsResume(false); setUpgradeMsg('');
     const cached = safeRead(KIT_KEY, {})[keyForJob(job)];
     if (cached) { setKit(cached); setStatus('done'); } else { setKit(null); setStatus('idle'); }
   }, [open, job]);
 
   const generate = async () => {
     if (!job) return;
-    if (!resume.text || resume.text.length < 40) { setErr('Upload and analyze a resume first, then come back to tailor it for this job.'); return; }
-    setStatus('loading'); setErr(''); setNotice('');
+    if (!resume.text || resume.text.length < 40) {
+      // Be specific about WHICH step is missing and give a way to fix it,
+      // rather than a dead-end sentence on a modal with no exit.
+      setErr(resume.text
+        ? 'The saved resume is too short to tailor. Open Resume, paste the full text, and run the analysis once.'
+        : 'No saved resume found yet. Open Resume, upload or paste yours, run the analysis, then come back here.');
+      setNeedsResume(true);
+      return;
+    }
+    // Monthly entitlement, checked before spending a network call.
+    if (!canUse('tailoring')) {
+      const msg = `${describeLimit('tailoring')} You've used them all for this month.`;
+      setErr(msg); setUpgradeMsg(msg);
+      promptUpgrade(msg, 'pro');
+      return;
+    }
+    setStatus('loading'); setErr(''); setNotice(''); setNeedsResume(false); setUpgradeMsg('');
     const prompt = `You are an expert job application assistant. Build a truthful tailored application kit.
 Return ONLY valid JSON with this shape:
 {"atsBefore":0,"atsAfter":0,"matchedKeywords":[],"stillMissing":[],"summary":"","whyFit":[],"riskNotes":[],"changeNotes":[],"tailoredResume":"plain text resume","latexResume":"Jake's Resume LaTeX if possible","docs":{"coverLetter":"","recruiterMessage":"","linkedinNote":"","applicationEmail":{"subject":"","body":""},"followUp3":"","followUp5":"","followUp7":"","salaryNegotiation":"","applyChecklist":[]}}
@@ -188,16 +206,23 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
         createdAt: new Date().toISOString(), job,
       };
       const all = safeRead(KIT_KEY, {}); all[keyForJob(job)] = next; safeWrite(KIT_KEY, all);
+      useMeter('tailoring');
       setKit(next); setStatus('done');
     } catch (e) {
-      // No raw error for the student. If AI simply isn't configured, say so
-      // clearly; otherwise note it's temporarily unavailable. Either way we
-      // still hand back a working deterministic package.
-      const code = e?.data?.error?.code || '';
-      if (code === 'ai_not_configured') {
-        degrade('AI tailoring is not configured yet. You can still use the job checklist and project gap analysis below.');
+      // Never a raw error, but never a misleading one either. A plan limit is
+      // NOT "temporarily unavailable" — that phrasing is what made students
+      // retry forever instead of upgrading or waiting for the daily reset.
+      const d = describeApiError(e, 'AI tailoring');
+      if (d.kind === 'quota') {
+        setUpgradeMsg(d.message);
+        promptUpgrade(d.message, d.suggestPlan || 'pro');
+        degrade(`${d.message} In the meantime, here's a deterministic starter kit built from your resume — fully editable.`);
+      } else if (d.kind === 'rate') {
+        degrade(`${d.message} Here's a deterministic starter kit you can use or edit right now.`);
+      } else if (d.kind === 'config') {
+        degrade('AI tailoring is not enabled on this account, so this is the standard template version. The checklist and project gap analysis below still work.');
       } else {
-        degrade('AI tailoring is temporarily unavailable, so here’s a deterministic starter kit you can edit. You can still use the checklist and gap analysis.');
+        degrade('AI tailoring could not run just now, so here’s a deterministic starter kit you can edit. You can still use the checklist and gap analysis.');
       }
     }
   };
@@ -213,7 +238,15 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
   return <Modal open={open} onClose={onClose} width="max-w-5xl" title={job ? `Tailoring for ${job.title}` : 'Tailor resume'}>
     {status === 'loading' && <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-300"><Spinner className="border-aurora-mint/20 border-t-aurora-mint" /> Rewriting resume + writing cover letter, recruiter, LinkedIn and email notes…</div>}
     {(status === 'idle' || status === 'error') && <div className="space-y-4">
-      {err && <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">{err}</p>}
+      {err && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+          <span className="min-w-0">{err}</span>
+          <div className="flex shrink-0 gap-2">
+            {needsResume && <Button size="sm" onClick={() => { onClose?.(); go?.('resume'); }}>Go to Resume</Button>}
+            {upgradeMsg && <Button size="sm" onClick={() => promptUpgrade(upgradeMsg, 'pro')}>See plans</Button>}
+          </div>
+        </div>
+      )}
       <div className="rounded-2xl border border-aurora-mint/25 bg-aurora-mint/10 p-4">
         <div className="text-xs font-semibold uppercase tracking-[0.3em] text-aurora-mint">Tailored application kit</div>
         <h3 className="mt-1 font-display text-2xl text-white">{job?.title} <span className="text-slate-500">· {job?.company}</span></h3>
@@ -369,7 +402,7 @@ export default function JobsView({ go }) {
   const addToTracker = (j) => {
     const exists = !!findCard(getTrackerBoard(), trackerJobIdentity(j));
     if (!exists && !canTrack(getTrackedCount())) {
-      promptUpgrade('Free plan tracks up to 20 jobs. Upgrade for unlimited tracking.', 'pro');
+      promptUpgrade(`${describeLimit('tracking')} Upgrade for unlimited tracking.`, 'pro');
       return { status: 'gated' };
     }
     const res = saveJobToTracker(j);
@@ -414,7 +447,7 @@ export default function JobsView({ go }) {
   };
 
   const openPeople = async (type, j, opts = {}) => {
-    if (!canUse('contacts')) { promptUpgrade('You’ve used all your contact searches this month. Upgrade for more.', 'pro'); return; }
+    if (!canUse('contacts')) { promptUpgrade(`${describeLimit('contacts')} You've used them all for this month.`, 'pro'); return; }
     const title = type === 'referrals' ? 'Referral paths' : type === 'linkedin' ? 'Public LinkedIn profiles' : 'Hiring contacts';
     setPeople({ open: true, title, status: 'loading', contacts: [], err: '', note: '', job: j, draft: '', copied: false });
     const domain = j.companyDomain || j.domain || domainFromUrl(j.url);
@@ -428,7 +461,7 @@ export default function JobsView({ go }) {
     }
     catch (err) { setPeople((p) => ({ ...p, status: 'error', err: err.message || 'Lookup failed.' })); }
   };
-  const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { setPeople((p) => ({ ...p, draft: `Could not generate outreach: ${e.message}` })); } };
+  const makeDraft = async (c) => { if (!canUse('outreach')) { promptUpgrade(`${describeLimit('outreach')} You've used them all for this month.`, 'pro'); return; } setPeople((p) => ({ ...p, draft: 'Generating…', copied: false })); const resume = getStoredResume(); const prompt = `Write a short LinkedIn/email outreach note under 90 words. Candidate resume summary: ${resume.analysis?.summary || resume.text.slice(0, 700)}\nTarget person: ${c.name || 'contact'}, ${c.title || c.position || ''} at ${c.company || people.job?.company || ''}.\nTarget job: ${people.job?.title || role}. Make it specific, polite and non-spammy. Output message only.`; try { const r = await AI.message({ max_tokens: 350, messages: [{ role: 'user', content: prompt }] }); const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(); useMeter('outreach'); setPeople((p) => ({ ...p, draft: text })); } catch (e) { const d = describeApiError(e, 'Outreach drafting'); setPeople((p) => ({ ...p, draft: d.message })); if (d.kind === 'quota' && d.suggestPlan) promptUpgrade(d.message, d.suggestPlan); } };
   const copyDraft = () => { navigator.clipboard?.writeText(people.draft || ''); setPeople((p) => ({ ...p, copied: true })); setTimeout(() => setPeople((p) => ({ ...p, copied: false })), 1500); };
   const action = (type, j) => { saveSelectedJob(j); if (type === 'tailor') { setTailorJob(enrichJob(j, getStoredResume())); return; } if (type === 'buildproject') { const ej = enrichJob(j, getStoredResume()); setBuildConfirm({ job: ej, gaps: (ej._missing || []).slice(0, 12) }); return; } if (type === 'details') { const ej = enrichJob(j, getStoredResume()); const body = [
       ej.title ? `Role: ${ej.title}` : '',

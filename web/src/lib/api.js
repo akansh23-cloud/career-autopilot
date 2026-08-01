@@ -1,6 +1,27 @@
 // Thin fetch wrapper. Same-origin in production (Express serves the SPA);
 // proxied to the backend during `vite` dev. Always sends the session cookie.
+import { recordQuota } from './quota.js';
+
 const json = (r) => r.text().then((t) => (t ? JSON.parse(t) : {}));
+
+/* The backend uses two error envelope shapes:
+     A)  { error: { code, message } }            — /ai/messages and friends
+     B)  { error: 'quota_exceeded', message }    — quota + rate limiters
+   Callers should never have to know which. normalizeError() flattens both
+   into a single { code, message } so error handling is one code path. */
+function normalizeError(data, res) {
+  const e = data?.error;
+  let code = '';
+  let message = '';
+  if (e && typeof e === 'object') {
+    code = e.code || e.error || '';
+    message = e.message || '';
+  } else if (typeof e === 'string') {
+    code = e;
+  }
+  message = message || data?.message || (typeof e === 'string' ? '' : '') || res.statusText || 'Request failed';
+  return { code, message };
+}
 
 // Read the readable double-submit CSRF cookie the server sets, so we can echo it
 // back in the X-CSRF-Token header on state-changing requests.
@@ -24,11 +45,32 @@ async function req(method, path, body) {
     headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+  // The server reports remaining daily allowance on every metered call so the
+  // UI can warn BEFORE the student hits the wall, not only after.
+  const hdrBucket = res.headers.get('X-Quota-Bucket');
+  if (hdrBucket) {
+    recordQuota({ bucket: hdrBucket, remaining: res.headers.get('X-Quota-Remaining') });
+  }
+
   const data = await json(res).catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data?.error?.message || data?.message || data?.error || res.statusText);
+    const { code, message } = normalizeError(data, res);
+    const err = new Error(message);
     err.status = res.status;
+    err.code = code;
     err.data = data;
+    // Quota rejections carry bucket/limit/resetAt — keep them on the error so
+    // views can show "resets at X" and route to the right upgrade tier.
+    if (data && (data.bucket || code === 'quota_exceeded')) {
+      err.quota = {
+        bucket: data.bucket || hdrBucket || null,
+        limit: data.limit ?? null,
+        remaining: data.remaining ?? 0,
+        plan: data.plan || null,
+        resetAt: data.resetAt || null,
+      };
+      if (err.quota.bucket) recordQuota({ ...err.quota });
+    }
     throw err;
   }
   return data;

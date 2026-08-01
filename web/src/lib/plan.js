@@ -1,5 +1,21 @@
-// Plan + quota system (frontend). Limits mirror the backend; the backend is the
-// source of truth for billing, but these gate the UI and show upgrade prompts.
+// Plan + entitlement system (frontend).
+//
+// TWO DISTINCT THINGS LIVE IN THIS APP — do not conflate them:
+//
+//   1. ENTITLEMENTS (this file): what a plan unlocks, and the monthly
+//      allowances shown on the pricing card — tailoring runs, contact
+//      searches, workspaces, templates, DOCX export. Counted client-side so
+//      the UI can gate and prompt an upgrade before a call goes out.
+//
+//   2. DAILY COMPUTE QUOTA (lib/quota.js, mirroring the server's
+//      quotaMiddleware): how much expensive work the backend will do per UTC
+//      day. The SERVER is the only real enforcer, and it is what actually
+//      returns 429.
+//
+// A student can be inside their monthly entitlement and still be stopped by
+// the daily quota. Both paths must produce a clear, specific message — that
+// was the whole point of the fix.
+import { BUCKET_LIMITS } from './quota.js';
 
 const PLAN_KEY = 'careerAutopilot.plan.v1';
 const USAGE_KEY = 'careerAutopilot.usage.v1';
@@ -24,7 +40,31 @@ export const METER_LABELS = {
   tracking: 'tracked jobs',
   outreach: 'AI outreach drafts',
   creatorRecs: 'project recommendations',
+  workspaces: 'active project workspaces',
+  aiGen: 'AI project roadmaps',
+  sandboxPublish: 'published sandbox projects',
 };
+
+/* Which server compute bucket a UI action ultimately spends. Used to show the
+   real daily allowance next to the monthly entitlement, so the two numbers on
+   screen always agree with what the backend will actually do. */
+export const METER_TO_BUCKET = {
+  tailoring: 'aiCalls',
+  outreach: 'aiCalls',
+  contacts: 'aiCalls',
+  aiGen: 'generation',
+  creatorRecs: 'generation',
+  workspaces: 'generation',
+  sandboxPublish: 'syncs',
+};
+
+export function dailyBucketLimit(meter, id = planId()) {
+  const bucket = METER_TO_BUCKET[meter];
+  if (!bucket) return U;
+  const row = BUCKET_LIMITS[isAdmin() ? 'admin' : id] || BUCKET_LIMITS.free;
+  const v = row[bucket];
+  return v == null ? U : v;
+}
 
 function read(key) {
   if (typeof window === 'undefined') return null;
@@ -96,11 +136,34 @@ export function canTrack(currentCount) {
   const lim = currentLimits().tracking;
   return isUnlimited(lim) || currentCount < lim;
 }
+/* workspaces are a live count too (how many project workspaces exist right
+   now), not a monthly meter. Previously defined but never enforced, which is
+   why a blocked second project failed silently. */
+export function canCreateWorkspace(currentCount) {
+  if (isAdmin()) return true;
+  const lim = currentLimits().workspaces;
+  return isUnlimited(lim) || currentCount < lim;
+}
+export function workspaceAllowance() { return isAdmin() ? Infinity : currentLimits().workspaces; }
 
 /* feature flags */
 export function canUploadCustom() { return isAdmin() || !!currentLimits().customUpload; }
 export function canExportDocx() { return isAdmin() || !!currentLimits().docx; }
 export function templateAllowance() { return isAdmin() ? Infinity : currentLimits().templates; } // number or Infinity
+
+/* Human sentence for any meter, used in upgrade prompts and the usage strip.
+   Always mentions BOTH the monthly entitlement and the daily server cap when
+   they differ, so the number on screen is never contradicted by a 429. */
+export function describeLimit(meter, id = planId()) {
+  const label = METER_LABELS[meter] || meter;
+  const monthly = isAdmin() ? U : limitsFor(id)[meter];
+  const daily = dailyBucketLimit(meter, id);
+  if (isUnlimited(monthly) && isUnlimited(daily)) return `Unlimited ${label}.`;
+  const parts = [];
+  if (!isUnlimited(monthly)) parts.push(`${monthly} ${label} per month`);
+  if (!isUnlimited(daily)) parts.push(`${daily} per day across the account`);
+  return `Your ${PLAN_LABELS[id] || id} plan includes ${parts.join(', capped at ')}.`;
+}
 
 /* trigger the upgrade modal with a contextual reason (no-op for admins) */
 export function promptUpgrade(reason, suggested = 'pro') {

@@ -6,6 +6,7 @@ import {
 import { PageIntro, StatCard, SectionCard, BarChart, NextBestAction } from './common.jsx';
 import { Badge, Button, Skeleton, EmptyState } from '../components/ui/kit.jsx';
 import { WorkspaceOpenButton } from '../components/workspace/WorkspaceCta.jsx';
+import PlanUsageStrip from '../components/PlanUsageStrip.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { Dashboard as DashboardApi } from '../lib/api.js';
 import { getStoredResume, getStoredJobResults } from '../lib/resumeStore.js';
@@ -134,6 +135,8 @@ export default function Dashboard({ go }) {
           <Badge tone="amber">Demo data — sign in with Google for your own dashboard</Badge>
         </div>
       )}
+
+      <PlanUsageStrip />
 
       <NextBestAction
         title={nba.title}

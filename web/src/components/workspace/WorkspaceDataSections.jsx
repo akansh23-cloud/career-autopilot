@@ -1,6 +1,8 @@
 // Guided Project Workspace — Files / APIs / Database / Tests / Deployment /
 // Proof / Patent sections.
-import { Card, Badge } from '../ui/kit.jsx';
+import { useState } from 'react';
+import { Github, Globe, ShieldCheck, Loader2, Info } from 'lucide-react';
+import { Card, Badge, Button } from '../ui/kit.jsx';
 import { StatusBadge, KeyVal, ChipList, ItemRow, SectionTitle, NoticeBar } from './workspaceBits.jsx';
 import { fileBadge, asList } from '../../lib/workspaceSelectors.js';
 
@@ -138,18 +140,92 @@ export function WorkspaceDeployment({ plan }) {
   );
 }
 
-export function WorkspaceProof({ plan, selected, onSelect }) {
+/* How verification actually works — stated plainly. The old placeholder copy
+   told students nothing about what to attach or what would be checked. */
+function VerificationExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card className="mt-4 p-5">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2.5 text-left">
+        <Info size={15} className="shrink-0 text-aurora-cyan" />
+        <span className="text-[13.5px] font-semibold text-white">How verification works</span>
+        <span className="ml-auto text-[12px] text-slate-500">{open ? 'Hide' : 'Show'}</span>
+      </button>
+      {open && (
+        <div className="mt-4 space-y-4 text-[13px] leading-relaxed text-slate-300">
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">GitHub proof</div>
+            <p>We read your <strong>public</strong> repository from GitHub&rsquo;s API — no token, no write access. We confirm the repo exists and has commits, that a README exists in the root and is substantial enough to explain the project, and whether a CI workflow lives under <span className="font-mono text-[12px]">.github/workflows</span>. A private repo cannot be read this way; connect the GitHub App in Career Profile to verify private work with your permission.</p>
+          </div>
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">Deployment proof</div>
+            <p>We request your deployed URL server-side and record the HTTP status, response time, page title and whether the response is a real rendered page rather than an empty shell or a parked domain. A page that loads but renders nothing stays pending.</p>
+          </div>
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">What never happens</div>
+            <p>Nothing passes because you clicked a button, downloaded a starter pack or marked a task Done. If a check cannot run — timeout, rate limit, network block — the item stays <strong>pending</strong>. We never fail you for our outage and we never fake a pass.</p>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+export function WorkspaceProof({ plan, selected, onSelect, onVerify, verifying }) {
   const proofs = plan?.proofRequirements || [];
+  const saved = plan?.proofEvidence || {};
+  const summary = plan?.verificationSummary || null;
+  const [repoUrl, setRepoUrl] = useState(saved.repoUrl || '');
+  const [liveUrl, setLiveUrl] = useState(saved.liveUrl || '');
+
+  const run = () => onVerify?.({ repoUrl: repoUrl.trim(), liveUrl: liveUrl.trim() });
+  const canRun = !!onVerify && !verifying;
+
   return (
     <div>
       <SectionTitle hint="Implementation proof is separate from the architecture design score.">Proof requirements</SectionTitle>
-      <NoticeBar>GitHub and deployment verification are <strong>coming next</strong> — in v1 only local/manual checks can be verified. Nothing here is auto-verified by downloads or clicks.</NoticeBar>
-      <div className="mt-3 space-y-1.5">
+
+      <Card className="mt-3 p-5">
+        <div className="mb-1 text-[13.5px] font-semibold text-white">Attach your evidence</div>
+        <p className="mb-4 text-[12.5px] leading-relaxed text-slate-400">
+          Paste what you have. We check it server-side and mark only what we can actually observe. Anything we cannot reach stays pending with a reason.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500"><Github size={12} /> Public repository URL</span>
+            <input
+              value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)}
+              placeholder="https://github.com/you/your-project"
+              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500"><Globe size={12} /> Deployed URL</span>
+            <input
+              value={liveUrl} onChange={(e) => setLiveUrl(e.target.value)}
+              placeholder="https://your-project.vercel.app"
+              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button onClick={run} disabled={!canRun}>
+            {verifying ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : <><ShieldCheck size={15} /> Run verification</>}
+          </Button>
+          {summary?.ranAt && (
+            <span className="text-[11.5px] text-slate-500">
+              Last run {new Date(summary.ranAt).toLocaleString()} · {summary.verifiedItems} verified, {summary.pendingItems} pending
+            </span>
+          )}
+        </div>
+      </Card>
+
+      <div className="mt-4 space-y-1.5">
         {proofs.map((p) => (
           <ItemRow
             key={p.id}
             title={p.title}
-            sub={`${p.description || ''} · via ${p.verificationMethod}`}
+            sub={p.verificationNote || `${p.description || ''} · via ${p.verificationMethod}`}
             badge={<StatusBadge status={p.status || 'pending'} />}
             right={p.required ? <Badge tone="amber">Required</Badge> : <Badge>Optional</Badge>}
             selected={selected?.type === 'proof' && selected?.id === p.id}
@@ -157,6 +233,8 @@ export function WorkspaceProof({ plan, selected, onSelect }) {
           />
         ))}
       </div>
+
+      <VerificationExplainer />
     </div>
   );
 }

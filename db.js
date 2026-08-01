@@ -10,6 +10,13 @@ import mongoose from 'mongoose';
 import * as verificationStore from './verificationStore.js';
 
 const URI = process.env.MONGODB_URI || '';
+
+/* Demo cohort for DB-free recording/demos. Served ONLY when DEMO_MODE is on
+   AND there is no MONGODB_URI — it is generated in memory and never written,
+   so it cannot mix with or overwrite real records. See
+   server/utils/demoCollegeData.js. */
+import demoCollege from './server/utils/demoCollegeData.js';
+const demoOn = () => !URI && demoCollege.demoModeEnabled();
 export const dbEnabled = () => !!URI;
 
 /* ---- cached connection (survives serverless warm starts) ---- */
@@ -1345,7 +1352,7 @@ async function collegeScopeMembers(scope, { readinessData = true } = {}) {
 export async function listCollegeStudents({ collegeId, filters = {} }) {
   const scope = String(collegeId || '').trim();
   if (!scope) return [];
-  if (!URI) return [];
+  if (!URI) return demoOn() ? demoCollege.demoStudents({ filters }) : [];
   try {
     await connectDB();
     const matched = await collegeScopeMembers(scope);
@@ -1400,7 +1407,8 @@ async function collegeScopedUserStates(scope) {
 export async function collegeStudentsDeep({ collegeId }) {
   const scope = String(collegeId || '').trim();
   const empty = { rows: [], events: [] };
-  if (!scope || !URI) return empty;
+  if (!scope) return empty;
+  if (!URI) return demoOn() ? demoCollege.demoStudentsDeep() : empty;
   try {
     await connectDB();
     const matched = await collegeScopedUserStates(scope);
@@ -1494,7 +1502,8 @@ export async function collegeStudentsDeep({ collegeId }) {
    and a recent activity feed. Scope-checked against the caller's college. */
 export async function collegeStudentDetail({ collegeId, studentId }) {
   const scope = String(collegeId || '').trim();
-  if (!scope || !URI) return null;
+  if (!scope) return null;
+  if (!URI) return demoOn() ? demoCollege.demoStudentDetail(studentId) : null;
   try {
     await connectDB();
     if (!mongoose.Types.ObjectId.isValid(String(studentId))) return null;
@@ -1555,7 +1564,7 @@ export async function collegeStudentDetail({ collegeId, studentId }) {
 export async function listPlacementDrives({ collegeId }) {
   const scope = String(collegeId || '').trim();
   if (!scope) return [];
-  if (!URI) return _memDrives.get(scope) || [];
+  if (!URI) return _memDrives.get(scope) || (demoOn() ? demoCollege.demoDrives() : []);
   try {
     await connectDB();
     const GenericDoc = genericDocModel();
@@ -4527,7 +4536,10 @@ export async function leaveCollege({ userId, email }) {
 }
 
 export async function getMyCollege({ userId, email }) {
-  if (!URI) return { ok: true, db: false, college: null, membership: null };
+  if (!URI) {
+    if (demoOn()) return { ok: true, db: false, demo: true, college: demoCollege.demoCollege(), membership: { status: 'active', via: 'admin' } };
+    return { ok: true, db: false, college: null, membership: null };
+  }
   try {
     await connectDB();
     const uid = await resolveUserId({ userId, email });
@@ -4551,7 +4563,7 @@ export async function getMyCollege({ userId, email }) {
 }
 
 export async function listCollegeMembers({ collegeId, status = '' }) {
-  if (!URI) return [];
+  if (!URI) return demoOn() ? demoCollege.demoMembers(status) : [];
   try {
     await connectDB();
     const q = { collegeId: String(collegeId), isActive: { $ne: false } };
@@ -4645,7 +4657,7 @@ export async function importRoster({ collegeId, rows = [], importedBy = '' }) {
 }
 
 export async function listRoster({ collegeId }) {
-  if (!URI) return { rows: [], counts: { invited: 0, joined: 0 } };
+  if (!URI) return demoOn() ? demoCollege.demoRoster() : { rows: [], counts: { invited: 0, joined: 0 } };
   try {
     await connectDB();
     const rows = await RosterEntry.find({ collegeId: String(collegeId) })
@@ -4736,7 +4748,7 @@ export async function createCollegeTask({ collegeId, title, description = '', du
 }
 
 export async function listCollegeTasks({ collegeId }) {
-  if (!URI) return [];
+  if (!URI) return demoOn() ? demoCollege.demoTasks() : [];
   try {
     await connectDB();
     const docs = await CollegeTask.find({ collegeId: String(collegeId) }).sort({ createdAt: -1 }).limit(200).lean();
@@ -4833,7 +4845,7 @@ const DEMO_BATCHES = ['2026', '2027'];
 const DEMO_SKILL_POOL = ['Python', 'Java', 'JavaScript', 'React', 'Node.js', 'SQL', 'MongoDB', 'AWS', 'Docker', 'Kubernetes', 'Git', 'Linux', 'C++', 'Machine Learning', 'Data Structures', 'REST APIs', 'Spring Boot', 'Flask'];
 const DEMO_PROJECTS = ['Campus Event Portal', 'Attendance Anomaly Detector', 'Mess Menu Optimizer', 'Placement Prep Tracker', 'Smart Parking Allocator', 'Lab Inventory System', 'Bus Route Predictor', 'Alumni Connect Graph', 'Exam Seating Planner', 'Hostel Complaint Triage'];
 
-export async function seedDemoCollege({ reset = false } = {}) {
+export async function seedDemoCollege({ reset = false, count = 50 } = {}) {
   if (!URI) return { ok: false, reason: 'db_disabled', message: 'Demo seeding needs MongoDB (set MONGODB_URI).' };
   try {
     await connectDB();
@@ -4864,7 +4876,7 @@ export async function seedDemoCollege({ reset = false } = {}) {
       lastLoginAt: new Date(now - 1 * DAY), loginCount: 12,
     });
 
-    const STUDENTS = 120;
+    const STUDENTS = Math.max(1, Math.min(500, Number(count) || 50));
     let created = 0;
     for (let i = 0; i < STUDENTS; i++) {
       const first = pick(rng, DEMO_FIRST);

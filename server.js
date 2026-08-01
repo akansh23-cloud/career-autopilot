@@ -3727,7 +3727,12 @@ app.get('/contacts/providers', (req, res) => {
    ============================================================ */
 app.post('/ai/messages', aiLimiter, validateBody(aiMessagesSchema), async (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.status(400).json({ error: { code: 'ai_not_configured', message: 'AI tailoring is not configured on the server (no ANTHROPIC_API_KEY). The app still works with deterministic fallbacks.' } });
+  // Student-facing copy: never name an internal environment variable. The
+  // operational detail belongs in the server logs, not on a student's screen.
+  if (!key) {
+    logger.warn('AI proxy called but no provider key is configured');
+    return res.status(400).json({ error: { code: 'ai_not_configured', message: 'AI features are not enabled on this account yet, so you are seeing the standard template version. Everything else still works.' } });
+  }
   try {
     // Always force the server-resolved, supported model. The client may send a
     // stale/hardcoded model id (older builds sent a now-retired snapshot); we
@@ -4297,7 +4302,7 @@ function buildPrepPlan(o) {
 }
 
 app.post('/opportunities/prep-plan', (req, res) => {
-  try { res.json({ ok: true, plan: buildPrepPlan(req.body && req.body.opportunity), generatedBy: 'template', note: 'Deterministic template. Configure ANTHROPIC_API_KEY and use the in-app AI button for a tailored plan.' }); }
+  try { res.json({ ok: true, plan: buildPrepPlan(req.body && req.body.opportunity), generatedBy: 'template', note: 'Standard template plan. AI-tailored plans appear here once AI features are enabled on this account.' }); }
   catch (e) { res.json({ ok: false, error: e.message }); }
 });
 

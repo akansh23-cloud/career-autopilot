@@ -23,8 +23,10 @@ export const WorkspaceApi = {
   recalculate: (projectId, workspacePlan) =>
     api.post(`/api/workspace/${enc(projectId)}/recalculate`, { workspacePlan }),
 
-  verify: (projectId, workspacePlan) =>
-    api.post(`/api/workspace/${enc(projectId)}/verify`, { workspacePlan }),
+  // evidence: { repoUrl, liveUrl } — optional; the server falls back to
+  // whatever the workspace already has on file.
+  verify: (projectId, workspacePlan, evidence = null) =>
+    api.post(`/api/workspace/${enc(projectId)}/verify`, { workspacePlan, evidence }),
 
   codegenPreview: (projectId, { workspacePlan, taskId, filePath, templateKey } = {}) =>
     api.post(`/api/workspace/${enc(projectId)}/codegen/preview`, { workspacePlan, taskId, filePath, templateKey }),

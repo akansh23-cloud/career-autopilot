@@ -55,7 +55,12 @@ export function getAccessForUser(user) {
     skillXp: paid,
     verifiedBadges: paid, // Project Verified+ require Pro
     badgeLevelCap: PLAN_BADGE_CAP[effectivePlan] || 'Project Verified',
+    // Consumed by the workspace Proof panel: everyone can verify a repo and a
+    // deployed URL; Premium additionally gets the advanced deployment report
+    // (uptime re-checks, response-time history). Previously declared and never
+    // read, which made the Premium pricing line untrue.
     deploymentVerification: isAdmin || premium,
+    basicProofVerification: true,
     recruiterReadyBadges: isAdmin || premium,
     // analyzers / scores
     githubAnalyzer: paid ? (premium || isAdmin ? 'advanced' : 'basic') : 'none',

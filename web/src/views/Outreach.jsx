@@ -3,7 +3,8 @@ import { Send, Search, Mail, Building2, User, Sparkles, Copy, Check, AlertTriang
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal, Field } from '../components/ui/kit.jsx';
 import { Contacts, AI } from '../lib/api.js';
-import { canUse, useMeter, promptUpgrade } from '../lib/plan.js';
+import { canUse, useMeter, promptUpgrade, describeLimit } from '../lib/plan.js';
+import { describeApiError } from '../lib/quota.js';
 
 export default function Outreach() {
   const [company, setCompany] = useState('');
@@ -23,7 +24,7 @@ export default function Outreach() {
   };
 
   const openDraft = async (c) => {
-    if (!canUse('outreach')) { promptUpgrade('You’ve used all your AI outreach drafts this month. Upgrade for more.', 'pro'); return; }
+    if (!canUse('outreach')) { promptUpgrade(`${describeLimit('outreach')} You've used them all for this month.`, 'pro'); return; }
     setDraft({ open: true, contact: c, text: '', loading: true, copied: false });
     const prompt = `Write a short, warm, personalised LinkedIn/email outreach message to ${c.name || 'a recruiter'}${c.title ? ` (${c.title})` : ''} at ${company || c.company || 'the company'}.
 I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 90 words, specific, no fluff, friendly. Output the message only.`;
@@ -32,7 +33,11 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
       const text = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
       useMeter('outreach');
       setDraft((d) => ({ ...d, text, loading: false }));
-    } catch (e) { setDraft((d) => ({ ...d, text: 'Could not generate (is ANTHROPIC_API_KEY set?). ' + e.message, loading: false })); }
+    } catch (e) {
+      const d2 = describeApiError(e, 'Outreach drafting');
+      setDraft((d) => ({ ...d, text: d2.message, loading: false }));
+      if (d2.kind === 'quota' && d2.suggestPlan) promptUpgrade(d2.message, d2.suggestPlan);
+    }
   };
   const copyDraft = () => { navigator.clipboard?.writeText(draft.text); setDraft((d) => ({ ...d, copied: true })); setTimeout(() => setDraft((d) => ({ ...d, copied: false })), 1500); };
 

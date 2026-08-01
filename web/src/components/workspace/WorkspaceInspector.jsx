@@ -122,8 +122,12 @@ export default function WorkspaceInspector({ plan, selected, onClose, onPreviewC
             <KeyVal label="Why needed">{item.description}</KeyVal>
             <KeyVal label="Verification method">{item.verificationMethod}</KeyVal>
             <KeyVal label="Required">{item.required ? 'Yes' : 'Optional'}</KeyVal>
-            {(item.verificationMethod === 'github' || item.verificationMethod === 'deployment') && (
-              <p className="text-[12px] text-slate-500">Automatic verification for this proof type is coming next — it stays pending in v1.</p>
+            {item.verificationNote && <KeyVal label="Last check">{item.verificationNote}</KeyVal>}
+            {item.verificationMethod === 'github' && (
+              <p className="text-[12px] leading-relaxed text-slate-500">Checked against your public repository: it must exist and have commits, and README / CI items look for a substantial README.md and a workflow under .github/workflows. Attach the repo URL in the Proof tab and run verification.</p>
+            )}
+            {item.verificationMethod === 'deployment' && (
+              <p className="text-[12px] leading-relaxed text-slate-500">Checked by requesting your deployed URL server-side: it must return a success status and a real rendered page, not an empty shell. Attach the URL in the Proof tab and run verification.</p>
             )}
           </>
         )}
