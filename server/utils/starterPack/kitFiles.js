@@ -17,9 +17,15 @@ export function renderCheckRunner() {
  * script cannot and does not verify anything on the platform. */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
-const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+/* Resolve the pack root from this file's own location.
+ * fileURLToPath is REQUIRED here — URL.pathname is percent-encoded, so any
+ * space in the path becomes %20 and every lookup fails ("/my project" ->
+ * "/my%20project"). On Windows it also yields a leading slash ("/C:/Users/..").
+ * Both break the manifest lookup below. */
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const manifestPath = path.join(ROOT, 'workspace', 'checks.json');
 if (!fs.existsSync(manifestPath)) { console.error('workspace/checks.json not found — re-download the starter pack.'); process.exit(1); }
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));

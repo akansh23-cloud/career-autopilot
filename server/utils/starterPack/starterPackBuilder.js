@@ -75,9 +75,16 @@ export function buildStarterPack(plan = {}) {
       addText(promptFileName(entry), `# AI pair prompt — Task ${entry.no}: ${entry.title}\n\nCopy the block below into ChatGPT, Claude, or Gemini. It makes any chatbot a tutor that knows your exact task, files, and goal. Paste your errors in as you go.\n\n\`\`\`text\n${entry.aiPrompt}\n\`\`\`\n`);
     }
     // Machine-checkable acceptance manifest + the local runner.
-    try { addText('workspace/checks.json', JSON.stringify(planChecks(p), null, 2) + '\n'); }
-    catch (err) { warnings.push(`Checks manifest failed: ${err.message}`); }
-    addText('scripts/check.mjs', renderCheckRunner());
+    // These ship ALL-OR-NOTHING. Previously check.mjs was added outside this
+    // try block, so a failed manifest shipped a runner with nothing to read —
+    // the student got "workspace/checks.json not found — re-download the
+    // starter pack", and re-downloading produced the identical broken pack.
+    try {
+      addText('workspace/checks.json', JSON.stringify(planChecks(p), null, 2) + '\n');
+      addText('scripts/check.mjs', renderCheckRunner());
+    } catch (err) {
+      warnings.push(`Checks manifest could not be generated (${err.message}), so the local check runner was omitted from this pack. Everything else in the kit works — task checks are optional feedback, not verification.`);
+    }
     addText('.devcontainer/devcontainer.json', renderDevcontainer(root));
   }
 

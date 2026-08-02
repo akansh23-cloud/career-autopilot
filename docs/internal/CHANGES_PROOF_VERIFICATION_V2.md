@@ -159,3 +159,67 @@ in the test.
 Set `GITHUB_TOKEN`. Without it the platform supports roughly a dozen
 verifications an hour across all users. Everything degrades honestly, but
 students will see a lot of "could not run just now".
+
+---
+
+# Addendum — starter pack check runner (v8)
+
+## Reported
+
+```
+project-for-full-stack (main) $ node scripts/check.mjs 18
+workspace/checks.json not found — re-download the starter pack.
+```
+
+...with `workspace/checks.json` present in the extracted pack. Re-downloading
+produced an identical pack, so the error message sent users in a circle.
+
+## Bug 1 — path resolution (the cause)
+
+`scripts/check.mjs` resolved its own root with:
+
+```js
+const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+```
+
+`URL.pathname` is **percent-encoded**, so any space anywhere in the path breaks
+the lookup:
+
+```
+ROOT    = /tmp/my%20project    <- file never found
+correct = /tmp/my project
+```
+
+Spaces in project paths are common (`C:\Users\John Doe`, `~/My Drive`). On
+Windows `.pathname` additionally returns a leading slash before the drive
+letter (`/C:/Users/...`), failing for a second reason.
+
+Fixed in `server/utils/starterPack/kitFiles.js`:
+
+```js
+import { fileURLToPath } from 'node:url';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+```
+
+## Bug 2 — runner could ship without its manifest
+
+In `starterPackBuilder.js`, `workspace/checks.json` was written inside a
+try/catch but `scripts/check.mjs` was added **outside** it. A failing
+`planChecks()` therefore shipped a runner with nothing to read, producing this
+exact error — with only a warning buried in the pack.
+
+Both files now ship all-or-nothing. If the manifest cannot be generated, the
+runner is omitted and the warning says so plainly.
+
+## Verification
+
+```
+npm test  ->  725 passing, 0 failing   (was 717)
+```
+
+New — `test/starterPackRunner.test.js` (8 tests). Each writes a real pack to a
+temp directory and executes the generated runner as a subprocess: a path with a
+space, a path with `()` and `&`, a plain path, invocation from a subdirectory,
+the task listing, an unknown task number, a genuinely missing manifest (still
+correctly reported), and a source-level assertion that `URL.pathname` is never
+used for root resolution again.
