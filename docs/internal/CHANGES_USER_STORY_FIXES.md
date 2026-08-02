@@ -69,10 +69,20 @@ redirected the student into project #1 with no message.
 `xl:grid-cols-6` inside a three-column page left each card ~120px, so titles
 wrapped one word per line.
 
-- `WorkspaceTaskBoard.jsx` rewritten: horizontal scroll, fixed 310px columns,
-  16px gutters, 16px card padding, 14px titles with a description line,
-  full-height status select, colour-accented column headers, and **empty
-  columns hidden by default** (a fresh workspace has four of six empty).
+- `WorkspaceTaskBoard.jsx` rewritten: horizontal scroll, fixed 300px columns,
+  colour-accented sticky headers, and **empty columns hidden by default**
+  (a fresh workspace has four of six empty).
+- **Depth cap (follow-up fix).** The first pass traded horizontal cramping for
+  vertical sprawl — roomier cards plus a per-card description line made each
+  card ~180px, so a column with 11 tasks ran ~2000px and took several page
+  scrolls to reach the end. Now:
+  - each column scrolls **inside itself** (`max-h-[min(60vh,520px)]`), so the
+    board is a fixed-height surface regardless of task count;
+  - the description moved off the card face — it shows only for the selected
+    card, and lives in the inspector otherwise;
+  - card chrome tightened (~180px → ~120px per card).
+
+  Net: the board fits one screen. Horizontal roominess is unchanged.
 - `ProjectWorkspace.jsx`: the inspector was a permanent flex sibling from `xl`
   up. It is now inline only at `2xl` and a slide-over below that — worth about
   400px back to the board.
