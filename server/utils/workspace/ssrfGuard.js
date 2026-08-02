@@ -22,7 +22,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 
 const MAX_REDIRECTS = 3;
-const TIMEOUT_MS = 9000;
+const TIMEOUT_MS = 4500; // keep inside a serverless function budget
 
 /* Blocked IPv4 ranges, as [network, maskBits]. */
 const BLOCKED_V4 = [
