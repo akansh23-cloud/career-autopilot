@@ -120,18 +120,14 @@ export async function verifyScreenshots(repoUrl, readmeResult = null) {
   const parsed = parseRepoUrl(repoUrl);
   if (!parsed) return { checked: true, unavailable: false, present: false, count: 0, note: 'No valid repository URL attached.' };
 
-  // Checked in PARALLEL, not in sequence. Four sequential lookups at 4s each
-  // is 16s of wall clock — on its own more than a serverless function gets.
-  const results = await Promise.all(
-    SCREENSHOT_DIRS.map((dir) => ghGet(`/repos/${parsed.fullName}/contents/${dir}`).then((r) => ({ dir, r }))),
-  );
-
   let images = [];
   let foundDir = '';
-  let sawUnavailable = results.some(({ r }) => r.unavailable);
+  let sawUnavailable = false;
 
-  for (const { dir, r } of results) {           // preserve preference order
-    if (r.unavailable || r.status === 404 || !Array.isArray(r.data)) continue;
+  for (const dir of SCREENSHOT_DIRS) {
+    const r = await ghGet(`/repos/${parsed.fullName}/contents/${dir}`);
+    if (r.unavailable) { sawUnavailable = true; continue; }
+    if (r.status === 404 || !Array.isArray(r.data)) continue;
     const found = r.data.filter((f) => f.type === 'file' && IMAGE_RE.test(f.name || '') && Number(f.size || 0) > 1024);
     if (found.length) {
       foundDir = dir;
@@ -332,70 +328,24 @@ export async function verifyApiHealth(liveUrl, healthPath = '/api/health') {
  * evidence: { repoUrl, liveUrl, testOutput }
  * Returns every observation the attached evidence supports.
  */
-/* Wall-clock ceiling for one verification run. Serverless platforms kill the
-   function at a fixed limit and the caller gets a 504 with no explanation, so
-   we stop first and report honestly instead: anything unfinished comes back as
-   `unavailable`, which the validator renders as `pending`, never a failure.
-   Override with PROOF_VERIFY_BUDGET_MS (a long-running host can afford more). */
-const BUDGET_MS = Number(process.env.PROOF_VERIFY_BUDGET_MS || 8000);
-
-const TIMED_OUT = Symbol('timed_out');
-
-/* Resolve to TIMED_OUT rather than reject, so one slow check cannot take the
-   whole run down with it. */
-function withBudget(promise, deadlineMs) {
-  let timer;
-  const guard = new Promise((resolve) => {
-    timer = setTimeout(() => resolve(TIMED_OUT), Math.max(0, deadlineMs));
-  });
-  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
-}
-
-const unfinished = (what) => ({
-  checked: false,
-  unavailable: true,
-  note: `The ${what} check did not finish in time. It stays pending — nothing was marked failed. Try again in a moment.`,
-});
-
 export async function gatherProofEvidence(evidence = {}) {
   const repoUrl = String(evidence.repoUrl || '').trim();
   const liveUrl = String(evidence.liveUrl || '').trim();
   const testOutput = String(evidence.testOutput || '');
 
-  const startedAt = Date.now();
-  const left = () => BUDGET_MS - (Date.now() - startedAt);
-  const settle = (value, what) => (value === TIMED_OUT ? unfinished(what) : value);
-
-  // The deployment checks are independent of the GitHub ones, so they run
-  // alongside rather than after — on a serverless host the two chains sharing
-  // wall clock is the difference between finishing and being killed.
-  const deployWork = liveUrl
-    ? withBudget(Promise.all([verifyDeployment(liveUrl), verifyApiHealth(liveUrl)]), BUDGET_MS)
-    : Promise.resolve([null, null]);
-
-  const githubRaw = repoUrl ? await withBudget(verifyGithubRepo(repoUrl), left()) : null;
-  const github = repoUrl ? settle(githubRaw, 'repository') : null;
+  const github = repoUrl ? await verifyGithubRepo(repoUrl) : null;
 
   // Only spend further GitHub calls when the repo itself resolved — keeps a
   // typo'd URL from burning five requests against the hourly limit.
   const canDrillIn = !!(github && github.present);
-  let readme = null; let ci = null; let screenshots = null;
-  if (canDrillIn && left() > 500) {
-    const pair = await withBudget(Promise.all([verifyReadme(repoUrl), verifyCiRun(repoUrl)]), left());
-    [readme, ci] = pair === TIMED_OUT ? [unfinished('README'), unfinished('CI')] : pair;
-    if (left() > 500) {
-      screenshots = settle(await withBudget(verifyScreenshots(repoUrl, readme), left()), 'screenshot');
-    } else {
-      screenshots = unfinished('screenshot');
-    }
-  } else if (canDrillIn) {
-    readme = unfinished('README'); ci = unfinished('CI'); screenshots = unfinished('screenshot');
-  }
+  const [readme, ci] = canDrillIn
+    ? await Promise.all([verifyReadme(repoUrl), verifyCiRun(repoUrl)])
+    : [null, null];
+  const screenshots = canDrillIn ? await verifyScreenshots(repoUrl, readme) : null;
 
-  const deployPair = await deployWork;
-  const [deployment, apiHealth] = deployPair === TIMED_OUT
-    ? [unfinished('deployment'), unfinished('API health')]
-    : deployPair;
+  const [deployment, apiHealth] = liveUrl
+    ? await Promise.all([verifyDeployment(liveUrl), verifyApiHealth(liveUrl)])
+    : [null, null];
 
   const tests = testOutput.trim() ? parseTestOutput(testOutput) : null;
 
@@ -405,8 +355,6 @@ export async function gatherProofEvidence(evidence = {}) {
     hasTestOutput: !!testOutput.trim(),
     github, readme, screenshots, ci, deployment, apiHealth, tests,
     githubTokenConfigured: hasGithubToken(),
-    elapsedMs: Date.now() - startedAt,
-    budgetMs: BUDGET_MS,
   };
 }
 

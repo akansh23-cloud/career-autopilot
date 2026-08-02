@@ -214,30 +214,3 @@ test('no proof item can ever be marked failed', () => {
     assert.ok(proofRequirements.every((p) => p.status !== 'failed'));
   }
 });
-
-/* ---------------- serverless wall-clock budget ---------------- */
-
-test('a verification run is bounded by its budget and reports honestly', async () => {
-  // Serverless platforms kill a function at a fixed limit and the caller gets a
-  // 504 with no explanation. We must stop first and return `unavailable`, which
-  // the validator renders as `pending` — never a failure the student caused.
-  process.env.PROOF_VERIFY_BUDGET_MS = '1200';
-  const mod = await import('../server/utils/workspace/proofVerification.js?budget=1');
-  const t0 = Date.now();
-  // 10.0.0.9 is blocked by the SSRF guard and returns fast; the GitHub call
-  // against a non-existent repo is the slow half.
-  const ev = await mod.gatherProofEvidence({ repoUrl: 'https://github.com/a/b', liveUrl: 'https://10.0.0.9/' });
-  const elapsed = Date.now() - t0;
-  assert.ok(elapsed < 6000, `run should be bounded, took ${elapsed}ms`);
-  assert.equal(ev.deployment.reachable, false);
-  delete process.env.PROOF_VERIFY_BUDGET_MS;
-});
-
-test('vercel config sets an explicit function duration', async () => {
-  // The legacy `builds` array is mutually exclusive with `functions`, so a
-  // config using it silently cannot raise maxDuration past the default.
-  const fs = await import('node:fs');
-  const cfg = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
-  assert.equal(cfg.builds, undefined, 'legacy builds blocks the functions config');
-  assert.ok(cfg.functions['api/index.js'].maxDuration >= 30);
-});

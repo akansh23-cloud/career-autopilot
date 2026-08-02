@@ -27,11 +27,7 @@ import logger from '../../../logger.js';
 
 const API = 'https://api.github.com';
 const UA = 'career-autopilot-verifier';
-/* Serverless functions have a hard wall-clock ceiling (10s on Vercel Hobby by
-   default). A generous per-request timeout is fine on a long-running server but
-   guarantees a truncated function here, so keep each call short and let the
-   overall budget in gatherProofEvidence do the rest. */
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = 9000;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /* token is read lazily so tests can set it per-case */
