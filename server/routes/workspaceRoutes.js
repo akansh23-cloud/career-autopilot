@@ -70,6 +70,7 @@ const verifyBodySchema = z.object({
   evidence: z.object({
     repoUrl: shortText(300).optional().default(''),
     liveUrl: shortText(300).optional().default(''),
+    testOutput: shortText(20000).optional().default(''),
   }).optional().nullable(),
 }).passthrough();
 
@@ -337,8 +338,9 @@ export function registerWorkspaceRoutes(app, deps = {}) {
       const rawEvidence = {
         repoUrl: req.body?.evidence?.repoUrl || plan?.proofEvidence?.repoUrl || '',
         liveUrl: req.body?.evidence?.liveUrl || plan?.proofEvidence?.liveUrl || '',
+        testOutput: req.body?.evidence?.testOutput || plan?.proofEvidence?.testOutput || '',
       };
-      const hasEvidence = !!(rawEvidence.repoUrl || rawEvidence.liveUrl);
+      const hasEvidence = !!(rawEvidence.repoUrl || rawEvidence.liveUrl || rawEvidence.testOutput);
       const evidence = hasEvidence ? await gatherProofEvidence(rawEvidence) : null;
 
       const { proofRequirements, verificationSummary } = runVerification(plan, evidence);

@@ -29,12 +29,16 @@ export const STATUS_TONE = {
   planned: 'default', generated: 'cyan', backlog: 'default', ready: 'cyan',
   in_progress: 'amber', blocked: 'rose', done: 'mint', verified: 'violet',
   pending: 'default', passed: 'mint', failed: 'rose',
+  // Self-reported must be visually distinct from verified — a proof score
+  // inflated by unverifiable self-claims is worthless to a recruiter.
+  self_reported: 'amber', not_applicable: 'default',
 };
 
 export function statusLabel(s = '') {
   const map = {
     backlog: 'Backlog', ready: 'Ready', in_progress: 'In Progress', blocked: 'Blocked',
     done: 'Done', verified: 'Verified', planned: 'Planned', generated: 'Generated', pending: 'Pending',
+    self_reported: 'Self-reported', not_applicable: 'N/A',
   };
   return map[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Planned');
 }

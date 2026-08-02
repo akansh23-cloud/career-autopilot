@@ -1,38 +1,28 @@
 /* ============================================================
-   PROOF VERIFICATION  —  GitHub + deployment evidence
+   PROOF VERIFICATION
    ------------------------------------------------------------
-   Turns the two "coming next" proof types into real, honest checks.
+   Turns student-supplied evidence into observations. It does NOT
+   decide status — workspaceValidator does that. This file only
+   reports what was seen.
 
-   Design rules (unchanged from v1's spirit):
-     - Nothing is auto-passed. A check passes only when a live network
-       observation supports it.
-     - No evidence attached  ->  status stays `pending` with an
-       instruction telling the student exactly what to attach.
-     - A check that cannot run (network blocked, timeout, rate limit)
-       returns `pending`, never `failed` and never `verified`. We do not
-       punish a student for our outage, and we never fake a pass.
-     - Only public, unauthenticated GitHub data is read here. The
-       authenticated GitHub App path (githubIntegrationEngine.js) stays
-       the source of truth for private repos.
+   THREE OUTCOMES, always distinguishable:
+     present/reachable  -> a real positive observation
+     absent             -> a real negative observation (e.g. 404)
+     unavailable        -> we could not check (rate limit, timeout,
+                           network). Must become `pending`, never
+                           `failed`. Never punish a student for our
+                           infrastructure.
+
+   Everything that fetches a student-supplied URL goes through
+   ssrfGuard.
    ============================================================ */
 
-const UA = 'career-autopilot-verifier';
-const TIMEOUT_MS = 9000;
+import { ghGet, ghGetRaw, hasGithubToken } from './githubClient.js';
+import { safeFetch } from './ssrfGuard.js';
+import { parseTestOutput } from './testOutputParser.js';
 
-async function timedFetch(url, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, {
-      redirect: 'follow',
-      ...options,
-      signal: controller.signal,
-      headers: { 'User-Agent': UA, ...(options.headers || {}) },
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
+const SCREENSHOT_DIRS = ['docs/screenshots', 'screenshots', 'docs/images', 'assets/screenshots'];
 
 export function parseRepoUrl(raw = '') {
   const s = String(raw || '').trim();
@@ -45,151 +35,330 @@ export function parseRepoUrl(raw = '') {
 export function normalizeUrl(raw = '') {
   let s = String(raw || '').trim();
   if (!s) return null;
-  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
   try { return new URL(s).toString(); } catch { return null; }
 }
 
-/* ---------------- GitHub ---------------- */
+/* ---------------- GitHub: repo, README, screenshots, CI ---------------- */
 
-/**
- * Check a public repo: does it exist, is it reachable, does it have a
- * meaningful README, does it have CI workflows, when was it last pushed.
- * Returns { ok, reachable, ...signals, note }.
- */
 export async function verifyGithubRepo(repoUrl) {
   const parsed = parseRepoUrl(repoUrl);
   if (!parsed) {
-    return { ok: false, reachable: false, reason: 'bad_url', note: 'That does not look like a GitHub repository URL. Use the form https://github.com/your-name/your-repo.' };
+    return { checked: true, unavailable: false, present: false, reason: 'bad_url',
+      note: 'That does not look like a GitHub repository URL. Use https://github.com/your-name/your-repo.' };
   }
-  try {
-    const r = await timedFetch(`https://api.github.com/repos/${parsed.fullName}`, {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
-    if (r.status === 404) {
-      return { ok: true, reachable: false, fullName: parsed.fullName, reason: 'not_found', note: 'That repository is private or does not exist. Make it public, or connect the GitHub App so we can read it with your permission.' };
-    }
-    if (r.status === 403) {
-      return { ok: false, reachable: false, fullName: parsed.fullName, reason: 'rate_limited', note: 'GitHub rate-limited the check. This stays pending — try again in a few minutes.' };
-    }
-    if (!r.ok) {
-      return { ok: false, reachable: false, fullName: parsed.fullName, reason: 'error', note: 'GitHub could not be reached for this check. It stays pending.' };
-    }
-    const repo = await r.json();
 
-    /* README presence + substance. A one-line README is not proof. */
-    let readmePresent = false;
-    let readmeBytes = 0;
-    let readmeMeaningful = false;
-    try {
-      const rr = await timedFetch(`https://api.github.com/repos/${parsed.fullName}/readme`, {
-        headers: { Accept: 'application/vnd.github+json' },
-      });
-      if (rr.ok) {
-        const meta = await rr.json();
-        readmePresent = true;
-        readmeBytes = Number(meta.size || 0);
-        readmeMeaningful = readmeBytes >= 400; // ~a real intro + how-to-run
-      }
-    } catch { /* readme check is best-effort */ }
-
-    /* CI workflows. */
-    let ciPresent = false;
-    try {
-      const cr = await timedFetch(`https://api.github.com/repos/${parsed.fullName}/contents/.github/workflows`, {
-        headers: { Accept: 'application/vnd.github+json' },
-      });
-      if (cr.ok) {
-        const files = await cr.json();
-        ciPresent = Array.isArray(files) && files.some((f) => /\.ya?ml$/i.test(f.name || ''));
-      }
-    } catch { /* best-effort */ }
-
-    return {
-      ok: true,
-      reachable: true,
-      fullName: repo.full_name || parsed.fullName,
-      htmlUrl: repo.html_url || `https://github.com/${parsed.fullName}`,
-      isPrivate: !!repo.private,
-      defaultBranch: repo.default_branch || 'main',
-      pushedAt: repo.pushed_at || null,
-      stars: Number(repo.stargazers_count || 0),
-      language: repo.language || '',
-      readmePresent,
-      readmeBytes,
-      readmeMeaningful,
-      ciPresent,
-      checkedAt: new Date().toISOString(),
-      note: 'Public repository read successfully.',
-    };
-  } catch (e) {
-    return { ok: false, reachable: false, fullName: parsed.fullName, reason: 'network', note: 'The GitHub check could not complete (network or timeout). It stays pending — nothing was marked verified.' };
+  const r = await ghGet(`/repos/${parsed.fullName}`);
+  if (r.unavailable) {
+    return { checked: false, unavailable: true, fullName: parsed.fullName, reason: r.reason,
+      note: r.reason === 'rate_limited'
+        ? 'GitHub rate-limited this check. It stays pending — try again shortly.'
+        : 'The GitHub check could not run just now. It stays pending — nothing was marked failed.' };
   }
+  if (r.status === 404) {
+    return { checked: true, unavailable: false, present: false, fullName: parsed.fullName, reason: 'not_found',
+      note: 'That repository is private or does not exist. Make it public so recruiters (and we) can read it.' };
+  }
+
+  const repo = r.data || {};
+  const out = {
+    checked: true, unavailable: false, present: true,
+    fullName: repo.full_name || parsed.fullName,
+    htmlUrl: repo.html_url || `https://github.com/${parsed.fullName}`,
+    isPrivate: !!repo.private,
+    defaultBranch: repo.default_branch || 'main',
+    pushedAt: repo.pushed_at || null,
+    language: repo.language || '',
+    size: Number(repo.size || 0),
+    checkedAt: new Date().toISOString(),
+  };
+  // A repo containing only a README is not a project. `size` is in KB.
+  out.hasSource = out.size > 20;
+  out.note = `Public repository ${out.fullName} read successfully${out.pushedAt ? `, last pushed ${String(out.pushedAt).slice(0, 10)}` : ''}.`;
+  return out;
+}
+
+/** README must be substantial AND actually explain how to run the thing. */
+export async function verifyReadme(repoUrl) {
+  const parsed = parseRepoUrl(repoUrl);
+  if (!parsed) return { checked: true, unavailable: false, present: false, note: 'No valid repository URL attached.' };
+
+  const meta = await ghGet(`/repos/${parsed.fullName}/readme`);
+  if (meta.unavailable) return { checked: false, unavailable: true, note: 'The README check could not run just now. It stays pending.' };
+  if (meta.status === 404) {
+    return { checked: true, unavailable: false, present: false,
+      note: 'No README.md found in the repository root. Add one covering what the project does, why, and how to run it.' };
+  }
+
+  const raw = await ghGetRaw(`/repos/${parsed.fullName}/readme`);
+  const text = raw.text || '';
+  const bytes = Number(meta.data?.size || text.length || 0);
+
+  // Size alone is a weak signal — a wall of boilerplate passes it. Look for
+  // structure and a run instruction instead.
+  const headings = (text.match(/^#{2,3}\s+\S/gm) || []).length;
+  const hasRunInstructions = /npm\s+(install|i|run|start|test)|yarn\s+|pnpm\s+|docker\s+(run|compose)|pip\s+install|getting started|how to run|quick ?start/i.test(text);
+  const imageRefs = (text.match(/!\[[^\]]*\]\([^)]+\)/g) || []).length;
+
+  const meaningful = bytes >= 400 && headings >= 2 && hasRunInstructions;
+  const missing = [];
+  if (bytes < 400) missing.push('more detail');
+  if (headings < 2) missing.push('section headings');
+  if (!hasRunInstructions) missing.push('setup / run instructions');
+
+  return {
+    checked: true, unavailable: false, present: true, meaningful,
+    bytes, headings, hasRunInstructions, imageRefs,
+    note: meaningful
+      ? `README.md looks substantial (${bytes} bytes, ${headings} sections, run instructions present).`
+      : `README.md exists but needs ${missing.join(' and ')}.`,
+  };
+}
+
+/** Screenshots live in the repo — verifiable, and recruiters see them. */
+export async function verifyScreenshots(repoUrl, readmeResult = null) {
+  const parsed = parseRepoUrl(repoUrl);
+  if (!parsed) return { checked: true, unavailable: false, present: false, count: 0, note: 'No valid repository URL attached.' };
+
+  let images = [];
+  let foundDir = '';
+  let sawUnavailable = false;
+
+  for (const dir of SCREENSHOT_DIRS) {
+    const r = await ghGet(`/repos/${parsed.fullName}/contents/${dir}`);
+    if (r.unavailable) { sawUnavailable = true; continue; }
+    if (r.status === 404 || !Array.isArray(r.data)) continue;
+    const found = r.data.filter((f) => f.type === 'file' && IMAGE_RE.test(f.name || '') && Number(f.size || 0) > 1024);
+    if (found.length) {
+      foundDir = dir;
+      images = found.map((f) => ({ name: f.name, size: f.size, url: f.html_url }));
+      break;
+    }
+  }
+
+  if (!images.length && sawUnavailable) {
+    return { checked: false, unavailable: true, note: 'The screenshot check could not run just now. It stays pending.' };
+  }
+
+  const inReadme = readmeResult?.imageRefs || 0;
+  const count = images.length;
+  const enough = count >= 2;
+  const embedded = inReadme >= 1;
+
+  let note;
+  if (!count) {
+    note = 'No screenshots found. Commit at least 2 images to docs/screenshots/ and embed one in your README so recruiters see the app immediately.';
+  } else if (!enough) {
+    note = `Only ${count} screenshot found in ${foundDir}/. Add at least 2 showing real flows.`;
+  } else if (!embedded) {
+    note = `${count} screenshots found in ${foundDir}/, but none are embedded in the README. Add one so it renders on the repo page.`;
+  } else {
+    note = `${count} screenshots in ${foundDir}/ and ${inReadme} embedded in the README.`;
+  }
+
+  return { checked: true, unavailable: false, present: count > 0, count, enough, embedded, dir: foundDir, images, note };
+}
+
+/** A green CI run is the only path from "pasted output" to real proof. */
+export async function verifyCiRun(repoUrl) {
+  const parsed = parseRepoUrl(repoUrl);
+  if (!parsed) return { checked: true, unavailable: false, present: false, note: 'No valid repository URL attached.' };
+
+  const wf = await ghGet(`/repos/${parsed.fullName}/contents/.github/workflows`);
+  if (wf.unavailable) return { checked: false, unavailable: true, note: 'The CI check could not run just now.' };
+  const hasWorkflow = wf.status !== 404 && Array.isArray(wf.data) && wf.data.some((f) => /\.ya?ml$/i.test(f.name || ''));
+  if (!hasWorkflow) {
+    return { checked: true, unavailable: false, present: false, hasWorkflow: false,
+      note: 'No workflow found under .github/workflows. Add one that runs your tests on every push and this becomes automatically verified.' };
+  }
+
+  const runs = await ghGet(`/repos/${parsed.fullName}/actions/runs?per_page=10`, { allowCache: false });
+  if (runs.unavailable) return { checked: false, unavailable: true, hasWorkflow: true, note: 'The CI run check could not complete. It stays pending.' };
+
+  const list = runs.data?.workflow_runs || [];
+  const success = list.find((x) => x.conclusion === 'success' && x.status === 'completed');
+  if (!success) {
+    const latest = list[0];
+    return { checked: true, unavailable: false, present: false, hasWorkflow: true,
+      note: latest
+        ? `A workflow exists but the most recent run finished as "${latest.conclusion || latest.status}". Get it green and this verifies automatically.`
+        : 'A workflow exists but has not run yet. Push a commit to trigger it.' };
+  }
+
+  return {
+    checked: true, unavailable: false, present: true, hasWorkflow: true,
+    runUrl: success.html_url, sha: success.head_sha, branch: success.head_branch,
+    finishedAt: success.updated_at,
+    note: `CI run passed on ${success.head_branch || 'default branch'} (${String(success.head_sha || '').slice(0, 7)}).`,
+  };
 }
 
 /* ---------------- Deployment ---------------- */
 
-/**
- * Check a deployed URL is actually serving something. Mirrors the logic of
- * POST /api/projects/verify-live-link so both paths agree.
- */
+/* Hosting-platform failure pages return HTTP 200 with real HTML. Without
+   these signatures a dead deployment verifies clean — the bug in v6, whose
+   check was only `body.length > 400 && /<div|script/`. */
+const FAILURE_SIGNATURES = [
+  [/DEPLOYMENT_NOT_FOUND|The deployment could not be found/i, 'Vercel reports that this deployment does not exist.'],
+  [/Page Not Found[\s\S]{0,200}Netlify|Netlify[\s\S]{0,200}Page Not Found/i, 'Netlify is serving its 404 page.'],
+  [/no-such-app|herokucdn\.com\/error-pages/i, 'Heroku reports there is no such app.'],
+  [/Service Suspended|This service has been suspended/i, 'The hosting service has suspended this deployment.'],
+  [/There isn't a GitHub Pages site here/i, 'GitHub Pages has no site at that address.'],
+  [/Application error[\s\S]{0,120}client-side exception/i, 'The app loaded but crashed with a client-side exception.'],
+  [/This domain is (parked|for sale)|Buy this domain/i, 'That is a parked domain, not a deployment.'],
+  [/Welcome to nginx|Apache2 [\s\S]{0,40}Default Page|Default Web Site Page/i, 'That is a default web-server page — nothing is deployed on it.'],
+  [/Build failed|Deployment failed/i, 'The hosting platform reports a failed build.'],
+];
+
 export async function verifyDeployment(liveUrl) {
   const url = normalizeUrl(liveUrl);
   if (!url) {
-    return { ok: false, reachable: false, reason: 'bad_url', note: 'That does not look like a valid URL. Include the full address, e.g. https://your-app.vercel.app' };
+    return { checked: true, unavailable: false, reachable: false, reason: 'bad_url',
+      note: 'That does not look like a valid URL. Include the full address, e.g. https://your-app.vercel.app' };
   }
+
   const started = Date.now();
-  try {
-    const r = await timedFetch(url, { method: 'GET' });
-    const responseTimeMs = Date.now() - started;
-    const statusCode = r.status;
-    const contentType = r.headers.get('content-type') || '';
-    const reachable = statusCode >= 200 && statusCode < 400;
-    let title = '';
-    let looksLikeApp = false;
-    if (/text\/html/i.test(contentType)) {
-      const body = await r.text().catch(() => '');
-      const m = body.match(/<title[^>]*>([^<]*)<\/title>/i);
-      if (m) title = m[1].trim().slice(0, 160);
-      looksLikeApp = body.length > 400 && /<(div|main|section|app|script|header)/i.test(body);
-    } else if (contentType) {
-      looksLikeApp = true;
+  const r = await safeFetch(url);
+  const responseTimeMs = Date.now() - started;
+
+  if (!r.ok) {
+    if (r.reason === 'private_address') {
+      return { checked: true, unavailable: false, reachable: false, reason: 'private_address',
+        note: 'That address points to a private or internal network, so it cannot be a public demo. Use your public deployment URL.' };
     }
-    return {
-      ok: true,
-      reachable,
-      statusCode,
-      finalUrl: r.url || url,
-      responseTimeMs,
-      contentType,
-      title,
-      looksLikeApp,
-      checkedAt: new Date().toISOString(),
-      note: reachable
-        ? (looksLikeApp ? 'The deployment responded with a real page.' : 'The page loaded but looks empty — confirm the deployment is actually serving your app.')
-        : `The deployment responded with HTTP ${statusCode}.`,
-    };
-  } catch {
-    return {
-      ok: false, reachable: false, reason: 'unreachable', finalUrl: url,
-      responseTimeMs: Date.now() - started,
-      note: 'Could not reach that URL (timeout, DNS or network restriction). It stays pending — nothing was marked verified.',
-    };
+    if (r.reason === 'bad_url' || r.reason === 'bad_scheme') {
+      return { checked: true, unavailable: false, reachable: false, reason: r.reason,
+        note: 'That URL could not be parsed. Use the full https:// address.' };
+    }
+    if (r.reason === 'too_many_redirects') {
+      return { checked: true, unavailable: false, reachable: false, reason: r.reason,
+        note: 'That URL redirects too many times to follow.' };
+    }
+    return { checked: true, unavailable: false, reachable: false, reason: 'unreachable', responseTimeMs,
+      note: 'Could not reach that URL — it may be down, asleep on a free tier, or the address may be wrong.' };
   }
+
+  const res = r.response;
+  const statusCode = res.status;
+  const contentType = res.headers.get('content-type') || '';
+  const ok2xx = statusCode >= 200 && statusCode < 400;
+
+  if (!ok2xx) {
+    return { checked: true, unavailable: false, reachable: false, statusCode, responseTimeMs, finalUrl: r.finalUrl,
+      note: `The deployment responded with HTTP ${statusCode}.` };
+  }
+
+  let title = '';
+  let failureNote = '';
+  let looksLikeApp = false;
+  let bodyLength = 0;
+
+  if (/text\/html/i.test(contentType)) {
+    const body = (await res.text().catch(() => '')).slice(0, 200000);
+    bodyLength = body.length;
+    const m = body.match(/<title[^>]*>([^<]*)<\/title>/i);
+    if (m) title = m[1].trim().slice(0, 160);
+
+    for (const [re, msg] of FAILURE_SIGNATURES) {
+      if (re.test(body)) { failureNote = msg; break; }
+    }
+    // A client-rendered SPA legitimately returns a near-empty shell, so a short
+    // body is NOT proof of failure — but a script bundle is a decent positive
+    // signal that something real is deployed. This is why the status we award
+    // is "reachable", not "working": a plain fetch cannot execute JS.
+    const hasBundle = /<script[^>]+src=/i.test(body);
+    const hasMarkup = /<(main|section|header|nav|article|form|table)/i.test(body);
+    looksLikeApp = !failureNote && (hasBundle || hasMarkup || body.length > 1500);
+  } else if (contentType) {
+    looksLikeApp = true;
+    bodyLength = Number(res.headers.get('content-length') || 0);
+  }
+
+  return {
+    checked: true, unavailable: false,
+    reachable: ok2xx && !failureNote && looksLikeApp,
+    statusCode, finalUrl: r.finalUrl, responseTimeMs, contentType, title,
+    looksLikeApp, bodyLength, failureNote,
+    redirected: r.hops.length > 0,
+    checkedAt: new Date().toISOString(),
+    note: failureNote
+      || (looksLikeApp
+        ? `Reachable at ${r.finalUrl} (HTTP ${statusCode}, ${responseTimeMs}ms)${title ? ` — “${title}”` : ''}.`
+        : `The URL responded (HTTP ${statusCode}) but served no recognisable page.`),
+  };
 }
 
+/** /api/health is the strongest deployment signal — JSON, not a rendered SPA. */
+export async function verifyApiHealth(liveUrl, healthPath = '/api/health') {
+  const base = normalizeUrl(liveUrl);
+  if (!base) return { checked: true, unavailable: false, reachable: false, note: 'No deployed URL attached.' };
+
+  let target;
+  try { target = new URL(healthPath, base).toString(); } catch {
+    return { checked: true, unavailable: false, reachable: false, note: 'Could not build the health-check URL.' };
+  }
+
+  const r = await safeFetch(target);
+  if (!r.ok) {
+    return { checked: true, unavailable: false, reachable: false, target,
+      note: `No response from ${healthPath}. Add a health endpoint that returns JSON, or leave this optional item pending.` };
+  }
+  const res = r.response;
+  if (res.status < 200 || res.status >= 300) {
+    return { checked: true, unavailable: false, reachable: false, statusCode: res.status, target,
+      note: `${healthPath} responded with HTTP ${res.status}.` };
+  }
+  const text = (await res.text().catch(() => '')).slice(0, 4000);
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* not JSON */ }
+
+  return {
+    checked: true, unavailable: false,
+    reachable: !!json,
+    statusCode: res.status, target, isJson: !!json,
+    note: json
+      ? `${healthPath} responded HTTP ${res.status} with valid JSON.`
+      : `${healthPath} responded HTTP ${res.status} but did not return JSON. A health endpoint should return a JSON body.`,
+  };
+}
+
+/* ---------------- orchestration ---------------- */
+
 /**
- * Run whatever checks the attached evidence supports.
- * evidence: { repoUrl, liveUrl }
- * Returns { github, deployment } — either may be null when no evidence given.
+ * evidence: { repoUrl, liveUrl, testOutput }
+ * Returns every observation the attached evidence supports.
  */
 export async function gatherProofEvidence(evidence = {}) {
   const repoUrl = String(evidence.repoUrl || '').trim();
   const liveUrl = String(evidence.liveUrl || '').trim();
-  const [github, deployment] = await Promise.all([
-    repoUrl ? verifyGithubRepo(repoUrl) : Promise.resolve(null),
-    liveUrl ? verifyDeployment(liveUrl) : Promise.resolve(null),
-  ]);
-  return { github, deployment, repoUrl: repoUrl || null, liveUrl: liveUrl || null };
+  const testOutput = String(evidence.testOutput || '');
+
+  const github = repoUrl ? await verifyGithubRepo(repoUrl) : null;
+
+  // Only spend further GitHub calls when the repo itself resolved — keeps a
+  // typo'd URL from burning five requests against the hourly limit.
+  const canDrillIn = !!(github && github.present);
+  const [readme, ci] = canDrillIn
+    ? await Promise.all([verifyReadme(repoUrl), verifyCiRun(repoUrl)])
+    : [null, null];
+  const screenshots = canDrillIn ? await verifyScreenshots(repoUrl, readme) : null;
+
+  const [deployment, apiHealth] = liveUrl
+    ? await Promise.all([verifyDeployment(liveUrl), verifyApiHealth(liveUrl)])
+    : [null, null];
+
+  const tests = testOutput.trim() ? parseTestOutput(testOutput) : null;
+
+  return {
+    repoUrl: repoUrl || null,
+    liveUrl: liveUrl || null,
+    hasTestOutput: !!testOutput.trim(),
+    github, readme, screenshots, ci, deployment, apiHealth, tests,
+    githubTokenConfigured: hasGithubToken(),
+  };
 }
 
-export default { verifyGithubRepo, verifyDeployment, gatherProofEvidence, parseRepoUrl, normalizeUrl };
+export default {
+  gatherProofEvidence, verifyGithubRepo, verifyReadme, verifyScreenshots,
+  verifyCiRun, verifyDeployment, verifyApiHealth, parseRepoUrl, normalizeUrl,
+};

@@ -104,5 +104,5 @@ test('workspace verification no longer advertises features as "coming next"', ()
   assert.doesNotMatch(proof, /coming next/i);
   assert.doesNotMatch(inspector, /coming next/i);
   // and it explains what is actually checked
-  assert.match(proof, /How verification works/);
+  assert.match(proof, /How each check works/);
 });

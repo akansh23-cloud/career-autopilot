@@ -86,7 +86,7 @@ test('POST verify with unusable evidence never fakes a pass', async () => {
   const netChecks = s.checks.filter((ch) => ch.method === 'github' || ch.method === 'deployment');
   assert.ok(netChecks.every((ch) => ch.result === 'pending'));
   assert.equal(s.evidenceUsed.repoUrl, 'definitely-not-a-repo');
-  assert.equal(s.evidenceUsed.githubReachable, false);
+  assert.equal(s.evidenceUsed.testOutputProvided, false);
   plan = r.json.updatedWorkspacePlan;
 });
 

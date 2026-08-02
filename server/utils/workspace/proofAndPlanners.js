@@ -55,23 +55,36 @@ export function planDeployment(project = {}, stack = {}) {
   };
 }
 
-/* Proof requirements. verificationMethod drives the v1 verify endpoint:
-   only `workspace_local` items can be auto-evaluated locally; github/
-   deployment/manual items stay pending with honest "coming next" notes. */
+/* Proof requirements. verificationMethod drives the verify endpoint.
+
+   The demo-video item was removed deliberately: it was redundant with the
+   screenshots requirement (both show the app working), not with the
+   deployment check (which only proves the server responds). Screenshots win
+   because they live in the repo and survive a free-tier deployment being
+   suspended months later, when a recruiter actually looks. */
 export function planProof(project = {}, stack = {}) {
+  // Not every project deploys — a CLI tool, a library, a data pipeline or a
+  // notebook has no URL to check. Those items are marked `conditional` and get
+  // SKIPPED rather than sitting permanently red.
+  const deployable = !!(stack?.frontend || stack?.backend || stack?.deployment);
+  const hasBackend = !!stack?.backend;
+
   const items = [
-    ['github_repo', 'GitHub repository connected', 'Public or shareable repo containing this project.', true, 'github'],
-    ['readme', 'README.md present and meaningful', 'Explains what/why/how-to-run.', true, 'github'],
-    ['screenshots', 'Screenshots of the working app', 'At least 2 screenshots of real flows.', true, 'manual'],
-    ['deployed_url', 'Deployed demo URL', 'Publicly reachable deployment.', true, 'deployment'],
-    ['tests_passing', 'Tests pass locally', '`npm test` exits 0; paste/attach the output.', true, 'local_tests'],
-    ['api_health', 'API health check reachable', '/api/health responds on the deployed backend.', false, 'deployment'],
-    ['architecture_exported', 'Architecture spec generated and saved', 'Architecture OS spec exists for this project (design quality, not implementation proof).', false, 'workspace_local'],
-    ['demo_video', 'Demo video (optional)', 'Short walkthrough video link.', false, 'manual'],
+    ['github_repo', 'GitHub repository connected', 'Public repo containing this project.', true, 'github', false],
+    ['readme', 'README.md present and meaningful', 'Explains what it does, why, and how to run it.', true, 'github', false],
+    ['screenshots', 'Screenshots committed to the repo', 'At least 2 images in docs/screenshots/, with one embedded in the README.', true, 'github_screenshots', false],
+    ['deployed_url', 'Deployed demo URL', 'Publicly reachable deployment.', deployable, 'deployment', !deployable],
+    ['tests_passing', 'Tests pass', 'Paste your `npm test` output, or add CI to have it verified automatically.', true, 'tests', false],
+    ['api_health', 'API health check reachable', '/api/health returns JSON on the deployed backend.', false, 'api_health', !hasBackend],
+    ['architecture_exported', 'Architecture spec generated and saved', 'Architecture OS spec exists for this project (design quality, not implementation proof).', false, 'workspace_local', false],
   ];
-  return items.map(([key, title, description, required, verificationMethod]) => ({
-    id: did('proof', key), type: key, title, description, required,
-    status: 'pending', verificationMethod,
+
+  return items.map(([key, title, description, required, verificationMethod, skipped]) => ({
+    id: did('proof', key), type: key, title, description,
+    required: !!required && !skipped,
+    status: skipped ? 'not_applicable' : 'pending',
+    skipped: !!skipped,
+    verificationMethod,
   }));
 }
 

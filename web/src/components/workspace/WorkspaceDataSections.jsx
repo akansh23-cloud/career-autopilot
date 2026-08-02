@@ -1,7 +1,7 @@
 // Guided Project Workspace — Files / APIs / Database / Tests / Deployment /
 // Proof / Patent sections.
 import { useState } from 'react';
-import { Github, Globe, ShieldCheck, Loader2, Info } from 'lucide-react';
+import { Github, Globe, ShieldCheck, Loader2, Info, TerminalSquare } from 'lucide-react';
 import { Card, Badge, Button } from '../ui/kit.jsx';
 import { StatusBadge, KeyVal, ChipList, ItemRow, SectionTitle, NoticeBar } from './workspaceBits.jsx';
 import { fileBadge, asList } from '../../lib/workspaceSelectors.js';
@@ -140,26 +140,33 @@ export function WorkspaceDeployment({ plan }) {
   );
 }
 
-/* How verification actually works — stated plainly. The old placeholder copy
-   told students nothing about what to attach or what would be checked. */
+/* How verification actually works — stated plainly, per evidence type. */
 function VerificationExplainer() {
   const [open, setOpen] = useState(false);
   return (
     <Card className="mt-4 p-5">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2.5 text-left">
         <Info size={15} className="shrink-0 text-aurora-cyan" />
-        <span className="text-[13.5px] font-semibold text-white">How verification works</span>
+        <span className="text-[13.5px] font-semibold text-white">How each check works</span>
         <span className="ml-auto text-[12px] text-slate-500">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
         <div className="mt-4 space-y-4 text-[13px] leading-relaxed text-slate-300">
           <div>
-            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">GitHub proof</div>
-            <p>We read your <strong>public</strong> repository from GitHub&rsquo;s API — no token, no write access. We confirm the repo exists and has commits, that a README exists in the root and is substantial enough to explain the project, and whether a CI workflow lives under <span className="font-mono text-[12px]">.github/workflows</span>. A private repo cannot be read this way; connect the GitHub App in Career Profile to verify private work with your permission.</p>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">Repository &amp; README</div>
+            <p>We read your <strong>public</strong> repo through GitHub&rsquo;s API — no token from you, no write access. The README needs real substance: at least two sections and a setup or run instruction. Length alone does not pass.</p>
           </div>
           <div>
-            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">Deployment proof</div>
-            <p>We request your deployed URL server-side and record the HTTP status, response time, page title and whether the response is a real rendered page rather than an empty shell or a parked domain. A page that loads but renders nothing stays pending.</p>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">Screenshots</div>
+            <p>Commit at least two images to <span className="font-mono text-[12px]">docs/screenshots/</span> and embed one in your README. We check they exist in the repo. This is better than a file-sharing link: it survives your deployment being suspended, and a recruiter sees the app the moment they open your repo.</p>
+          </div>
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">Deployment</div>
+            <p>We request your URL server-side and record status, timing and title — and we look for hosting failure pages (Vercel&rsquo;s deployment-not-found, suspended services, parked domains) which return HTTP 200 and would otherwise pass. This confirms the deployment is <em>reachable</em>. It cannot execute your app&rsquo;s JavaScript, so we never claim more than that.</p>
+          </div>
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">Tests</div>
+            <p>Pasted output is checked for a real runner summary (Jest, Vitest, Mocha, node:test, pytest, go test) and any failures are rejected — but it stays <strong>self-reported</strong>, because a paste can always be edited. Add a CI workflow and a green run upgrades it to fully verified.</p>
           </div>
           <div>
             <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500">What never happens</div>
@@ -171,15 +178,21 @@ function VerificationExplainer() {
   );
 }
 
+const FIELD_CLS = 'w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50';
+
 export function WorkspaceProof({ plan, selected, onSelect, onVerify, verifying }) {
   const proofs = plan?.proofRequirements || [];
   const saved = plan?.proofEvidence || {};
   const summary = plan?.verificationSummary || null;
   const [repoUrl, setRepoUrl] = useState(saved.repoUrl || '');
   const [liveUrl, setLiveUrl] = useState(saved.liveUrl || '');
+  const [testOutput, setTestOutput] = useState(saved.testOutput || '');
 
-  const run = () => onVerify?.({ repoUrl: repoUrl.trim(), liveUrl: liveUrl.trim() });
+  const run = () => onVerify?.({ repoUrl: repoUrl.trim(), liveUrl: liveUrl.trim(), testOutput });
   const canRun = !!onVerify && !verifying;
+
+  const active = proofs.filter((p) => p.status !== 'not_applicable');
+  const skipped = proofs.filter((p) => p.status === 'not_applicable');
 
   return (
     <div>
@@ -188,44 +201,53 @@ export function WorkspaceProof({ plan, selected, onSelect, onVerify, verifying }
       <Card className="mt-3 p-5">
         <div className="mb-1 text-[13.5px] font-semibold text-white">Attach your evidence</div>
         <p className="mb-4 text-[12.5px] leading-relaxed text-slate-400">
-          Paste what you have. We check it server-side and mark only what we can actually observe. Anything we cannot reach stays pending with a reason.
+          Everything below feeds the checks. We mark only what we can actually observe — anything we cannot reach stays pending with a reason, never a failure.
         </p>
+
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block">
             <span className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500"><Github size={12} /> Public repository URL</span>
-            <input
-              value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)}
-              placeholder="https://github.com/you/your-project"
-              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
-            />
+            <input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)}
+              placeholder="https://github.com/you/your-project" className={`h-11 ${FIELD_CLS}`} />
+            <span className="mt-1.5 block text-[11.5px] text-slate-500">Covers the repo, README and screenshot checks.</span>
           </label>
           <label className="block">
             <span className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500"><Globe size={12} /> Deployed URL</span>
-            <input
-              value={liveUrl} onChange={(e) => setLiveUrl(e.target.value)}
-              placeholder="https://your-project.vercel.app"
-              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
-            />
+            <input value={liveUrl} onChange={(e) => setLiveUrl(e.target.value)}
+              placeholder="https://your-project.vercel.app" className={`h-11 ${FIELD_CLS}`} />
+            <span className="mt-1.5 block text-[11.5px] text-slate-500">Covers the deployment and API health checks.</span>
           </label>
         </div>
+
+        <label className="mt-4 block">
+          <span className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-500"><TerminalSquare size={12} /> Test output</span>
+          <textarea value={testOutput} onChange={(e) => setTestOutput(e.target.value)} rows={6}
+            placeholder={'Run `npm test` and paste the full console output here, including the summary line.'}
+            className={`resize-y py-3 font-mono text-[12px] leading-relaxed ${FIELD_CLS}`} />
+          <span className="mt-1.5 block text-[11.5px] text-slate-500">
+            Stays <span className="text-amber-glow">self-reported</span> — a paste can always be edited. A green CI run in your repo upgrades it to verified.
+          </span>
+        </label>
+
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button onClick={run} disabled={!canRun}>
             {verifying ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : <><ShieldCheck size={15} /> Run verification</>}
           </Button>
           {summary?.ranAt && (
             <span className="text-[11.5px] text-slate-500">
-              Last run {new Date(summary.ranAt).toLocaleString()} · {summary.verifiedItems} verified, {summary.pendingItems} pending
+              Last run {new Date(summary.ranAt).toLocaleString()} · {summary.verifiedItems} verified
+              {summary.selfReportedItems ? `, ${summary.selfReportedItems} self-reported` : ''}, {summary.pendingItems} pending
             </span>
           )}
         </div>
       </Card>
 
       <div className="mt-4 space-y-1.5">
-        {proofs.map((p) => (
+        {active.map((p) => (
           <ItemRow
             key={p.id}
             title={p.title}
-            sub={p.verificationNote || `${p.description || ''} · via ${p.verificationMethod}`}
+            sub={p.verificationNote || p.description}
             badge={<StatusBadge status={p.status || 'pending'} />}
             right={p.required ? <Badge tone="amber">Required</Badge> : <Badge>Optional</Badge>}
             selected={selected?.type === 'proof' && selected?.id === p.id}
@@ -233,6 +255,19 @@ export function WorkspaceProof({ plan, selected, onSelect, onVerify, verifying }
           />
         ))}
       </div>
+
+      {skipped.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-600">Not applicable to this project</div>
+          <div className="space-y-1.5 opacity-50">
+            {skipped.map((p) => (
+              <ItemRow key={p.id} title={p.title} sub={p.verificationNote || 'Not applicable to this project type.'}
+                badge={<StatusBadge status="not_applicable" />}
+                selected={false} onClick={() => onSelect({ type: 'proof', id: p.id })} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <VerificationExplainer />
     </div>

@@ -28,57 +28,126 @@ export function validateWorkspacePlan(plan = {}) {
   return { ok: issues.length === 0, issues };
 }
 
-/* Decide a github proof item from a real repo observation. */
-function judgeGithub(item, gh) {
-  if (!gh) return { result: 'pending', note: 'Attach your public repository URL in the Proof tab, then run Verify.' };
-  if (!gh.ok) return { result: 'pending', note: gh.note || 'The GitHub check could not run. Nothing was marked verified.' };
-  if (!gh.reachable) return { result: 'pending', note: gh.note || 'That repository is not publicly readable.' };
+/* ============================================================
+   STATUS TIERS
+   ------------------------------------------------------------
+   verified       an independent observation supports the claim
+   self_reported  the student asserted it and the assertion is
+                  well-formed, but we cannot independently confirm
+                  it (pasted test output). Counts toward completion,
+                  but must LOOK different from verified — a
+                  recruiter-facing score built on self-claims is
+                  worthless.
+   pending        not yet evidenced, or we could not check
+   not_applicable structurally irrelevant to this project
 
-  if (item.type === 'readme_present' || /readme/i.test(item.title || '')) {
-    if (!gh.readmePresent) return { result: 'pending', note: 'No README.md found in the repository root. Add one that explains what the project does, why, and how to run it.' };
-    if (!gh.readmeMeaningful) return { result: 'pending', note: `A README exists but is only ${gh.readmeBytes} bytes. Expand it to cover what it does, why it exists, and how to run it locally.` };
-    return { result: 'verified', note: `README.md found (${gh.readmeBytes} bytes) in ${gh.fullName}.` };
+   There is deliberately no `failed`. A check we could not run is
+   the platform's problem, not the student's, and an unmet
+   requirement is just "not done yet".
+   ============================================================ */
+
+/* Unavailable observations must never become a negative verdict. */
+function unavailableVerdict(obs, fallback) {
+  if (obs && obs.unavailable) {
+    return { result: 'pending', note: obs.note || 'This check could not run just now. Nothing was marked failed.' };
   }
-  if (item.type === 'ci_workflow' || /ci\/cd|workflow|pipeline/i.test(item.title || '')) {
-    return gh.ciPresent
-      ? { result: 'verified', note: `CI workflow found under .github/workflows in ${gh.fullName}.` }
-      : { result: 'pending', note: 'No workflow file found under .github/workflows. Add a CI workflow that runs your tests on push.' };
-  }
-  // Default github proof: the repo itself exists, is public and has commits.
-  return {
-    result: 'verified',
-    note: `Public repository ${gh.fullName} verified${gh.pushedAt ? `, last pushed ${String(gh.pushedAt).slice(0, 10)}` : ''}.`,
-  };
+  return fallback;
 }
 
-/* Decide a deployment proof item from a real HTTP observation. */
-function judgeDeployment(item, dep) {
+function judgeGithub(item, ev) {
+  const gh = ev?.github;
+  if (!gh) return { result: 'pending', note: 'Attach your public repository URL in the Proof tab, then run Verify.' };
+  const bail = unavailableVerdict(gh, null);
+  if (bail) return bail;
+  if (!gh.present) return { result: 'pending', note: gh.note };
+
+  if (item.type === 'readme') {
+    const rm = ev?.readme;
+    if (!rm) return { result: 'pending', note: 'README could not be read.' };
+    const b2 = unavailableVerdict(rm, null);
+    if (b2) return b2;
+    if (!rm.present || !rm.meaningful) return { result: 'pending', note: rm.note };
+    return { result: 'verified', note: rm.note };
+  }
+
+  if (!gh.hasSource) {
+    return { result: 'pending', note: `${gh.fullName} is reachable but looks nearly empty. Push your actual source code.` };
+  }
+  return { result: 'verified', note: gh.note };
+}
+
+function judgeScreenshots(item, ev) {
+  const sc = ev?.screenshots;
+  if (!ev?.github) return { result: 'pending', note: 'Attach your repository URL in the Proof tab, then run Verify.' };
+  if (!sc) return { result: 'pending', note: 'Repository must be readable before screenshots can be checked.' };
+  const bail = unavailableVerdict(sc, null);
+  if (bail) return bail;
+  if (!sc.enough || !sc.embedded) return { result: 'pending', note: sc.note };
+  return { result: 'verified', note: sc.note };
+}
+
+function judgeDeployment(item, ev) {
+  const dep = ev?.deployment;
   if (!dep) return { result: 'pending', note: 'Attach your deployed URL in the Proof tab, then run Verify.' };
-  if (!dep.ok || !dep.reachable) return { result: 'pending', note: dep.note || 'The deployed URL could not be reached.' };
-  if (!dep.looksLikeApp) return { result: 'pending', note: dep.note || 'The URL responded but the page looks empty. Confirm the deployment serves your app.' };
-  return {
-    result: 'verified',
-    note: `Reachable at ${dep.finalUrl} (HTTP ${dep.statusCode}, ${dep.responseTimeMs}ms)${dep.title ? ` — “${dep.title}”` : ''}.`,
-  };
+  const bail = unavailableVerdict(dep, null);
+  if (bail) return bail;
+  if (!dep.reachable) return { result: 'pending', note: dep.note };
+  // "reachable", not "working": a server-side fetch cannot execute the JS of a
+  // client-rendered app, so we never claim more than we observed.
+  return { result: 'verified', note: `${dep.note} Confirms the deployment is reachable; it does not execute your app's JavaScript.` };
+}
+
+function judgeApiHealth(item, ev) {
+  const h = ev?.apiHealth;
+  if (!h) return { result: 'pending', note: 'Attach your deployed URL in the Proof tab, then run Verify.' };
+  const bail = unavailableVerdict(h, null);
+  if (bail) return bail;
+  if (!h.reachable) return { result: 'pending', note: h.note };
+  return { result: 'verified', note: h.note };
+}
+
+/* Two tiers. A green CI run is independent evidence; a paste is not. */
+function judgeTests(item, ev) {
+  const ci = ev?.ci;
+  if (ci && !ci.unavailable && ci.present) {
+    return { result: 'verified', note: ci.note };
+  }
+  const t = ev?.tests;
+  if (t && t.ok) {
+    const ciHint = ci && !ci.unavailable ? ` ${ci.note}` : '';
+    return { result: 'self_reported', note: `${t.message}${ciHint}` };
+  }
+  if (t && !t.ok) return { result: 'pending', note: t.message };
+  if (ci && ci.unavailable) return { result: 'pending', note: ci.note };
+  if (ci && !ci.present) return { result: 'pending', note: `Paste your test output in the Proof tab. ${ci.note}` };
+  return { result: 'pending', note: 'Run your tests, then paste the console output in the Proof tab. Adding a CI workflow upgrades this to fully verified.' };
 }
 
 /**
  * runVerification(plan, evidence)
- * evidence: { github, deployment, repoUrl, liveUrl } from
- * utils/workspace/proofVerification.gatherProofEvidence(). Omitted entirely,
- * every network-backed item simply stays pending with a clear instruction.
+ * evidence comes from utils/workspace/proofVerification.gatherProofEvidence().
+ * Omitted entirely, every network-backed item stays pending with a clear
+ * instruction rather than a failure.
  */
 export function runVerification(plan = {}, evidence = null) {
   const p = obj(plan);
-  const gh = evidence?.github || null;
-  const dep = evidence?.deployment || null;
   const checks = [];
+
   const proof = arr(p.proofRequirements).map((item) => {
     const out = { ...item };
-    let verdict;
 
-    if (item.verificationMethod === 'workspace_local') {
-      if (item.type === 'architecture_exported') {
+    // Structurally irrelevant items are skipped, never marked pending — a
+    // permanently red row on a CLI project is noise, not feedback.
+    if (item.skipped || item.status === 'not_applicable') {
+      out.status = 'not_applicable';
+      out.verificationNote = 'Not applicable to this project type.';
+      checks.push({ id: item.id, title: item.title, method: item.verificationMethod, result: 'not_applicable', note: out.verificationNote });
+      return out;
+    }
+
+    let verdict;
+    switch (item.verificationMethod) {
+      case 'workspace_local': {
         const hasSpec = !!obj(p.architecture).architectureSpec;
         verdict = {
           result: hasSpec ? 'verified' : 'pending',
@@ -86,17 +155,15 @@ export function runVerification(plan = {}, evidence = null) {
             ? 'Architecture spec exists in this workspace. This proves design quality only — not implementation.'
             : 'Generate an architecture in the Architecture tab first.',
         };
-      } else {
-        verdict = { result: 'pending', note: 'No local rule for this item yet.' };
+        break;
       }
-    } else if (item.verificationMethod === 'github') {
-      verdict = judgeGithub(item, gh);
-    } else if (item.verificationMethod === 'deployment') {
-      verdict = judgeDeployment(item, dep);
-    } else if (item.verificationMethod === 'local_tests') {
-      verdict = { result: 'pending', note: 'Run `npm test` locally and paste the output in the Proof tab. Add a CI workflow and this becomes verifiable from your repo.' };
-    } else {
-      verdict = { result: 'pending', note: 'Manual evidence — attach it in the Proof tab.' };
+      case 'github': verdict = judgeGithub(item, evidence); break;
+      case 'github_screenshots': verdict = judgeScreenshots(item, evidence); break;
+      case 'deployment': verdict = judgeDeployment(item, evidence); break;
+      case 'api_health': verdict = judgeApiHealth(item, evidence); break;
+      case 'tests': verdict = judgeTests(item, evidence); break;
+      default:
+        verdict = { result: 'pending', note: 'Manual evidence — attach it in the Proof tab.' };
     }
 
     out.status = verdict.result;
@@ -106,8 +173,11 @@ export function runVerification(plan = {}, evidence = null) {
     return out;
   });
 
-  const verifiedCount = proof.filter((x) => x.status === 'verified').length;
-  const requiredPending = proof.filter((x) => x.required && x.status !== 'verified').length;
+  const active = proof.filter((x) => x.status !== 'not_applicable');
+  const verifiedCount = active.filter((x) => x.status === 'verified').length;
+  const selfReportedCount = active.filter((x) => x.status === 'self_reported').length;
+  const requiredPending = active.filter((x) => x.required && x.status !== 'verified' && x.status !== 'self_reported').length;
+
   return {
     proofRequirements: proof,
     verificationSummary: {
@@ -116,14 +186,17 @@ export function runVerification(plan = {}, evidence = null) {
       evidenceUsed: {
         repoUrl: evidence?.repoUrl || null,
         liveUrl: evidence?.liveUrl || null,
-        githubReachable: gh ? !!gh.reachable : null,
-        deploymentReachable: dep ? !!dep.reachable : null,
+        testOutputProvided: !!evidence?.hasTestOutput,
+        githubTokenConfigured: evidence?.githubTokenConfigured ?? null,
       },
       verifiedItems: verifiedCount,
-      pendingItems: proof.length - verifiedCount,
+      selfReportedItems: selfReportedCount,
+      pendingItems: active.length - verifiedCount - selfReportedCount,
+      notApplicableItems: proof.length - active.length,
       requiredPending,
+      complete: requiredPending === 0,
       checks,
-      note: 'Checks run against real evidence you attach. Anything we could not observe stays pending — it is never auto-passed. Generated starter code is not verified work; Done is not Verified; the architecture design score is not implementation proof.',
+      note: 'Checks run against real evidence you attach. Anything we could not observe stays pending — it is never auto-passed, and a check we could not run is never counted against you. Self-reported items are shown separately from verified ones. Generated starter code is not verified work; Done is not Verified; the architecture design score is not implementation proof.',
     },
   };
 }

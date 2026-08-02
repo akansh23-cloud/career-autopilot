@@ -124,10 +124,19 @@ export default function WorkspaceInspector({ plan, selected, onClose, onPreviewC
             <KeyVal label="Required">{item.required ? 'Yes' : 'Optional'}</KeyVal>
             {item.verificationNote && <KeyVal label="Last check">{item.verificationNote}</KeyVal>}
             {item.verificationMethod === 'github' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">Checked against your public repository: it must exist and have commits, and README / CI items look for a substantial README.md and a workflow under .github/workflows. Attach the repo URL in the Proof tab and run verification.</p>
+              <p className="text-[12px] leading-relaxed text-slate-500">Read from your public repository via the GitHub API. Attach the repo URL in the Proof tab and run verification.</p>
+            )}
+            {item.verificationMethod === 'github_screenshots' && (
+              <p className="text-[12px] leading-relaxed text-slate-500">Commit at least 2 images to docs/screenshots/ in your repo and embed one in the README. We check they exist. Screenshots in the repo outlast a suspended deployment.</p>
             )}
             {item.verificationMethod === 'deployment' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">Checked by requesting your deployed URL server-side: it must return a success status and a real rendered page, not an empty shell. Attach the URL in the Proof tab and run verification.</p>
+              <p className="text-[12px] leading-relaxed text-slate-500">Requested server-side: must return a success status, a real page, and no hosting failure signature. Confirms the deployment is reachable — it cannot execute your app's JavaScript.</p>
+            )}
+            {item.verificationMethod === 'api_health' && (
+              <p className="text-[12px] leading-relaxed text-slate-500">We call /api/health on your deployed URL and expect a JSON body. This is the strongest deployment signal, because JSON cannot be faked by an empty page shell.</p>
+            )}
+            {item.verificationMethod === 'tests' && (
+              <p className="text-[12px] leading-relaxed text-slate-500">Paste your test output in the Proof tab — we look for a real runner summary and reject runs with failures. It stays self-reported until a green CI run in your repo verifies it independently.</p>
             )}
           </>
         )}
