@@ -1,29 +1,56 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Users, GraduationCap, BarChart3, Flame, FolderCheck, FileText,
-  CalendarClock, Download, Search, Plus, Bell, ClipboardList, Gauge, Eye,
+  CalendarClock, Download, Search, Bell, ClipboardList, Gauge, Eye,
+  IndianRupee, FileDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { PageIntro, SectionCard, StatCard, BarChart } from './common.jsx';
-import { Button, Badge, Spinner, EmptyState, Input, Field, Modal } from '../components/ui/kit.jsx';
+import { Button, Badge, Spinner, EmptyState, Input, Field } from '../components/ui/kit.jsx';
 import { College } from '../lib/api.js';
 import { getEffectiveRole } from '../lib/roleCapabilities.js';
 import CommandCenter from '../components/college/CommandCenter.jsx';
 import OnboardingPanel from '../components/college/OnboardingPanel.jsx';
 import StudentDrilldown from '../components/college/StudentDrilldown.jsx';
+import DriveManager from '../components/college/DriveManager.jsx';
+import PlacementReport from '../components/college/PlacementReport.jsx';
+import InterventionsPanel from '../components/college/InterventionsPanel.jsx';
+import { exportCollegeReportPDF } from '../lib/collegeReport.js';
 
-const TABS = [
-  { id: 'command', label: 'Command center', icon: Gauge },
-  { id: 'onboarding', label: 'Onboarding & roster', icon: ClipboardList },
-  { id: 'overview', label: 'Overview', icon: GraduationCap },
-  { id: 'directory', label: 'Student directory', icon: Users },
-  { id: 'readiness', label: 'Placement readiness', icon: BarChart3 },
-  { id: 'heatmap', label: 'Skill heatmap', icon: Flame },
-  { id: 'analytics', label: 'Batch & branch analytics', icon: BarChart3 },
-  { id: 'projects', label: 'Verified projects', icon: FolderCheck },
-  { id: 'resume', label: 'Resume readiness', icon: FileText },
-  { id: 'drives', label: 'Drive tracker', icon: CalendarClock },
-  { id: 'reports', label: 'Reports / export', icon: Download },
+/* Tabs are grouped rather than listed flat. Fourteen equal-weight buttons in
+   one row is a wall; three labelled groups is a workspace. "Operate" is the
+   daily job, "Cohort" is the analysis, "Manage" is the setup. */
+const GROUPS = [
+  {
+    label: 'Operate',
+    tabs: [
+      { id: 'command', label: 'Command center', icon: Gauge },
+      { id: 'drives', label: 'Drives', icon: CalendarClock },
+      { id: 'placement', label: 'Placement report', icon: IndianRupee },
+      { id: 'interventions', label: 'Interventions', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Cohort',
+    tabs: [
+      { id: 'directory', label: 'Student directory', icon: Users },
+      { id: 'overview', label: 'Overview', icon: GraduationCap },
+      { id: 'readiness', label: 'Readiness', icon: BarChart3 },
+      { id: 'heatmap', label: 'Skill heatmap', icon: Flame },
+      { id: 'analytics', label: 'Batch & branch', icon: BarChart3 },
+      { id: 'projects', label: 'Verified projects', icon: FolderCheck },
+      { id: 'resume', label: 'Resume readiness', icon: FileText },
+    ],
+  },
+  {
+    label: 'Manage',
+    tabs: [
+      { id: 'onboarding', label: 'Onboarding & roster', icon: ClipboardList },
+      { id: 'reports', label: 'Reports & export', icon: Download },
+    ],
+  },
 ];
+
+const ALL_TABS = GROUPS.flatMap((g) => g.tabs);
 
 // Small async-state wrapper: shows loading / error / empty consistently.
 function useAsync(fn, deps = []) {
@@ -59,8 +86,8 @@ export default function CollegeWorkspace({ params = {}, go }) {
   const effectiveRole = getEffectiveRole();
   const allowed = effectiveRole === 'college_admin' || effectiveRole === 'admin';
 
-  const [tab, setTab] = useState(TABS.some((t) => t.id === params.tab) ? params.tab : 'command');
-  useEffect(() => { if (params.tab && TABS.some((t) => t.id === params.tab)) setTab(params.tab); }, [params.tab]);
+  const [tab, setTab] = useState(ALL_TABS.some((t) => t.id === params.tab) ? params.tab : 'command');
+  useEffect(() => { if (params.tab && ALL_TABS.some((t) => t.id === params.tab)) setTab(params.tab); }, [params.tab]);
 
   if (!allowed) {
     return (
@@ -90,31 +117,38 @@ export default function CollegeWorkspace({ params = {}, go }) {
         title="College workspace"
         sub="Scoped to your college only. All student data is limited to your institution."
       />
-      <div className="mb-5 flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${
-              tab === t.id ? 'border-white/25 bg-white/[0.06] text-white' : 'border-white/8 bg-white/[0.02] text-slate-300 hover:border-white/20'
-            }`}
-          >
-            <t.icon size={15} /> {t.label}
-          </button>
+      <div className="mb-5 space-y-2">
+        {GROUPS.map((g) => (
+          <div key={g.label} className="flex flex-wrap items-center gap-2">
+            <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-600">{g.label}</span>
+            {g.tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${
+                  tab === t.id ? 'border-white/25 bg-white/[0.06] text-white' : 'border-white/8 bg-white/[0.02] text-slate-300 hover:border-white/20'
+                }`}
+              >
+                <t.icon size={15} /> {t.label}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
 
       {tab === 'command' && <CommandCenterTab go={(t) => setTab(t)} />}
+      {tab === 'drives' && <DriveManager />}
+      {tab === 'placement' && <PlacementReport go={(t) => setTab(t)} />}
+      {tab === 'interventions' && <InterventionsPanel />}
       {tab === 'onboarding' && <OnboardingPanel />}
       {tab === 'overview' && <OverviewTab go={(t) => setTab(t)} />}
-      {tab === 'directory' && <DirectoryTab go={go} />}
+      {tab === 'directory' && <DirectoryTab />}
       {tab === 'readiness' && <ReadinessTab />}
       {tab === 'heatmap' && <HeatmapTab />}
       {tab === 'analytics' && <AnalyticsTab />}
       {tab === 'projects' && <ProjectsTab go={go} />}
       {tab === 'resume' && <ResumeReadinessTab />}
-      {tab === 'drives' && <DrivesTab />}
-      {tab === 'reports' && <ReportsTab />}
+      {tab === 'reports' && <ReportsTab go={(t) => setTab(t)} />}
     </div>
   );
 }
@@ -149,59 +183,152 @@ function OverviewTab({ go }) {
 }
 
 const FILTER_DEFAULTS = { branch: '', batch: '', year: '', skill: '', minReadiness: '', minResume: '', verifiedOnly: false };
+const PAGE_SIZE = 25;
 
-function DirectoryTab({ go }) {
+const ENGAGEMENT_TONE = { active7: 'mint', active30: 'cyan', dormant: 'amber', never: 'default' };
+const ENGAGEMENT_LABEL = { active7: 'This week', active30: 'This month', dormant: 'Dormant', never: 'Never active' };
+const RISK_TONE = { high: 'amber', medium: 'cyan', low: 'default', none: 'default' };
+
+function SortHeader({ label, field, sort, order, onSort, align = 'left' }) {
+  const active = sort === field;
+  const Icon = order === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th className={`px-2 py-2 ${align === 'right' ? 'text-right' : ''}`}>
+      <button
+        onClick={() => onSort(field)}
+        className={`inline-flex items-center gap-1 transition hover:text-slate-300 ${active ? 'text-slate-200' : ''}`}
+      >
+        {label}{active && <Icon size={11} />}
+      </button>
+    </th>
+  );
+}
+
+function DirectoryTab() {
   const [drill, setDrill] = useState(null);
   const [filters, setFilters] = useState(FILTER_DEFAULTS);
   const [applied, setApplied] = useState(FILTER_DEFAULTS);
-  const { loading, error, data } = useAsync(() => College.students(applied), [JSON.stringify(applied)]);
+  const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  const [sort, setSort] = useState('readinessScore');
+  const [order, setOrder] = useState('desc');
+  const [offset, setOffset] = useState(0);
+
+  // Debounced so typing a name doesn't fire one request per keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => { setDebouncedQ(q); setOffset(0); }, 300);
+    return () => clearTimeout(id);
+  }, [q]);
+
+  // deep=1 asks the server for engagement, funnel stage and risk severity —
+  // signals the observability engine already computes but the directory
+  // previously threw away.
+  const query = useMemo(() => ({
+    ...applied, q: debouncedQ, sort, order, offset, limit: PAGE_SIZE, deep: 1,
+  }), [applied, debouncedQ, sort, order, offset]);
+
+  const { loading, error, data } = useAsync(() => College.students(query), [JSON.stringify(query)]);
   const students = data?.students || [];
+  const total = data?.total ?? 0;
   const set = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
+
+  const onSort = (field) => {
+    if (sort === field) setOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    else { setSort(field); setOrder(['name', 'branch', 'batch'].includes(field) ? 'asc' : 'desc'); }
+    setOffset(0);
+  };
+
+  const from = total === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + students.length, total);
 
   return (
     <SectionCard
       title="Student directory"
-      action={<Button size="sm" variant="soft" onClick={() => { setFilters(FILTER_DEFAULTS); setApplied(FILTER_DEFAULTS); }}>Reset</Button>}
+      eyebrow={total > 0 ? `${total} student(s) match — showing ${from}\u2013${to}` : undefined}
+      action={
+        <Button size="sm" variant="soft" onClick={() => {
+          setFilters(FILTER_DEFAULTS); setApplied(FILTER_DEFAULTS); setQ(''); setOffset(0);
+        }}>Reset</Button>
+      }
     >
+      <div className="mb-3">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email\u2026" className="max-w-sm" />
+      </div>
+
       <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Branch"><Input value={filters.branch} onChange={(e) => set('branch', e.target.value)} placeholder="e.g. CSE" /></Field>
         <Field label="Batch / grad year"><Input value={filters.batch} onChange={(e) => set('batch', e.target.value)} placeholder="e.g. 2026" /></Field>
         <Field label="Year"><Input value={filters.year} onChange={(e) => set('year', e.target.value)} placeholder="e.g. 3rd" /></Field>
         <Field label="Skill"><Input value={filters.skill} onChange={(e) => set('skill', e.target.value)} placeholder="e.g. React" /></Field>
-        <Field label="Min readiness"><Input type="number" value={filters.minReadiness} onChange={(e) => set('minReadiness', e.target.value)} placeholder="0–100" /></Field>
-        <Field label="Min resume score"><Input type="number" value={filters.minResume} onChange={(e) => set('minResume', e.target.value)} placeholder="0–100" /></Field>
+        <Field label="Min readiness"><Input type="number" value={filters.minReadiness} onChange={(e) => set('minReadiness', e.target.value)} placeholder="0\u2013100" /></Field>
+        <Field label="Min resume score"><Input type="number" value={filters.minResume} onChange={(e) => set('minResume', e.target.value)} placeholder="0\u2013100" /></Field>
         <label className="flex items-center gap-2 self-end text-sm text-slate-300">
           <input type="checkbox" checked={filters.verifiedOnly} onChange={(e) => set('verifiedOnly', e.target.checked)} /> Verified projects only
         </label>
-        <Button size="sm" className="self-end" onClick={() => setApplied(filters)}><Search size={14} /> Apply filters</Button>
+        <Button size="sm" className="self-end" onClick={() => { setApplied(filters); setOffset(0); }}>
+          <Search size={14} /> Apply filters
+        </Button>
       </div>
 
       {loading ? <Loading /> : error ? <ErrorState message={error} /> : students.length === 0 ? (
         <EmptyState icon={Users} title="No students match" hint="Adjust filters, or no students are linked to your college yet." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-2 py-2">Name</th><th className="px-2 py-2">Branch</th><th className="px-2 py-2">Batch</th>
-                <th className="px-2 py-2">Readiness</th><th className="px-2 py-2">Resume</th><th className="px-2 py-2">Verified</th><th className="px-2 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {students.map((s) => (
-                <tr key={s.id} className="border-t border-white/6 hover:bg-white/[0.02]">
-                  <td className="px-2 py-2 text-slate-200">{s.name || s.email}</td>
-                  <td className="px-2 py-2 text-slate-400">{s.branch || '—'}</td>
-                  <td className="px-2 py-2 text-slate-400">{s.batch || '—'}</td>
-                  <td className="px-2 py-2">{s.readinessScore ?? '—'}</td>
-                  <td className="px-2 py-2">{s.resumeScore ?? '—'}</td>
-                  <td className="px-2 py-2">{s.verifiedProjects > 0 ? <Badge tone="mint">{s.verifiedProjects}</Badge> : '—'}</td>
-                  <td className="px-2 py-2"><Button size="sm" variant="soft" onClick={() => setDrill(s.id)}><Eye size={12} /> View</Button></td>
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <SortHeader label="Name" field="name" sort={sort} order={order} onSort={onSort} />
+                  <SortHeader label="Branch" field="branch" sort={sort} order={order} onSort={onSort} />
+                  <SortHeader label="Batch" field="batch" sort={sort} order={order} onSort={onSort} />
+                  <SortHeader label="Readiness" field="readinessScore" sort={sort} order={order} onSort={onSort} align="right" />
+                  <SortHeader label="Resume" field="resumeScore" sort={sort} order={order} onSort={onSort} align="right" />
+                  <SortHeader label="Verified" field="verifiedProjects" sort={sort} order={order} onSort={onSort} align="right" />
+                  <th className="px-2 py-2">Stage</th>
+                  <SortHeader label="Activity" field="lastActiveAt" sort={sort} order={order} onSort={onSort} />
+                  <th className="px-2 py-2">Risk</th>
+                  <th className="px-2 py-2" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {students.map((s) => (
+                  <tr key={s.id} className="border-t border-white/6 hover:bg-white/[0.02]">
+                    <td className="px-2 py-2 text-slate-200">{s.name || s.email}</td>
+                    <td className="px-2 py-2 text-slate-400">{s.branch || '\u2014'}</td>
+                    <td className="px-2 py-2 text-slate-400">{s.batch || '\u2014'}</td>
+                    <td className="px-2 py-2 text-right">{s.readinessScore ?? '\u2014'}</td>
+                    <td className="px-2 py-2 text-right">{s.resumeScore ?? '\u2014'}</td>
+                    <td className="px-2 py-2 text-right">{s.verifiedProjects > 0 ? <Badge tone="mint">{s.verifiedProjects}</Badge> : '\u2014'}</td>
+                    <td className="px-2 py-2 text-xs text-slate-400">{String(s.funnelStage || '').replace(/_/g, ' ') || '\u2014'}</td>
+                    <td className="px-2 py-2">
+                      {s.engagement
+                        ? <Badge tone={ENGAGEMENT_TONE[s.engagement] || 'default'}>{ENGAGEMENT_LABEL[s.engagement] || s.engagement}</Badge>
+                        : <span className="text-slate-600">\u2014</span>}
+                    </td>
+                    <td className="px-2 py-2">
+                      {s.riskBand && s.riskBand !== 'none'
+                        ? <Badge tone={RISK_TONE[s.riskBand] || 'default'}>{s.riskBand}</Badge>
+                        : <span className="text-slate-600">\u2014</span>}
+                    </td>
+                    <td className="px-2 py-2"><Button size="sm" variant="soft" onClick={() => setDrill(s.id)}><Eye size={12} /> View</Button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {total > PAGE_SIZE && (
+            <div className="mt-4 flex items-center justify-between border-t border-white/6 pt-3">
+              <span className="text-xs text-slate-500">Showing {from}\u2013{to} of {total}</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="soft" disabled={offset === 0}
+                  onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}><ChevronLeft size={13} /> Previous</Button>
+                <Button size="sm" variant="soft" disabled={!data?.hasMore}
+                  onClick={() => setOffset((o) => o + PAGE_SIZE)}>Next <ChevronRight size={13} /></Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       <StudentDrilldown studentId={drill} open={Boolean(drill)} onClose={() => setDrill(null)} />
     </SectionCard>
@@ -209,7 +336,7 @@ function DirectoryTab({ go }) {
 }
 
 function ReadinessTab() {
-  const { loading, error, data } = useAsync(() => College.students());
+  const { loading, error, data } = useAsync(() => College.students({ limit: 500 }));
   if (loading) return <Loading />;
   if (error) return <ErrorState message={error} />;
   const students = data?.students || [];
@@ -261,7 +388,7 @@ function AnalyticsTab() {
 }
 
 function ProjectsTab({ go }) {
-  const { loading, error, data } = useAsync(() => College.students({ verifiedOnly: true }));
+  const { loading, error, data } = useAsync(() => College.students({ verifiedOnly: true, limit: 500 }));
   if (loading) return <Loading />;
   if (error) return <ErrorState message={error} />;
   const students = (data?.students || []).filter((s) => s.verifiedProjects > 0);
@@ -300,84 +427,89 @@ function ResumeReadinessTab() {
   );
 }
 
-function DrivesTab() {
-  const [tick, setTick] = useState(0);
-  const { loading, error, data } = useAsync(() => College.drives(), [tick]);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ title: '', company: '' });
-  const drives = data?.drives || [];
-  const create = async () => {
-    if (!form.title.trim()) return;
-    await College.createDrive(form);
-    setForm({ title: '', company: '' });
-    setOpen(false);
-    setTick((t) => t + 1);
-  };
-  return (
-    <SectionCard title="Placement drive tracker" action={<Button size="sm" onClick={() => setOpen(true)}><Plus size={14} /> New drive</Button>}>
-      {loading ? <Loading /> : error ? <ErrorState message={error} onRetry={() => setTick((t) => t + 1)} /> : drives.length === 0 ? (
-        <EmptyState icon={CalendarClock} title="No drives yet" hint="Create a placement drive to track companies, eligibility and shortlists." />
-      ) : (
-        <ul className="space-y-2">
-          {drives.map((d) => (
-            <li key={d.id} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-sm">
-              <span className="text-slate-200">{d.title}{d.company ? ` · ${d.company}` : ''}</span>
-              <Badge tone="cyan">{d.status || 'open'}</Badge>
-            </li>
-          ))}
-        </ul>
-      )}
-      <Modal open={open} onClose={() => setOpen(false)} title="New placement drive">
-        <div className="space-y-3">
-          <Field label="Title"><Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Summer Internship 2026" /></Field>
-          <Field label="Company"><Input value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} placeholder="e.g. Acme Corp" /></Field>
-          <div className="flex justify-end gap-2"><Button variant="soft" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={create}>Create drive</Button></div>
-        </div>
-      </Modal>
-    </SectionCard>
-  );
-}
-
-function ReportsTab() {
+/* ------------------------------------------------------------------ */
+/* Reports — CSV plus the PDF a TPO actually forwards                  */
+/* ------------------------------------------------------------------ */
+function ReportsTab({ go }) {
   const [status, setStatus] = useState('');
-  const exportFullCsv = async () => {
-    setStatus('Preparing full export…');
-    try {
-      const res = await College.exportCsv(true);
-      if (!res?.ok) { setStatus('Export failed.'); return; }
-      const blob = new Blob([res.csv || ''], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'college-observability.csv'; a.click();
-      URL.revokeObjectURL(url);
-      setStatus(`Exported ${res.rows} rows (extended columns).`);
-    } catch (e) { setStatus(e?.message || 'Export failed.'); }
+  const [busy, setBusy] = useState('');
+
+  const download = (csv, name) => {
+    const blob = new Blob([csv || ''], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
   };
-  const exportCsv = async () => {
-    setStatus('Preparing…');
+
+  const exportCsv = async (full) => {
+    setBusy(full ? 'full' : 'basic'); setStatus('Preparing\u2026');
     try {
-      const res = await College.exportCsv();
+      const res = await College.exportCsv(full);
       if (!res?.ok) { setStatus('Export failed.'); return; }
-      const blob = new Blob([res.csv || ''], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'college-students.csv'; a.click();
-      URL.revokeObjectURL(url);
-      setStatus(`Exported ${res.rows} rows.`);
+      download(res.csv, full ? 'college-observability.csv' : 'college-students.csv');
+      setStatus(`Exported ${res.rows} rows${full ? ' with extended columns' : ''}.`);
     } catch (e) { setStatus(e?.message || 'Export failed.'); }
+    finally { setBusy(''); }
   };
+
+  const exportPdf = async () => {
+    setBusy('pdf'); setStatus('Building the report\u2026');
+    try {
+      // Both engines are pulled fresh so the PDF can never disagree with the
+      // dashboard it was printed from.
+      const [placementData, observability] = await Promise.all([
+        College.placement(),
+        College.observability(),
+      ]);
+      const r = await exportCollegeReportPDF({
+        collegeName: observability?.collegeName || placementData?.collegeId || 'Your institution',
+        placement: placementData,
+        observability,
+      });
+      setStatus(`Report ready \u2014 ${r.pages} page(s) downloaded.`);
+    } catch (e) { setStatus(e?.message || 'Could not build the report.'); }
+    finally { setBusy(''); }
+  };
+
   return (
-    <SectionCard title="Reports & export">
-      <p className="mb-3 text-sm text-muted">Export your college’s scoped student data as CSV for reporting. Only students linked to your institution are included.</p>
-      <div className="flex items-center gap-3">
-        <Button onClick={exportCsv}><Download size={15} /> Export student CSV</Button>
-        <Button variant="soft" onClick={exportFullCsv}><Download size={15} /> Full observability CSV</Button>
-        {status && <span className="text-sm text-slate-400">{status}</span>}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1 rounded-lg border border-white/8 px-2 py-1"><Bell size={12} /> Notify students (placeholder)</span>
-        <span className="inline-flex items-center gap-1 rounded-lg border border-white/8 px-2 py-1"><ClipboardList size={12} /> Assign improvement task (placeholder)</span>
-      </div>
-    </SectionCard>
+    <div className="space-y-4">
+      <SectionCard title="Placement readiness report" eyebrow="The document you forward, not a spreadsheet you clean up">
+        <p className="mb-4 text-sm text-muted">
+          A print-ready PDF covering placement rate, package statistics, branch-wise and batch-wise splits, the
+          recruiter list, and the students who are ready but not yet placed \u2014 plus a methodology note explaining
+          exactly how each figure was derived. The text is vector, so every number can be copied straight into an
+          accreditation return.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={exportPdf} disabled={Boolean(busy)}>
+            {busy === 'pdf' ? <Spinner /> : <FileDown size={15} />} Download PDF report
+          </Button>
+          <Button variant="soft" onClick={() => go?.('placement')}><IndianRupee size={14} /> View the numbers first</Button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Raw data export" eyebrow="Scoped to your institution \u2014 no other college\u2019s students are ever included">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="soft" onClick={() => exportCsv(false)} disabled={Boolean(busy)}>
+            {busy === 'basic' ? <Spinner /> : <Download size={15} />} Student CSV
+          </Button>
+          <Button variant="soft" onClick={() => exportCsv(true)} disabled={Boolean(busy)}>
+            {busy === 'full' ? <Spinner /> : <Download size={15} />} Full observability CSV
+          </Button>
+        </div>
+        {status && <p className="mt-3 text-sm text-slate-400">{status}</p>}
+      </SectionCard>
+
+      {/* These two used to be dead grey "placeholder" chips sitting on top of
+          fully working endpoints. They now link to the real thing. */}
+      <SectionCard title="Act on what you found" eyebrow="All live \u2014 in-app delivery always, email when SMTP is configured">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="soft" onClick={() => go?.('interventions')}><Bell size={14} /> Notify students</Button>
+          <Button variant="soft" onClick={() => go?.('interventions')}><ClipboardList size={14} /> Assign an improvement task</Button>
+          <Button variant="soft" onClick={() => go?.('drives')}><CalendarClock size={14} /> Record drive outcomes</Button>
+        </div>
+      </SectionCard>
+    </div>
   );
 }

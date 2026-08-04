@@ -51,6 +51,11 @@ function mulberry32(seed) {
   };
 }
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
+
+/* One epoch for the whole process. Every relative timestamp below is derived
+   from EPOCH rather than a fresh Date.now(), so repeated calls return byte-
+   identical records and a re-recorded demo take looks like the first one. */
+const EPOCH = Date.now();
 const between = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
 
 /* ---------------- vocabulary ---------------- */
@@ -287,22 +292,62 @@ export function demoStudentDetail(studentId) {
 }
 
 export function demoDrives() {
-  const now = Date.now();
+  const now = EPOCH;
+  // A believable placement season for a mid-tier Indian engineering college:
+  // one high-volume service recruiter doing the bulk of the hiring, a few
+  // mid-tier product roles, an internship drive for the pre-final year, and a
+  // single "dream offer" almost nobody clears. `selectivity` is consumed by
+  // demoOutcomes to shape each funnel — mass recruiters convert far more of
+  // their applicants than a 28 LPA platform role does.
   return [
     {
-      id: 'demo_drive_1', title: 'Backend Engineer — Campus Hire 2026', company: 'Northwind Systems',
-      eligibility: { branches: ['CSE', 'IT'], batches: ['2026'], minResume: 70 },
-      status: 'open', createdAt: new Date(now - 9 * DAY).toISOString(), demo: true,
+      id: 'demo_drive_1', title: 'Backend Engineer \u2014 Campus Hire 2026', company: 'Northwind Systems',
+      role: 'SDE-1', location: 'Pune', ctcLpa: 11,
+      eligibility: { branches: ['CSE', 'IT'], batches: ['2026'], minResume: 65 },
+      status: 'in_progress', selectivity: 1.0,
+      createdAt: new Date(now - 24 * DAY).toISOString(), demo: true,
     },
     {
-      id: 'demo_drive_2', title: 'Data Analyst Internship', company: 'Kestrel Analytics',
-      eligibility: { branches: ['CSE', 'IT', 'ENTC'], batches: ['2027'], minResume: 60 },
-      status: 'open', createdAt: new Date(now - 3 * DAY).toISOString(), demo: true,
+      id: 'demo_drive_2', title: 'Graduate Engineer Trainee', company: 'Sundaram TechServices',
+      role: 'GET', location: 'Chennai / Pune', ctcLpa: 4.2,
+      eligibility: { batches: ['2026'], minResume: 45 },
+      status: 'closed', selectivity: 1.7,
+      createdAt: new Date(now - 46 * DAY).toISOString(), demo: true,
     },
     {
-      id: 'demo_drive_3', title: 'Embedded Systems Trainee', company: 'Halcyon Devices',
-      eligibility: { branches: ['ENTC', 'Mechanical'], batches: ['2026'], minResume: 55 },
-      status: 'closed', createdAt: new Date(now - 38 * DAY).toISOString(), demo: true,
+      id: 'demo_drive_3', title: 'Full-Stack Developer', company: 'Meridian Labs',
+      role: 'Software Engineer', location: 'Bengaluru', ctcLpa: 9.5,
+      eligibility: { branches: ['CSE', 'IT'], batches: ['2026'], minResume: 60 },
+      status: 'in_progress', selectivity: 1.0,
+      createdAt: new Date(now - 17 * DAY).toISOString(), demo: true,
+    },
+    {
+      id: 'demo_drive_4', title: 'Embedded Systems Trainee', company: 'Halcyon Devices',
+      role: 'Embedded Engineer', location: 'Pune', ctcLpa: 6.5,
+      eligibility: { branches: ['ENTC', 'Mechanical'], batches: ['2026'], minResume: 50 },
+      status: 'closed', selectivity: 1.3,
+      createdAt: new Date(now - 38 * DAY).toISOString(), demo: true,
+    },
+    {
+      id: 'demo_drive_5', title: 'Manufacturing Graduate Programme', company: 'Ironvale Industries',
+      role: 'Graduate Trainee', location: 'Nashik', ctcLpa: 5.4,
+      eligibility: { branches: ['Mechanical', 'ENTC'], batches: ['2026'], minResume: 45 },
+      status: 'closed', selectivity: 1.5,
+      createdAt: new Date(now - 33 * DAY).toISOString(), demo: true,
+    },
+    {
+      id: 'demo_drive_6', title: 'Platform Engineer \u2014 Dream Offer', company: 'Aurelia Cloud',
+      role: 'Platform Engineer', location: 'Remote', ctcLpa: 28,
+      eligibility: { branches: ['CSE', 'IT'], batches: ['2026'], minReadiness: 72, minVerifiedProjects: 1 },
+      status: 'in_progress', selectivity: 0.75,
+      createdAt: new Date(now - 8 * DAY).toISOString(), demo: true,
+    },
+    {
+      id: 'demo_drive_7', title: 'Data Analyst Internship', company: 'Kestrel Analytics',
+      role: 'Data Analyst Intern', location: 'Pune', ctcLpa: 5.5,
+      eligibility: { branches: ['CSE', 'IT', 'ENTC'], batches: ['2027'], minResume: 55 },
+      status: 'open', selectivity: 1.1,
+      createdAt: new Date(now - 4 * DAY).toISOString(), demo: true,
     },
   ];
 }
@@ -347,6 +392,123 @@ export function demoTasks() {
   ];
 }
 
+/* Placement outcomes for the demo drives. Deterministic and deliberately
+   imperfect: not everyone who applies is shortlisted, a couple of strong
+   students hold two offers, and one accepted offer has no CTC recorded — so
+   the "package coverage" warning has something real to report. */
+export function demoOutcomes() {
+  const rng = mulberry32(0x5150ACED);
+  const now = EPOCH;
+  const rows = cohort().rows;
+  const drives = demoDrives();
+  const out = [];
+  const placed = new Set(); // a student who accepts stops applying elsewhere
+
+  // Package bands per drive, centred on the advertised CTC.
+  const band = (ctc) => [ctc * 0.85, ctc * 1.2];
+
+  // Day-1 order: the most selective companies pick first, mass recruiters last.
+  // Generating in list order let the volume hirer absorb the cohort and left
+  // every premium drive with an empty funnel.
+  const ordered = [...drives].sort((a, b) => (a.selectivity ?? 1) - (b.selectivity ?? 1));
+
+  for (const drive of ordered) {
+    const e = drive.eligibility || {};
+    const sel = drive.selectivity ?? 1;
+    // Applicants are drawn from students who genuinely clear eligibility, so
+    // the demo funnel is consistent with what the eligibility engine reports.
+    const pool = rows.filter((r) => {
+      if (e.branches?.length && !e.branches.includes(r.branch)) return false;
+      if (e.batches?.length && !e.batches.includes(r.batch)) return false;
+      if (e.minResume != null && Number(r.resumeScore || 0) < e.minResume) return false;
+      if (e.minReadiness != null && Number(r.readinessScore || 0) < e.minReadiness) return false;
+      if (e.minVerifiedProjects != null && Number(r.projectsVerified || 0) < e.minVerifiedProjects) return false;
+      return true;
+    });
+
+    const [lo, hi] = band(drive.ctcLpa || 6);
+
+    for (const r of pool) {
+      // Someone who has already accepted an offer is off the market. This is
+      // what keeps the placement percentage honest instead of double-counting.
+      if (placed.has(r.id)) continue;
+      if (rng() > 0.86) continue; // a few students skip a drive
+
+      const strength = Number(r.readinessScore || 0) / 100;
+      const gate = (base, weight) => rng() < Math.min(0.96, (base + strength * weight) * sel);
+
+      let stage = 'applied';
+      if (gate(0.55, 0.35)) stage = 'shortlisted';
+      if (stage === 'shortlisted' && gate(0.55, 0.35)) stage = 'interviewed';
+      if (stage === 'interviewed' && gate(0.40, 0.40)) stage = 'offered';
+      if (stage === 'offered' && rng() < 0.82) stage = 'accepted';
+      else if (stage !== 'offered' && rng() < 0.45) stage = 'rejected';
+
+      if (stage === 'accepted') placed.add(r.id);
+
+      const offered = stage === 'offered' || stage === 'accepted';
+      // One accepted offer per run intentionally has no package recorded, so
+      // the "package coverage" data-quality warning has something real to flag.
+      const skipCtc = stage === 'accepted' && rng() < 0.06;
+      const ctc = offered && !skipCtc ? Math.round((lo + rng() * (hi - lo)) * 10) / 10 : null;
+
+      out.push({
+        id: `out_${drive.id}_${r.id}`,
+        driveId: drive.id,
+        studentId: r.id,
+        stage,
+        furthestStage: stage === 'rejected' ? (rng() < 0.5 ? 'shortlisted' : 'interviewed') : stage,
+        ctcLpa: ctc,
+        company: drive.company,
+        role: drive.role,
+        note: '',
+        offerAt: offered ? new Date(now - between(rng, 2, 30) * DAY).toISOString() : null,
+        updatedAt: new Date(now - between(rng, 1, 34) * DAY).toISOString(),
+        demo: true,
+      });
+    }
+  }
+  return out;
+}
+
+/* 90 days of daily cohort snapshots ending YESTERDAY — today's snapshot is
+   written for real by the observability route, so the delta a viewer sees is
+   a genuine comparison between stored history and a freshly computed value. */
+export function demoSnapshots() {
+  const rows = cohort().rows;
+  const now = EPOCH;
+  const students = rows.length;
+  const curAvgReadiness = Math.round(rows.reduce((s, r) => s + (r.readinessScore || 0), 0) / Math.max(1, students));
+  const withResume = rows.filter((r) => r.resumeScore != null);
+  const curAvgResume = withResume.length
+    ? Math.round(withResume.reduce((s, r) => s + r.resumeScore, 0) / withResume.length) : 0;
+  const curRecruiterReady = rows.filter((r) => (r.recruiterReadyProjects || 0) > 0).length;
+  const curVerified = rows.filter((r) => (r.projectsVerified || 0) > 0).length;
+  const curReady = rows.filter((r) => (r.readinessScore || 0) >= 70).length;
+
+  const snaps = [];
+  for (let d = 90; d >= 1; d--) {
+    const t = now - d * DAY;
+    // progress runs 0 (90 days ago) -> ~0.99 (yesterday)
+    const p = (90 - d) / 90;
+    const ramp = (curr, startFactor) => Math.round(curr * (startFactor + (1 - startFactor) * p));
+    snaps.push({
+      date: new Date(t).toISOString().slice(0, 10),
+      at: new Date(t).toISOString(),
+      students: ramp(students, 0.72),
+      avgReadiness: ramp(curAvgReadiness, 0.78),
+      avgResume: ramp(curAvgResume, 0.85),
+      recruiterReady: ramp(curRecruiterReady, 0.45),
+      verifiedStudents: ramp(curVerified, 0.55),
+      withResume: ramp(withResume.length, 0.6),
+      active7: ramp(Math.round(students * 0.4), 0.7),
+      placementReady: ramp(curReady, 0.5),
+      demo: true,
+    });
+  }
+  return snaps;
+}
+
 export function demoCollege() {
   return {
     key: DEMO_COLLEGE_ID, id: DEMO_COLLEGE_ID, name: DEMO_COLLEGE_NAME, city: 'Pune',
@@ -360,4 +522,5 @@ export default {
   DEMO_COLLEGE_ID, DEMO_COLLEGE_NAME, DEMO_DOMAIN, DEMO_JOIN_CODE, DEMO_TPO_EMAIL, DEMO_STUDENT_COUNT,
   demoModeEnabled, demoStudents, demoStudentsDeep, demoStudentDetail,
   demoDrives, demoMembers, demoRoster, demoTasks, demoCollege,
+  demoOutcomes, demoSnapshots,
 };

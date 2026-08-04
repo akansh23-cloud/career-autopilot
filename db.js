@@ -1187,7 +1187,9 @@ export function collegeKey({ collegeId, college } = {}) {
   return 'cn_' + name.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-const _memDrives = new Map();          // collegeId -> [ { id, title, ... } ]  (placeholder feature)
+const _memDrives = new Map();          // collegeId -> [ { id, title, eligibility, status, ... } ]
+const _memOutcomes = new Map();        // collegeId -> [ { driveId, studentId, stage, ctcLpa, ... } ]
+const _memSnapshots = new Map();       // collegeId -> [ { date, avgReadiness, ... } ] daily cohort snapshots
 
 const _verifyKey = ({ id, email }) => (email ? String(email).toLowerCase() : (id ? String(id) : ''));
 
@@ -1577,7 +1579,12 @@ export async function createPlacementDrive({ collegeId, drive }) {
   if (!scope) return { ok: false, reason: 'no_scope' };
   const rec = { id: 'drv_' + Math.random().toString(36).slice(2, 10), createdAt: new Date().toISOString(), ...drive };
   if (!URI) {
-    const list = _memDrives.get(scope) || [];
+    // Seed from the demo world on FIRST write. Without this, creating one
+    // drive replaced the demo cohort's three drives with a single row and the
+    // whole populated demo evaporated on the first click.
+    const list = _memDrives.has(scope)
+      ? _memDrives.get(scope)
+      : (demoOn() ? [...demoCollege.demoDrives()] : []);
     list.unshift(rec);
     _memDrives.set(scope, list);
     return { ok: true, drive: rec, db: false };
@@ -1590,6 +1597,253 @@ export async function createPlacementDrive({ collegeId, drive }) {
   } catch (err) {
     console.error('[db] createPlacementDrive failed:', err.message);
     return { ok: false, reason: 'db_error' };
+  }
+}
+
+/* Drives are editable and closable. `id` here is the logical drive id stored
+   inside `data`, NOT the Mongo _id, so memory mode and DB mode address rows
+   the same way and a drive keeps its identity across storage backends. */
+export async function updatePlacementDrive({ collegeId, driveId, patch = {} }) {
+  const scope = String(collegeId || '').trim();
+  const id = String(driveId || '').trim();
+  if (!scope || !id) return { ok: false, reason: 'no_scope' };
+  // Never let a caller rewrite identity or tenancy through a patch body.
+  const { id: _ignoredId, createdAt: _ignoredAt, collegeId: _ignoredCollege, ...safe } = patch;
+  safe.updatedAt = new Date().toISOString();
+
+  if (!URI) {
+    const list = _memDrives.has(scope)
+      ? _memDrives.get(scope)
+      : (demoOn() ? [...demoCollege.demoDrives()] : []);
+    const idx = list.findIndex((d) => String(d.id) === id);
+    if (idx < 0) return { ok: false, reason: 'not_found' };
+    list[idx] = { ...list[idx], ...safe };
+    _memDrives.set(scope, list);
+    return { ok: true, drive: list[idx], db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const doc = await GenericDoc.findOne({ kind: 'placement_drive', collegeId: scope, 'data.id': id });
+    if (!doc) return { ok: false, reason: 'not_found' };
+    doc.data = { ...doc.data, ...safe };
+    doc.markModified('data');
+    await doc.save();
+    return { ok: true, drive: { id: String(doc._id), ...doc.data }, db: true };
+  } catch (err) {
+    console.error('[db] updatePlacementDrive failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+export async function deletePlacementDrive({ collegeId, driveId }) {
+  const scope = String(collegeId || '').trim();
+  const id = String(driveId || '').trim();
+  if (!scope || !id) return { ok: false, reason: 'no_scope' };
+  if (!URI) {
+    const list = _memDrives.get(scope) || [];
+    const next = list.filter((d) => String(d.id) !== id);
+    _memDrives.set(scope, next);
+    const seeded = _memOutcomes.has(scope)
+      ? _memOutcomes.get(scope)
+      : (demoOn() ? [...demoCollege.demoOutcomes()] : []);
+    _memOutcomes.set(scope, seeded.filter((o) => String(o.driveId) !== id));
+    return { ok: true, removed: list.length - next.length, db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const r = await GenericDoc.deleteOne({ kind: 'placement_drive', collegeId: scope, 'data.id': id });
+    // Outcomes belong to the drive — orphaned outcomes would silently keep
+    // inflating the college's placement percentage after a drive is removed.
+    await GenericDoc.deleteMany({ kind: 'placement_outcome', collegeId: scope, 'data.driveId': id });
+    return { ok: true, removed: r.deletedCount || 0, db: true };
+  } catch (err) {
+    console.error('[db] deletePlacementDrive failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+/* ---------------- Placement outcomes (per student, per drive) ----------------
+   One record per (driveId, studentId). Upserted, never appended, so a student
+   moving applied -> shortlisted -> offered stays a single row whose furthest
+   reached stage is tracked alongside the current one. */
+export async function listPlacementOutcomes({ collegeId, driveId = '' }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope) return [];
+  const filterDrive = (rows) => (driveId ? rows.filter((o) => String(o.driveId) === String(driveId)) : rows);
+  if (!URI) {
+    // `.has()` rather than a length check: once this college has been written
+    // to in memory, deleting the last outcome must leave it empty. A length
+    // check made the demo set reappear, so deleting a drive could INCREASE the
+    // recorded offer count.
+    if (_memOutcomes.has(scope)) return filterDrive(_memOutcomes.get(scope));
+    return demoOn() ? filterDrive(demoCollege.demoOutcomes()) : [];
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const q = { kind: 'placement_outcome', collegeId: scope };
+    if (driveId) q['data.driveId'] = String(driveId);
+    const docs = await GenericDoc.find(q).sort({ updatedAt: -1 }).limit(20000).lean();
+    return docs.map((d) => ({ ...d.data }));
+  } catch (err) {
+    console.error('[db] listPlacementOutcomes failed:', err.message);
+    return [];
+  }
+}
+
+function mergeOutcome(existing, next) {
+  const stageOrder = ['applied', 'shortlisted', 'interviewed', 'offered', 'accepted'];
+  const depth = (s) => stageOrder.indexOf(String(s));
+  const prevFurthest = existing?.furthestStage || existing?.stage || '';
+  // furthestStage only ever moves forward. A student who cleared two rounds and
+  // was then rejected must still show in those rounds' funnel counts.
+  const furthestStage = depth(next.stage) > depth(prevFurthest) ? next.stage : (prevFurthest || next.stage);
+  return {
+    ...(existing || {}),
+    ...next,
+    furthestStage,
+    createdAt: existing?.createdAt || next.updatedAt,
+  };
+}
+
+export async function upsertPlacementOutcomes({ collegeId, driveId, entries = [], actorEmail = '' }) {
+  const scope = String(collegeId || '').trim();
+  const drive = String(driveId || '').trim();
+  if (!scope || !drive) return { ok: false, reason: 'no_scope' };
+  const now = new Date().toISOString();
+
+  const shaped = entries.slice(0, 2000).map((e) => ({
+    id: `out_${drive}_${String(e.studentId)}`,
+    driveId: drive,
+    studentId: String(e.studentId),
+    stage: String(e.stage || 'applied'),
+    ctcLpa: e.ctcLpa == null || e.ctcLpa === '' ? null : Number(e.ctcLpa),
+    company: String(e.company || '').slice(0, 160),
+    role: String(e.role || '').slice(0, 160),
+    note: String(e.note || '').slice(0, 500),
+    offerAt: e.stage === 'offered' || e.stage === 'accepted' ? (e.offerAt || now) : (e.offerAt || null),
+    updatedAt: now,
+    updatedBy: String(actorEmail || '').toLowerCase(),
+  }));
+
+  if (!URI) {
+    // Same first-write seeding as drives, so recording one outcome doesn't
+    // wipe the demo cohort's existing placement history.
+    const list = _memOutcomes.has(scope)
+      ? _memOutcomes.get(scope)
+      : (demoOn() ? [...demoCollege.demoOutcomes()] : []);
+    for (const s of shaped) {
+      const idx = list.findIndex((o) => o.driveId === s.driveId && o.studentId === s.studentId);
+      if (idx >= 0) list[idx] = mergeOutcome(list[idx], s);
+      else list.push(mergeOutcome(null, s));
+    }
+    _memOutcomes.set(scope, list);
+    return { ok: true, saved: shaped.length, db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    let saved = 0;
+    for (const s of shaped) {
+      const existing = await GenericDoc.findOne({
+        kind: 'placement_outcome', collegeId: scope,
+        'data.driveId': s.driveId, 'data.studentId': s.studentId,
+      });
+      if (existing) {
+        existing.data = mergeOutcome(existing.data, s);
+        existing.markModified('data');
+        await existing.save();
+      } else {
+        await GenericDoc.create({ kind: 'placement_outcome', collegeId: scope, data: mergeOutcome(null, s) });
+      }
+      saved++;
+    }
+    return { ok: true, saved, db: true };
+  } catch (err) {
+    console.error('[db] upsertPlacementOutcomes failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+export async function removePlacementOutcome({ collegeId, driveId, studentId }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope) return { ok: false, reason: 'no_scope' };
+  if (!URI) {
+    const list = _memOutcomes.has(scope)
+      ? _memOutcomes.get(scope)
+      : (demoOn() ? [...demoCollege.demoOutcomes()] : []);
+    const next = list.filter((o) => !(String(o.driveId) === String(driveId) && String(o.studentId) === String(studentId)));
+    _memOutcomes.set(scope, next);
+    return { ok: true, removed: list.length - next.length, db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const r = await GenericDoc.deleteOne({
+      kind: 'placement_outcome', collegeId: scope,
+      'data.driveId': String(driveId), 'data.studentId': String(studentId),
+    });
+    return { ok: true, removed: r.deletedCount || 0, db: true };
+  } catch (err) {
+    console.error('[db] removePlacementOutcome failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+/* ---------------- Daily cohort snapshots (for honest trend deltas) ----------
+   Written opportunistically on observability reads — at most one per college
+   per UTC day, so the cost is a single upsert regardless of traffic. Without
+   these there is no way to say "avg readiness is up 6 since last month"
+   truthfully, because today's rows contain no history. */
+export async function recordCollegeSnapshot({ collegeId, metrics }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope || !metrics?.date) return { ok: false, reason: 'no_scope' };
+  if (!URI) {
+    // Seed from demo history on first write. Recording today's snapshot used to
+    // replace the stored history outright, which left the trend engine with a
+    // single same-day row and therefore no baseline at all.
+    const list = _memSnapshots.has(scope)
+      ? _memSnapshots.get(scope)
+      : (demoOn() ? [...demoCollege.demoSnapshots()] : []);
+    const idx = list.findIndex((s) => s.date === metrics.date);
+    if (idx >= 0) list[idx] = metrics; else list.push(metrics);
+    _memSnapshots.set(scope, list.slice(-400));
+    return { ok: true, db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    await GenericDoc.updateOne(
+      { kind: 'college_snapshot', collegeId: scope, 'data.date': metrics.date },
+      { $set: { kind: 'college_snapshot', collegeId: scope, data: metrics } },
+      { upsert: true }
+    );
+    return { ok: true, db: true };
+  } catch (err) {
+    // A snapshot failure must never break the dashboard it is measuring.
+    console.error('[db] recordCollegeSnapshot failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+export async function listCollegeSnapshots({ collegeId, days = 120 }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope) return [];
+  if (!URI) {
+    if (_memSnapshots.has(scope)) return [..._memSnapshots.get(scope)];
+    return demoOn() ? demoCollege.demoSnapshots() : [];
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const docs = await GenericDoc.find({ kind: 'college_snapshot', collegeId: scope })
+      .sort({ 'data.date': -1 }).limit(Math.max(2, Number(days) || 120)).lean();
+    return docs.map((d) => ({ ...d.data })).reverse();
+  } catch (err) {
+    console.error('[db] listCollegeSnapshots failed:', err.message);
+    return [];
   }
 }
 

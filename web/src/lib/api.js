@@ -14,7 +14,11 @@ function normalizeError(data, res) {
   let code = '';
   let message = '';
   if (e && typeof e === 'object') {
-    code = e.code || e.error || '';
+    // Anthropic's own envelope is { error: { type: 'not_found_error', message } }
+    // — the discriminator is `type`, not `code`. Without reading it, every
+    // upstream failure arrives at the UI with an empty code and gets rendered
+    // as a generic "temporarily unavailable", which hides the real cause.
+    code = e.code || e.error || e.type || '';
     message = e.message || '';
   } else if (typeof e === 'string') {
     code = e;
@@ -290,8 +294,19 @@ export const College = {
   studentDetail: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}/detail`),
   observability: (fresh = false) => api.get('/api/college/observability' + (fresh ? '?fresh=1' : '')),
   analytics: () => api.get('/api/college/analytics'),
+  // ---- Placement drives (full lifecycle) ----
   drives: () => api.get('/api/college/drives'),
   createDrive: (body) => api.post('/api/college/drives', body),
+  updateDrive: (id, patch) => api.patch(`/api/college/drives/${encodeURIComponent(id)}`, patch),
+  deleteDrive: (id) => api.del(`/api/college/drives/${encodeURIComponent(id)}`),
+  // Who is eligible for a drive, who isn't, and the exact rule that excluded them.
+  driveCohort: (id) => api.get(`/api/college/drives/${encodeURIComponent(id)}/cohort`),
+  driveOutcomes: (id) => api.get(`/api/college/drives/${encodeURIComponent(id)}/outcomes`),
+  saveOutcomes: (id, entries) => api.post(`/api/college/drives/${encodeURIComponent(id)}/outcomes`, { entries }),
+  removeOutcome: (driveId, studentId) =>
+    api.del(`/api/college/drives/${encodeURIComponent(driveId)}/outcomes/${encodeURIComponent(studentId)}`),
+  // ---- Placement outcomes report (placement %, packages, recruiters) ----
+  placement: () => api.get('/api/college/placement'),
   exportCsv: (full = false) => api.get('/api/college/export' + (full ? '?full=1' : '')),
   notify: (studentIds, { title = '', message = '' } = {}) => api.post('/api/college/notify', { studentIds, title, message }),
   assignTask: (body) => api.post('/api/college/tasks', body),

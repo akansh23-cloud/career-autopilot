@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import {
   Users, BarChart3, GraduationCap, ShieldCheck, Flame,
   AlertTriangle, Activity as ActivityIcon, Filter, Download, CalendarClock, Bell, Eye, ClipboardList,
+  Trophy, IndianRupee, Target,
 } from 'lucide-react';
 import { Badge, Button, EmptyState, Spinner, Modal, Field, Input } from '../ui/kit.jsx';
 import { SectionCard, StatCard } from '../../views/common.jsx';
 import { College } from '../../lib/api.js';
+import TrendStrip from './TrendStrip.jsx';
 import StudentDrilldown from './StudentDrilldown.jsx';
 
 /* ============================================================
@@ -383,6 +385,22 @@ export default function CommandCenter({ data, loading, error, onRetry, go }) {
         <StatCard i={2} icon={ShieldCheck} tone="mint" label="Recruiter-ready" value={String(k.recruiterReady ?? 0)} hint={`${k.verifiedStudents ?? 0} with verified proof`} />
         <StatCard i={3} icon={AlertTriangle} tone="amber" label="At risk" value={String(k.atRisk ?? 0)} hint={`${k.pendingReviews ?? 0} reviews pending`} />
       </div>
+
+      {/* Outcomes sit beside readiness deliberately: a cohort can look ready
+          and still not be getting placed, and that gap is the whole point. */}
+      {d.placement && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard i={0} icon={Trophy} tone="mint" label="Placement rate" value={`${d.placement.placementRate ?? 0}%`} hint={`${d.placement.placed ?? 0} placed · ${d.placement.offers ?? 0} offer(s)`} onClick={() => go?.('placement')} />
+          <StatCard i={1} icon={IndianRupee} tone="violet" label="Median package" value={d.placement.medianCtc > 0 ? `₹${Number(d.placement.medianCtc).toFixed(2)}L` : '—'} hint={d.placement.highestCtc > 0 ? `highest ₹${Number(d.placement.highestCtc).toFixed(2)}L` : 'no packages recorded'} onClick={() => go?.('placement')} />
+          <StatCard i={2} icon={CalendarClock} tone="cyan" label="Open drives" value={String(d.placement.activeDrives ?? 0)} hint={`${d.placement.drives ?? 0} total`} onClick={() => go?.('drives')} />
+          <StatCard i={3} icon={Target} tone="amber" label="Ready, not placed" value={String(Math.max(0, (k.recruiterReady ?? 0) - (d.placement.placed ?? 0)))} hint="prepared and still available" onClick={() => go?.('placement')} />
+        </div>
+      )}
+
+      {/* Movement, not just level. */}
+      <SectionCard title="Movement" eyebrow="How the cohort has shifted, not just where it stands">
+        <TrendStrip trends={d.trends} />
+      </SectionCard>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard title="Verification funnel" eyebrow="Registered → recruiter-ready">

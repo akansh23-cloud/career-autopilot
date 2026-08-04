@@ -56,7 +56,40 @@ production, **exits** on missing `SESSION_SECRET` / `MONGODB_URI`. See `config.j
 `DEMO_MODE` is gated on two conditions at once: the flag must be on **and**
 there must be no database connected. With a real `MONGODB_URI` present the flag
 does nothing, so demo records can never mix with, mask, or overwrite live data.
-The cohort is generated per request and never written anywhere.
+
+The read-only cohort (students, readiness, skills) is generated per request and
+never stored. The **writable** placement features behave differently: creating a
+drive, recording an outcome, or loading the command center writes to a
+per-process in-memory store, seeded from the demo world on first write. Nothing
+touches disk or a database, and everything is discarded when the process exits.
+
+Two consequences worth knowing:
+
+- **Never enable `DEMO_MODE` on Vercel or any serverless host.** Each invocation
+  gets a fresh container, so a drive created during a demo disappears on the very
+  next request. Demo mode is for a local machine or a single long-running server
+  only. `npm run preflight` fails the build if it detects this combination.
+- Restarting the process resets the demo world to its deterministic initial
+  state — which is what you want between recording takes.
 
 Never set `DEMO_MODE=1` in production. See `docs/DEMO_RECORDING.md` for the
 full walkthrough.
+
+## AI model override
+
+| Var | Meaning |
+| --- | --- |
+| `AI_MODEL` / `ANTHROPIC_MODEL` | Optional. Overrides the server's default model. Leave unset unless you have a reason. |
+
+`resolveAiModel()` validates the value against `/^claude-[a-z0-9.-]+$/` — shape
+only. Two failure modes follow from that:
+
+1. A non-Claude id (`gemini-2.0-flash`) fails the pattern and is **silently
+   discarded**; the Claude default is used instead. Switching providers is what
+   `AI_PROVIDER` is for.
+2. The id is never checked against the provider, so a **retired** model passes
+   validation here and returns 404 at request time. In the app this appears as
+   "tailoring is temporarily unavailable" with no further detail.
+
+`npm run preflight` reports both cases. If AI features break after a deploy,
+check this variable first.

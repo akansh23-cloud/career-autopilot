@@ -183,3 +183,85 @@ test('csvSafe.buildCsv is importable — /api/college/export used it without imp
   const csv = buildCsv(['a', 'b'], [['1', '2']]);
   assert.ok(csv.includes('a,b'));
 });
+
+/* ---------------- demo placement world ---------------- */
+// The demo cohort IS the pilot demo, so its internal consistency is a product
+// property, not a fixture detail. A TPO clicking through must never find a
+// number that contradicts another number on the next screen.
+
+test('demo drives and outcomes are deterministic across calls', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  assert.deepEqual(m.demoDrives(), m.demoDrives());
+  assert.deepEqual(m.demoOutcomes(), m.demoOutcomes());
+});
+
+test('every demo outcome belongs to a real demo drive and a real demo student', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  const driveIds = new Set(m.demoDrives().map((d) => d.id));
+  const studentIds = new Set(m.demoStudents().map((s) => s.id));
+  for (const o of m.demoOutcomes()) {
+    assert.ok(driveIds.has(o.driveId), `orphan outcome on drive ${o.driveId}`);
+    assert.ok(studentIds.has(o.studentId), `outcome for unknown student ${o.studentId}`);
+  }
+});
+
+test('no demo student is placed twice — one acceptance ends their season', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  const accepted = m.demoOutcomes().filter((o) => o.stage === 'accepted').map((o) => o.studentId);
+  assert.equal(new Set(accepted).size, accepted.length, 'a student accepted two offers');
+});
+
+test('every demo applicant genuinely satisfies that drive\u2019s eligibility rules', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  const { eligibilityCheck } = await import('../server/utils/placementOutcomes.js');
+  const byId = new Map(m.demoStudents().map((s) => [s.id, s]));
+  const drives = new Map(m.demoDrives().map((d) => [d.id, d]));
+  for (const o of m.demoOutcomes()) {
+    const drive = drives.get(o.driveId);
+    const student = byId.get(o.studentId);
+    const r = eligibilityCheck(student, drive.eligibility || {});
+    assert.equal(r.eligible, true, `${student.name} was in ${drive.company} but fails: ${r.reasons.join('; ')}`);
+  }
+});
+
+test('the demo placement story is credible rather than perfect', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  const { buildPlacementStats } = await import('../server/utils/placementOutcomes.js');
+  const rows = m.demoStudents();
+  const stats = buildPlacementStats({
+    rows, drives: m.demoDrives(), outcomes: m.demoOutcomes(), now: Date.now(),
+  });
+  const s = stats.summary;
+  // A demo that shows 5% looks broken; one that shows 100% looks fake.
+  assert.ok(s.placementRate >= 25 && s.placementRate <= 70, `placement rate ${s.placementRate}% is not believable`);
+  assert.ok(s.recruiters >= 5, 'a real season has several recruiters, not one');
+  assert.ok(s.highestCtc > s.medianCtc * 2, 'there should be a visible top-end offer');
+  // Deliberately imperfect: at least one accepted offer lacks a package, so the
+  // data-quality warning is exercised in the demo rather than only in tests.
+  assert.ok(s.offersWithoutCtc >= 1, 'the CTC-coverage warning has nothing to show');
+  assert.ok(s.ctcCoverage < 100 && s.ctcCoverage > 80);
+  assert.ok(stats.readyUnplaced.length >= 1, 'the intervention list should not be empty in a demo');
+});
+
+test('every demo drive has a funnel with something in it', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  const { summarizeDrives } = await import('../server/utils/placementOutcomes.js');
+  const summary = summarizeDrives({
+    drives: m.demoDrives(), outcomes: m.demoOutcomes(), rows: m.demoStudents(),
+  });
+  for (const d of summary) {
+    assert.ok(d.eligibleCount > 0, `${d.company} has nobody eligible`);
+    assert.ok(d.participants > 0, `${d.company} has an empty funnel`);
+    assert.ok(d.placed <= d.offered, `${d.company} placed more students than it made offers to`);
+  }
+});
+
+test('demo snapshots stop before today so the live snapshot is the current value', async () => {
+  const m = await import('../server/utils/demoCollegeData.js');
+  const snaps = m.demoSnapshots();
+  assert.ok(snaps.length >= 60, 'enough history for a 30-day baseline');
+  const today = new Date().toISOString().slice(0, 10);
+  assert.ok(snaps.every((s) => s.date < today), 'demo history must not claim to be today');
+  // Monotonic-ish growth: the cohort should look like it has been improving.
+  assert.ok(snaps[snaps.length - 1].avgReadiness >= snaps[0].avgReadiness);
+});

@@ -27,6 +27,8 @@
    ============================================================ */
 import { z } from 'zod';
 import collegeObservability from '../utils/collegeObservability.js';
+import placement from '../utils/placementOutcomes.js';
+import trends from '../utils/collegeTrends.js';
 import { parseRosterCsv, isValidJoinCodeFormat, ROSTER_MAX_ROWS } from '../utils/collegeOnboarding.js';
 import { buildCsv } from '../utils/csvSafe.js';
 import { emailEnabled, sendMail, nudgeEmail } from '../utils/mailer.js';
@@ -77,6 +79,17 @@ export function registerCollegeRoutes(app, deps = {}) {
     return { ...r, readinessScore: readiness.score, readinessCategory: readiness.category, readinessComponents: readiness.components, readinessGaps: readiness.gaps };
   });
 
+  /* Risk severity is a weighted sum, so it has no natural ceiling. These
+     thresholds match the weights in collegeObservability's RISK_RULES: any
+     single flag lands at low, a stacked pair at medium, three or more at high. */
+  const riskBandOf = (severity) => {
+    const v = Number(severity) || 0;
+    if (v >= 6) return 'high';
+    if (v >= 3) return 'medium';
+    if (v > 0) return 'low';
+    return 'none';
+  };
+
   /* =====================================================================
      TPO / placement-cell routes  (/api/college/*)
      ===================================================================== */
@@ -94,6 +107,11 @@ export function registerCollegeRoutes(app, deps = {}) {
     });
   });
 
+  /* Sortable + paginated. The full cohort used to be serialized on every
+     keystroke; at 2,000 students that is a multi-megabyte response for a
+     40-row table. Sorting stays server-side so page 2 is the real page 2. */
+  const SORTABLE = new Set(['name', 'branch', 'batch', 'readinessScore', 'resumeScore', 'verifiedProjects', 'lastActiveAt']);
+
   app.get('/api/college/students', ...guard, async (req, res) => {
     const collegeId = callerCollegeId(req);
     const filters = {
@@ -101,8 +119,78 @@ export function registerCollegeRoutes(app, deps = {}) {
       skill: req.query.skill || '', minReadiness: req.query.minReadiness || '', minResume: req.query.minResume || '',
       verifiedOnly: req.query.verifiedOnly === 'true' || req.query.verifiedOnly === '1',
     };
-    const students = await db.listCollegeStudents({ collegeId, filters });
-    res.json({ ok: true, collegeId, students, count: students.length, db: db.dbEnabled() });
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const sort = SORTABLE.has(String(req.query.sort)) ? String(req.query.sort) : 'readinessScore';
+    const order = String(req.query.order) === 'asc' ? 'asc' : 'desc';
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 50));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    // Opt-in enrichment. The default shape is unchanged for every existing
+    // caller; the directory asks for deep=1 to get engagement, funnel stage
+    // and risk severity that the observability engine already computes.
+    const deep = req.query.deep === '1' || req.query.deep === 'true';
+
+    let students;
+    if (deep) {
+      const now = Date.now();
+      const { rows } = await db.collegeStudentsDeep({ collegeId });
+      students = attachReadiness(rows)
+        .filter((r) => {
+          if (filters.branch && String(r.branch).toLowerCase() !== filters.branch.toLowerCase()) return false;
+          if (filters.batch && String(r.batch) !== filters.batch) return false;
+          if (filters.year && !String(r.year).toLowerCase().includes(filters.year.toLowerCase())) return false;
+          if (filters.skill && !(r.skills || []).some((s) => String(s).toLowerCase().includes(filters.skill.toLowerCase()))) return false;
+          if (filters.minReadiness !== '' && Number(r.readinessScore || 0) < Number(filters.minReadiness)) return false;
+          if (filters.minResume !== '' && Number(r.resumeScore || 0) < Number(filters.minResume)) return false;
+          if (filters.verifiedOnly && !(Number(r.projectsVerified) > 0)) return false;
+          return true;
+        })
+        .map((r) => ({
+          id: r.id, name: r.name, email: r.email, branch: r.branch, batch: r.batch, year: r.year,
+          skills: r.skills || [],
+          readinessScore: r.readinessScore, readinessCategory: r.readinessCategory,
+          resumeScore: r.resumeScore,
+          verifiedProjects: r.projectsVerified,
+          projectsPending: r.projectsPending + r.projectsNeedsReview,
+          recruiterReadyProjects: r.recruiterReadyProjects,
+          lastActiveAt: r.lastActiveAt,
+          funnelStage: collegeObservability.funnelStage(r),
+          engagement: collegeObservability.engagementBucket(r.lastActiveAt, now),
+          riskSeverity: collegeObservability.riskFlags(r, now).severity,
+          // severity is a count-weighted number used for ordering; the band is
+          // what a human can read in a table cell.
+          riskBand: riskBandOf(collegeObservability.riskFlags(r, now).severity),
+          membership: r.membership || { status: 'active', via: 'admin' },
+        }));
+    } else {
+      students = await db.listCollegeStudents({ collegeId, filters });
+    }
+
+    // Free-text search across name and email — the single most-used lookup in
+    // a placement office ("pull up Ananya's profile") and the one that was
+    // missing entirely.
+    if (q) students = students.filter((s) => `${s.name || ''} ${s.email || ''}`.toLowerCase().includes(q));
+
+    const dir = order === 'asc' ? 1 : -1;
+    students.sort((a, b) => {
+      const av = a[sort];
+      const bv = b[sort];
+      // Nulls always sort last regardless of direction: a student with no
+      // resume score is missing data, not the worst-performing student.
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+
+    const total = students.length;
+    const page = students.slice(offset, offset + limit);
+    res.json({
+      ok: true, collegeId, students: page, count: page.length,
+      total, offset, limit, sort, order, deep,
+      hasMore: offset + page.length < total,
+      db: db.dbEnabled(),
+    });
   });
 
   app.get('/api/college/students/:id', ...guard, async (req, res) => {
@@ -132,15 +220,195 @@ export function registerCollegeRoutes(app, deps = {}) {
     });
   });
 
-  app.get('/api/college/drives', ...guard, async (req, res) => {
-    const drives = await db.listPlacementDrives({ collegeId: callerCollegeId(req) });
-    res.json({ ok: true, drives, db: db.dbEnabled() });
+  /* =====================================================================
+     Placement drives — full lifecycle, eligibility matching and outcomes
+     ---------------------------------------------------------------------
+     Drives are the placement cell's actual unit of work. Every number
+     below is rule-based and reproducible: eligibility comes from the
+     drive's own criteria, the funnel from recorded stages, and packages
+     from CTC figures a human entered. No AI touches any of it.
+     ===================================================================== */
+
+  const eligibilitySchema = z.object({
+    branches: z.array(z.string().max(60)).max(40).optional().default([]),
+    batches: z.array(z.string().max(20)).max(20).optional().default([]),
+    years: z.array(z.string().max(20)).max(12).optional().default([]),
+    skills: z.array(z.string().max(60)).max(40).optional().default([]),
+    requireVerifiedSkills: z.boolean().optional().default(false),
+    minReadiness: z.coerce.number().min(0).max(100).nullable().optional(),
+    minResume: z.coerce.number().min(0).max(100).nullable().optional(),
+    minVerifiedProjects: z.coerce.number().min(0).max(50).nullable().optional(),
+  }).partial();
+
+  const driveSchema = z.object({
+    title: z.string().trim().min(1, 'A drive title is required.').max(160),
+    company: z.string().trim().max(160).optional().default(''),
+    role: z.string().trim().max(160).optional().default(''),
+    location: z.string().trim().max(160).optional().default(''),
+    // CTC in LPA — the unit every Indian placement report is written in.
+    ctcLpa: z.coerce.number().min(0).max(500).nullable().optional(),
+    driveDate: z.string().max(40).optional().default(''),
+    status: z.enum(['open', 'in_progress', 'closed', 'cancelled']).optional().default('open'),
+    notes: z.string().max(2000).optional().default(''),
+    eligibility: eligibilitySchema.optional().default({}),
   });
-  app.post('/api/college/drives', ...guard, async (req, res) => {
-    const b = req.body || {};
-    const drive = { title: String(b.title || 'Untitled drive').slice(0, 160), company: String(b.company || '').slice(0, 160), eligibility: b.eligibility || {}, status: 'open' };
-    const result = await db.createPlacementDrive({ collegeId: callerCollegeId(req), drive });
+
+  const outcomeSchema = z.object({
+    entries: z.array(z.object({
+      studentId: z.string().min(1).max(80),
+      stage: z.enum(placement.STAGE_IDS).optional().default('applied'),
+      ctcLpa: z.coerce.number().min(0).max(500).nullable().optional(),
+      company: z.string().max(160).optional().default(''),
+      role: z.string().max(160).optional().default(''),
+      note: z.string().max(500).optional().default(''),
+    })).min(1).max(2000),
+  });
+
+  /** Shared loader: cohort rows with readiness attached, scoped to the caller. */
+  async function scopedCohort(collegeId) {
+    const { rows, events } = await db.collegeStudentsDeep({ collegeId });
+    return { rows: attachReadiness(rows), events };
+  }
+
+  const findDrive = (drives, id) => drives.find((d) => String(d.id) === String(id));
+
+  app.get('/api/college/drives', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const [drives, outcomes, { rows }] = await Promise.all([
+      db.listPlacementDrives({ collegeId }),
+      db.listPlacementOutcomes({ collegeId }),
+      scopedCohort(collegeId),
+    ]);
+    // Every drive carries its own roll-up so the list is decision-ready
+    // without N follow-up requests.
+    const summarized = placement.summarizeDrives({ drives, outcomes, rows });
+    res.json({
+      ok: true, drives: summarized, count: summarized.length,
+      stages: placement.PLACEMENT_STAGES, db: db.dbEnabled(),
+    });
+  });
+
+  app.post('/api/college/drives', ...guard, validate(driveSchema), async (req, res) => {
+    const result = await db.createPlacementDrive({
+      collegeId: callerCollegeId(req),
+      drive: { ...req.body, createdByEmail: me(req).email },
+    });
     res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+  });
+
+  app.patch('/api/college/drives/:id', ...guard, validate(driveSchema.partial()), async (req, res) => {
+    const result = await db.updatePlacementDrive({
+      collegeId: callerCollegeId(req), driveId: req.params.id, patch: req.body,
+    });
+    if (!result.ok && result.reason === 'not_found') {
+      return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+    }
+    res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+  });
+
+  app.delete('/api/college/drives/:id', ...guard, async (req, res) => {
+    const result = await db.deletePlacementDrive({ collegeId: callerCollegeId(req), driveId: req.params.id });
+    res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+  });
+
+  /* Who qualifies for this drive, and — just as important — who does not and
+     exactly why. A TPO can answer a student's "why wasn't I allowed to sit?"
+     from this response without interpreting anything. */
+  app.get('/api/college/drives/:id/cohort', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const [drives, { rows }, outcomes] = await Promise.all([
+      db.listPlacementDrives({ collegeId }),
+      scopedCohort(collegeId),
+      db.listPlacementOutcomes({ collegeId, driveId: req.params.id }),
+    ]);
+    const drive = findDrive(drives, req.params.id);
+    if (!drive) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+
+    const outcomeByStudent = new Map(outcomes.map((o) => [String(o.studentId), o]));
+    const { eligible, ineligible } = placement.matchDriveCohort(rows, drive);
+    const shape = (r) => ({
+      id: r.id, name: r.name, email: r.email, branch: r.branch, batch: r.batch,
+      readinessScore: r.readinessScore, resumeScore: r.resumeScore,
+      projectsVerified: r.projectsVerified, eligible: r.eligible, reasons: r.reasons,
+      outcome: outcomeByStudent.get(String(r.id)) || null,
+    });
+
+    res.json({
+      ok: true, drive,
+      eligible: eligible.map(shape),
+      ineligible: ineligible.map(shape).slice(0, 500),
+      counts: { eligible: eligible.length, ineligible: ineligible.length, total: rows.length },
+      funnel: placement.buildDriveFunnel(outcomes),
+      stages: placement.PLACEMENT_STAGES,
+      db: db.dbEnabled(),
+    });
+  });
+
+  app.get('/api/college/drives/:id/outcomes', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const outcomes = await db.listPlacementOutcomes({ collegeId, driveId: req.params.id });
+    res.json({ ok: true, outcomes, funnel: placement.buildDriveFunnel(outcomes), db: db.dbEnabled() });
+  });
+
+  app.post('/api/college/drives/:id/outcomes', ...guard, validate(outcomeSchema), async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const [drives, cohort] = await Promise.all([
+      db.listPlacementDrives({ collegeId }),
+      db.listCollegeStudents({ collegeId }),
+    ]);
+    const drive = findDrive(drives, req.params.id);
+    if (!drive) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+
+    // Tenancy is enforced on the write path too: a student id from another
+    // college is silently dropped, never recorded against this drive.
+    const inScope = new Set(cohort.map((s) => String(s.id)));
+    const entries = req.body.entries
+      .filter((e) => inScope.has(String(e.studentId)))
+      .map((e) => ({
+        ...e,
+        company: e.company || drive.company || '',
+        role: e.role || drive.role || drive.title || '',
+        // Fall back to the drive's advertised package so a TPO marking ten
+        // offers doesn't have to retype the same CTC ten times.
+        ctcLpa: e.ctcLpa == null && (e.stage === 'offered' || e.stage === 'accepted')
+          ? (drive.ctcLpa ?? null) : e.ctcLpa,
+      }));
+    if (!entries.length) return res.status(404).json({ ok: false, error: 'no_targets_in_scope' });
+
+    const result = await db.upsertPlacementOutcomes({
+      collegeId, driveId: req.params.id, entries, actorEmail: me(req).email,
+    });
+    const outcomes = await db.listPlacementOutcomes({ collegeId, driveId: req.params.id });
+    res.status(result.ok ? 200 : 400).json({
+      ...result, skipped: req.body.entries.length - entries.length,
+      funnel: placement.buildDriveFunnel(outcomes), db: db.dbEnabled(),
+    });
+  });
+
+  app.delete('/api/college/drives/:driveId/outcomes/:studentId', ...guard, async (req, res) => {
+    const result = await db.removePlacementOutcome({
+      collegeId: callerCollegeId(req), driveId: req.params.driveId, studentId: req.params.studentId,
+    });
+    res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
+  });
+
+  /* The placement report itself — the numbers a TPO forwards to their
+     director and pastes into NAAC/NBA returns. */
+  app.get('/api/college/placement', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const [{ rows }, drives, outcomes] = await Promise.all([
+      scopedCohort(collegeId),
+      db.listPlacementDrives({ collegeId }),
+      db.listPlacementOutcomes({ collegeId }),
+    ]);
+    const stats = placement.buildPlacementStats({ rows, drives, outcomes, now: Date.now() });
+    const placedIds = new Set(outcomes.filter(placement.isPlaced).map((o) => String(o.studentId)));
+    res.json({
+      ok: true, collegeId, ...stats,
+      batchComparison: trends.batchComparison({ rows, placedIds, now: Date.now() }),
+      drives: placement.summarizeDrives({ drives, outcomes, rows }),
+      db: db.dbEnabled(),
+    });
   });
 
   /* ---- Advanced observability (command center) ------------------------
@@ -158,12 +426,27 @@ export function registerCollegeRoutes(app, deps = {}) {
     if (!fresh && hit && Date.now() - hit.at < OBSERVABILITY_CACHE_TTL_MS) {
       return res.json({ ...hit.payload, cached: true, cacheAgeMs: Date.now() - hit.at });
     }
-    const [{ rows, events }, drives] = await Promise.all([
+    const now = Date.now();
+    const [{ rows, events }, drives, outcomes] = await Promise.all([
       db.collegeStudentsDeep({ collegeId }),
       db.listPlacementDrives({ collegeId }),
+      db.listPlacementOutcomes({ collegeId }),
     ]);
     const scored = attachReadiness(rows);
-    const payload = collegeObservability.buildObservability({ rows: scored, drives, events, now: Date.now() });
+    const payload = collegeObservability.buildObservability({ rows: scored, drives, events, now });
+
+    /* ---- Trends -------------------------------------------------------
+       Stock metrics (avg readiness, recruiter-ready) cannot be recovered
+       retroactively, so we store one small snapshot per college per day and
+       compare against it. Until a baseline exists the deltas come back null
+       and the UI says "no baseline yet" — it never renders a fabricated
+       trendline. Flow metrics come straight from the event log and are
+       therefore available immediately. */
+    const current = trends.snapshotMetrics({ rows: scored, now });
+    // Fire-and-forget: measuring the dashboard must never be able to break it.
+    db.recordCollegeSnapshot({ collegeId, metrics: current }).catch(() => {});
+    const history = await db.listCollegeSnapshots({ collegeId, days: 120 }).catch(() => []);
+    const placedIds = new Set(outcomes.filter(placement.isPlaced).map((o) => String(o.studentId)));
     const roster = scored
       .map((r) => ({
         id: r.id, name: r.name, email: r.email, branch: r.branch, batch: r.batch,
@@ -180,7 +463,19 @@ export function registerCollegeRoutes(app, deps = {}) {
         riskSeverity: collegeObservability.riskFlags(r, Date.now()).severity,
       }))
       .sort((a, b) => (b.readinessScore || 0) - (a.readinessScore || 0));
-    const out = { ok: true, collegeId, ...payload, roster, db: db.dbEnabled() };
+    // The PDF report needs a human name, not a slug, in its title block.
+    const college = await db.getCollege({ key: collegeId }).catch(() => null);
+    const out = {
+      ok: true, collegeId, collegeName: college?.name || '', ...payload, roster,
+      trends: {
+        stock: trends.computeStockDeltas({ current, history, windowDays: 30, now }),
+        flow: trends.computeFlowDeltas({ events, windowDays: 30, now }),
+        snapshots: history.slice(-60),
+      },
+      batchComparison: trends.batchComparison({ rows: scored, placedIds, now }),
+      placement: placement.buildPlacementStats({ rows: scored, drives, outcomes, now }).summary,
+      db: db.dbEnabled(),
+    };
     observabilityCache.set(collegeId, { at: Date.now(), payload: out });
     res.json(out);
   });
@@ -388,9 +683,49 @@ export function registerCollegeRoutes(app, deps = {}) {
     res.status(result.ok ? 200 : 400).json({ ...result, db: db.dbEnabled() });
   });
 
+  /* Assigned tasks were previously write-only: a TPO could send work out and
+     had no way to see whether any of it came back. This closes the loop —
+     completion rate per task, overdue detection, and cohort-level roll-up.
+
+     Note the shape normalization: the DB path returns assigned/done while the
+     demo path returns assignedCount/completedCount. Both are accepted here so
+     the panel renders identically with or without a database. */
   app.get('/api/college/tasks', ...guard, async (req, res) => {
-    const tasks = await db.listCollegeTasks({ collegeId: callerCollegeId(req) });
-    res.json({ ok: true, tasks, db: db.dbEnabled() });
+    const now = Date.now();
+    const raw = await db.listCollegeTasks({ collegeId: callerCollegeId(req) });
+    const tasks = raw.map((t) => {
+      const assigned = Number(t.assigned ?? t.assignedCount ?? 0);
+      const done = Number(t.done ?? t.completedCount ?? 0);
+      const dueMs = t.dueAt ? Date.parse(t.dueAt) : NaN;
+      const pending = Math.max(0, assigned - done);
+      const isOverdue = Number.isFinite(dueMs) && dueMs < now && pending > 0;
+      return {
+        id: t.id, title: t.title, description: t.description || '',
+        dueAt: t.dueAt || null, createdAt: t.createdAt || null,
+        assigned, done, pending,
+        completionRate: assigned > 0 ? Math.round((done / assigned) * 100) : 0,
+        overdue: isOverdue,
+        daysOverdue: isOverdue ? Math.floor((now - dueMs) / 86400000) : 0,
+        status: pending === 0 && assigned > 0 ? 'complete' : isOverdue ? 'overdue' : 'active',
+      };
+    });
+
+    const totalAssigned = tasks.reduce((s, t) => s + t.assigned, 0);
+    const totalDone = tasks.reduce((s, t) => s + t.done, 0);
+    res.json({
+      ok: true, tasks, count: tasks.length,
+      summary: {
+        tasks: tasks.length,
+        active: tasks.filter((t) => t.status === 'active').length,
+        overdue: tasks.filter((t) => t.overdue).length,
+        complete: tasks.filter((t) => t.status === 'complete').length,
+        assigned: totalAssigned,
+        done: totalDone,
+        pending: Math.max(0, totalAssigned - totalDone),
+        completionRate: totalAssigned > 0 ? Math.round((totalDone / totalAssigned) * 100) : 0,
+      },
+      db: db.dbEnabled(),
+    });
   });
 
   /* =====================================================================

@@ -19,6 +19,7 @@ import {
 import { TemplateGallery, TemplatePreviewModal, ResumePaper } from '../components/ResumeTemplates.jsx';
 import { analyzeTemplateImage } from '../lib/templateAnalyze.js';
 import { canUploadCustom, canExportDocx, useMeter, canUse, promptUpgrade, templateAllowance } from '../lib/plan.js';
+import { describeApiError } from '../lib/quota.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -354,10 +355,23 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
       useMeter('tailoring');
       safeWrite({ resume, jd, tpl: tplId, len, out: next, updatedAt: new Date().toISOString() });
     } catch (e) {
-      const code = e?.data?.error?.code || '';
-      setErr(code === 'ai_not_configured'
-        ? 'AI rewrite isn’t configured yet. Use the deterministic “Tailor resume for a job” tool in Resume OS — it works without AI.'
-        : 'Tailoring is temporarily unavailable. Please try again in a moment.');
+      // Every failure used to collapse into one "temporarily unavailable"
+      // string, so a bad key, a retired model, an hourly rate limit and a
+      // stale CSRF cookie all looked identical — to the student AND to us.
+      // describeApiError() is the shared classifier Jobs.jsx already uses.
+      const d = describeApiError(e, 'Resume tailoring');
+      if (d.kind === 'quota') {
+        setErr(d.message);
+        promptUpgrade(d.message, d.suggestPlan || 'pro');
+      } else if (d.kind === 'config') {
+        setErr('AI rewrite isn’t enabled on this account yet. Use the deterministic “Tailor resume for a job” tool in Resume OS — it works without AI.');
+      } else if (d.kind === 'rate') {
+        setErr(`${d.message} You can use the deterministic “Tailor resume for a job” tool in Resume OS meanwhile — it works without AI.`);
+      } else {
+        setErr(`${d.message || 'Tailoring could not run just now.'} You can use the deterministic “Tailor resume for a job” tool in Resume OS meanwhile — it works without AI.`);
+      }
+      // Full detail for the browser console so the cause is one F12 away.
+      console.error('[tailor] failed', { status: e?.status, code: e?.code, message: e?.message, body: e?.data });
       setStatus('error');
     }
   };

@@ -51,6 +51,39 @@ add(has('ADMIN_EMAILS') ? PASS : FAIL, 'ADMIN_EMAILS', has('ADMIN_EMAILS') ? env
   else add(PASS, 'ALLOW_DEV_LOGIN', dev ? 'enabled (non-production)' : 'disabled');
 }
 
+/* Demo mode is safe locally and broken on serverless. The demo cohort's
+   drives, outcomes and daily snapshots live in per-process memory, and every
+   Vercel invocation gets a fresh container — so anything a TPO creates during
+   a demo vanishes on the next request. Flag it loudly rather than letting it
+   be discovered live in front of a college. */
+{
+  const demo = env.DEMO_MODE === '1' || env.DEMO_MODE === 'true';
+  const serverless = Boolean(env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME || env.NOW_REGION);
+  const prod = (env.NODE_ENV || '') === 'production';
+  if (demo && serverless) {
+    add(FAIL, 'DEMO_MODE', 'enabled on a serverless host — in-memory demo writes do not survive between requests');
+  } else if (demo && prod && !has('MONGODB_URI')) {
+    add(WARN, 'DEMO_MODE', 'enabled in production with no database — visitors see synthetic data');
+  } else if (demo) {
+    add(PASS, 'DEMO_MODE', 'enabled (no database configured — synthetic cohort served)');
+  } else {
+    add(PASS, 'DEMO_MODE', 'disabled');
+  }
+}
+
+/* A model override is shape-validated but never checked against the provider,
+   so a retired id fails only at request time — as a generic "temporarily
+   unavailable" in the app. Surface it here instead. */
+{
+  const model = String(env.AI_MODEL || env.ANTHROPIC_MODEL || '').trim();
+  if (!model) add(PASS, 'AI_MODEL', 'unset — server default is used');
+  else if (!/^claude-[a-z0-9.-]+$/i.test(model)) {
+    add(FAIL, 'AI_MODEL', `"${model}" fails the shape check and will be silently ignored — use AI_PROVIDER to switch providers`);
+  } else {
+    add(WARN, 'AI_MODEL', `pinned to "${model}" — not verified against the provider; confirm it is still current or AI features return 404`);
+  }
+}
+
 // Payments + legal + email presence
 {
   const r = has('RAZORPAY_KEY_ID') && has('RAZORPAY_KEY_SECRET');

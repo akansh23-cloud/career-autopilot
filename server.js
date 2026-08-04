@@ -3744,6 +3744,17 @@ app.post('/ai/messages', aiLimiter, validateBody(aiMessagesSchema), async (req, 
       body: JSON.stringify(body)
     });
     const data = await r.json().catch(() => ({ error: { message: 'Bad upstream response' } }));
+    // A non-2xx from the provider used to pass through silently: nothing in the
+    // logs, a generic message on screen. Log the real cause (status + provider
+    // error type + model) so "tailoring is broken" is one grep away.
+    if (!r.ok) {
+      logger.error('AI provider rejected the request', {
+        status: r.status,
+        type: data?.error?.type || '',
+        providerMessage: data?.error?.message || '',
+        model: body.model,
+      });
+    }
     res.status(r.status).json(data);
   } catch (err) {
     logger.error('AI proxy failed', { message: err.message });
