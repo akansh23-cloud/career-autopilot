@@ -58,6 +58,7 @@ import InnovationOS from './views/innovation/InnovationOS.jsx';
 import ApplicationsView from './views/ApplicationsView.jsx';
 import ReadinessView from './views/ReadinessView.jsx';
 import ProjectWorkspace from './views/ProjectWorkspace.jsx';
+import MyTeamProject from './views/MyTeamProject.jsx';
 
 const VIEWS = {
   dash: RoleDashboard,
@@ -95,6 +96,7 @@ const VIEWS = {
   applications: ApplicationsView,
   readiness: ReadinessView,
   projectworkspace: ProjectWorkspace,
+  teamproject: MyTeamProject,
 };
 
 function Splash() {

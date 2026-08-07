@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Users, GraduationCap, BarChart3, Flame, FolderCheck, FileText,
-  CalendarClock, Download, Search, Bell, ClipboardList, Gauge, Eye,
+  CalendarClock, Download, Search, Bell, ClipboardList, Gauge, Eye, Users2,
   IndianRupee, FileDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { PageIntro, SectionCard, StatCard, BarChart } from './common.jsx';
@@ -14,6 +14,7 @@ import StudentDrilldown from '../components/college/StudentDrilldown.jsx';
 import DriveManager from '../components/college/DriveManager.jsx';
 import PlacementReport from '../components/college/PlacementReport.jsx';
 import InterventionsPanel from '../components/college/InterventionsPanel.jsx';
+import TeamProjectsPanel from '../components/college/TeamProjectsPanel.jsx';
 import { exportCollegeReportPDF } from '../lib/collegeReport.js';
 
 /* Tabs are grouped rather than listed flat. Fourteen equal-weight buttons in
@@ -27,6 +28,7 @@ const GROUPS = [
       { id: 'drives', label: 'Drives', icon: CalendarClock },
       { id: 'placement', label: 'Placement report', icon: IndianRupee },
       { id: 'interventions', label: 'Interventions', icon: ClipboardList },
+      { id: 'teams', label: 'Team projects', icon: Users2 },
     ],
   },
   {
@@ -140,6 +142,7 @@ export default function CollegeWorkspace({ params = {}, go }) {
       {tab === 'drives' && <DriveManager />}
       {tab === 'placement' && <PlacementReport go={(t) => setTab(t)} />}
       {tab === 'interventions' && <InterventionsPanel />}
+      {tab === 'teams' && <TeamProjectsPanel />}
       {tab === 'onboarding' && <OnboardingPanel />}
       {tab === 'overview' && <OverviewTab go={(t) => setTab(t)} />}
       {tab === 'directory' && <DirectoryTab />}

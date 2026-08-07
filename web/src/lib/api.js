@@ -320,6 +320,18 @@ export const College = {
   members: (status = '') => api.get('/api/college/members' + (status ? `?status=${encodeURIComponent(status)}` : '')),
   approveMember: (id) => api.post(`/api/college/members/${encodeURIComponent(id)}/approve`, {}),
   removeMember: (id) => api.del(`/api/college/members/${encodeURIComponent(id)}`),
+  // ---- Team projects: form a team, generate a skill-matched project, assign
+  //      it, then verify the live hosted URL the team submits. ----
+  teamCatalog: () => api.get('/api/college/team-projects/catalog'),
+  suggestTeams: (body) => api.post('/api/college/team-projects/suggest', body),
+  previewTeamProject: (body) => api.post('/api/college/team-projects/preview', body),
+  teamProjects: () => api.get('/api/college/team-projects'),
+  teamProject: (id) => api.get(`/api/college/team-projects/${encodeURIComponent(id)}`),
+  assignTeamProject: (body) => api.post('/api/college/team-projects', body),
+  updateTeamProject: (id, patch) => api.patch(`/api/college/team-projects/${encodeURIComponent(id)}`, patch),
+  deleteTeamProject: (id) => api.del(`/api/college/team-projects/${encodeURIComponent(id)}`),
+  requestTeamLink: (id, message = '') => api.post(`/api/college/team-projects/${encodeURIComponent(id)}/request-link`, { message }),
+  verifyTeamProject: (id) => api.post(`/api/college/team-projects/${encodeURIComponent(id)}/verify`, {}),
 };
 
 /* Student self-service: my college binding, notifications, tasks, consent.
@@ -333,6 +345,12 @@ export const My = {
   markNotificationsRead: (ids = null) => api.post('/api/my/notifications/read', ids ? { ids } : {}),
   tasks: () => api.get('/api/my/tasks'),
   completeTask: (taskId) => api.post(`/api/my/tasks/${encodeURIComponent(taskId)}/done`, {}),
+  // Team projects the signed-in student is a member of. The server filters by
+  // membership, so this can only ever return the caller's own assignments.
+  teamProjects: () => api.get('/api/my/team-projects'),
+  teamProject: (id) => api.get(`/api/my/team-projects/${encodeURIComponent(id)}`),
+  submitTeamProject: (id, body) => api.post(`/api/my/team-projects/${encodeURIComponent(id)}/submit`, body),
+  verifyTeamProject: (id) => api.post(`/api/my/team-projects/${encodeURIComponent(id)}/verify`, {}),
   consent: (body) => api.post('/api/my/consent', body),
 };
 

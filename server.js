@@ -61,6 +61,7 @@ import { registerResumeOsRoutes } from './server/routes/resumeOsRoutes.js';
 import { registerProjectStoreRoutes } from './server/routes/projectStoreRoutes.js';
 import { registerOpsRoutes } from './server/routes/opsRoutes.js';
 import { registerCollegeRoutes } from './server/routes/collegeRoutes.js';
+import { registerTeamProjectRoutes } from './server/routes/teamProjectRoutes.js';
 import { requestIdMiddleware, createErrorHandler } from './server/utils/observability.js';
 import { createQuotaMiddleware } from './server/utils/quotaMiddleware.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
@@ -3039,6 +3040,17 @@ app.use('/api/college', requireAuth, requireRole('college_admin', 'admin'));
    DPDP consent, 60s-cached observability, and the demo-college seed. ---- */
 registerCollegeRoutes(app, {
   requireAuth, requireRole, requireCollegeScope, requireAdmin,
+  currentUser, db, logger, computeReadiness,
+});
+
+/* ---- Team projects — placement-cell group assignments --------------------
+   A coordinator forms a team, the engine generates a project customised to
+   that team's combined skills, every member is notified, and the team's live
+   hosted URL is verified for real. Coordinator routes live under
+   /api/college/team-projects/* (scope-guarded); students reach only their own
+   assignments under /api/my/team-projects/*. ---- */
+registerTeamProjectRoutes(app, {
+  requireAuth, requireRole, requireCollegeScope,
   currentUser, db, logger, computeReadiness,
 });
 

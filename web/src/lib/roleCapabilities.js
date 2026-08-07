@@ -66,6 +66,7 @@ const STUDENT_EARLY_SCREENS = [
   'inspirations',      // live-inspirations
   'sandbox',           // project-sandbox
   'partners',          // find-project-partner
+  'teamproject',       // placement-cell team assignment (student side)
   'leaderboards',
   'settings',
 ];

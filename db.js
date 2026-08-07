@@ -1190,6 +1190,7 @@ export function collegeKey({ collegeId, college } = {}) {
 const _memDrives = new Map();          // collegeId -> [ { id, title, eligibility, status, ... } ]
 const _memOutcomes = new Map();        // collegeId -> [ { driveId, studentId, stage, ctcLpa, ... } ]
 const _memSnapshots = new Map();       // collegeId -> [ { date, avgReadiness, ... } ] daily cohort snapshots
+const _memTeamProjects = new Map();    // collegeId -> [ { id, title, members, brief, submission, verification } ]
 
 const _verifyKey = ({ id, email }) => (email ? String(email).toLowerCase() : (id ? String(id) : ''));
 
@@ -1845,6 +1846,194 @@ export async function listCollegeSnapshots({ collegeId, days = 120 }) {
     console.error('[db] listCollegeSnapshots failed:', err.message);
     return [];
   }
+}
+
+/* ============================================================
+   TEAM PROJECTS  (college-scoped group assignments)
+   ------------------------------------------------------------
+   A team project is one record holding: the members (denormalised, so
+   the coordinator's view survives a student leaving the cohort), the
+   generated brief, the team's single submission (live URL + repo), and
+   the last verification result.
+
+   Storage mirrors the placement-drive pattern exactly — GenericDoc with
+   kind:'team_project' when a database is configured, an in-memory map
+   otherwise — so the entire feature works in the DB-less demo
+   configuration without pretending anything was persisted.
+
+   The logical `id` lives inside `data`, never the Mongo _id, so a record
+   keeps its identity across both backends.
+   ============================================================ */
+
+const _teamScope = (collegeId) => String(collegeId || '').trim();
+const _teamList = (scope) => (_memTeamProjects.has(scope) ? _memTeamProjects.get(scope) : []);
+
+export async function listTeamProjects({ collegeId }) {
+  const scope = _teamScope(collegeId);
+  if (!scope) return [];
+  if (!URI) return [..._teamList(scope)];
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const docs = await GenericDoc.find({ kind: 'team_project', collegeId: scope })
+      .sort({ createdAt: -1 }).limit(300).lean();
+    return docs.map((d) => ({ ...d.data }));
+  } catch (err) {
+    console.error('[db] listTeamProjects failed:', err.message);
+    return [];
+  }
+}
+
+export async function getTeamProject({ collegeId, projectId }) {
+  const list = await listTeamProjects({ collegeId });
+  return list.find((p) => String(p.id) === String(projectId)) || null;
+}
+
+export async function createTeamProject({ collegeId, project }) {
+  const scope = _teamScope(collegeId);
+  if (!scope) return { ok: false, reason: 'no_scope' };
+  const rec = {
+    id: 'tp_' + Math.random().toString(36).slice(2, 10),
+    collegeId: scope,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    submission: { liveUrl: '', repoUrl: '', notes: '', submittedBy: '', submittedAt: null },
+    verification: null,
+    ...project,
+  };
+  if (!URI) {
+    const list = _teamList(scope);
+    list.unshift(rec);
+    _memTeamProjects.set(scope, list);
+    return { ok: true, project: rec, db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    await GenericDoc.create({ kind: 'team_project', collegeId: scope, data: rec });
+    return { ok: true, project: rec, db: true };
+  } catch (err) {
+    console.error('[db] createTeamProject failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+/* Patches never rewrite identity or tenancy — the same guard the drive
+   updater uses, for the same reason. */
+export async function updateTeamProject({ collegeId, projectId, patch = {} }) {
+  const scope = _teamScope(collegeId);
+  const id = String(projectId || '').trim();
+  if (!scope || !id) return { ok: false, reason: 'no_scope' };
+  const { id: _i, collegeId: _c, createdAt: _a, ...safe } = patch;
+  safe.updatedAt = new Date().toISOString();
+
+  if (!URI) {
+    const list = _teamList(scope);
+    const idx = list.findIndex((p) => String(p.id) === id);
+    if (idx < 0) return { ok: false, reason: 'not_found' };
+    list[idx] = { ...list[idx], ...safe };
+    _memTeamProjects.set(scope, list);
+    return { ok: true, project: list[idx], db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const doc = await GenericDoc.findOne({ kind: 'team_project', collegeId: scope, 'data.id': id });
+    if (!doc) return { ok: false, reason: 'not_found' };
+    doc.data = { ...doc.data, ...safe };
+    doc.markModified('data');
+    await doc.save();
+    return { ok: true, project: { ...doc.data }, db: true };
+  } catch (err) {
+    console.error('[db] updateTeamProject failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+export async function deleteTeamProject({ collegeId, projectId }) {
+  const scope = _teamScope(collegeId);
+  const id = String(projectId || '').trim();
+  if (!scope || !id) return { ok: false, reason: 'no_scope' };
+  if (!URI) {
+    const list = _teamList(scope);
+    const next = list.filter((p) => String(p.id) !== id);
+    _memTeamProjects.set(scope, next);
+    return { ok: true, removed: list.length - next.length, db: false };
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const r = await GenericDoc.deleteOne({ kind: 'team_project', collegeId: scope, 'data.id': id });
+    return { ok: true, removed: r.deletedCount || 0, db: true };
+  } catch (err) {
+    console.error('[db] deleteTeamProject failed:', err.message);
+    return { ok: false, reason: 'db_error' };
+  }
+}
+
+/* A student's own team assignments.
+   Matching is by studentId OR email. Email matters: in the DB-less demo
+   configuration the cohort ids are synthetic (`demo_7`) and will never equal
+   a signed-in user's id, so without the email fallback a student would sign
+   in and correctly see nothing. Both paths are exact-match and case-folded —
+   no fuzzy name matching, which could leak another student's assignment. */
+export async function listMyTeamProjects({ userId, email }) {
+  const uid = String(userId || '');
+  const mail = String(email || '').toLowerCase();
+  if (!uid && !mail) return [];
+
+  const mine = (rec) => (rec.members || []).some((m) => (
+    (uid && String(m.studentId) === uid) || (mail && String(m.email || '').toLowerCase() === mail)
+  ));
+
+  if (!URI) {
+    const out = [];
+    for (const list of _memTeamProjects.values()) out.push(...list.filter(mine));
+    return out;
+  }
+  try {
+    await connectDB();
+    const GenericDoc = genericDocModel();
+    const docs = await GenericDoc.find({ kind: 'team_project' }).sort({ createdAt: -1 }).limit(500).lean();
+    return docs.map((d) => ({ ...d.data })).filter(mine);
+  } catch (err) {
+    console.error('[db] listMyTeamProjects failed:', err.message);
+    return [];
+  }
+}
+
+/** Find one assignment the caller is genuinely a member of (scope check). */
+export async function getMyTeamProject({ userId, email, projectId }) {
+  const list = await listMyTeamProjects({ userId, email });
+  return list.find((p) => String(p.id) === String(projectId)) || null;
+}
+
+/** Team submission is shared: any member may submit or update it, and the
+    record keeps who did, so the coordinator can see it was not one person
+    doing everything. */
+export async function submitTeamProjectLink({ userId, email, projectId, liveUrl, repoUrl, notes }) {
+  const rec = await getMyTeamProject({ userId, email, projectId });
+  if (!rec) return { ok: false, reason: 'not_found_or_out_of_scope' };
+  const history = Array.isArray(rec.submissionHistory) ? rec.submissionHistory.slice(-9) : [];
+  const submission = {
+    liveUrl: String(liveUrl ?? rec.submission?.liveUrl ?? '').trim().slice(0, 500),
+    repoUrl: String(repoUrl ?? rec.submission?.repoUrl ?? '').trim().slice(0, 500),
+    notes: String(notes ?? rec.submission?.notes ?? '').slice(0, 2000),
+    submittedBy: String(email || userId || '').toLowerCase(),
+    submittedAt: new Date().toISOString(),
+  };
+  history.push({ at: submission.submittedAt, by: submission.submittedBy, liveUrl: submission.liveUrl, repoUrl: submission.repoUrl });
+  return updateTeamProject({
+    collegeId: rec.collegeId,
+    projectId: rec.id,
+    // A new submission invalidates the previous verdict — otherwise a team
+    // could pass verification, swap the URL, and keep the green badge.
+    patch: { submission, submissionHistory: history, verification: null },
+  });
+}
+
+export async function recordTeamProjectVerification({ collegeId, projectId, verification }) {
+  return updateTeamProject({ collegeId, projectId, patch: { verification } });
 }
 
 function genericDocModel() {

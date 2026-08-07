@@ -24,7 +24,7 @@ export const NAV_GROUPS = [
   { label: 'Resume OS', short: 'Résumé', ids: ['resume', 'editor'] },
   { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
   { label: 'Applications', short: 'Apply', ids: ['applications'] },
-  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'projectcreator', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },
+  { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'teamproject', 'projectcreator', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },
   { label: 'Patent Engine', short: 'Patents', ids: ['innovation', 'patents', 'patentgenerate', 'patentportfolio', 'priorart', 'patentdisclosures'] },
   { label: 'Profile / XP', short: 'Profile', ids: ['careerprofile', 'skillsxp', 'readiness'] },
   { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },

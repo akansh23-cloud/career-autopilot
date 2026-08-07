@@ -69,6 +69,7 @@ export const NAV = [
   { id: 'projectstudio', label: 'Project OS', icon: Rocket },
   { id: 'sandbox', label: 'Project Sandbox', icon: Globe2 },
   { id: 'partners', label: 'Find Project Partner', icon: Users },
+  { id: 'teamproject', label: 'Team Project', icon: Users },
   { id: 'recruiter', label: 'Recruiter Console', icon: UserSearch },
   { id: 'college', label: 'Placement Cell', icon: GraduationCap },
   { id: 'growth', label: 'Growth', icon: TrendingUp },
