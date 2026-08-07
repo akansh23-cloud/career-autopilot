@@ -6,6 +6,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import * as db from './db.js';
+import demoTalent from './server/utils/demoTalentData.js';
 import * as subs from './paymentsStore.js';
 import * as access from './access.js';
 import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
@@ -3073,6 +3074,39 @@ app.get('/api/recruiter/candidates', requireAuth, requireRole('recruiter', 'admi
 });
 
 /* Admin: project verification queue (pending / needs_review). */
+/* ============================================================
+   ADMIN — DEMO WORLD SEEDING
+   ------------------------------------------------------------
+   The same seed as `npm run seed:demo`, over HTTP, for a deployment
+   where opening a shell against the cluster is inconvenient. Admin
+   only (ADMIN_EMAILS / persisted admin role).
+
+   `reset: true` rebuilds from scratch. It can only ever delete
+   records tagged demo or addressed @demo-institute.test, so it
+   cannot touch a real college or a real recruiter.
+   ============================================================ */
+app.post('/api/admin/demo/seed', requireAuth, requireAdmin, async (req, res) => {
+  const body = req.body || {};
+  const result = await db.seedDemoCollege({
+    reset: body.reset === true,
+    count: Number(body.perBranch) || 0,
+    talent: body.talent !== false,
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+/* Recruiter side only — for a database whose cohort is already seeded and
+   predates the recruiter world. */
+app.post('/api/admin/demo/recruiter-seed', requireAuth, requireAdmin, async (req, res) => {
+  const result = await db.seedDemoTalent({ reset: (req.body || {}).reset === true });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+app.get('/api/admin/demo/status', requireAuth, requireAdmin, async (req, res) => {
+  const recruiter = await db.demoTalentStatus().catch(() => ({ seeded: false }));
+  res.json({ ok: true, recruiter, db: db.dbEnabled() });
+});
+
 app.get('/api/admin/verification-queue', requireAuth, requireAdmin, async (req, res) => {
   const queue = await db.verificationQueue({ limit: 100 });
   res.json({ ok: true, queue, db: db.dbEnabled() });
@@ -3203,6 +3237,139 @@ app.post('/api/network/shortlists', requireAuth, requireRole('recruiter', 'admin
     candidateUserId: body.candidateUserId, note: body.note,
   });
   res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   RECRUITER — CAMPUS BRIDGE
+   ------------------------------------------------------------
+   The recruiter-facing counterpart to /api/college/*. Same guard
+   posture as the rest of candidate discovery: recruiter-or-admin
+   only, behind requireAuth.
+
+   Two sources, one shape:
+     · database attached  → the seeded recruiter world, scoped to the
+       caller's own organisation (db.resolveRecruiterOrg). Candidate
+       ids are real user ids, so every row in the pipeline opens a
+       profile that exists.
+     · no database, DEMO_MODE=1 → the in-memory world, for local
+       recording. Nothing is written and nothing persists.
+
+   A caller with no organisation still gets empty collections rather
+   than someone else's requisitions — the client renders its own
+   empty states, the same contract the college routes use. `demo` on
+   every response stays true for seeded data, so a viewer is never
+   invited to mistake it for their own records.
+   ============================================================ */
+const recruiterGuard = [requireAuth, requireRole('recruiter', 'admin')];
+const talentDemoActive = () => demoTalent.demoModeEnabled() && !db.dbEnabled();
+
+/* Which organisation's console the caller sees, or null. requireVerifiedRole
+   has already resolved the access context onto req.userRole. */
+async function recruiterOrgFor(req) {
+  if (!db.dbEnabled()) return null;
+  const ctx = req.userRole || {};
+  try {
+    return await db.resolveRecruiterOrg({
+      organizationId: ctx.organizationId || '',
+      isAdmin: ctx.isAdmin === true,
+    });
+  } catch {
+    return null;
+  }
+}
+
+app.get('/api/recruiter/summary', ...recruiterGuard, async (req, res) => {
+  if (talentDemoActive()) {
+    return res.json({ ok: true, demo: true, summary: demoTalent.demoTalentSummary(), db: false });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) return res.json({ ok: true, demo: false, summary: null, db: db.dbEnabled() });
+  const summary = await db.getRecruiterSummary(orgKey);
+  res.json({ ok: true, demo: !!summary, summary, db: db.dbEnabled() });
+});
+
+app.get('/api/recruiter/requisitions', ...recruiterGuard, async (req, res) => {
+  const status = String(req.query.status || '');
+  if (talentDemoActive()) {
+    let list = demoTalent.demoRequisitions();
+    if (status) list = list.filter((r) => r.status === status);
+    return res.json({ ok: true, demo: true, requisitions: list, db: false });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) return res.json({ ok: true, demo: false, requisitions: [], db: db.dbEnabled() });
+  const requisitions = await db.listRecruiterRequisitions(orgKey, { status });
+  res.json({ ok: true, demo: true, requisitions, db: db.dbEnabled() });
+});
+
+/* Ranked, eligibility-gated candidates for one requisition. This is the bridge
+   mechanic itself: the requisition's criteria are run against the connected
+   campus cohort, and the response explains every match rather than just
+   scoring it. */
+app.get('/api/recruiter/requisitions/:id/matches', ...recruiterGuard, async (req, res) => {
+  const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 25));
+  const id = String(req.params.id);
+
+  if (talentDemoActive()) {
+    const out = demoTalent.demoMatchesForRequisition(id, { limit });
+    if (!out.requisition) return res.status(404).json({ ok: false, error: 'requisition_not_found' });
+    return res.json({ ok: true, demo: true, ...out, db: false });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) return res.json({ ok: true, demo: false, requisition: null, matches: [], db: db.dbEnabled() });
+  const out = await db.getRecruiterMatches(orgKey, id, { limit });
+  if (!out.requisition) return res.status(404).json({ ok: false, error: 'requisition_not_found' });
+  res.json({ ok: true, demo: true, ...out, db: db.dbEnabled() });
+});
+
+app.get('/api/recruiter/pipeline', ...recruiterGuard, async (req, res) => {
+  const filters = {
+    requisitionId: String(req.query.requisitionId || ''),
+    stage: String(req.query.stage || ''),
+  };
+  if (talentDemoActive()) {
+    return res.json({
+      ok: true, demo: true, pipeline: demoTalent.demoPipeline(filters),
+      stages: demoTalent.PIPELINE_STAGES, db: false,
+    });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) {
+    return res.json({ ok: true, demo: false, pipeline: [], stages: demoTalent.PIPELINE_STAGES, db: db.dbEnabled() });
+  }
+  const pipeline = await db.listRecruiterPipeline(orgKey, filters);
+  res.json({ ok: true, demo: true, pipeline, stages: demoTalent.PIPELINE_STAGES, db: db.dbEnabled() });
+});
+
+app.get('/api/recruiter/campus-partners', ...recruiterGuard, async (req, res) => {
+  if (talentDemoActive()) {
+    return res.json({ ok: true, demo: true, partners: demoTalent.demoCampusPartners(), db: false });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) return res.json({ ok: true, demo: false, partners: [], db: db.dbEnabled() });
+  const partners = await db.listRecruiterCampusPartners(orgKey);
+  res.json({ ok: true, demo: true, partners, db: db.dbEnabled() });
+});
+
+/* What our open roles need vs what the connected cohort can actually prove.
+   The one view a recruiter and a placement cell can act on together. */
+app.get('/api/recruiter/skill-gap', ...recruiterGuard, async (req, res) => {
+  if (talentDemoActive()) {
+    return res.json({ ok: true, demo: true, gaps: demoTalent.demoSkillGap(), db: false });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) return res.json({ ok: true, demo: false, gaps: [], db: db.dbEnabled() });
+  const gaps = await db.getRecruiterSkillGap(orgKey);
+  res.json({ ok: true, demo: true, gaps, db: db.dbEnabled() });
+});
+
+app.get('/api/recruiter/interviews', ...recruiterGuard, async (req, res) => {
+  if (talentDemoActive()) {
+    return res.json({ ok: true, demo: true, interviews: demoTalent.demoInterviews(), db: false });
+  }
+  const orgKey = await recruiterOrgFor(req);
+  if (!orgKey) return res.json({ ok: true, demo: false, interviews: [], db: db.dbEnabled() });
+  const interviews = await db.listRecruiterInterviews(orgKey);
+  res.json({ ok: true, demo: true, interviews, db: db.dbEnabled() });
 });
 
 /* ============================================================

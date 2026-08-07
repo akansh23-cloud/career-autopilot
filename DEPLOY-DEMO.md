@@ -52,6 +52,96 @@ node scripts/seed-demo.mjs --per-branch=25 # 100 students instead of 200
 The same seed is available at `POST /api/admin/demo/seed` (`{"reset": true}`)
 for an authenticated admin — an email listed in `ADMIN_EMAILS`.
 
+---
+
+# Recruiter bridge on a real deployment
+
+The recruiter console (`/api/recruiter/*`) used to serve the in-memory world
+only, and returned empty collections the moment a database was attached — which
+is every deployment. It is now seeded alongside the cohort, so the bridge works
+in production.
+
+## What gets written
+
+| Collection | What |
+|---|---|
+| `NetworkProfile` | the consent-gated talent pool, one per seeded student |
+| `GenericDoc` | `recruiter_org`, `recruiter_requisition`, `recruiter_pipeline`, `recruiter_interview`, `recruiter_campus_partner`, scoped to `demo-northwind-systems` |
+
+Matches, skill gap and KPIs are **not** stored. They are computed per request
+from those rows through `server/utils/recruiterAnalytics.js` — the same
+functions the local in-memory path runs. A seeded dashboard therefore cannot
+drift away from the records it claims to summarise.
+
+Candidate ids are rewritten from the generator's synthetic `demo_007` to the
+real ObjectIds the cohort was written under. That is the whole point of the
+bridge: a recruiter clicks a candidate and lands on the same student the
+placement cell verified. Anyone missing from the cohort is dropped rather than
+left dangling, so a resized seed never strands a pipeline row.
+
+## Seeding it
+
+The recruiter world rides along with the college seed:
+
+```bash
+MONGODB_URI="mongodb+srv://…" npm run seed:demo:reset -- \
+  --tpo=you@yourdomain.com --recruiter=you@yourdomain.com
+```
+
+Both flags can point at the same address — that account then sees both sides of
+the bridge, which is what you want for a walkthrough.
+
+If your database was seeded before the bridge existed, add just the recruiter
+side without touching the students:
+
+```bash
+MONGODB_URI="…" npm run seed:demo:recruiter          # or :reset to rebuild
+```
+
+`--no-talent` skips it entirely. `POST /api/admin/demo/recruiter-seed` does the
+same over HTTP for an admin, and `GET /api/admin/demo/status` reports counts.
+
+## Why --recruiter matters
+
+Exactly as much as `--tpo`, and for the same reason. Every `/api/recruiter/*`
+route is scoped to the caller's own organisation, so signing in with a personal
+account resolves to no org and the console is empty. `--recruiter` binds your
+address to the demo hiring org as a verified recruiter (`accountType`,
+`roleVerified`, `organizationId`), which Google sign-in preserves.
+
+Admins listed in `ADMIN_EMAILS` always resolve to the demo org, so an admin
+account can inspect it without being bound.
+
+Setting `RECRUITER_DEMO_OPEN=1` opens the seeded org to **every** verified
+recruiter on the deployment. Reasonable for an MVP where you control who has a
+recruiter account; wrong the moment real recruiters sign up, because they would
+see Northwind's pipeline instead of their own empty one.
+
+## Verifying
+
+```bash
+npm run seed:demo:status
+```
+
+should now report the recruiter bridge as seeded, with roughly 45 talent
+profiles, 6 requisitions, ~30 pipeline rows and 4 campus partners against the
+default 200-student cohort. Then sign in as the bound recruiter and open the
+console — `/api/recruiter/summary` returning a non-null `summary` confirms the
+whole chain.
+
+Responses keep `demo: true` for seeded data. The console surfaces that, and it
+should stay that way: a viewer must never mistake a seeded pipeline for their
+own records.
+
+## Removing it later
+
+```bash
+MONGODB_URI="…" node -e "import('./db.js').then(d=>d.wipeDemoTalent()).then(r=>console.log(r))"
+```
+
+`wipeDemoCollege()` removes it too — the recruiter world is a projection of the
+cohort, so the two are wiped together.
+
 ## Vercel environment
 
 ```
