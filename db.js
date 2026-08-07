@@ -203,6 +203,14 @@ const userStateSchema = new mongoose.Schema(
     email: { type: String, lowercase: true, trim: true, index: true },
     profile: { type: mongoose.Schema.Types.Mixed, default: {} },
     resume: { type: mongoose.Schema.Types.Mixed, default: {} },
+    /* Cached readiness snapshot + verified project count. Both were already
+       SELECTED by listCollegeStudents (`state.readiness`, `state.verifiedProjectCount`)
+       but were never declared here, so a strict schema silently dropped them on
+       write and the college overview always reported avgReadiness 0 against a
+       real database. Declaring them is additive — existing documents simply
+       read as the defaults. */
+    readiness: { type: mongoose.Schema.Types.Mixed, default: null },
+    verifiedProjectCount: { type: Number, default: 0 },
     projects: { type: [mongoose.Schema.Types.Mixed], default: [] },
     tracker: { type: mongoose.Schema.Types.Mixed, default: {} },
     xpSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -252,7 +260,14 @@ const projectSubmissionSchema = new mongoose.Schema(
     outcome: { type: String, default: '' },
     claimedSkills: { type: [String], default: [] },
     // Verification outputs (backend-owned).
-    verificationStatus: { type: String, default: 'pending', enum: ['pending', 'verified', 'rejected', 'needs_review'] },
+    /* `draft` = started in the workspace, not yet submitted for verification.
+       It counts toward a student's project total but toward none of the
+       verification buckets, which is what puts them in the "building" funnel
+       stage rather than "submitted". Added because there was previously no way
+       to represent work-in-progress: any project row had to claim a
+       verification outcome it had not been through. Existing documents are
+       unaffected — the default is still `pending`. */
+    verificationStatus: { type: String, default: 'pending', enum: ['draft', 'pending', 'verified', 'rejected', 'needs_review'] },
     verifiedSkills: { type: [String], default: [] },
     pendingSkills: { type: [String], default: [] },
     rejectedSkills: { type: [String], default: [] },
@@ -5256,191 +5271,361 @@ export async function setUserConsent({ userId, email, version = CONSENT_VERSION,
 /* ============================================================
    DEMO COLLEGE SEED  (deterministic; safe to re-run)
    ------------------------------------------------------------
-   Creates a fully-populated "Demo Institute of Technology" so every
-   demo shows a living command center: 120 students across all six
-   funnel stages, three branches, two batches, verified/pending/
-   rejected submissions, resume scores, 60 days of activity for the
-   engagement buckets and momentum series, a roster, two placement
-   drives and a verified TPO (tpo@demo-institute.test — usable with
-   dev login). Deterministic RNG: re-seeding produces the same world.
-   All demo docs are tagged (provider/emails end in .test, College.demo)
-   and `reset:true` wipes only those.
+   Persists the demo world defined in server/utils/demoCollegeData.js
+   into MongoDB, so the same cohort a DB-free demo shows in memory is
+   what a deployed instance reads back out of the database.
+
+   Before this, there were two unrelated demo worlds: an in-memory one
+   (200 students, four CSE specialisations, four year-groups) served only
+   when DEMO_MODE=1 AND no MONGODB_URI, and a separate generator here
+   (120 students, CSE/IT/ENTC, two batches) that wrote to Mongo. On any
+   host that requires a database — which is every production deploy,
+   because config.js refuses to boot without MONGODB_URI — the richer
+   world was unreachable. There is now one source of truth: this
+   function reads demoCollegeData and writes it down.
+
+   WHAT IS WRITTEN
+     College · verified TPO · N students (User + UserState + SkillXp +
+     ProjectSubmission + ResumeAnalysis + Activity) · roster (joined and
+     invited) · 3 pending join requests · 8 placement drives · the
+     placement outcome funnel · 90 daily cohort snapshots · 5 tasks.
+
+   FIDELITY NOTES
+     - Timestamps are written explicitly ({ timestamps: false }), because
+       Mongoose would otherwise stamp everything with the seed time and
+       collapse the engagement buckets, the 60-day momentum series and
+       the resume-improvement curve into a single day.
+     - UserState.updatedAt is pinned to the student's last-active time.
+       collegeStudentsDeep derives lastActiveAt from the MAX of activity,
+       state.updatedAt, lastLoginAt and submission updatedAt — leaving
+       state.updatedAt at "now" would mark all 200 students active today.
+     - Submission statuses are built from the row's own counters rather
+       than re-derived, so projectsVerified/Pending/NeedsReview/Rejected
+       read back out of Mongo exactly as the cohort generator intended.
+     - Outcome studentIds are remapped from synthetic `demo_007` ids to
+       the real ObjectIds, since the placement engine joins outcomes to
+       cohort rows on that field.
+
+   SAFETY: every record is obviously synthetic — College.demo is true,
+   provider is 'demo', and all addresses end in `.test`, an IANA-reserved
+   TLD that can never route. `reset: true` wipes only those.
    ============================================================ */
 
 export const DEMO_COLLEGE_KEY = 'demo-institute-of-technology';
 const DEMO_DOMAIN = 'demo-institute.test';
 
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function rng() {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+const SEED_DAY = 24 * 60 * 60 * 1000;
+
+/** Explicit timestamps everywhere — see FIDELITY NOTES above. */
+const NO_TS = { timestamps: false, ordered: false };
+
+const asDate = (v, fallback = null) => {
+  if (!v) return fallback;
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? d : fallback;
+};
+
+/** Deterministic small integer from a string — used where the cohort row
+    carries no value of its own (login counts, task assignment picks) so a
+    re-seed produces the same numbers. */
+function hashInt(str, mod) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return Math.abs(h) % mod;
 }
-const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 
-const DEMO_FIRST = ['Aarav', 'Ananya', 'Rohan', 'Priya', 'Vivaan', 'Isha', 'Aditya', 'Sneha', 'Kabir', 'Diya', 'Arjun', 'Meera', 'Dev', 'Kavya', 'Nikhil', 'Riya', 'Sahil', 'Tanvi', 'Yash', 'Pooja', 'Harsh', 'Nandini', 'Om', 'Shruti', 'Raghav', 'Aisha', 'Kunal', 'Divya', 'Manav', 'Sakshi'];
-const DEMO_LAST = ['Sharma', 'Patil', 'Deshmukh', 'Kulkarni', 'Verma', 'Iyer', 'Joshi', 'Reddy', 'Nair', 'Gupta', 'Singh', 'Mehta', 'Chavan', 'Pawar', 'Agarwal', 'Bhosale'];
-const DEMO_BRANCHES = ['CSE', 'IT', 'ENTC'];
-const DEMO_BATCHES = ['2026', '2027'];
-const DEMO_SKILL_POOL = ['Python', 'Java', 'JavaScript', 'React', 'Node.js', 'SQL', 'MongoDB', 'AWS', 'Docker', 'Kubernetes', 'Git', 'Linux', 'C++', 'Machine Learning', 'Data Structures', 'REST APIs', 'Spring Boot', 'Flask'];
-const DEMO_PROJECTS = ['Campus Event Portal', 'Attendance Anomaly Detector', 'Mess Menu Optimizer', 'Placement Prep Tracker', 'Smart Parking Allocator', 'Lab Inventory System', 'Bus Route Predictor', 'Alumni Connect Graph', 'Exam Seating Planner', 'Hostel Complaint Triage'];
+/* Build the per-student ProjectSubmission rows. Titles, URLs and dates come
+   from the demo module's own drill-down; the STATUS mix is rebuilt from the
+   row counters so what Mongo aggregates back matches the cohort exactly. */
+function submissionsFor(row, detail, userId, lastActiveMs) {
+  const projects = detail?.projects || [];
+  if (!projects.length) return [];
 
-export async function seedDemoCollege({ reset = false, count = 50 } = {}) {
+  const statuses = [];
+  for (let i = 0; i < row.projectsVerified; i++) statuses.push('verified');
+  for (let i = 0; i < row.projectsPending; i++) statuses.push('pending');
+  for (let i = 0; i < row.projectsNeedsReview; i++) statuses.push('needs_review');
+  for (let i = 0; i < row.projectsRejected; i++) statuses.push('rejected');
+  /* A cohort row's projectsTotal is deliberately larger than the sum of its
+     verification buckets for students in the "building" stage — they have work
+     underway that has not been submitted. Those become drafts. Filling them in
+     as `pending` instead would have pushed every building student into the
+     "submitted" column and inflated the review queue by ~40 projects. */
+  while (statuses.length < projects.length) statuses.push('draft');
+
+  return projects.map((p, i) => {
+    const status = statuses[i];
+    // Only a verified project can be recruiter-ready — a recruiter-ready
+    // project is one a recruiter can open AND that has passed verification.
+    const recruiterReady = status === 'verified' && i < row.recruiterReadyProjects;
+    const created = asDate(p.createdAt, new Date());
+    // A submission cannot have been touched after the student stopped showing
+    // up, or a dormant student would land in the "active this week" bucket.
+    const rawUpdated = asDate(p.updatedAt, created).getTime();
+    const updated = new Date(lastActiveMs ? Math.min(rawUpdated, lastActiveMs) : rawUpdated);
+    return {
+      userId, email: row.email,
+      title: p.title,
+      description: `${p.title} — ${row.branch} coursework project.`,
+      technologies: (row.skills || []).slice(0, 4),
+      claimedSkills: (row.skills || []).slice(0, 3),
+      verifiedSkills: status === 'verified' ? (row.verifiedSkills || []).slice(0, 3) : [],
+      verificationStatus: status,
+      githubUrl: recruiterReady ? p.githubUrl : '',
+      liveDemoUrl: recruiterReady ? p.liveDemoUrl : '',
+      createdAt: created,
+      updatedAt: updated < created ? created : updated,
+    };
+  });
+}
+
+export async function seedDemoCollege({ reset = false, count = 0 } = {}) {
   if (!URI) return { ok: false, reason: 'db_disabled', message: 'Demo seeding needs MongoDB (set MONGODB_URI).' };
   try {
     await connectDB();
     if (reset) await wipeDemoCollege();
+
     const existing = await College.findOne({ key: DEMO_COLLEGE_KEY }).lean();
     if (existing && !reset) {
       const members = await User.countDocuments({ collegeId: DEMO_COLLEGE_KEY });
-      return { ok: true, alreadySeeded: true, collegeKey: DEMO_COLLEGE_KEY, students: members, joinCode: existing.joinCode, tpoEmail: `tpo@${DEMO_DOMAIN}` };
+      return {
+        ok: true, alreadySeeded: true, collegeKey: DEMO_COLLEGE_KEY,
+        students: members, joinCode: existing.joinCode, tpoEmail: `tpo@${DEMO_DOMAIN}`,
+        message: 'Already seeded — pass { "reset": true } to rebuild.',
+      };
     }
 
-    const rng = mulberry32(20260711);
+    /* `count` is students PER SPECIALISATION (four of them), so the default
+       50 yields the 200-student world. It stays capped so a stray value can
+       never try to write a six-figure cohort into a shared cluster. */
+    const perBranch = Math.max(1, Math.min(125, Number(count) || demoCollege.DEMO_PER_BRANCH));
+    if (perBranch !== demoCollege.DEMO_PER_BRANCH) demoCollege._regenerate(perBranch);
+
+    const meta = demoCollege.demoCollege();
+    const { rows } = demoCollege.demoStudentsDeep();
     const now = Date.now();
-    const DAY = 24 * 60 * 60 * 1000;
+
+    /* ---------------- college + TPO ---------------- */
 
     const college = await College.create({
-      key: DEMO_COLLEGE_KEY, name: 'Demo Institute of Technology', city: 'Pune',
+      key: DEMO_COLLEGE_KEY, name: meta.name, city: meta.city || 'Pune',
       status: 'active', domains: [DEMO_DOMAIN], aliases: ['cn_' + DEMO_COLLEGE_KEY],
-      joinCode: 'DEMO2026', settings: { autoApproveDomainJoins: true, autoApproveCodeJoins: true },
-      approvedAt: new Date(), approvedBy: 'seed', demo: true, createdByEmail: `tpo@${DEMO_DOMAIN}`,
+      joinCode: meta.joinCode || 'DEMO2026',
+      settings: { autoApproveDomainJoins: true, autoApproveCodeJoins: true },
+      approvedAt: new Date(), approvedBy: 'seed', demo: true,
+      createdByEmail: `tpo@${DEMO_DOMAIN}`,
     });
 
     // Verified TPO — dev-login with this email drops straight into the command center.
     await User.create({
       email: `tpo@${DEMO_DOMAIN}`, name: 'Prof. S. Kulkarni (TPO)', provider: 'demo',
       accountType: 'college_admin', roleVerified: true, verificationStatus: 'approved',
-      collegeId: DEMO_COLLEGE_KEY, collegeMembership: { status: 'active', via: 'admin', at: new Date() },
+      collegeId: DEMO_COLLEGE_KEY,
+      collegeMembership: { status: 'active', via: 'admin', at: new Date() },
       consent: { version: CONSENT_VERSION, acceptedAt: new Date(), collegeVisibility: true },
-      lastLoginAt: new Date(now - 1 * DAY), loginCount: 12,
+      lastLoginAt: new Date(now - SEED_DAY), loginCount: 12,
     });
 
-    const STUDENTS = Math.max(1, Math.min(500, Number(count) || 50));
-    let created = 0;
-    for (let i = 0; i < STUDENTS; i++) {
-      const first = pick(rng, DEMO_FIRST);
-      const last = pick(rng, DEMO_LAST);
-      const name = `${first} ${last}`;
-      const email = `${first}.${last}.${String(i + 1).padStart(3, '0')}@${DEMO_DOMAIN}`.toLowerCase();
-      const branch = pick(rng, DEMO_BRANCHES);
-      const batch = pick(rng, DEMO_BATCHES);
+    /* ---------------- students ----------------
+       Ids are minted up front so outcomes, roster rows and task assignments
+       can all reference the same user without a second round of lookups. */
 
-      // Funnel stage distribution: registered 12%, profile 18%, building 22%,
-      // submitted 15%, verified 20%, recruiter-ready 13%.
-      const roll = rng();
-      const stage = roll < 0.12 ? 0 : roll < 0.30 ? 1 : roll < 0.52 ? 2 : roll < 0.67 ? 3 : roll < 0.87 ? 4 : 5;
+    const idFor = new Map();       // demo id -> ObjectId
+    const userDocs = [];
+    const stateDocs = [];
+    const xpDocs = [];
+    const subDocs = [];
+    const resumeDocs = [];
+    const activityDocs = [];
 
-      // Engagement: recruiter-ready & verified lean active; registered leans dormant/never.
-      const engRoll = rng() + stage * 0.08;
-      const lastActiveDaysAgo = engRoll > 0.85 ? Math.floor(rng() * 6) + 1
-        : engRoll > 0.55 ? Math.floor(rng() * 22) + 8
-        : engRoll > 0.3 ? Math.floor(rng() * 120) + 35
-        : null; // never active
+    for (const row of rows) {
+      const _id = new mongoose.Types.ObjectId();
+      idFor.set(row.id, _id);
 
-      const user = await User.create({
-        email, name, provider: 'demo', accountType: 'student',
+      const memberSince = asDate(row.memberSince, new Date(now - 60 * SEED_DAY));
+      const lastActive = asDate(row.lastActiveAt, null);
+      const lastActiveMs = lastActive ? lastActive.getTime() : null;
+
+      userDocs.push({
+        _id, email: row.email, name: row.name, provider: 'demo', accountType: 'student',
         collegeId: DEMO_COLLEGE_KEY,
-        collegeMembership: { status: 'active', via: pick(rng, ['roster', 'roster', 'domain', 'code']), at: new Date(now - Math.floor(rng() * 50) * DAY) },
-        consent: { version: CONSENT_VERSION, acceptedAt: new Date(now - Math.floor(rng() * 50) * DAY), collegeVisibility: true },
-        createdAt: new Date(now - (60 + Math.floor(rng() * 30)) * DAY),
-        lastLoginAt: lastActiveDaysAgo != null ? new Date(now - lastActiveDaysAgo * DAY) : null,
-        loginCount: lastActiveDaysAgo != null ? Math.floor(rng() * 40) + 1 : 0,
+        collegeMembership: {
+          status: row.membership?.status || 'active',
+          via: row.membership?.via || 'roster',
+          at: asDate(row.membership?.at, memberSince),
+        },
+        consent: { version: CONSENT_VERSION, acceptedAt: memberSince, collegeVisibility: true },
+        isActive: true,
+        lastLoginAt: lastActive,
+        loginCount: lastActive ? 1 + hashInt(row.id, 40) : 0,
+        createdAt: memberSince, updatedAt: lastActive || memberSince,
       });
 
-      const skillCount = stage === 0 ? Math.floor(rng() * 2) : 2 + Math.floor(rng() * 6);
-      const skills = Array.from(new Set(Array.from({ length: skillCount }, () => pick(rng, DEMO_SKILL_POOL))));
-      const resumeScore = stage >= 2 ? 38 + Math.floor(rng() * 20) + stage * 8 : null;
-
-      await UserState.create({
-        userId: user._id, email,
-        profile: stage >= 1
-          ? { college: 'Demo Institute of Technology', branch, batch, skills, targetRole: pick(rng, ['SDE', 'Data Engineer', 'DevOps Engineer', 'Backend Developer']) }
-          : { college: 'Demo Institute of Technology', skills },
-        resume: resumeScore != null ? { score: resumeScore } : {},
+      stateDocs.push({
+        userId: _id, email: row.email,
+        profile: {
+          college: meta.name, branch: row.branch, batch: row.batch,
+          year: row.year, yearSem: row.year,
+          skills: row.skills || [], targetRole: row.targetRole || '',
+          rollNo: row.rollNo, cgpa: row.cgpa, backlogs: row.backlogs,
+        },
+        resume: row.resumeScore == null ? {} : {
+          score: row.resumeScore, ats: row.resumeAts,
+          impact: row.resumeImpact, clarity: row.resumeClarity,
+          versions: row.resumeVersions,
+        },
+        readiness: {
+          score: row.readinessScore, category: row.readinessCategory,
+          components: row.readinessComponents, gaps: row.readinessGaps,
+        },
+        verifiedProjectCount: row.projectsVerified || 0,
+        createdAt: memberSince,
+        // Pinned deliberately — see FIDELITY NOTES.
+        updatedAt: lastActive || memberSince,
       });
 
-      if (resumeScore != null) {
-        await ResumeAnalysis.create({
-          userId: user._id, email, score: resumeScore,
-          ats: Math.min(100, resumeScore + Math.floor(rng() * 12) - 4),
-          impact: Math.max(10, resumeScore - Math.floor(rng() * 14)),
-          clarity: Math.min(100, resumeScore + Math.floor(rng() * 10)),
-          targetRole: 'SDE', resumeHash: `demo-${i}`,
-          createdAt: new Date(now - Math.floor(rng() * 30) * DAY),
+      const detail = demoCollege.demoStudentDetail(row.id);
+
+      for (const led of detail?.skillLedger || []) {
+        if (!(led.verifiedXp > 0) && !(led.pendingXp > 0)) continue;
+        xpDocs.push({
+          userId: _id, email: row.email, skillName: led.skillName,
+          verifiedXp: led.verifiedXp || 0, pendingXp: led.pendingXp || 0,
+          createdAt: memberSince, updatedAt: lastActive || memberSince,
         });
       }
 
-      // Submissions by stage: building=1 pending-less draft, submitted=+pending,
-      // verified/recruiter-ready=verified (+ github/live proof at stage 5).
-      const mkSub = (status, withProof) => ProjectSubmission.create({
-        userId: user._id, email,
-        title: pick(rng, DEMO_PROJECTS),
-        verificationStatus: status,
-        claimedSkills: skills.slice(0, 3), verifiedSkills: status === 'verified' ? skills.slice(0, 3) : [],
-        technologies: skills.slice(0, 4),
-        githubUrl: withProof ? `https://github.com/demo/${DEMO_COLLEGE_KEY}-${i}` : '',
-        liveDemoUrl: withProof && rng() > 0.5 ? `https://demo-${i}.${DEMO_DOMAIN}` : '',
-        createdAt: new Date(now - Math.floor(20 + rng() * 40) * DAY),
-        updatedAt: new Date(now - Math.floor(rng() * 20) * DAY),
-      });
-      if (stage === 2) await mkSub(rng() > 0.5 ? 'rejected' : 'needs_review', false);
-      if (stage === 3) { await mkSub('pending', false); if (rng() > 0.6) await mkSub('needs_review', false); }
-      if (stage === 4) { await mkSub('verified', rng() > 0.7); if (rng() > 0.5) await mkSub('pending', false); }
-      if (stage === 5) { await mkSub('verified', true); if (rng() > 0.4) await mkSub('verified', rng() > 0.5); }
+      subDocs.push(...submissionsFor(row, detail, _id, lastActiveMs));
 
-      if (stage >= 4) {
-        for (const skill of skills.slice(0, 3)) {
-          await SkillXp.create({ userId: user._id, email, skillName: skill, verifiedXp: 40 + Math.floor(rng() * 160), pendingXp: Math.floor(rng() * 40) });
-        }
-      } else if (stage === 3) {
-        await SkillXp.create({ userId: user._id, email, skillName: skills[0] || 'Python', verifiedXp: 0, pendingXp: 30 + Math.floor(rng() * 60) });
+      for (const h of detail?.resumeHistory || []) {
+        const at = asDate(h.createdAt, memberSince);
+        resumeDocs.push({
+          userId: _id, email: row.email,
+          targetRole: row.targetRole || 'General',
+          score: h.score, ats: h.ats, impact: h.impact, clarity: h.clarity,
+          resumeHash: `${row.id}-v${h.version}`, scoringVersion: 'demo-seed',
+          createdAt: at, updatedAt: at,
+        });
       }
 
-      // Activity trail (drives engagement buckets + weekly momentum).
-      if (lastActiveDaysAgo != null) {
-        const events = 1 + Math.floor(rng() * 4);
-        for (let e = 0; e < events; e++) {
-          const daysAgo = e === 0 ? lastActiveDaysAgo : lastActiveDaysAgo + Math.floor(rng() * 40);
-          await Activity.create({
-            userId: user._id, email,
-            text: pick(rng, ['Updated resume', 'Submitted project for verification', 'Completed skill quiz', 'Explored job matches', 'Refined project workspace']),
-            tone: 'info', createdAt: new Date(now - daysAgo * DAY),
-          });
-        }
+      if (lastActive) {
+        activityDocs.push({
+          userId: _id, email: row.email, tone: 'info',
+          text: ['Updated resume', 'Submitted project for verification', 'Completed skill quiz',
+            'Explored job matches', 'Refined project workspace'][hashInt(row.id, 5)],
+          createdAt: lastActive, updatedAt: lastActive,
+        });
       }
-
-      await RosterEntry.create({
-        collegeId: DEMO_COLLEGE_KEY, email, name, branch, batch,
-        rollNo: `DIT${batch}${String(i + 1).padStart(3, '0')}`,
-        status: 'joined', joinedUserId: user._id, importedBy: `tpo@${DEMO_DOMAIN}`,
-      });
-      created += 1;
     }
 
-    // A few invited-but-not-joined roster rows (shows the funnel's front door).
-    for (let i = 0; i < 15; i++) {
-      await RosterEntry.create({
-        collegeId: DEMO_COLLEGE_KEY,
-        email: `invited.${String(i + 1).padStart(2, '0')}@${DEMO_DOMAIN}`,
-        name: `${pick(rng, DEMO_FIRST)} ${pick(rng, DEMO_LAST)}`,
-        branch: pick(rng, DEMO_BRANCHES), batch: pick(rng, DEMO_BATCHES),
-        rollNo: `DIT-INV-${i + 1}`, status: 'invited', importedBy: `tpo@${DEMO_DOMAIN}`,
-      });
-    }
+    /* Three pending join requests, so the approve / remove controls in the
+       members screen have something real to act on. */
+    const pendingMembers = demoCollege.demoMembers('pending').map((m) => ({
+      email: m.email, name: m.name, provider: 'demo', accountType: 'student',
+      collegeId: DEMO_COLLEGE_KEY,
+      collegeMembership: { status: 'pending', via: m.via || 'code', at: asDate(m.at, new Date()) },
+      consent: { version: CONSENT_VERSION, acceptedAt: asDate(m.at, new Date()), collegeVisibility: true },
+      isActive: true, lastLoginAt: asDate(m.at, null), loginCount: 1,
+      createdAt: asDate(m.at, new Date()), updatedAt: asDate(m.at, new Date()),
+    }));
+
+    await User.insertMany([...userDocs, ...pendingMembers], NO_TS);
+    await UserState.insertMany(stateDocs, NO_TS);
+    if (xpDocs.length) await SkillXp.insertMany(xpDocs, NO_TS);
+    if (subDocs.length) await ProjectSubmission.insertMany(subDocs, NO_TS);
+    if (resumeDocs.length) await ResumeAnalysis.insertMany(resumeDocs, NO_TS);
+    if (activityDocs.length) await Activity.insertMany(activityDocs, NO_TS);
+
+    /* ---------------- roster ---------------- */
+
+    const roster = demoCollege.demoRoster();
+    const byEmail = new Map(rows.map((r) => [r.email, r]));
+    const rosterDocs = roster.rows.map((r) => {
+      const student = byEmail.get(r.email);
+      const at = asDate(r.createdAt, new Date());
+      return {
+        collegeId: DEMO_COLLEGE_KEY, email: r.email, name: r.name,
+        branch: r.branch, batch: r.batch, rollNo: r.rollNo,
+        status: r.status,
+        joinedUserId: student ? idFor.get(student.id) : null,
+        importedBy: `tpo@${DEMO_DOMAIN}`,
+        createdAt: at, updatedAt: at,
+      };
+    });
+    if (rosterDocs.length) await RosterEntry.insertMany(rosterDocs, NO_TS);
+
+    /* ---------------- drives, outcomes, snapshots ---------------- */
 
     const GenericDoc = genericDocModel();
-    for (const d of [
-      { title: 'TCS Ninja Campus Drive', company: 'TCS', eligibility: { minReadiness: 60 }, status: 'open' },
-      { title: 'Infosys SP Off-Campus Pool', company: 'Infosys', eligibility: { minReadiness: 70, branch: 'CSE' }, status: 'open' },
-    ]) {
-      await GenericDoc.create({ kind: 'placement_drive', collegeId: DEMO_COLLEGE_KEY, data: { id: 'drv_demo_' + d.company.toLowerCase(), createdAt: new Date().toISOString(), ...d } });
-    }
+    const drives = demoCollege.demoDrives();
+    await GenericDoc.insertMany(
+      drives.map((d) => ({
+        kind: 'placement_drive', collegeId: DEMO_COLLEGE_KEY, data: d,
+        createdAt: asDate(d.createdAt, new Date()), updatedAt: asDate(d.createdAt, new Date()),
+      })),
+      NO_TS,
+    );
 
-    return { ok: true, seeded: true, collegeKey: DEMO_COLLEGE_KEY, students: created, joinCode: college.joinCode, tpoEmail: `tpo@${DEMO_DOMAIN}` };
+    /* Outcomes join to cohort rows on studentId, which in the database is the
+       user's ObjectId — not the synthetic `demo_007`. Any outcome whose
+       student did not survive a resized cohort is dropped rather than left
+       dangling, so the placement funnel never counts a student who is not
+       in the directory. */
+    const outcomeDocs = [];
+    for (const o of demoCollege.demoOutcomes()) {
+      const uid = idFor.get(o.studentId);
+      if (!uid) continue;
+      const at = asDate(o.updatedAt, new Date());
+      outcomeDocs.push({
+        kind: 'placement_outcome', collegeId: DEMO_COLLEGE_KEY,
+        data: { ...o, studentId: String(uid) },
+        createdAt: at, updatedAt: at,
+      });
+    }
+    if (outcomeDocs.length) await GenericDoc.insertMany(outcomeDocs, NO_TS);
+
+    const snapshots = demoCollege.demoSnapshots();
+    await GenericDoc.insertMany(
+      snapshots.map((s) => ({
+        kind: 'college_snapshot', collegeId: DEMO_COLLEGE_KEY, data: s,
+        createdAt: asDate(s.at, new Date()), updatedAt: asDate(s.at, new Date()),
+      })),
+      NO_TS,
+    );
+
+    /* ---------------- tasks ----------------
+       Assignment counts come from the demo module; WHICH students are assigned
+       is picked deterministically so a re-seed produces the same board. */
+
+    const allIds = rows.map((r) => idFor.get(r.id));
+    const taskDocs = demoCollege.demoTasks().map((t, ti) => {
+      const assigned = Math.min(allIds.length, Number(t.assignedCount) || 0);
+      const done = Math.min(assigned, Number(t.completedCount) || 0);
+      const start = allIds.length ? (ti * 37) % allIds.length : 0;
+      const picked = Array.from({ length: assigned }, (_, i) => allIds[(start + i) % allIds.length]);
+      const createdAt = asDate(t.createdAt, new Date());
+      return {
+        collegeId: DEMO_COLLEGE_KEY, title: t.title, description: t.description,
+        dueAt: asDate(t.dueAt, null), createdByEmail: `tpo@${DEMO_DOMAIN}`,
+        assignments: picked.map((uid, i) => ({
+          userId: uid,
+          status: i < done ? 'done' : 'open',
+          doneAt: i < done ? new Date(createdAt.getTime() + SEED_DAY) : null,
+        })),
+        createdAt, updatedAt: createdAt,
+      };
+    });
+    if (taskDocs.length) await CollegeTask.insertMany(taskDocs, NO_TS);
+
+    return {
+      ok: true, seeded: true, collegeKey: DEMO_COLLEGE_KEY,
+      students: userDocs.length,
+      perBranch, branches: meta.branches, batches: meta.batches,
+      drives: drives.length, outcomes: outcomeDocs.length,
+      snapshots: snapshots.length, tasks: taskDocs.length,
+      rosterRows: rosterDocs.length, pendingJoinRequests: pendingMembers.length,
+      joinCode: college.joinCode, tpoEmail: `tpo@${DEMO_DOMAIN}`,
+    };
   } catch (err) {
     console.error('[db] seedDemoCollege failed:', err.message);
     return { ok: false, reason: 'db_error', error: err.message };
@@ -5463,7 +5648,12 @@ export async function wipeDemoCollege() {
   await RosterEntry.deleteMany({ collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
   await CollegeTask.deleteMany({ collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
   await College.deleteMany({ key: DEMO_COLLEGE_KEY }).catch(() => {});
+  /* Scoped by collegeId rather than by kind. The seed now writes outcomes,
+     daily snapshots and (via the app) team projects under this college too —
+     a kind-specific delete left those behind, so a re-seed stacked a second
+     placement funnel on top of the first and the numbers drifted upward on
+     every reset. */
   const GenericDoc = genericDocModel();
-  await GenericDoc.deleteMany({ kind: 'placement_drive', collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
+  await GenericDoc.deleteMany({ collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
   return { ok: true, wiped: ids.length };
 }

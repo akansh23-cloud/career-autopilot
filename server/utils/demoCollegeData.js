@@ -260,14 +260,27 @@ function generate(perBranch = DEMO_PER_BRANCH) {
 
         const projectsTotal = stage === 0 ? 0 : stage === 1 ? between(rng, 0, 1)
           : stage === 5 ? between(rng, 3, 5) : between(rng, 1, 4);
-        const projectsVerified = stage === 5 ? Math.min(projectsTotal, between(rng, 2, 4))
-          : stage === 4 ? Math.min(projectsTotal, between(rng, 1, 3)) : 0;
-        const projectsPending = stage === 3 ? Math.min(projectsTotal, between(rng, 1, 2))
-          : stage >= 4 ? Math.max(0, Math.min(projectsTotal - projectsVerified, between(rng, 0, 1))) : 0;
-        const projectsNeedsReview = stage === 3 && rng() > 0.75 ? 1 : 0;
-        const projectsRejected = stage >= 3 && rng() > 0.85 ? 1 : 0;
-        const recruiterReadyProjects = stage === 5 ? Math.max(2, projectsVerified)
-          : stage === 4 ? between(rng, 0, projectsVerified) : 0;
+
+        /* Each status is drawn independently, then spent against a shared
+           budget of the student's actual projects. Without the budget the
+           counts could describe more outcomes than the student has work: a
+           third-year with 2 projects could report 2 pending + 1 needs-review
+           + 1 rejected. In memory nothing cross-checked that, but a database
+           stores one row per project and the sum has to close. */
+        let remaining = projectsTotal;
+        const take = (n) => { const v = Math.max(0, Math.min(n, remaining)); remaining -= v; return v; };
+
+        const projectsVerified = take(stage === 5 ? between(rng, 2, 4) : stage === 4 ? between(rng, 1, 3) : 0);
+        const projectsPending = take(stage === 3 ? between(rng, 1, 2) : stage >= 4 ? between(rng, 0, 1) : 0);
+        const projectsNeedsReview = take(stage === 3 && rng() > 0.75 ? 1 : 0);
+        const projectsRejected = take(stage >= 3 && rng() > 0.85 ? 1 : 0);
+
+        /* Recruiter-ready is a subset of verified, never a superset: a project
+           a recruiter can open is only proof if it has passed verification. */
+        const recruiterReadyProjects = Math.min(
+          projectsVerified,
+          stage === 5 ? Math.max(2, projectsVerified) : stage === 4 ? between(rng, 0, projectsVerified) : 0,
+        );
 
         // Engagement — recruiter-ready students lean active, registered lean
         // dormant. Seniors lean active across the board because placement
@@ -734,5 +747,5 @@ export default {
   DEMO_STUDENT_COUNT, DEMO_PER_BRANCH, BRANCH_LIST, YEAR_LIST, BATCH_LIST,
   demoModeEnabled, demoStudents, demoStudentsDeep, demoStudentDetail,
   demoDrives, demoMembers, demoRoster, demoTasks, demoCollege,
-  demoOutcomes, demoSnapshots,
+  demoOutcomes, demoSnapshots, _regenerate,
 };

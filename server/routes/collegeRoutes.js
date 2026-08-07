@@ -837,7 +837,9 @@ export function registerCollegeRoutes(app, deps = {}) {
     });
 
     app.post('/api/admin/demo/seed', requireAuth, requireAdmin, async (req, res) => {
-      const result = await db.seedDemoCollege({ reset: req.body?.reset === true, count: Number(req.body?.count) || 50 });
+      // `count` is students PER SPECIALISATION (four of them). Omit it to get
+      // the full 200-student world; db.js clamps and defaults.
+      const result = await db.seedDemoCollege({ reset: req.body?.reset === true, count: Number(req.body?.count) || 0 });
       res.status(result.ok ? 200 : 400).json(result);
     });
   }

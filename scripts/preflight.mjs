@@ -61,7 +61,7 @@ add(has('ADMIN_EMAILS') ? PASS : FAIL, 'ADMIN_EMAILS', has('ADMIN_EMAILS') ? env
   const serverless = Boolean(env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME || env.NOW_REGION);
   const prod = (env.NODE_ENV || '') === 'production';
   if (demo && serverless) {
-    add(FAIL, 'DEMO_MODE', 'enabled on a serverless host — in-memory demo writes do not survive between requests');
+    add(FAIL, 'DEMO_MODE', 'enabled on a serverless host — in-memory demo writes do not survive between requests. Unset it and run `npm run seed:demo:reset` against MONGODB_URI instead; the same cohort is then stored in the database.');
   } else if (demo && prod && !has('MONGODB_URI')) {
     add(WARN, 'DEMO_MODE', 'enabled in production with no database — visitors see synthetic data');
   } else if (demo) {
