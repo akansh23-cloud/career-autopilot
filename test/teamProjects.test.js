@@ -307,3 +307,62 @@ test('a project can be deleted and then no longer appears', async () => {
   const list = ok(await GET('/api/college/team-projects'), 'list after delete');
   assert.equal(list.projects.some((p) => p.id === projectId), false);
 });
+
+/* ============================================================
+   Skill mapping — regressions
+   ------------------------------------------------------------
+   The first cut matched skills by naive substring, so the one-letter
+   'r' token in the ML list captured Grafana, Prometheus, Apache Spark
+   and Operating Systems and filed all four as machine learning. A
+   DevOps team therefore came back staffed with an "ML / Analytics
+   Owner" and a Big Data team's core tools counted for nothing.
+   Matching is whole-word now; these lock that in.
+   ============================================================ */
+
+test('short tokens no longer swallow unrelated skills', () => {
+  assert.equal(engine.areaForSkill('Grafana'), 'devops');
+  assert.equal(engine.areaForSkill('Prometheus'), 'devops');
+  assert.equal(engine.areaForSkill('Apache Spark'), 'data');
+  assert.equal(engine.areaForSkill('Operating Systems'), 'backend');
+  assert.equal(engine.areaForSkill('Serverless'), 'backend');
+  // ...while the language R itself still resolves, as a whole word.
+  assert.equal(engine.areaForSkill('R'), 'ml');
+});
+
+test('the demo college\u2019s specialisation vocabularies are all recognised', () => {
+  const expected = {
+    // AI & ML
+    'Machine Learning': 'ml', 'PyTorch': 'ml', 'scikit-learn': 'ml', 'OpenCV': 'ml',
+    // Big Data
+    Hadoop: 'data', Kafka: 'data', Hive: 'data', 'Power BI': 'data',
+    // Cloud
+    AWS: 'devops', Kubernetes: 'devops', Terraform: 'devops', Microservices: 'backend',
+    // DevOps
+    Jenkins: 'devops', Helm: 'devops', Bash: 'devops', 'CI/CD': 'devops',
+    // Shared fundamentals
+    Python: 'backend', 'C++': 'backend', SQL: 'data', Git: 'devops', JavaScript: 'frontend',
+  };
+  for (const [skill, area] of Object.entries(expected)) {
+    assert.equal(engine.areaForSkill(skill), area, `${skill} should map to ${area}`);
+  }
+});
+
+test('longer skill names win over their own fragments', () => {
+  assert.equal(engine.areaForSkill('React Native'), 'mobile');
+  assert.equal(engine.areaForSkill('React'), 'frontend');
+  assert.equal(engine.areaForSkill('Spring Boot'), 'backend');
+  assert.equal(engine.areaForSkill('Embedded C'), 'hardware');
+});
+
+test('a single-specialisation team still gets one distinct role each', () => {
+  // Four students who all listed the same narrow stack. Before the fix the
+  // fourth fell through to a role a teammate already held.
+  const members = ['a', 'b', 'c', 'd'].map((id, i) => engine.shapeMember({
+    id, name: `Member ${id.toUpperCase()}`,
+    skills: ['Hadoop', 'Apache Spark', 'SQL'], verifiedSkills: ['SQL'],
+    readinessScore: 70 - i,
+  }));
+  const brief = engine.generateTeamProject({ members, options: {} });
+  const roles = brief.assignments.map((a) => a.role);
+  assert.equal(new Set(roles).size, 4, `duplicate roles: ${roles.join(', ')}`);
+});

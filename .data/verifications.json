@@ -8,7 +8,7 @@
     "name": "Wannabe Rec",
     "requestedType": "recruiter",
     "email": "rbac-pending-rec@example.com",
-    "updatedAt": "2026-08-07T10:12:40.917Z"
+    "updatedAt": "2026-08-07T10:52:52.212Z"
   },
   "rbac-verified-rec@example.com": {
     "accountType": "recruiter",
@@ -17,7 +17,7 @@
     "organizationId": "org-9",
     "collegeId": "",
     "email": "rbac-verified-rec@example.com",
-    "updatedAt": "2026-08-07T10:12:40.928Z"
+    "updatedAt": "2026-08-07T10:52:52.227Z"
   },
   "rbac-verified-college@example.com": {
     "accountType": "college_admin",
@@ -26,6 +26,6 @@
     "organizationId": "",
     "collegeId": "college-A",
     "email": "rbac-verified-college@example.com",
-    "updatedAt": "2026-08-07T10:12:40.957Z"
+    "updatedAt": "2026-08-07T10:52:52.260Z"
   }
 }

@@ -271,6 +271,30 @@ export function buildPlacementStats({ rows = [], drives = [], outcomes = [], now
   }
 
   const students = rows.length;
+
+  /* ---- Placement rate is reported over the GRADUATING cohort, not the whole
+     college. A department with four year-groups on the platform has ~75% of
+     its students not yet placeable; dividing by all of them reports a rate no
+     TPO recognises and no NAAC/NBA return would accept.
+
+     The graduating cohort is derived from the drives themselves — the union of
+     the batches the college's drives actually target — so it needs no separate
+     configuration and stays correct as the season rolls over. When no drive
+     declares a batch (a fresh college, or a single-batch pilot) this falls back
+     to the full roster, which is the previous behaviour exactly.
+
+     Both numbers are returned: `placementRate` over the graduating batch is
+     the headline, `placementRateAllStudents` is kept so nothing that consumed
+     the old figure silently changes meaning. ---- */
+  const targetBatches = new Set(
+    drives.flatMap((d) => (d.eligibility?.batches || []).map((x) => String(x)))
+  );
+  const placementCohort = targetBatches.size
+    ? rows.filter((r) => targetBatches.has(String(r.batch)))
+    : rows;
+  const placementCohortSize = placementCohort.length || students;
+  const graduatingBatches = [...targetBatches].sort();
+
   const participated = perStudent.size;
   const placedEntries = [...perStudent.values()].filter((e) => e.placedWith);
   const placed = placedEntries.length;
@@ -356,10 +380,14 @@ export function buildPlacementStats({ rows = [], drives = [], outcomes = [], now
     generatedAt: new Date(now).toISOString(),
     summary: {
       students,
+      // The cohort the placement rate is actually computed over.
+      placementCohortSize,
+      graduatingBatches,
       participated,
-      participationRate: pct(participated, students),
+      participationRate: pct(participated, placementCohortSize),
       placed,
-      placementRate: pct(placed, students),
+      placementRate: pct(placed, placementCohortSize),
+      placementRateAllStudents: pct(placed, students),
       offers: allOffers.length,
       multiOffer,
       medianCtc: median(acceptedCtcs),

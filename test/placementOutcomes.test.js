@@ -265,3 +265,48 @@ test('stage predicates and depths agree with the declared stage list', () => {
   assert.equal(stageDepth('applied'), 0);
   assert.ok(PLACEMENT_STAGES.every((s) => typeof s.label === 'string' && s.label.length > 0));
 });
+
+/* ============================================================
+   Placement rate is scoped to the graduating cohort
+   ------------------------------------------------------------
+   A department with four year-groups on the platform has ~75% of its
+   students not yet placeable. Dividing placements by the whole roster
+   reported a rate no TPO recognises (22% when the real figure was 41%)
+   and that no NAAC/NBA return would accept. The graduating cohort is
+   derived from the batches the college's own drives target, so it needs
+   no extra configuration.
+   ============================================================ */
+
+test('placement rate is computed over the batches the drives actually target', () => {
+  const rows = [
+    { id: 'a', branch: 'CSE', batch: '2026', readinessScore: 80 },
+    { id: 'b', branch: 'CSE', batch: '2026', readinessScore: 75 },
+    // Two juniors who cannot be placed this season and must not dilute the rate.
+    { id: 'c', branch: 'CSE', batch: '2028', readinessScore: 30 },
+    { id: 'd', branch: 'CSE', batch: '2029', readinessScore: 20 },
+  ];
+  const drives = [{ id: 'd1', title: 'Campus Hire', company: 'Acme', ctcLpa: 10, status: 'open', eligibility: { batches: ['2026'] } }];
+  const outcomes = [{ driveId: 'd1', studentId: 'a', stage: 'accepted', ctcLpa: 10, company: 'Acme' }];
+
+  const s = buildPlacementStats({ rows, drives, outcomes, now: Date.now() }).summary;
+  assert.equal(s.students, 4, 'the total roster is still reported');
+  assert.equal(s.placementCohortSize, 2, 'only the 2026 batch is placeable');
+  assert.deepEqual(s.graduatingBatches, ['2026']);
+  assert.equal(s.placementRate, 50, '1 of the 2 graduating students is placed');
+  assert.equal(s.placementRateAllStudents, 25, 'the all-roster figure is kept for continuity');
+});
+
+test('with no batch-scoped drive the rate falls back to the whole roster', () => {
+  // A fresh college, or a single-batch pilot, must behave exactly as before.
+  const rows = [
+    { id: 'a', branch: 'CSE', batch: '2026', readinessScore: 80 },
+    { id: 'b', branch: 'CSE', batch: '2026', readinessScore: 40 },
+  ];
+  const drives = [{ id: 'd1', title: 'Open Drive', company: 'Acme', ctcLpa: 8, status: 'open', eligibility: {} }];
+  const outcomes = [{ driveId: 'd1', studentId: 'a', stage: 'accepted', ctcLpa: 8, company: 'Acme' }];
+
+  const s = buildPlacementStats({ rows, drives, outcomes, now: Date.now() }).summary;
+  assert.equal(s.placementCohortSize, 2);
+  assert.deepEqual(s.graduatingBatches, []);
+  assert.equal(s.placementRate, s.placementRateAllStudents, 'both figures agree when no batch is targeted');
+});

@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 
 import demo, {
   DEMO_COLLEGE_ID, DEMO_DOMAIN, DEMO_STUDENT_COUNT,
+  BRANCH_LIST, YEAR_LIST, BATCH_LIST,
   demoModeEnabled, demoStudents, demoStudentsDeep, demoStudentDetail,
   demoDrives, demoMembers, demoRoster, demoTasks, demoCollege,
 } from '../server/utils/demoCollegeData.js';
@@ -45,9 +46,70 @@ test('the demo domain uses a reserved TLD that cannot route', () => {
 
 /* ---------------- cohort shape ---------------- */
 
-test('the cohort is exactly 50 students', () => {
-  assert.equal(demoStudents().length, 50);
-  assert.equal(DEMO_STUDENT_COUNT, 50);
+test('the cohort is 200 students — 50 in each of four CSE specialisations', () => {
+  const rows = demoStudents();
+  assert.equal(rows.length, 200);
+  assert.equal(DEMO_STUDENT_COUNT, 200);
+  const perBranch = {};
+  for (const s of rows) perBranch[s.branch] = (perBranch[s.branch] || 0) + 1;
+  assert.deepEqual(Object.keys(perBranch).sort(), [...BRANCH_LIST].sort());
+  for (const [branch, n] of Object.entries(perBranch)) {
+    assert.equal(n, 50, `${branch} has ${n} students, expected 50`);
+  }
+});
+
+test('all four academic years are represented in every branch', () => {
+  const rows = demoStudents();
+  for (const branch of BRANCH_LIST) {
+    const years = new Set(rows.filter((s) => s.branch === branch).map((s) => s.year));
+    assert.equal(years.size, 4, `${branch} covers ${years.size} years, expected 4`);
+  }
+  assert.deepEqual([...new Set(rows.map((s) => s.year))].sort(), [...YEAR_LIST].sort());
+  assert.deepEqual([...new Set(rows.map((s) => s.batch))].sort(), [...BATCH_LIST].sort());
+});
+
+/* Seniority has to be visible in the numbers, or the year filter is decoration.
+   A cohort where a first-year looks like a final-year would also make the
+   readiness engine look like it is not measuring anything. */
+test('readiness climbs with academic year', () => {
+  const rows = demoStudents();
+  const avgFor = (year) => {
+    const r = rows.filter((s) => s.year === year);
+    return r.reduce((a, s) => a + s.readinessScore, 0) / r.length;
+  };
+  const avgs = YEAR_LIST.map(avgFor);
+  for (let i = 1; i < avgs.length; i++) {
+    assert.ok(avgs[i] > avgs[i - 1],
+      `${YEAR_LIST[i]} (${avgs[i].toFixed(1)}) should out-score ${YEAR_LIST[i - 1]} (${avgs[i - 1].toFixed(1)})`);
+  }
+});
+
+test('no first-year is recruiter-ready — that would read as fabricated', () => {
+  for (const s of demoStudents().filter((x) => x.year === '1st year')) {
+    assert.equal(s.recruiterReadyProjects, 0, `${s.id} is a first-year with recruiter-ready projects`);
+  }
+});
+
+/* The whole point of four specialisations is that they are actually different.
+   If every branch carried the same skills, the team-project skill matching
+   would have nothing to match on. */
+test('each specialisation carries skills the others do not', () => {
+  const rows = demoStudents();
+  const skillsOf = (branch) => new Set(rows.filter((s) => s.branch === branch).flatMap((s) => s.skills));
+  const sets = Object.fromEntries(BRANCH_LIST.map((b) => [b, skillsOf(b)]));
+  for (const branch of BRANCH_LIST) {
+    const others = new Set(BRANCH_LIST.filter((b) => b !== branch).flatMap((b) => [...sets[b]]));
+    const unique = [...sets[branch]].filter((s) => !others.has(s));
+    assert.ok(unique.length >= 2, `${branch} has only ${unique.length} distinctive skills`);
+  }
+});
+
+test('a student carries the academic fields a placement report needs', () => {
+  for (const s of demoStudents()) {
+    assert.ok(s.rollNo, `${s.id} has no roll number`);
+    assert.ok(s.cgpa >= 6 && s.cgpa <= 10, `${s.id} has an implausible CGPA`);
+    assert.ok(Number.isInteger(s.backlogs) && s.backlogs >= 0);
+  }
 });
 
 test('student names are unique — duplicates read as fake on screen', () => {
@@ -100,8 +162,8 @@ test('internal counts are self-consistent', () => {
 
 test('multiple branches and batches so the analytics charts have bars', () => {
   const rows = demoStudents();
-  assert.ok(new Set(rows.map((s) => s.branch)).size >= 3);
-  assert.ok(new Set(rows.map((s) => s.batch)).size >= 2);
+  assert.equal(new Set(rows.map((s) => s.branch)).size, 4);
+  assert.equal(new Set(rows.map((s) => s.batch)).size, 4);
 });
 
 /* ---------------- determinism ---------------- */
@@ -114,9 +176,20 @@ test('the cohort is identical across calls — a re-recorded take looks the same
 /* ---------------- filters ---------------- */
 
 test('filters narrow the cohort correctly', () => {
-  const cse = demoStudents({ filters: { branch: 'CSE' } });
-  assert.ok(cse.length > 0);
-  assert.ok(cse.every((s) => s.branch === 'CSE'));
+  const aiml = demoStudents({ filters: { branch: 'CSE (AI & ML)' } });
+  assert.equal(aiml.length, 50);
+  assert.ok(aiml.every((s) => s.branch === 'CSE (AI & ML)'));
+
+  const finalYear = demoStudents({ filters: { year: '4th year' } });
+  assert.ok(finalYear.length > 0);
+  assert.ok(finalYear.every((s) => s.year === '4th year'));
+
+  const batch2026 = demoStudents({ filters: { batch: '2026' } });
+  assert.ok(batch2026.every((s) => s.batch === '2026'));
+
+  const spark = demoStudents({ filters: { skill: 'Spark' } });
+  assert.ok(spark.length > 0, 'no Big Data student lists Spark');
+  assert.ok(spark.every((s) => s.skills.some((k) => k.toLowerCase().includes('spark'))));
 
   const verified = demoStudents({ filters: { verifiedOnly: true } });
   assert.ok(verified.length > 0);
@@ -132,7 +205,7 @@ test('filters narrow the cohort correctly', () => {
 
 test('deep rows and activity events back the observability view', () => {
   const { rows, events } = demoStudentsDeep();
-  assert.equal(rows.length, 50);
+  assert.equal(rows.length, 200);
   assert.ok(events.length > 30, 'too few activity events for a momentum series');
   for (const e of events) {
     assert.ok(['verification', 'resume'].includes(e.type));
@@ -146,17 +219,17 @@ test('student drill-down resolves and is scoped to that student', () => {
   assert.equal(detail.student.id, 'demo_005');
   assert.ok(Array.isArray(detail.projects));
   assert.ok(Array.isArray(detail.skillLedger));
-  assert.equal(demoStudentDetail('demo_999'), null);
+  assert.equal(demoStudentDetail('demo_9999'), null);
   assert.equal(demoStudentDetail(''), null);
 });
 
 test('drives, roster, tasks and members are populated', () => {
   assert.ok(demoDrives().length >= 3);
   assert.ok(demoDrives().some((d) => d.status === 'open'));
-  assert.ok(demoRoster().rows.length > 30);
+  assert.ok(demoRoster().rows.length > 150);
   assert.equal(demoRoster().counts.joined + demoRoster().counts.invited, demoRoster().rows.length);
   assert.ok(demoTasks().length >= 3);
-  assert.ok(demoMembers().length >= 50);
+  assert.ok(demoMembers().length >= 200);
 });
 
 test('members include pending join requests so approval controls are live', () => {

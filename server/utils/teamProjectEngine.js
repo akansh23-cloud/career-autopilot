@@ -45,17 +45,22 @@
 
 const AREA_SKILLS = {
   frontend: ['react', 'next.js', 'nextjs', 'vue', 'angular', 'svelte', 'javascript', 'typescript',
-    'html', 'css', 'tailwind', 'bootstrap', 'redux', 'jquery', 'figma', 'ui/ux', 'ui design'],
+    'html', 'css', 'tailwind', 'bootstrap', 'redux', 'jquery', 'figma', 'ui/ux', 'ui design',
+    'web development', 'frontend'],
   backend: ['node', 'node.js', 'express', 'java', 'spring', 'spring boot', 'django', 'flask',
     'fastapi', 'php', 'laravel', 'ruby', 'rails', '.net', 'c#', 'go', 'golang', 'rest api',
-    'rest apis', 'graphql', 'microservices'],
+    'rest apis', 'api', 'graphql', 'microservices', 'serverless', 'backend', 'python', 'c++',
+    'c', 'operating systems', 'os', 'computer networks'],
   data: ['sql', 'mysql', 'postgres', 'postgresql', 'mongodb', 'mongo', 'redis', 'oracle',
-    'data structures', 'dbms', 'pandas', 'numpy', 'excel', 'power bi', 'tableau', 'etl',
-    'data analysis', 'data analytics'],
-  ml: ['machine learning', 'deep learning', 'tensorflow', 'pytorch', 'scikit', 'sklearn', 'nlp',
-    'computer vision', 'opencv', 'ai', 'llm', 'data science', 'r'],
-  devops: ['docker', 'kubernetes', 'aws', 'azure', 'gcp', 'ci/cd', 'jenkins', 'terraform',
-    'linux', 'git', 'github actions', 'ansible', 'devops', 'nginx'],
+    'data structures', 'dsa', 'dbms', 'pandas', 'numpy', 'excel', 'power bi', 'tableau', 'etl',
+    'data analysis', 'data analytics', 'hadoop', 'spark', 'apache spark', 'kafka', 'hive',
+    'data warehouse', 'data engineering', 'big data', 'snowflake', 'airflow'],
+  ml: ['machine learning', 'ml', 'deep learning', 'tensorflow', 'pytorch', 'scikit-learn',
+    'scikit learn', 'sklearn', 'nlp', 'natural language processing', 'computer vision', 'opencv',
+    'artificial intelligence', 'ai', 'llm', 'data science', 'neural networks', 'keras', 'r'],
+  devops: ['docker', 'kubernetes', 'k8s', 'aws', 'azure', 'gcp', 'ci/cd', 'jenkins', 'terraform',
+    'linux', 'git', 'github actions', 'ansible', 'devops', 'nginx', 'helm', 'bash', 'shell',
+    'prometheus', 'grafana', 'monitoring', 'sre', 'cloud', 'cloud computing'],
   mobile: ['android', 'ios', 'flutter', 'react native', 'kotlin', 'swift', 'dart'],
   hardware: ['embedded c', 'arduino', 'raspberry pi', 'iot', 'vhdl', 'verilog', 'matlab',
     'plc', 'autocad', 'solidworks', 'catia', 'ansys', 'pcb', 'microcontroller'],
@@ -76,7 +81,8 @@ export const AREA_LABELS = {
 
 export const AREA_IDS = Object.keys(AREA_SKILLS);
 
-/* Longest-first so multi-word skills match before their fragments. */
+/* Longest-first so multi-word skills match before their fragments.
+   ("spring boot" must beat "spring"; "react native" must beat "react".) */
 const AREA_INDEX = Object.entries(AREA_SKILLS)
   .flatMap(([area, list]) => list.map((token) => ({ area, token })))
   .sort((a, b) => b.token.length - a.token.length);
@@ -85,12 +91,21 @@ const clean = (v, max = 200) => String(v ?? '').replace(/\s+/g, ' ').trim().slic
 const lower = (v) => clean(v).toLowerCase();
 const uniq = (list) => [...new Set(list.filter(Boolean))];
 
+/* Matching is WHOLE-WORD, not substring.
+   Naive `includes` made short tokens catastrophic: the one-letter 'r' token
+   matched Grafana, Prometheus, Apache Spark and Operating Systems, filing all
+   four as machine learning. Both sides are normalised to space-delimited words
+   and the token is matched as a complete phrase, so 'r' only ever matches the
+   language R. '+', '#' and '.' survive normalisation so 'c++', 'c#' and
+   'node.js' stay intact. */
+const wordify = (v) => ` ${lower(v).replace(/[^a-z0-9+#.]+/g, ' ').replace(/\s+/g, ' ').trim()} `;
+
 /** Which capability area a single declared skill belongs to ('' if unknown). */
 export function areaForSkill(skill) {
-  const s = lower(skill);
-  if (!s) return '';
+  const hay = wordify(skill);
+  if (hay.trim() === '') return '';
   for (const { area, token } of AREA_INDEX) {
-    if (s === token || s.includes(token)) return area;
+    if (hay.includes(wordify(token))) return area;
   }
   return '';
 }
@@ -439,8 +454,16 @@ function assignRoles(members, analysis) {
   const roles = new Map();
   for (const { m } of order) {
     const prefs = strengthOf(m);
+    /* Preference first, then any area the team actually covers, then any area
+       at all. That last fallback matters: a four-person single-specialisation
+       team covers only two or three areas, and without it the fourth member
+       was handed a role a teammate already owned — two "Data & Schema Owners"
+       on the same brief, which is exactly the ambiguity this is meant to
+       prevent. Roles stay unique as long as the team is smaller than the
+       number of areas; beyond that a repeat is unavoidable and honest. */
     let area = prefs.find((a) => !taken.has(a))
       || rankedAreas.find((a) => !taken.has(a))
+      || AREA_IDS.find((a) => !taken.has(a))
       || prefs[0]
       || 'backend';
     taken.add(area);

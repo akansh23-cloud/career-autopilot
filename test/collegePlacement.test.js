@@ -13,6 +13,11 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer, stopServer, makeClient } from './helpers.js';
 
+// The demo college runs four CSE specialisations. Tests target one of them so
+// the eligibility fixtures exercise a real branch value rather than a legacy
+// generic "CSE" that no student carries any more.
+const TEST_BRANCH = 'CSE (Cloud Computing)';
+
 let server, base, client;
 
 before(async () => {
@@ -42,7 +47,7 @@ test('a drive can be created with full eligibility criteria', async () => {
     company: 'Testworks',
     role: 'SDE-1',
     ctcLpa: 15,
-    eligibility: { branches: ['CSE'], batches: ['2026'], minReadiness: 40 },
+    eligibility: { branches: [TEST_BRANCH], batches: ['2026'], minReadiness: 40 },
   }), 'create drive');
   assert.ok(r.drive?.id, 'drive gets an id');
   createdDriveId = r.drive.id;
@@ -93,7 +98,7 @@ test('the cohort endpoint splits eligible from ineligible and explains every exc
 
   // Every eligible student really does satisfy the criteria we set.
   for (const s of r.eligible) {
-    assert.equal(String(s.branch).toUpperCase(), 'CSE');
+    assert.equal(s.branch, TEST_BRANCH);
     assert.equal(String(s.batch), '2026');
     assert.ok(Number(s.readinessScore) >= 40);
     assert.deepEqual(s.reasons, []);
