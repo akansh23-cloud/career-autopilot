@@ -4526,12 +4526,22 @@ function psFallbackProject(input = {}) {
   const role = input.targetRole || 'Software Engineer';
   const type = input.type || 'Full Stack';
   const skills = Array.from(new Set([...(input.sourceMissingSkills || []), ...psTechStack(type)])).slice(0, 12);
-  const title = `Production-grade ${type} project for ${role}`;
+  /* IDENTITY IS THE CALLER'S. When the student clicks "Build this" on a
+     recommendation, that recommendation's title and problem statement ARE the
+     project. This template only fills in what the caller did NOT supply.
+     Previously it unconditionally overwrote the title with a generic
+     "Production-grade <type> project for <role>", so every build in a session
+     came back with the same name — and then deduped into the same workspace. */
+  const title = String(input.title || '').trim()
+    || `Production-grade ${type} project for ${role}`;
+  const problemStatement = String(input.problemStatement || '').trim()
+    || `Demonstrate ${skills.slice(0, 3).join(', ')} with a deployable, recruiter-visible project.`;
   return {
     title, targetRole: role, type, difficulty: input.difficulty || 'Intermediate', duration: input.duration || '1 week',
     skillsCovered: skills, sourceMissingSkills: input.sourceMissingSkills || [],
-    problemStatement: `Demonstrate ${skills.slice(0, 3).join(', ')} with a deployable, recruiter-visible project.`,
-    useCase: `A practical ${type} project producing real proof-of-work: a deployment, README and measurable results.`,
+    problemStatement,
+    useCase: String(input.useCase || '').trim()
+      || `A practical ${type} project producing real proof-of-work: a deployment, README and measurable results.`,
     techStack: psTechStack(type),
     architecture: `Cleanly separated ${type} architecture with tests, CI/CD and a public deployment.`,
     steps: [
@@ -4588,9 +4598,23 @@ app.post('/api/projects/generate-roadmap', requireAuth, generationLimiter, async
     return project;
   };
 
-  const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.`;
+  /* The caller may have already chosen WHAT to build (a recommendation the
+     student clicked). If so the model designs the *roadmap* for that project —
+     it does not get to rename it. */
+  const pinnedTitle = String(input.title || '').trim();
+  const pinnedProblem = String(input.problemStatement || '').trim();
+  const pinned = pinnedTitle
+    ? `\n\nThe project is ALREADY CHOSEN and must not be renamed or replaced. Use exactly this title: "${pinnedTitle}".${pinnedProblem ? ` Its problem statement is: "${pinnedProblem.slice(0, 600)}". Keep the same problem and users.` : ''} Design the roadmap, stack and architecture FOR THIS project.`
+    : '';
+
+  const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.${pinned}`;
   const ai = parseJSONLoose(await anthropicJSON(prompt, 1800));
-  if (ai && ai.title) return res.json({ ok: true, project: attachArchitecture(ai), generatedBy: 'ai' });
+  if (ai && ai.title) {
+    // Belt and braces: even a well-prompted model drifts on titles.
+    if (pinnedTitle) ai.title = pinnedTitle;
+    if (pinnedProblem) ai.problemStatement = pinnedProblem;
+    return res.json({ ok: true, project: attachArchitecture(ai), generatedBy: 'ai' });
+  }
   res.json({ ok: true, project: attachArchitecture(psFallbackProject(input)), generatedBy: 'template' });
 });
 app.post('/api/projects/generate-readme', requireAuth, generationLimiter, async (req, res) => {

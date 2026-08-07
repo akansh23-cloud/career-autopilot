@@ -240,6 +240,10 @@ export async function createProjectFromRec(rec = {}, ctx = {}) {
   let project;
   try { project = await genRoadmap(input); } catch { project = buildProject(input); }
   project.id = project.id || uid('proj');
+  /* Final authority on identity: the card the student clicked. Whatever the
+     generation layer returns, THIS project is the recommendation they chose. */
+  if (String(rec.title || '').trim()) project.title = String(rec.title).trim();
+  if (String(rec.summary || '').trim()) project.problemStatement = String(rec.summary).trim();
   project.creator = {
     fromRecommendation: rec,
     productType: rec.type,

@@ -26,6 +26,29 @@ async function patchServerState(patch) {
     });
   } catch {}
 }
+/* One-time repair for workspaces saved while the generator was overwriting the
+   chosen project name with a generic "Production-grade <type> project for
+   <role>" string. Where we still hold the recommendation the student clicked,
+   we restore the real title and problem statement. Purely additive: a project
+   without a recommendation, or with a title the student typed themselves, is
+   left exactly as it is. */
+const GENERIC_TITLE_RE = /^production-grade\s+.+\s+project\s+for\s+.+$/i;
+function repairProjectIdentity(list = []) {
+  let changed = false;
+  const next = list.map((p) => {
+    const rec = p && p.creator && p.creator.fromRecommendation;
+    const recTitle = String(rec?.title || '').trim();
+    if (!recTitle) return p;
+    const current = String(p.title || '').trim();
+    if (current === recTitle) return p;
+    if (current && !GENERIC_TITLE_RE.test(current)) return p; // deliberately renamed — leave alone
+    changed = true;
+    const recSummary = String(rec.summary || '').trim();
+    return { ...p, title: recTitle, ...(recSummary ? { problemStatement: recSummary } : {}) };
+  });
+  return { list: next, changed };
+}
+
 export async function hydrateProjectsFromServer() {
   try {
     const r = await fetch('/api/user/state', { credentials: 'include' });
@@ -34,6 +57,11 @@ export async function hydrateProjectsFromServer() {
     const projects = d?.state?.projects;
     if (Array.isArray(projects)) write(PROJECTS_KEY, projects, EV.projects);
   } catch {}
+  const { list, changed } = repairProjectIdentity(getProjects());
+  if (changed) {
+    write(PROJECTS_KEY, list, EV.projects);
+    patchServerState({ projects: list });
+  }
   return getProjects();
 }
 
@@ -65,8 +93,19 @@ export function getProject(id) {
    (title, target role, source job/title). Used so regenerating or re-saving the
    same project never spawns a second workspace. */
 function normKey(s = '') { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+/* A stable identifier for the IDEA behind a creator-built project.
+   Recommendation ids are regenerated on every discover run (they carry a salt
+   + index), so they cannot be used. The capability archetype + domain are
+   deterministic for a given idea, which makes this stable across regenerations
+   while still separating two distinct ideas that happen to share a title. */
+function recFingerprint(p = {}) {
+  const rec = (p.creator && p.creator.fromRecommendation) || {};
+  const cap = rec.novelty?.capabilityId || p.novelty?.capabilityId || '';
+  const dom = rec.domain || p.domain || '';
+  return cap && dom ? `${normKey(cap)}#${normKey(dom)}` : '';
+}
 function dedupeKey(p = {}) {
-  return [normKey(p.title), normKey(p.targetRole || p.role), normKey(p.sourceJob?.title || p.jobId || '')].join('|');
+  return [normKey(p.title), normKey(p.targetRole || p.role), normKey(p.sourceJob?.title || p.jobId || ''), recFingerprint(p)].join('|');
 }
 export function findDuplicateProject(project, list = getProjects()) {
   if (!project || !normKey(project.title)) return null; // need a real title to compare
