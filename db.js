@@ -1330,7 +1330,16 @@ async function collegeScopeMembers(scope, { readinessData = true } = {}) {
      callers pass readinessData:false to manage accounts that haven't
      consented yet. */
   const consentFilter = readinessData ? { 'consent.collegeVisibility': true } : {};
-  const bound = await User.find({ collegeId: scope, isActive: { $ne: false }, ...consentFilter })
+  /* Staff are not students. A TPO is bound to their own college and accepts the
+     same consent as everyone else, so without this they appeared in their own
+     student directory as a blank row — no branch, no skills, readiness 0 —
+     dragging the cohort average down and occupying a seat in auto-formed
+     project teams. Membership administration passes readinessData:false and
+     still sees every account, staff included. */
+  const staffFilter = readinessData
+    ? { accountType: { $nin: ['college_admin', 'admin', 'recruiter'] } }
+    : {};
+  const bound = await User.find({ collegeId: scope, isActive: { $ne: false }, ...consentFilter, ...staffFilter })
     .select('name email collegeId collegeMembership targetRole createdAt lastLoginAt updatedAt consent')
     .limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
 

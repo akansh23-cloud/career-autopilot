@@ -80,3 +80,51 @@ lands on a different container. `npm run preflight` fails the build on it.
 ```bash
 MONGODB_URI="…" node -e "import('./db.js').then(d=>d.wipeDemoCollege()).then(r=>console.log(r))"
 ```
+
+---
+
+# Nudge emails
+
+Nudges always create an **in-app notification**. Email is an optional upgrade
+that is off unless SMTP is configured, and the endpoint says so in its own
+response rather than pretending delivery happened:
+
+> Delivered in-app to 12 students. Email delivery is not configured (set SMTP_URL to enable).
+
+To turn on real mail, add to Vercel:
+
+```
+SMTP_URL=smtp://apikey:SG.xxxxx@smtp.sendgrid.net:587
+EMAIL_FROM=Career Autopilot <no-reply@yourdomain.com>
+FRONTEND_ORIGIN=https://your-app.vercel.app
+```
+
+or the four-variable form (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`).
+Redeploy afterwards — environment changes only apply to new deployments.
+
+Two cautions for a demo:
+
+* Every seeded student address ends in `@demo-institute.test`, a reserved TLD
+  that cannot receive mail. Those sends will bounce or fail. Nudge a real
+  address you control instead, or accept in-app-only for the demo.
+* Gmail SMTP with an ordinary password will not work; you need an App Password
+  and 2FA on the account. A transactional provider (SendGrid, Resend, Postmark)
+  is less trouble.
+
+# Team formation
+
+Two entry points in the *Teams* tab:
+
+* **Form teams** — auto-selects from the cohort, ranked by readiness, skipping
+  students with no declared skills, then splits them into teams of the chosen
+  size. Filters (branch/batch/readiness) narrow the pool.
+* **Pick students** — choose members by hand and split exactly that selection.
+
+Both then generate a project brief from the team's actual skill coverage via
+the team project engine, which you can regenerate with a different archetype,
+scope or domain before assigning.
+
+Note on a multi-year cohort: auto-selection deliberately ranks by readiness.
+Taking students in registration order returns the entire first-year intake,
+who between four of them declare two or three skills — not enough for the
+engine to match a meaningful project to.

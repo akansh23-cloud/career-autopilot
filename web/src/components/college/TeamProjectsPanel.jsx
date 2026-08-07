@@ -203,18 +203,52 @@ function FormTeams({ onAssigned }) {
   const [state, setState] = useState({ loading: false, error: '', teams: [] });
   const [detail, setDetail] = useState(null);   // team being reviewed / assigned
 
-  const run = async () => {
+  /* Hand-picking. The API has always accepted studentIds, but the panel only
+     ever sent filters — so a coordinator who wanted a specific team (the four
+     final-years presenting on Friday) had no way to say so. */
+  const [picking, setPicking] = useState(false);
+  const [roster, setRoster] = useState({ loading: false, rows: [], error: '' });
+  const [chosen, setChosen] = useState([]);     // student ids, in click order
+  const [search, setSearch] = useState('');
+
+  const loadRoster = async () => {
+    setRoster((p) => ({ ...p, loading: true, error: '' }));
+    try {
+      const r = await College.students({
+        deep: '1', limit: 500, sort: 'readinessScore', order: 'desc',
+        branch: filters.branch, batch: filters.batch,
+      });
+      setRoster({ loading: false, rows: r?.students || [], error: r?.ok ? '' : 'Could not load the cohort.' });
+    } catch (e) {
+      setRoster({ loading: false, rows: [], error: e?.message || 'Could not load the cohort.' });
+    }
+  };
+
+  const openPicker = () => { setPicking(true); if (!roster.rows.length) loadRoster(); };
+  const toggle = (id) => setChosen((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const visibleRoster = roster.rows.filter((s) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return `${s.name || ''} ${s.email || ''} ${s.branch || ''}`.toLowerCase().includes(q);
+  });
+
+  const run = async (useChosen = false) => {
     setState({ loading: true, error: '', teams: [] });
     try {
       const r = await College.suggestTeams({
         teamSize: Number(teamSize), strategy, limit: Number(limit),
-        filters: {
+        // When students are hand-picked the filters are irrelevant — the
+        // selection IS the pool, and the server splits exactly those people.
+        studentIds: useChosen ? chosen : [],
+        filters: useChosen ? {} : {
           branch: filters.branch, batch: filters.batch,
           minReadiness: filters.minReadiness === '' ? null : Number(filters.minReadiness),
         },
       });
       if (!r.ok) { setState({ loading: false, error: r.message || 'Could not form teams.', teams: [] }); return; }
       setState({ loading: false, error: '', teams: r.teams || [] });
+      setPicking(false);
     } catch (e) {
       setState({ loading: false, error: e?.message || 'Could not form teams.', teams: [] });
     }
@@ -225,11 +259,22 @@ function FormTeams({ onAssigned }) {
       <SectionCard
         title="Form teams from your cohort"
         eyebrow="Step 1"
-        action={<Button size="sm" onClick={run} disabled={state.loading}>{state.loading ? <Spinner /> : <Sparkles size={14} />} Form teams</Button>}
+        action={(
+          <div className="flex gap-2">
+            <Button size="sm" variant="soft" onClick={openPicker}>
+              <ListChecks size={14} /> Pick students{chosen.length ? ` (${chosen.length})` : ''}
+            </Button>
+            <Button size="sm" onClick={() => run(false)} disabled={state.loading}>
+              {state.loading ? <Spinner /> : <Sparkles size={14} />} Form teams
+            </Button>
+          </div>
+        )}
       >
         <p className="mb-4 text-sm text-slate-400">
           Students are split into teams and each team gets a project matched to the skills it actually has —
           declared and verified. Balanced formation mixes readiness levels so no team is all-strong or all-struggling.
+          Auto-selection takes the most placement-ready students who have declared skills; use <em>Pick students</em>
+          to choose a specific team by hand.
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Team size">
@@ -288,6 +333,56 @@ function FormTeams({ onAssigned }) {
           ))}
         </div>
       )}
+
+      <Modal open={picking} onClose={() => setPicking(false)} width="max-w-3xl" title="Pick students for this team">
+        <div className="space-y-4">
+          <Input
+            value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, email or branch…"
+          />
+          {roster.loading && <p className="text-sm text-slate-400"><Spinner /> Loading the cohort…</p>}
+          {roster.error && <p className="text-sm text-amber-300">{roster.error}</p>}
+          <div className="max-h-[45vh] space-y-1 overflow-y-auto">
+            {visibleRoster.map((s) => {
+              const on = chosen.includes(s.id);
+              const noSkills = !(s.skills || []).length;
+              return (
+                <button
+                  key={s.id} type="button" onClick={() => toggle(s.id)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                    on ? 'border-violet-400/40 bg-violet-400/[0.08] text-white' : 'border-white/8 bg-white/[0.02] text-slate-300 hover:border-white/15'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{s.name || s.email}</span>
+                    <span className="block truncate text-[11px] text-slate-500">
+                      {s.branch || '—'} · {s.batch || '—'} · {(s.skills || []).length} skills
+                      {/* Flagged rather than hidden: pairing a junior with a strong
+                          team is a legitimate choice, but it should be deliberate. */}
+                      {noSkills && <span className="text-amber-300/80"> · no declared skills</span>}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-400">readiness {s.readinessScore ?? '—'}</span>
+                </button>
+              );
+            })}
+            {!roster.loading && !visibleRoster.length && (
+              <p className="text-sm text-slate-500">No students match that search.</p>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              {chosen.length} selected · they will be split into teams of {teamSize}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="soft" size="sm" onClick={() => setChosen([])}>Clear</Button>
+              <Button size="sm" onClick={() => run(true)} disabled={chosen.length < 2 || state.loading}>
+                {state.loading ? <Spinner /> : <Sparkles size={14} />} Form teams from selection
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <AssignModal
         team={detail}
