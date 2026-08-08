@@ -292,6 +292,36 @@ export const College = {
   },
   student: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}`),
   studentDetail: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}/detail`),
+  studentResume: (id) => api.get(`/api/college/students/${encodeURIComponent(id)}/resume`),
+  /* Triggers a browser download of the student's resume text.
+     Deliberately NOT routed through req(): that helper parses the body as JSON,
+     which would swallow the file. Blob + object URL keeps the cookie auth
+     (credentials: 'include') and the server's Content-Disposition filename. */
+  downloadStudentResume: async (id, fallbackName = 'resume') => {
+    const res = await fetch(`/api/college/students/${encodeURIComponent(id)}/resume?download=1`, {
+      method: 'GET', credentials: 'include',
+    });
+    if (!res.ok) {
+      let message = 'Could not download this resume.';
+      try { message = (await res.json())?.message || message; } catch { /* non-JSON error body */ }
+      const err = new Error(message); err.status = res.status; throw err;
+    }
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = match ? match[1] : `${fallbackName}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke on the next tick — revoking synchronously can cancel the download
+    // in Safari before it has read the blob.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { ok: true };
+  },
+  taskAssignees: (taskId) => api.get(`/api/college/tasks/${encodeURIComponent(taskId)}/assignees`),
   observability: (fresh = false) => api.get('/api/college/observability' + (fresh ? '?fresh=1' : '')),
   analytics: () => api.get('/api/college/analytics'),
   // ---- Placement drives (full lifecycle) ----

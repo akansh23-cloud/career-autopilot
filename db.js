@@ -1536,6 +1536,190 @@ export async function collegeStudentsDeep({ collegeId }) {
 /* Single-student drill-down: everything the command center shows for the
    cohort, plus full project list, per-skill XP ledger, resume score history
    and a recent activity feed. Scope-checked against the caller's college. */
+/* ============================================================
+   COLLEGE SCOPE GUARD
+   ------------------------------------------------------------
+   Resolves a student ONLY if they belong to the caller's college.
+   Extracted from collegeStudentDetail so that every new
+   per-student endpoint (resume download, task history) enforces
+   the identical rule rather than re-implementing it — a resume is
+   the most sensitive artefact in the product, and a scope check
+   that has drifted from the one it was copied from is exactly how
+   one college ends up reading another's students.
+
+   Returns { user, profile, state } or null when out of scope.
+   ============================================================ */
+async function resolveStudentInCollege({ collegeId, studentId, select = 'profile resume updatedAt' }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope) return null;
+  if (!mongoose.Types.ObjectId.isValid(String(studentId))) return null;
+  const user = await User.findOne({ _id: studentId, isActive: { $ne: false } })
+    .select('name email collegeId targetRole createdAt lastLoginAt').lean();
+  if (!user) return null;
+  const state = await UserState.findOne({ userId: user._id }).select(select).lean();
+  const profile = state?.profile || {};
+  // In scope when BOUND to this college, or (legacy) unbound with a typed
+  // college name slugging to the scope or one of its aliases.
+  let inScope = user.collegeId === scope;
+  if (!inScope && !user.collegeId) {
+    const collegeDoc = await College.findOne({ key: scope }).select('aliases').lean().catch(() => null);
+    const aliasSet = new Set([scope, ...((collegeDoc && collegeDoc.aliases) || [])]);
+    inScope = !!profile.college && aliasSet.has(collegeKey({ college: profile.college }));
+  }
+  if (!inScope) return null;
+  return { user, profile, state };
+}
+
+/* ============================================================
+   STUDENT RESUME — placement-cell read access
+   ------------------------------------------------------------
+   The resume snapshot already lived in UserState.resume and was
+   already being SELECTed by collegeStudentDetail — then dropped
+   on the floor. The placement cell could see a resume SCORE for
+   every student but had no way to read the resume itself.
+
+   IMPORTANT — what "the resume" is here: the product extracts
+   text client-side and persists that text; the original PDF/DOCX
+   bytes are never uploaded. So this returns the extracted text,
+   and the download is a .txt. Serving it as a .pdf would be a
+   lie about provenance.
+   ============================================================ */
+export async function collegeStudentResume({ collegeId, studentId }) {
+  if (!URI) return demoOn() ? demoCollege.demoStudentResume(studentId) : null;
+  try {
+    await connectDB();
+    const found = await resolveStudentInCollege({ collegeId, studentId });
+    if (!found) return null;
+    const { user, state } = found;
+    const resume = state?.resume || {};
+    const text = String(resume.text || '').trim();
+    const latest = await ResumeAnalysis.findOne({ userId: user._id }).sort({ createdAt: -1 })
+      .select('score ats impact clarity targetRole createdAt').lean().catch(() => null);
+    return {
+      studentId: String(user._id),
+      studentName: user.name || '',
+      studentEmail: user.email || '',
+      available: text.length > 0,
+      fileName: resume.fileName || '',
+      targetRole: resume.targetRole || latest?.targetRole || '',
+      characters: text.length,
+      text,
+      score: latest?.score ?? resume.analysis?.score ?? null,
+      ats: latest?.ats ?? null,
+      analysedAt: resume.analysedAt || (latest?.createdAt ? new Date(latest.createdAt).toISOString() : null),
+      updatedAt: resume.updatedAt || (state?.updatedAt ? new Date(state.updatedAt).toISOString() : null),
+    };
+  } catch (err) {
+    console.error('[db] collegeStudentResume failed:', err.message);
+    return null;
+  }
+}
+
+/* ============================================================
+   TASK ASSIGNEES — who a task went to, and who actually did it
+   ------------------------------------------------------------
+   listCollegeTasks only ever returned COUNTS (assigned/done), so
+   a TPO could see "4 assigned, 0 done" and had no way to find out
+   WHICH four students, or to chase the ones who had not started.
+   The per-student rows were already stored on the task document's
+   `assignments` array — they were simply never read back.
+   ============================================================ */
+export async function collegeTaskAssignees({ collegeId, taskId }) {
+  if (!URI) return demoOn() ? demoCollege.demoTaskAssignees(taskId) : null;
+  try {
+    await connectDB();
+    const scope = String(collegeId || '').trim();
+    if (!scope || !mongoose.Types.ObjectId.isValid(String(taskId))) return null;
+    // Scoped by collegeId in the query itself — a task id from another college
+    // simply does not resolve.
+    const task = await CollegeTask.findOne({ _id: taskId, collegeId: scope }).lean();
+    if (!task) return null;
+
+    const assignments = task.assignments || [];
+    const ids = assignments.map((a) => a.userId).filter(Boolean);
+    const users = ids.length
+      ? await User.find({ _id: { $in: ids } }).select('name email').lean()
+      : [];
+    const states = ids.length
+      ? await UserState.find({ userId: { $in: ids } }).select('userId profile').lean()
+      : [];
+    const userById = new Map(users.map((u) => [String(u._id), u]));
+    const profileById = new Map(states.map((s) => [String(s.userId), s.profile || {}]));
+
+    const dueMs = task.dueAt ? Date.parse(task.dueAt) : NaN;
+    const now = Date.now();
+    const rows = assignments.map((a) => {
+      const uid = String(a.userId);
+      const u = userById.get(uid) || {};
+      const p = profileById.get(uid) || {};
+      const done = a.status === 'done';
+      return {
+        studentId: uid,
+        name: u.name || '',
+        email: u.email || '',
+        branch: p.branch || p.major || '',
+        batch: p.batch || p.gradYear || '',
+        status: a.status || 'open',
+        done,
+        doneAt: a.doneAt ? new Date(a.doneAt).toISOString() : null,
+        // Overdue is per-student: a student who finished before the due date is
+        // never overdue, even after the task's deadline has passed.
+        overdue: !done && Number.isFinite(dueMs) && dueMs < now,
+      };
+    }).sort((a, b) => Number(a.done) - Number(b.done) || a.name.localeCompare(b.name));
+
+    return {
+      taskId: String(task._id),
+      title: task.title,
+      description: task.description || '',
+      dueAt: task.dueAt ? new Date(task.dueAt).toISOString() : null,
+      createdAt: task.createdAt ? new Date(task.createdAt).toISOString() : null,
+      createdByEmail: task.createdByEmail || '',
+      assignees: rows,
+      assigned: rows.length,
+      done: rows.filter((r) => r.done).length,
+      pending: rows.filter((r) => !r.done).length,
+      overdue: rows.filter((r) => r.overdue).length,
+    };
+  } catch (err) {
+    console.error('[db] collegeTaskAssignees failed:', err.message);
+    return null;
+  }
+}
+
+/* Every task assigned to one student, with that student's own status. Powers
+   the "assigned work" section of the drill-down, so a TPO looking at a single
+   profile sees what they asked of this person and whether it came back. */
+export async function collegeStudentTasks({ collegeId, studentId }) {
+  if (!URI) return demoOn() ? demoCollege.demoStudentTasks(studentId) : [];
+  try {
+    await connectDB();
+    const scope = String(collegeId || '').trim();
+    if (!scope || !mongoose.Types.ObjectId.isValid(String(studentId))) return [];
+    const docs = await CollegeTask.find({ collegeId: scope, 'assignments.userId': studentId })
+      .sort({ createdAt: -1 }).limit(50).lean();
+    const now = Date.now();
+    return docs.map((d) => {
+      const mine = (d.assignments || []).find((a) => String(a.userId) === String(studentId)) || {};
+      const dueMs = d.dueAt ? Date.parse(d.dueAt) : NaN;
+      const done = mine.status === 'done';
+      return {
+        id: String(d._id), title: d.title, description: d.description || '',
+        dueAt: d.dueAt ? new Date(d.dueAt).toISOString() : null,
+        assignedAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
+        status: mine.status || 'open',
+        done,
+        doneAt: mine.doneAt ? new Date(mine.doneAt).toISOString() : null,
+        overdue: !done && Number.isFinite(dueMs) && dueMs < now,
+        assignedBy: d.createdByEmail || '',
+      };
+    });
+  } catch (err) {
+    console.error('[db] collegeStudentTasks failed:', err.message);
+    return [];
+  }
+}
+
 export async function collegeStudentDetail({ collegeId, studentId }) {
   const scope = String(collegeId || '').trim();
   if (!scope) return null;
@@ -1569,6 +1753,9 @@ export async function collegeStudentDetail({ collegeId, studentId }) {
         .select('text tone createdAt').lean(),
     ]);
 
+    const resume = state?.resume || {};
+    const resumeText = String(resume.text || '').trim();
+
     return {
       id: String(user._id), name: user.name || '', email: user.email || '',
       branch: profile.branch || profile.major || '', batch: profile.batch || profile.gradYear || '',
@@ -1576,6 +1763,19 @@ export async function collegeStudentDetail({ collegeId, studentId }) {
       skills: profile.skills || [],
       memberSince: user.createdAt ? new Date(user.createdAt).toISOString() : null,
       lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+      /* The resume snapshot was already being SELECTed here and then thrown
+         away. Metadata only — the text itself is served by the dedicated
+         download endpoint so a drill-down does not ship a full resume for
+         every student the TPO merely clicks on. */
+      resume: {
+        available: resumeText.length > 0,
+        fileName: resume.fileName || '',
+        targetRole: resume.targetRole || '',
+        characters: resumeText.length,
+        score: resumeHistory[0]?.score ?? resume.analysis?.score ?? null,
+        analysedAt: resume.analysedAt || null,
+        updatedAt: resume.updatedAt || null,
+      },
       skillLedger: xpRows.map((r) => ({ skill: r.skillName, verifiedXp: r.verifiedXp || 0, pendingXp: r.pendingXp || 0 })),
       projects: subs.map((s) => ({
         id: String(s._id), title: s.title || 'Untitled project', status: s.verificationStatus,

@@ -481,14 +481,160 @@ export function demoStudentDetail(studentId) {
     pendingXp: row.pendingSkills.includes(skillName) ? Math.round(row.totalPendingXp / Math.max(1, row.pendingSkills.length)) : 0,
   }));
 
+  /* SHAPE CONTRACT — must match db.collegeStudentDetail exactly.
+     This previously returned { student: {...}, projects, ... } while the DB
+     path returns the student's fields FLAT at the top level. The route spreads
+     whatever it gets straight into the response, so in demo mode the drill-down
+     rendered a blank name, a blank email and undefined activity text — the
+     header simply had nothing to read. The keys below (skill, at, text) also
+     match the DB path; they were skillName/createdAt/label here. */
+  const resume = demoStudentResume(row.id);
   return {
-    student: strip(row),
-    projects,
-    skillLedger,
-    resumeHistory: resumeHistoryFor(row, now),
-    activity: projects.slice(0, 5).map((p) => ({ type: 'project', label: p.title, at: p.updatedAt })),
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    branch: row.branch,
+    batch: row.batch,
+    year: row.year,
+    rollNo: row.rollNo,
+    targetRole: row.targetRole,
+    skills: row.skills,
+    memberSince: row.memberSince,
+    lastLoginAt: row.lastActiveAt,
+    student: strip(row), // kept for any caller still reading the nested shape
+    projects: projects.map((p) => ({
+      ...p,
+      status: p.verificationStatus,
+      verifiedSkills: p.verificationStatus === 'verified' ? row.verifiedSkills : [],
+      claimedSkills: row.skills,
+      technologies: row.skills,
+      submittedAt: p.createdAt,
+    })),
+    skillLedger: skillLedger.map((r) => ({ skill: r.skillName, verifiedXp: r.verifiedXp, pendingXp: r.pendingXp })),
+    resumeHistory: resumeHistoryFor(row, now).map((r) => ({ ...r, at: r.createdAt })),
+    resume: {
+      available: resume.available,
+      fileName: resume.fileName,
+      targetRole: resume.targetRole,
+      characters: resume.characters,
+      score: resume.score,
+      analysedAt: resume.analysedAt,
+      updatedAt: resume.updatedAt,
+    },
+    activity: projects.slice(0, 5).map((p) => ({
+      type: 'project', text: `Updated project \u201c${p.title}\u201d`, tone: 'cyan', at: p.updatedAt,
+    })),
     demo: true,
   };
+}
+
+/* ---------------- resume (demo) ----------------
+   A generated, clearly-labelled placeholder resume so the placement-cell
+   download path is exercisable without a database. Deterministic per student.
+   Students whose row carries no resumeScore have no resume on file — the empty
+   state has to be reachable in a demo too, otherwise it never gets designed. */
+export function demoStudentResume(studentId) {
+  const row = cohort().rows.find((r) => r.id === String(studentId));
+  if (!row) return null;
+  const now = Date.now();
+  if (row.resumeScore == null) {
+    return {
+      studentId: row.id, studentName: row.name, studentEmail: row.email,
+      available: false, fileName: '', targetRole: row.targetRole, characters: 0,
+      text: '', score: null, ats: null, analysedAt: null, updatedAt: null, demo: true,
+    };
+  }
+  const verified = row.verifiedSkills.length ? row.verifiedSkills.join(', ') : 'none verified yet';
+  const text = [
+    `${row.name}`,
+    `${row.email} | ${row.branch} | Batch ${row.batch} | Roll ${row.rollNo}`,
+    '',
+    `TARGET ROLE: ${row.targetRole}`,
+    '',
+    'EDUCATION',
+    `  ${row.branch}, CGPA ${row.cgpa}${row.backlogs ? ` (${row.backlogs} backlog(s))` : ''}`,
+    '',
+    'SKILLS',
+    `  Declared: ${row.skills.join(', ') || '—'}`,
+    `  Verified on Career Autopilot: ${verified}`,
+    '',
+    'PROJECTS',
+    ...row._projectNames.map((t, i) => `  ${i + 1}. ${t}${i < row.projectsVerified ? '  [verified]' : ''}`),
+    '',
+    `-- DEMO DATA (DEMO_MODE=1). Generated placeholder, not a real resume. --`,
+  ].join('\n');
+  return {
+    studentId: row.id, studentName: row.name, studentEmail: row.email,
+    available: true,
+    fileName: `${row.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-resume.txt`,
+    targetRole: row.targetRole,
+    characters: text.length,
+    text,
+    score: row.resumeScore, ats: row.resumeAts ?? null,
+    analysedAt: new Date(now - 6 * DAY).toISOString(),
+    updatedAt: new Date(now - 6 * DAY).toISOString(),
+    demo: true,
+  };
+}
+
+/* ---------------- task assignees (demo) ----------------
+   Deterministically picks which students a demo task went to, and which of
+   them completed it, so assignedCount/completedCount in demoTasks() and the
+   per-assignee rows below always agree. A mismatch between the roll-up and the
+   detail is exactly the kind of thing that erodes trust in the numbers. */
+function assigneesForTask(task) {
+  const rows = cohort().rows;
+  const seed = Number(String(task.id).replace(/\D/g, '') || 1) * 7919;
+  const rng = mulberry32(seed);
+  // Stable shuffle, then take the first `assignedCount`.
+  const pool = rows.map((r) => ({ r, k: rng() })).sort((a, b) => a.k - b.k).map((x) => x.r);
+  const picked = pool.slice(0, Math.min(task.assignedCount || 0, pool.length));
+  const doneCount = Math.min(task.completedCount || 0, picked.length);
+  const dueMs = task.dueAt ? Date.parse(task.dueAt) : NaN;
+  const now = Date.now();
+  return picked.map((r, i) => {
+    const done = i < doneCount;
+    return {
+      studentId: r.id, name: r.name, email: r.email, branch: r.branch, batch: r.batch,
+      status: done ? 'done' : 'open',
+      done,
+      doneAt: done ? new Date(Date.parse(task.createdAt) + (i + 1) * 3600000).toISOString() : null,
+      overdue: !done && Number.isFinite(dueMs) && dueMs < now,
+    };
+  });
+}
+
+export function demoTaskAssignees(taskId) {
+  const task = demoTasks().find((t) => t.id === String(taskId));
+  if (!task) return null;
+  const assignees = assigneesForTask(task)
+    .sort((a, b) => Number(a.done) - Number(b.done) || a.name.localeCompare(b.name));
+  return {
+    taskId: task.id, title: task.title, description: task.description,
+    dueAt: task.dueAt, createdAt: task.createdAt, createdByEmail: 'placement.cell@demo-institute.test',
+    assignees,
+    assigned: assignees.length,
+    done: assignees.filter((a) => a.done).length,
+    pending: assignees.filter((a) => !a.done).length,
+    overdue: assignees.filter((a) => a.overdue).length,
+    demo: true,
+  };
+}
+
+/** Every demo task assigned to one student, with that student's own status. */
+export function demoStudentTasks(studentId) {
+  const out = [];
+  for (const task of demoTasks()) {
+    const mine = assigneesForTask(task).find((a) => a.studentId === String(studentId));
+    if (!mine) continue;
+    out.push({
+      id: task.id, title: task.title, description: task.description,
+      dueAt: task.dueAt, assignedAt: task.createdAt,
+      status: mine.status, done: mine.done, doneAt: mine.doneAt, overdue: mine.overdue,
+      assignedBy: 'placement.cell@demo-institute.test', demo: true,
+    });
+  }
+  return out.sort((a, b) => Date.parse(b.assignedAt) - Date.parse(a.assignedAt));
 }
 
 /* ---------------- drives ----------------
@@ -746,6 +892,7 @@ export default {
   DEMO_COLLEGE_ID, DEMO_COLLEGE_NAME, DEMO_DOMAIN, DEMO_JOIN_CODE, DEMO_TPO_EMAIL,
   DEMO_STUDENT_COUNT, DEMO_PER_BRANCH, BRANCH_LIST, YEAR_LIST, BATCH_LIST,
   demoModeEnabled, demoStudents, demoStudentsDeep, demoStudentDetail,
+  demoStudentResume, demoTaskAssignees, demoStudentTasks,
   demoDrives, demoMembers, demoRoster, demoTasks, demoCollege,
   demoOutcomes, demoSnapshots, _regenerate,
 };

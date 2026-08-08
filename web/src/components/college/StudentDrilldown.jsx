@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   BarChart3, FolderCheck, FileText, Activity as ActivityIcon, Github,
   ExternalLink, Clock, Target, Sparkles, ShieldCheck, AlertTriangle, Bell,
+  Download, ClipboardList, CheckCircle2, CircleDashed, Eye,
 } from 'lucide-react';
 import { Badge, Button, Modal, Spinner } from '../ui/kit.jsx';
 import { College } from '../../lib/api.js';
@@ -31,14 +32,15 @@ const rel = (iso) => {
 function ScoreRing({ value = 0, category = '' }) {
   const v = Math.max(0, Math.min(100, Number(value) || 0));
   const r = 34; const c = 2 * Math.PI * r;
-  const tone = v >= 70 ? '#57E6A8' : v >= 45 ? '#6EE0F2' : v >= 20 ? '#EAC97C' : '#FB7185';
+  // Was fixed dark-theme pastels — unreadable as a ring on paper.
+  const tone = v >= 70 ? 'var(--ok)' : v >= 45 ? 'var(--info)' : v >= 20 ? 'var(--warn)' : 'var(--danger)';
   return (
     <div className="flex items-center gap-3">
       <svg width="84" height="84" viewBox="0 0 84 84" className="shrink-0">
-        <circle cx="42" cy="42" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
+        <circle cx="42" cy="42" r={r} fill="none" stroke="var(--surface-2)" strokeWidth="7" />
         <circle cx="42" cy="42" r={r} fill="none" stroke={tone} strokeWidth="7" strokeLinecap="round"
           strokeDasharray={`${(v / 100) * c} ${c}`} transform="rotate(-90 42 42)" />
-        <text x="42" y="47" textAnchor="middle" fill="#EDF2EE" fontSize="19" fontWeight="700">{v}</text>
+        <text x="42" y="47" textAnchor="middle" fill="var(--text-primary)" fontSize="19" fontWeight="700">{v}</text>
       </svg>
       <div>
         <div className="font-display text-sm text-fg">{category || '—'}</div>
@@ -78,14 +80,166 @@ function ResumeTrend({ history = [] }) {
   return (
     <div>
       <svg width={w} height={h} className="mb-1">
-        <path d={path} fill="none" stroke="#8FE3F7" strokeWidth="2" strokeLinecap="round" />
-        {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.score)} r="3" fill="#BCA8FF" />)}
+        <path d={path} fill="none" stroke="var(--info)" strokeWidth="2" strokeLinecap="round" />
+        {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.score)} r="3" fill="var(--brand-text)" />)}
       </svg>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-fg-muted">
         {history.slice(0, 3).map((p, i) => (
           <span key={i} className="font-mono">{p.score}/100 · {p.targetRole || 'General'} · {fmtDate(p.at)}</span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   RESUME — read + download for the placement cell
+   ------------------------------------------------------------
+   The resume snapshot was already stored on UserState.resume and
+   already fetched by the detail query, then dropped. The cell
+   could see a SCORE for every student and never the document.
+
+   Provenance is stated on the card on purpose: the product
+   extracts resume text client-side, so the original PDF/DOCX
+   bytes never reach the server. Offering a "Download PDF" button
+   here would be claiming to hand over a file the server does not
+   have.
+   ============================================================ */
+function ResumeCard({ studentId, resume, latestScore }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [preview, setPreview] = useState(null); // null = closed
+  const available = !!resume?.available;
+
+  const download = async () => {
+    setBusy(true); setErr('');
+    try { await College.downloadStudentResume(studentId, resume?.fileName || 'resume'); }
+    catch (e) { setErr(e?.message || 'Download failed.'); }
+    finally { setBusy(false); }
+  };
+
+  const showPreview = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await College.studentResume(studentId);
+      setPreview(r?.resume?.text || '');
+    } catch (e) { setErr(e?.message || 'Could not load the resume.'); }
+    finally { setBusy(false); }
+  };
+
+  const score = resume?.score ?? latestScore ?? null;
+
+  return (
+    <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
+          <FileText size={14} className="text-aurora-violet" /> Resume on file
+        </div>
+        {score != null && <Badge tone={score >= 70 ? 'mint' : score >= 45 ? 'cyan' : 'amber'}>{score}/100</Badge>}
+      </div>
+
+      {!available && (
+        <p className="text-sm text-muted">
+          No resume uploaded yet. Assign the &ldquo;Upload your latest resume&rdquo; task to chase it.
+        </p>
+      )}
+
+      {available && (
+        <>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-secondary">
+            {resume.fileName && <span className="font-mono truncate max-w-full">{resume.fileName}</span>}
+            {resume.targetRole && <span className="inline-flex items-center gap-1"><Target size={11} /> {resume.targetRole}</span>}
+            {resume.characters > 0 && <span>{resume.characters.toLocaleString('en-IN')} characters</span>}
+            {resume.updatedAt && <span>updated {rel(resume.updatedAt)}</span>}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="soft" onClick={download} disabled={busy}>
+              <Download size={13} /> {busy ? 'Preparing…' : 'Download resume'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={preview === null ? showPreview : () => setPreview(null)} disabled={busy}>
+              <Eye size={13} /> {preview === null ? 'Preview' : 'Hide preview'}
+            </Button>
+          </div>
+
+          <p className="mt-2 text-[11px] leading-relaxed text-fg-muted">
+            Downloads as <span className="font-mono">.txt</span> — this is the resume text the student submitted for
+            scoring. The original PDF is processed in the browser and never stored on the server.
+          </p>
+
+          {preview !== null && (
+            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-subtle bg-field p-3 font-mono text-[11px] leading-relaxed text-fg-secondary">
+              {preview || 'Empty resume text.'}
+            </pre>
+          )}
+        </>
+      )}
+
+      {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
+    </div>
+  );
+}
+
+/* ============================================================
+   ASSIGNED WORK — per-student task progress
+   ------------------------------------------------------------
+   The cohort table shows "4 assigned, 0 done" per task. On an
+   individual's profile the question is the other way round: what
+   was THIS student asked to do, and did they do it.
+   ============================================================ */
+function AssignedTasks({ tasks = [], summary }) {
+  if (!tasks.length) {
+    return (
+      <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+        <div className="mb-2 flex items-center gap-2 text-sm font-medium text-fg">
+          <ClipboardList size={14} className="text-aurora-cyan" /> Assigned work
+        </div>
+        <p className="text-sm text-muted">No tasks assigned to this student yet.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
+          <ClipboardList size={14} className="text-aurora-cyan" /> Assigned work ({tasks.length})
+        </div>
+        {summary && (
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-fg-secondary">{summary.done}/{summary.assigned} done</span>
+            {summary.overdue > 0 && <Badge tone="rose">{summary.overdue} overdue</Badge>}
+          </div>
+        )}
+      </div>
+
+      {summary?.assigned > 0 && (
+        <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-surface-2">
+          <div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.max(2, summary.completionRate)}%` }} />
+        </div>
+      )}
+
+      <ul className="space-y-2">
+        {tasks.slice(0, 10).map((t) => (
+          <li key={t.id} className="flex items-start justify-between gap-3 rounded-lg border border-subtle bg-surface-1 px-3 py-2">
+            <div className="flex min-w-0 items-start gap-2">
+              {t.done
+                ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-ok" />
+                : <CircleDashed size={14} className={`mt-0.5 shrink-0 ${t.overdue ? 'text-danger' : 'text-fg-muted'}`} />}
+              <div className="min-w-0">
+                <div className="truncate text-sm text-fg">{t.title}</div>
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-fg-muted">
+                  <span>assigned {rel(t.assignedAt)}</span>
+                  {t.dueAt && <span>due {fmtDate(t.dueAt)}</span>}
+                  {t.done && t.doneAt && <span className="text-ok">completed {rel(t.doneAt)}</span>}
+                </div>
+              </div>
+            </div>
+            <Badge tone={t.done ? 'mint' : t.overdue ? 'rose' : 'amber'}>
+              {t.done ? 'Done' : t.overdue ? 'Overdue' : 'Open'}
+            </Badge>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -193,6 +347,12 @@ export default function StudentDrilldown({ studentId, seed = null, open, onClose
                 </li>
               ))}
             </ul>
+          </div>
+
+          {/* Resume: the actual document, downloadable by the placement cell */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <ResumeCard studentId={studentId} resume={s.resume} latestScore={s.resumeHistory?.[0]?.score} />
+            <AssignedTasks tasks={s.assignedTasks || []} summary={s.taskSummary} />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

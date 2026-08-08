@@ -484,6 +484,10 @@ export function registerCollegeRoutes(app, deps = {}) {
     const collegeId = callerCollegeId(req);
     const detail = await db.collegeStudentDetail({ collegeId, studentId: req.params.id });
     if (!detail) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+    /* Tasks this student was personally assigned, with their own status.
+       Fetched alongside the profile so the TPO sees what they asked of this
+       person and whether it came back, without a second click. */
+    const assignedTasks = await db.collegeStudentTasks({ collegeId, studentId: req.params.id }).catch(() => []);
     const readiness = computeReadiness({
       verifiedSkills: detail.skillLedger.filter((s) => s.verifiedXp > 0).map((s) => s.skill),
       totalVerifiedXp: detail.skillLedger.reduce((a, s) => a + s.verifiedXp, 0),
@@ -491,7 +495,78 @@ export function registerCollegeRoutes(app, deps = {}) {
       recruiterReadyProjectCount: detail.projects.filter((p) => p.status === 'verified' && (p.githubUrl || p.liveDemoUrl)).length,
       resumeScore: detail.resumeHistory[0]?.score ?? null,
     });
-    res.json({ ok: true, student: { ...detail, readiness }, db: db.dbEnabled() });
+    res.json({
+      ok: true,
+      student: {
+        ...detail,
+        readiness,
+        assignedTasks,
+        taskSummary: {
+          assigned: assignedTasks.length,
+          done: assignedTasks.filter((t) => t.done).length,
+          open: assignedTasks.filter((t) => !t.done).length,
+          overdue: assignedTasks.filter((t) => t.overdue).length,
+          completionRate: assignedTasks.length
+            ? Math.round((assignedTasks.filter((t) => t.done).length / assignedTasks.length) * 100)
+            : 0,
+        },
+      },
+      db: db.dbEnabled(),
+    });
+  });
+
+  /* ---- Student resume: read + download, college-scoped ----
+     The placement cell could already see a resume SCORE for every student but
+     had no way to read the resume behind it. `?download=1` streams it as a
+     file attachment.
+
+     Provenance note: the product extracts resume TEXT client-side and persists
+     that; the original PDF/DOCX bytes never reach the server. So the download
+     is a .txt of the extracted text, labelled as such. Serving it with a .pdf
+     extension would misrepresent what the file is. */
+  app.get('/api/college/students/:id/resume', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const resume = await db.collegeStudentResume({ collegeId, studentId: req.params.id });
+    if (!resume) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+
+    const wantsDownload = req.query.download === '1' || req.query.download === 'true';
+    if (!wantsDownload) {
+      // Metadata + text for in-app preview.
+      return res.json({ ok: true, resume, db: db.dbEnabled() });
+    }
+    if (!resume.available) {
+      return res.status(404).json({ ok: false, error: 'no_resume_on_file', message: 'This student has not uploaded a resume yet.' });
+    }
+    /* Filename is derived from attacker-controlled input (the student's own
+       name / uploaded filename), so strip anything that could break out of the
+       header or the filesystem. */
+    const safeName = String(resume.fileName || `${resume.studentName || 'student'}-resume`)
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[^\w.\- ]+/g, '_')
+      .slice(0, 80)
+      .trim() || 'student-resume';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.txt"`);
+    res.setHeader('Cache-Control', 'no-store');
+    // Not the student's own upload byte-for-byte; say so in the artefact itself.
+    const header = [
+      `Resume text on file for ${resume.studentName || resume.studentEmail}`,
+      resume.targetRole ? `Target role: ${resume.targetRole}` : '',
+      resume.score != null ? `Career Autopilot resume score: ${resume.score}/100` : '',
+      resume.analysedAt ? `Last analysed: ${resume.analysedAt}` : '',
+      'Extracted text as submitted by the student — not the original PDF.',
+      '='.repeat(64), '',
+    ].filter(Boolean).join('\n');
+    return res.send(`${header}${resume.text}\n`);
+  });
+
+  /* ---- Task assignees: WHO a task went to and who actually did it ----
+     /api/college/tasks returns counts only. A TPO seeing "4 assigned, 0 done"
+     had no way to find out which four students, or to chase them. */
+  app.get('/api/college/tasks/:id/assignees', ...guard, async (req, res) => {
+    const detail = await db.collegeTaskAssignees({ collegeId: callerCollegeId(req), taskId: req.params.id });
+    if (!detail) return res.status(404).json({ ok: false, error: 'not_found_or_out_of_scope' });
+    res.json({ ok: true, ...detail, db: db.dbEnabled() });
   });
 
   app.get('/api/college/export', ...guard, async (req, res) => {

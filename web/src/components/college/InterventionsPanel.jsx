@@ -12,9 +12,10 @@
    be a grey "placeholder" chip on the Reports tab despite being fully
    built on the server.
    ============================================================ */
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   ClipboardList, Bell, AlertTriangle, CheckCircle2, Clock, Plus, Send, RefreshCw, Users,
+  ChevronRight, ChevronDown, CircleDashed,
 } from 'lucide-react';
 import { SectionCard, StatCard } from '../../views/common.jsx';
 import { Button, Badge, Spinner, EmptyState, Input, Field, Modal } from '../ui/kit.jsx';
@@ -44,6 +45,75 @@ function ProgressBar({ pct, overdue }) {
   );
 }
 
+/* ============================================================
+   TASK ASSIGNEES — who this task went to, and who actually did it
+   ------------------------------------------------------------
+   The table above reports "4 assigned, 0 done" and stops there. A
+   placement officer's next question is always WHICH four, so they
+   can chase the three who have not started. The per-student rows
+   were already on the task document; nothing ever read them back.
+
+   Loaded lazily on expand — a cohort task can carry 500
+   assignments and there is no reason to ship them all up front.
+   ============================================================ */
+function AssigneeRoster({ taskId }) {
+  const [state, setState] = useState({ loading: true, error: '', data: null });
+  const [showDone, setShowDone] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setState({ loading: true, error: '', data: null });
+    College.taskAssignees(taskId)
+      .then((r) => { if (alive) setState({ loading: false, error: '', data: r }); })
+      .catch((e) => { if (alive) setState({ loading: false, error: e?.message || 'Could not load assignees.', data: null }); });
+    return () => { alive = false; };
+  }, [taskId]);
+
+  if (state.loading) return <div className="flex items-center gap-2 px-2 py-3 text-xs text-fg-muted"><Spinner /> Loading assignees…</div>;
+  if (state.error) return <div className="px-2 py-3 text-xs text-danger">{state.error}</div>;
+
+  const all = state.data?.assignees || [];
+  const rows = showDone ? all : all.filter((a) => !a.done);
+  if (!all.length) return <div className="px-2 py-3 text-xs text-fg-muted">No assignees on this task.</div>;
+
+  return (
+    <div className="rounded-lg border border-subtle bg-surface-1 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-wider text-fg-muted">
+          {state.data.done} of {state.data.assigned} completed
+          {state.data.overdue > 0 && <span className="ml-2 text-danger">{state.data.overdue} overdue</span>}
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => setShowDone((v) => !v)}>
+          {showDone ? 'Show only pending' : 'Show everyone'}
+        </Button>
+      </div>
+      <ul className="max-h-64 space-y-1 overflow-y-auto pr-1">
+        {rows.map((a) => (
+          <li key={a.studentId} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-surface-hover">
+            <span className="flex min-w-0 items-center gap-2">
+              {a.done
+                ? <CheckCircle2 size={13} className="shrink-0 text-ok" />
+                : <CircleDashed size={13} className={`shrink-0 ${a.overdue ? 'text-danger' : 'text-fg-muted'}`} />}
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] text-fg">{a.name || a.email}</span>
+                <span className="block truncate text-[11px] text-fg-muted">
+                  {[a.branch, a.batch].filter(Boolean).join(' · ') || a.email}
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 text-[11px]">
+              {a.done
+                ? <span className="text-ok">Done{a.doneAt ? ` · ${new Date(a.doneAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ''}</span>
+                : <span className={a.overdue ? 'text-danger' : 'text-fg-muted'}>{a.overdue ? 'Overdue' : 'Pending'}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!rows.length && <p className="px-2 py-2 text-xs text-ok">Everyone has completed this task.</p>}
+    </div>
+  );
+}
+
 export default function InterventionsPanel() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +127,7 @@ export default function InterventionsPanel() {
   const [form, setForm] = useState({ title: '', description: '', dueAt: '' });
   const [nudge, setNudge] = useState({ title: '', message: '' });
   const [resolved, setResolved] = useState({ count: 0, loading: false });
+  const [expanded, setExpanded] = useState(null); // task id whose assignee roster is open
 
   const load = async () => {
     setLoading(true); setError('');
@@ -167,7 +238,7 @@ export default function InterventionsPanel() {
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
                 <tr>
-                  <th className="px-2 py-2">Task</th>
+                  <th className="px-2 py-2">Task <span className="normal-case text-fg-muted">— click to see who</span></th>
                   <th className="px-2 py-2 text-right">Assigned</th>
                   <th className="px-2 py-2 text-right">Done</th>
                   <th className="px-2 py-2">Completion</th>
@@ -177,10 +248,21 @@ export default function InterventionsPanel() {
               </thead>
               <tbody>
                 {tasks.map((t) => (
-                  <tr key={t.id} className="border-t border-subtle hover:bg-surface-1">
+                  <Fragment key={t.id}>
+                  <tr
+                    className="cursor-pointer border-t border-subtle hover:bg-surface-1"
+                    onClick={() => setExpanded((id) => (id === t.id ? null : t.id))}
+                  >
                     <td className="px-2 py-2">
-                      <span className="text-fg">{t.title}</span>
-                      {t.description && <span className="block max-w-md truncate text-xs text-fg-muted">{t.description}</span>}
+                      <span className="flex items-start gap-1.5">
+                        {expanded === t.id
+                          ? <ChevronDown size={14} className="mt-0.5 shrink-0 text-fg-muted" />
+                          : <ChevronRight size={14} className="mt-0.5 shrink-0 text-fg-muted" />}
+                        <span className="min-w-0">
+                          <span className="text-fg">{t.title}</span>
+                          {t.description && <span className="block max-w-md truncate text-xs text-fg-muted">{t.description}</span>}
+                        </span>
+                      </span>
                     </td>
                     <td className="px-2 py-2 text-right text-fg-secondary">{t.assigned}</td>
                     <td className="px-2 py-2 text-right text-fg-secondary">{t.done}</td>
@@ -194,6 +276,14 @@ export default function InterventionsPanel() {
                           : <Badge tone="cyan">Active</Badge>}
                     </td>
                   </tr>
+                  {expanded === t.id && (
+                    <tr className="border-t border-subtle bg-surface-1/60">
+                      <td colSpan={6} className="px-2 pb-3 pt-1">
+                        <AssigneeRoster taskId={t.id} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
