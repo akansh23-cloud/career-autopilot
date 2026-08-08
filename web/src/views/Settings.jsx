@@ -90,13 +90,13 @@ export default function Settings() {
           <MyCollegeCard />
           <SectionCard title="Account type" eyebrow="Persona">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-xl border border-aurora-violet/40 bg-aurora-violet/[0.08] px-3 py-1.5 text-sm font-semibold text-white">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-aurora-violet/40 bg-aurora-violet/[0.08] px-3 py-1.5 text-sm font-semibold text-fg">
                 <BadgeCheck size={15} className="text-aurora-mint" /> Account: {accountLabel}
               </span>
               {verifiedStaff && <Badge tone="mint">Verified</Badge>}
               {staffPending && <Badge tone="amber">Verification pending</Badge>}
             </div>
-            <p className="mt-3 text-[13px] leading-relaxed text-slate-400">
+            <p className="mt-3 text-[13px] leading-relaxed text-fg-secondary">
               {isAdmin
                 ? 'You have admin access. Manage user roles from the Admin console — account types aren’t changed here.'
                 : verifiedStaff
@@ -116,11 +116,11 @@ export default function Settings() {
             <datalist id="location-suggestions">{LOCATION_SUGGESTIONS.map((l) => <option key={l} value={l} />)}</datalist>
             <datalist id="salary-suggestions">{SALARY_SUGGESTIONS.map((s) => <option key={s} value={s} />)}</datalist>
             <div className="mt-3">
-              <span className="mb-1.5 block text-[13px] font-medium text-slate-300">Work mode</span>
+              <span className="mb-1.5 block text-[13px] font-medium text-fg-secondary">Work mode</span>
               <div className="flex flex-wrap gap-2">
                 {MODES.map((m) => (
                   <button key={m} onClick={() => setPrefs({ ...prefs, workMode: m })}
-                    className={`rounded-lg px-3 py-1.5 text-xs transition ${prefs.workMode === m ? 'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30' : 'text-slate-400 hover:bg-white/5'}`}>{m}</button>
+                    className={`rounded-lg px-3 py-1.5 text-xs transition ${prefs.workMode === m ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30' : 'text-fg-secondary hover:bg-surface-1'}`}>{m}</button>
                 ))}
               </div>
             </div>
@@ -128,7 +128,7 @@ export default function Settings() {
               <Field label="Min salary" hint="annual"><Input list="salary-suggestions" type="number" value={prefs.salaryMin} onChange={(e) => setPrefs({ ...prefs, salaryMin: e.target.value })} placeholder="1200000" /></Field>
               <Field label="Max salary" hint="annual"><Input list="salary-suggestions" type="number" value={prefs.salaryMax} onChange={(e) => setPrefs({ ...prefs, salaryMax: e.target.value })} placeholder="2400000" /></Field>
               <Field label="Currency">
-                <select value={CURRENCIES.includes(prefs.salaryCurrency) ? prefs.salaryCurrency : 'INR'} onChange={(e) => setPrefs({ ...prefs, salaryCurrency: e.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100 outline-none">
+                <select value={CURRENCIES.includes(prefs.salaryCurrency) ? prefs.salaryCurrency : 'INR'} onChange={(e) => setPrefs({ ...prefs, salaryCurrency: e.target.value })} className="h-11 w-full rounded-xl border border-field-border bg-field px-3 text-sm text-fg outline-none">
                   {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
@@ -138,7 +138,7 @@ export default function Settings() {
           <SectionCard title="LinkedIn profile">
             <Field label="Profile URL">
               <div className="relative">
-                <Linkedin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Linkedin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
                 <Input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/your-handle" className="pl-10" />
               </div>
             </Field>
@@ -153,35 +153,35 @@ export default function Settings() {
             <div className="flex items-center gap-3">
               <Avatar src={user?.picture} name={user?.name} size={48} />
               <div className="min-w-0">
-                <p className="truncate font-medium text-white">{user?.name}</p>
-                <p className="truncate text-xs text-slate-500">{user?.email || '—'}</p>
+                <p className="truncate font-medium text-fg">{user?.name}</p>
+                <p className="truncate text-xs text-fg-muted">{user?.email || '—'}</p>
               </div>
             </div>
-            <div className="mt-4 space-y-2 border-t border-white/8 pt-3 text-sm">
+            <div className="mt-4 space-y-2 border-t border-subtle pt-3 text-sm">
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-slate-400"><BadgeCheck size={14} /> Provider</span>
+                <span className="flex items-center gap-2 text-fg-secondary"><BadgeCheck size={14} /> Provider</span>
                 <Badge tone="violet" className="capitalize">{user?.provider || '—'}</Badge>
               </div>
               {user?.role && (
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-slate-400"><User size={14} /> Role</span>
-                  <span className="capitalize text-slate-200">{user.role}</span>
+                  <span className="flex items-center gap-2 text-fg-secondary"><User size={14} /> Role</span>
+                  <span className="capitalize text-fg">{user.role}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-slate-400"><Calendar size={14} /> Joined</span>
-                <span className="text-slate-200">{fmtDate(user?.createdAt)}</span>
+                <span className="flex items-center gap-2 text-fg-secondary"><Calendar size={14} /> Joined</span>
+                <span className="text-fg">{fmtDate(user?.createdAt)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-slate-400"><Clock size={14} /> Last login</span>
-                <span className="text-slate-200">{fmtDate(user?.lastLoginAt)}</span>
+                <span className="flex items-center gap-2 text-fg-secondary"><Clock size={14} /> Last login</span>
+                <span className="text-fg">{fmtDate(user?.lastLoginAt)}</span>
               </div>
             </div>
             <Button variant="danger" className="mt-4 w-full" onClick={logout}><LogOut size={15} /> Sign out</Button>
           </SectionCard>
 
           <SectionCard title="Data & Privacy">
-            <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-400">
+            <p className="flex items-start gap-2 text-xs leading-relaxed text-fg-secondary">
               <ShieldCheck size={15} className="mt-0.5 shrink-0 text-aurora-mint" />
               We store only safe profile fields (name, email, avatar, provider). We never store your Google password or access tokens. Resume text is used only to generate your analysis.
             </p>
@@ -209,14 +209,14 @@ export default function Settings() {
               {[['LinkedIn', 'linkedin'], ['Indeed', 'indeed']].map(([label, key]) => {
                 const c = conn?.[key];
                 return (
-                  <div key={key} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
-                    <span className="flex items-center gap-2 text-sm text-slate-200"><Plug size={15} className="text-aurora-cyan" /> {label}</span>
+                  <div key={key} className="flex items-center justify-between rounded-xl border border-subtle bg-surface-1 px-3 py-2.5">
+                    <span className="flex items-center gap-2 text-sm text-fg"><Plug size={15} className="text-aurora-cyan" /> {label}</span>
                     {!conn ? <Spinner /> : c?.connected ? <Badge tone="mint">Connected</Badge> : c?.enabled ? <Badge tone="cyan">Available</Badge> : <Badge>Off</Badge>}
                   </div>
                 );
               })}
             </div>
-            <p className="mt-3 text-xs text-slate-500">Connectors are configured server-side via OAuth keys in <code className="font-mono">.env</code>.</p>
+            <p className="mt-3 text-xs text-fg-muted">Connectors are configured server-side via OAuth keys in <code className="font-mono">.env</code>.</p>
           </SectionCard>
         </div>
       </div>

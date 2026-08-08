@@ -82,7 +82,7 @@ export default function ArchitectureStudioPanel({ project, legacyMermaid = '', o
     return (
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[12px] text-slate-500">Basic diagram (legacy). Generate the professional multi-view architecture for this project:</p>
+          <p className="text-[12px] text-fg-muted">Basic diagram (legacy). Generate the professional multi-view architecture for this project:</p>
           <Button size="sm" onClick={generate} disabled={busy === 'generate'}>
             {busy === 'generate' ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <><Sparkles size={14} /> Generate professional architecture</>}
           </Button>
@@ -118,25 +118,25 @@ export default function ArchitectureStudioPanel({ project, legacyMermaid = '', o
 
       {activeView && (
         <>
-          {activeView.description && <p className="text-[12px] text-slate-500">{activeView.description}</p>}
+          {activeView.description && <p className="text-[12px] text-fg-muted">{activeView.description}</p>}
           <ArchitectureCanvas view={activeView} height={height} />
           <ArchitectureExportPanel spec={spec} view={activeView} />
         </>
       )}
 
-      <div className="border-t border-white/8 pt-3">
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">Refine this architecture</p>
+      <div className="border-t border-subtle pt-3">
+        <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-fg-muted">Refine this architecture</p>
         <div className="flex gap-2">
           <Input value={refineText} onChange={(e) => setRefineText(e.target.value)} placeholder='e.g. "Add Redis cache, Kafka, worker service, monitoring and CI/CD"' onKeyDown={(e) => { if (e.key === 'Enter') refine(); }} />
           <Button size="sm" variant="soft" onClick={refine} disabled={!!busy || refineText.trim().length < 3}>
             {busy === 'refine' ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Refine
           </Button>
         </div>
-        {msg && <p className="mt-2 text-[12px] text-slate-400">{msg}</p>}
+        {msg && <p className="mt-2 text-[12px] text-fg-secondary">{msg}</p>}
       </div>
 
       {showValidation && validation && (
-        <div className="border-t border-white/8 pt-3">
+        <div className="border-t border-subtle pt-3">
           <ArchitectureValidationPanel validation={validation} />
         </div>
       )}

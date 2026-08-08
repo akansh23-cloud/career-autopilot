@@ -26,10 +26,10 @@ const PROVIDER_LABELS = {
 function Section({ icon: Icon, title, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-t border-white/[0.06] pt-3 first:border-0 first:pt-0">
+    <div className="border-t border-subtle pt-3 first:border-0 first:pt-0">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 text-left text-[11px] uppercase tracking-wide text-slate-500 hover:text-slate-300"
+        className="flex w-full items-center gap-2 text-left text-[11px] uppercase tracking-wide text-fg-muted hover:text-fg-secondary"
       >
         <Icon size={13} />
         <span className="flex-1">{title}</span>
@@ -43,8 +43,8 @@ function Section({ icon: Icon, title, children, defaultOpen = true }) {
 const Bullets = ({ items, ordered }) => (
   <ol className="space-y-1.5">
     {(items || []).map((it, i) => (
-      <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-slate-300">
-        <span className="shrink-0 text-slate-600">{ordered ? `${i + 1}.` : '•'}</span>
+      <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-fg-secondary">
+        <span className="shrink-0 text-fg-muted">{ordered ? `${i + 1}.` : '•'}</span>
         <span>{it}</span>
       </li>
     ))}
@@ -59,24 +59,24 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
   return (
     <div className="rounded-2xl border border-aurora-violet/25 bg-aurora-violet/[0.04] p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-lg border border-aurora-violet/40 bg-aurora-violet/10 px-2 py-1 text-[11px] font-semibold text-[#E4DCFF]">
+        <span className="inline-flex items-center gap-1.5 rounded-lg border border-aurora-violet/40 bg-aurora-violet/10 px-2 py-1 text-[11px] font-semibold text-brand">
           <BookOpen size={12} /> What you&apos;re building
         </span>
         {brief.disciplineLabel && (
-          <span className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-slate-300">
+          <span className="rounded-lg border border-subtle bg-surface-1 px-2 py-1 text-[11px] text-fg-secondary">
             {brief.disciplineLabel}
           </span>
         )}
       </div>
 
-      <p className="text-[15px] font-medium leading-snug text-white">{brief.oneLine}</p>
+      <p className="text-[15px] font-medium leading-snug text-fg">{brief.oneLine}</p>
       {brief.note && (
-        <p className="mt-2 flex gap-2 rounded-lg border border-aurora-amber/30 bg-aurora-amber/[0.06] px-3 py-2 text-[12px] text-[#EAC97C]">
+        <p className="mt-2 flex gap-2 rounded-lg border border-aurora-amber/30 bg-aurora-amber/[0.06] px-3 py-2 text-[12px] text-warn">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>{brief.note}</span>
         </p>
       )}
-      <p className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-300">{brief.inPlainEnglish}</p>
+      <p className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed text-fg-secondary">{brief.inPlainEnglish}</p>
 
       {!compact && (
         <div className="mt-4 space-y-3">
@@ -85,8 +85,8 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
               <div className="space-y-2">
                 {brief.howItWorks.map((s, i) => (
                   <div key={i} className="flex gap-3">
-                    <span className="mt-0.5 shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">{s.stage}</span>
-                    <p className="text-[13px] leading-relaxed text-slate-300">{s.what}</p>
+                    <span className="mt-0.5 shrink-0 rounded-md border border-subtle bg-surface-1 px-2 py-0.5 text-[10px] uppercase tracking-wide text-fg-secondary">{s.stage}</span>
+                    <p className="text-[13px] leading-relaxed text-fg-secondary">{s.what}</p>
                   </div>
                 ))}
               </div>
@@ -95,9 +95,9 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
 
           {brief.whatSuccessLooksLike && (
             <Section icon={ListChecks} title="What finished looks like">
-              <p className="text-[13px] leading-relaxed text-slate-300">{brief.whatSuccessLooksLike}</p>
+              <p className="text-[13px] leading-relaxed text-fg-secondary">{brief.whatSuccessLooksLike}</p>
               {brief.howYouKnowItWorks && (
-                <p className="mt-2 text-[13px] leading-relaxed text-slate-400"><span className="text-slate-500">How you prove it: </span>{brief.howYouKnowItWorks}</p>
+                <p className="mt-2 text-[13px] leading-relaxed text-fg-secondary"><span className="text-fg-muted">How you prove it: </span>{brief.howYouKnowItWorks}</p>
               )}
             </Section>
           )}
@@ -106,7 +106,7 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
             <Section icon={Wrench} title="Your first week">
               <Bullets items={brief.firstWeek} ordered />
               {brief.toolchain?.length > 0 && (
-                <p className="mt-2 text-[12px] text-slate-500">Tools: {brief.toolchain.join(' · ')}</p>
+                <p className="mt-2 text-[12px] text-fg-muted">Tools: {brief.toolchain.join(' · ')}</p>
               )}
             </Section>
           )}
@@ -115,8 +115,8 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
             <Section icon={AlertTriangle} title="Deliberately not building yet" defaultOpen={false}>
               <Bullets items={brief.notBuildingYet} />
               {brief.commonFailureMode && (
-                <p className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] leading-relaxed text-slate-400">
-                  <span className="text-slate-500">Where this usually goes wrong: </span>{brief.commonFailureMode}
+                <p className="mt-2 rounded-lg border border-subtle bg-surface-1 px-3 py-2 text-[12px] leading-relaxed text-fg-secondary">
+                  <span className="text-fg-muted">Where this usually goes wrong: </span>{brief.commonFailureMode}
                 </p>
               )}
             </Section>
@@ -127,8 +127,8 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
               <dl className="space-y-2">
                 {brief.glossary.map((g, i) => (
                   <div key={i}>
-                    <dt className="text-[12px] font-semibold text-slate-200">{g.term}</dt>
-                    <dd className="text-[12px] leading-relaxed text-slate-400">{g.meaning}</dd>
+                    <dt className="text-[12px] font-semibold text-fg">{g.term}</dt>
+                    <dd className="text-[12px] leading-relaxed text-fg-secondary">{g.meaning}</dd>
                   </div>
                 ))}
               </dl>
@@ -137,7 +137,7 @@ export default function ProjectBriefPanel({ brief, compact = false }) {
         </div>
       )}
 
-      <p className="mt-4 border-t border-white/[0.06] pt-2.5 text-[11px] text-slate-600">
+      <p className="mt-4 border-t border-subtle pt-2.5 text-[11px] text-fg-muted">
         {templated
           ? 'Written from a template — no AI provider is configured, so this is generic guidance shaped by the project type rather than a reading of your specific idea.'
           : `Prose written by ${provider} over a deterministic outline. Treat it as a starting explanation, not a verified plan.`}

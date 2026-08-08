@@ -492,6 +492,13 @@ export async function generateRoadmap(input) {
   const r = await tryPost('/api/projects/generate-roadmap', input);
   if (r && r.ok && r.project) {
     const merged = { ...local, ...r.project, id: local.id, tasks: (r.project.steps ? tasksFromRoadmap(r.project.steps) : local.tasks), generatedBy: r.generatedBy || 'ai' };
+    /* PROJECT IDENTITY IS OWNED BY THE CALLER, NOT THE GENERATOR.
+       The server enriches the roadmap/stack/architecture; it must never rename
+       the project the student actually picked. Without this, a template
+       fallback response renamed every build to the same generic string and the
+       store then deduped them all into one workspace. */
+    if (String(input.title || '').trim()) merged.title = input.title;
+    if (String(input.problemStatement || '').trim()) merged.problemStatement = input.problemStatement;
     // keep the rich, always-present industry detail + diagram consistent with merged fields
     merged.architectureDiagram = local.architectureDiagram;
     merged.industry = local.industry;

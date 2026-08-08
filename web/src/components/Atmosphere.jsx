@@ -28,8 +28,14 @@ export default function Atmosphere({ variant = 'landing' }) {
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
-      <div className="absolute inset-0 bg-ink-950" />
+    /* `atmosphere-layer` is the hook index.css already had a rule for
+       (the additive foil effects are dimmed on paper) — the class was never
+       actually applied to anything, so that rule was dead. It is applied now. */
+    <div className="atmosphere-layer pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
+      {/* Was bg-ink-950 — a near-black plate painted behind the ENTIRE app,
+          under every token-driven surface. No amount of light tokens could
+          survive it. It reads --bg-base now, like everything else. */}
+      <div className="absolute inset-0 bg-base" />
 
       {/* cursor-reactive foil light-table */}
       <div className="absolute inset-0 aurora-field" />
@@ -84,7 +90,7 @@ export default function Atmosphere({ variant = 'landing' }) {
 
       <div className="noise absolute inset-0" />
       <div className="vignette absolute inset-0" />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-ink-950/25 to-ink-950" />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-base/25 to-base" />
     </div>
   );
 }

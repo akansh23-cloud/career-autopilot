@@ -11,6 +11,54 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
+        /* THEME TOKENS. These read the CSS custom properties in index.css, so
+           `text-fg` / `bg-elevated` / `border-subtle` resolve differently in
+           light and dark without any conditional class logic in components.
+           The codemod (scripts/theme-codemod.mjs) rewrites the old hardcoded
+           `text-white` / `bg-white/5` / `border-white/10` usages to these. */
+        fg: {
+          DEFAULT: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+          inverse: 'var(--text-inverse)',
+        },
+        base: 'var(--bg-base)',
+        elevated: 'var(--bg-elevated)',
+        sunken: 'var(--bg-sunken)',
+        surface: {
+          1: 'var(--surface-1)',
+          2: 'var(--surface-2)',
+          hover: 'var(--surface-hover)',
+        },
+        subtle: 'var(--border-subtle)',
+        strong: 'var(--border-strong)',
+
+        /* FORM CONTROLS — opaque by contract.
+           `surface-1`/`surface-2` are translucent tints, which is correct for
+           panels stacked on the page but wrong for anything that opens over
+           other content (selects, popovers, menus, command palette). Those use
+           these instead so they never show what is behind them. */
+        field: {
+          DEFAULT: 'var(--field-bg)',
+          subtle: 'var(--field-bg-subtle)',
+          hover: 'var(--field-bg-hover)',
+          border: 'var(--field-border)',
+        },
+        menu: 'var(--menu-bg)',
+
+        /* Modal / overlay scrim. Was a fixed bg-black/72 everywhere, which is
+           correct behind a dark plate and a heavy blackout over paper. */
+        scrim: 'var(--scrim)',
+
+        /* Semantic signal inks. These already existed as CSS vars but nothing
+           could reach them from a class, so views fell back to fixed
+           rose-300 / mint-ish literals that lose contrast on white. */
+        ok: 'var(--ok)',
+        info: 'var(--info)',
+        warn: 'var(--warn)',
+        danger: 'var(--danger)',
+        brand: 'var(--brand-text)',
+
         // Archival green-cast inks (token names kept for drop-in compatibility).
         ink: {
           950: '#070908',
@@ -32,8 +80,11 @@ export default {
       },
       boxShadow: {
         glow: '0 0 0 1px rgba(188,168,255,0.22), 0 22px 60px -18px rgba(124,107,242,0.45)',
-        card: '0 1px 0 0 rgba(255,255,255,0.05) inset, 0 30px 70px -34px rgba(0,0,0,0.9)',
-        lift: '0 40px 90px -34px rgba(0,0,0,0.95)',
+        /* Were pinned to rgba(0,0,0,.9)/.95 — a bruise under every card on
+           paper. Both now read theme tokens (index.css), so light gets a soft
+           archival drop and dark keeps the deep plate shadow. */
+        card: 'var(--shadow-card)',
+        lift: 'var(--shadow-lift)',
       },
       backgroundImage: {
         'aurora-text': 'linear-gradient(105deg,#A9F0CE 0%,#8FE3F7 32%,#C9B8FF 62%,#F2B5DF 100%)',

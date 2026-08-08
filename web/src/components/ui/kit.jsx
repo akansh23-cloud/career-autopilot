@@ -12,10 +12,10 @@ export const Button = forwardRef(function Button(
   const sizes = { sm: 'h-9 px-3.5 text-[13px]', md: 'h-11 px-5 text-sm', lg: 'h-12 px-7 text-[15px]' };
   const variants = {
     primary: 'btn-primary hover:brightness-105 hover:-translate-y-0.5',
-    ghost: 'text-slate-200/80 hover:text-white hover:bg-white/5',
-    outline: 'border border-white/14 text-slate-100 hover:bg-white/5 hover:border-aurora-violet/40',
-    soft: 'bg-white/[0.06] text-slate-100 hover:bg-white/10 border border-white/8',
-    danger: 'bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25',
+    ghost: 'text-fg/80 hover:text-fg hover:bg-surface-1',
+    outline: 'border border-strong text-fg hover:bg-surface-1 hover:border-aurora-violet/40',
+    soft: 'bg-surface-1 text-fg hover:bg-surface-2 border border-subtle',
+    danger: 'bg-rose-500/10 text-danger border border-rose-400/40 hover:bg-rose-500/20',
   };
   return (
     <button ref={ref} className={cx(base, sizes[size], variants[variant], className)} {...props}>
@@ -55,12 +55,12 @@ export function Card({ className, hover, glow, spotlight, children, onMouseMove,
 /* ---------------- Badge ---------------- */
 export function Badge({ tone = 'default', className, children }) {
   const tones = {
-    default: 'bg-white/6 text-slate-300 border-white/10',
-    violet: 'bg-aurora-violet/14 text-[#E4DCFF] border-aurora-violet/35',
-    cyan: 'bg-aurora-cyan/12 text-[#C3F0FA] border-aurora-cyan/30',
-    mint: 'bg-aurora-mint/12 text-[#BDF5DC] border-aurora-mint/30',
-    amber: 'bg-amber-glow/14 text-[#F3E3B2] border-amber-glow/35',
-    rose: 'bg-rose-500/12 text-rose-300 border-rose-400/30',
+    default: 'bg-surface-1 text-fg-secondary border-subtle',
+    violet: 'bg-aurora-violet/14 text-brand border-aurora-violet/35',
+    cyan: 'bg-aurora-cyan/12 text-info border-aurora-cyan/30',
+    mint: 'bg-aurora-mint/12 text-ok border-aurora-mint/30',
+    amber: 'bg-amber-glow/14 text-warn border-amber-glow/35',
+    rose: 'bg-rose-500/12 text-danger border-rose-400/30',
   };
   return (
     <span className={cx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium tracking-wide', tones[tone], className)}>
@@ -79,8 +79,8 @@ export function Spinner({ className }) {
 /* ---------------- Skeleton ---------------- */
 export function Skeleton({ className }) {
   return (
-    <div className={cx('relative overflow-hidden rounded-lg bg-white/[0.05]', className)}>
-      <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
+    <div className={cx('relative overflow-hidden rounded-lg bg-surface-1', className)}>
+      <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-surface-2 to-transparent" />
     </div>
   );
 }
@@ -93,7 +93,7 @@ export function Avatar({ src, name = '', size = 36 }) {
   if (src && !err)
     return <img src={src} alt={name} style={style} onError={() => setErr(true)} className="rounded-full object-cover ring-2 ring-aurora-violet/20" />;
   return (
-    <div style={style} className="grid place-items-center rounded-full bg-aurora-cta text-[12px] font-bold text-ink-950 ring-2 ring-white/15">
+    <div style={style} className="grid place-items-center rounded-full bg-aurora-cta text-[12px] font-bold text-ink-950 ring-2 ring-strong">
       {initials}
     </div>
   );
@@ -120,7 +120,7 @@ export function Dropdown({ trigger, children, align = 'right' }) {
             transition={{ duration: 0.16, ease: 'easeOut' }}
             onClick={() => setOpen(false)}
             className={cx(
-              'absolute z-50 mt-2 min-w-[220px] overflow-hidden rounded-2xl border border-white/10 bg-ink-850/95 p-1.5 shadow-lift backdrop-blur-xl',
+              'absolute z-50 mt-2 min-w-[220px] overflow-hidden rounded-2xl border border-field-border bg-menu p-1.5 shadow-lift',
               align === 'right' ? 'right-0' : 'left-0'
             )}
           >
@@ -136,7 +136,7 @@ export function MenuItem({ icon: Icon, children, danger, ...p }) {
     <button
       className={cx(
         'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors',
-        danger ? 'text-rose-300 hover:bg-rose-500/10' : 'text-slate-200 hover:bg-white/6'
+        danger ? 'text-danger hover:bg-rose-500/10' : 'text-fg hover:bg-surface-hover'
       )}
       {...p}
     >
@@ -166,7 +166,7 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
           className="fixed inset-0 z-[100] grid place-items-center overflow-hidden p-3 sm:p-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         >
-          <div className="absolute inset-0 bg-black/72 backdrop-blur-sm" onClick={onClose} />
+          <div className="absolute inset-0 bg-scrim backdrop-blur-sm" onClick={onClose} />
           <motion.div
             initial={{ opacity: 0, y: 18, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -177,9 +177,9 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
             onTouchMove={(e) => e.stopPropagation()}
           >
             {title && (
-              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-ink-900/95 px-5 py-4 backdrop-blur-xl sm:px-6">
-                <h3 className="pr-4 text-lg font-semibold text-white">{title}</h3>
-                <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/8 hover:text-white">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-subtle bg-elevated px-5 py-4 sm:px-6">
+                <h3 className="pr-4 text-lg font-semibold text-fg">{title}</h3>
+                <button onClick={onClose} className="rounded-lg p-1.5 text-fg-secondary hover:bg-surface-2 hover:text-fg">
                   <X size={18} />
                 </button>
               </div>
@@ -197,13 +197,13 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
 /* ---------------- EmptyState ---------------- */
 export function EmptyState({ icon: Icon, title, hint, action }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/12 px-6 py-14 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-strong px-6 py-14 text-center">
       {Icon && (
         <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-aurora-violet/10 text-aurora-violet ring-1 ring-aurora-violet/25">
           <Icon size={24} />
         </div>
       )}
-      <p className="text-[15px] font-medium text-slate-200">{title}</p>
+      <p className="text-[15px] font-medium text-fg">{title}</p>
       {hint && <p className="mt-1.5 max-w-sm text-sm text-muted">{hint}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
@@ -215,7 +215,7 @@ export function Input({ className, ...p }) {
   return (
     <input
       className={cx(
-        'h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-aurora-violet/55 focus:bg-white/[0.05] focus:ring-2 focus:ring-aurora-violet/20',
+        'h-11 w-full rounded-xl border border-field-border bg-field px-3.5 text-sm text-fg placeholder:text-fg-muted outline-none transition focus:border-aurora-violet/70 focus:bg-field focus:ring-2 focus:ring-aurora-violet/25',
         className
       )}
       {...p}
@@ -225,9 +225,9 @@ export function Input({ className, ...p }) {
 export function Field({ label, children, hint }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[13px] font-medium text-slate-300">{label}</span>
+      <span className="mb-1.5 block text-[13px] font-medium text-fg-secondary">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-fg-muted">{hint}</span>}
     </label>
   );
 }

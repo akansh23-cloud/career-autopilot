@@ -130,7 +130,7 @@ export default function CommandPalette({ open, setOpen, onPick }) {
           className="fixed inset-0 z-[120] flex items-start justify-center p-3 pt-[12vh] sm:p-4 sm:pt-[14vh]"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         >
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={close} aria-hidden="true" />
+          <div className="absolute inset-0 bg-scrim backdrop-blur-sm" onClick={close} aria-hidden="true" />
           <motion.div
             role="dialog"
             aria-modal="true"
@@ -142,7 +142,7 @@ export default function CommandPalette({ open, setOpen, onPick }) {
             className="panel relative flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden p-0 shadow-lift"
           >
             {/* search row */}
-            <div className="flex items-center gap-3 border-b border-white/10 px-4">
+            <div className="flex items-center gap-3 border-b border-subtle px-4">
               <Search size={18} className="shrink-0 text-aurora-cyan" />
               <input
                 ref={inputRef}
@@ -150,9 +150,9 @@ export default function CommandPalette({ open, setOpen, onPick }) {
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={onKeyDown}
                 placeholder="Search workspaces or type a command…"
-                className="h-14 flex-1 bg-transparent text-[15px] text-slate-100 placeholder:text-slate-500 outline-none"
+                className="h-14 flex-1 bg-transparent text-[15px] text-fg placeholder:text-fg-muted outline-none"
               />
-              <kbd className="hidden shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-400 sm:flex">
+              <kbd className="hidden shrink-0 items-center gap-1 rounded-md border border-subtle bg-surface-1 px-1.5 py-0.5 text-[10px] text-fg-secondary sm:flex">
                 ESC
               </kbd>
             </div>
@@ -161,13 +161,13 @@ export default function CommandPalette({ open, setOpen, onPick }) {
             <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2">
               {flat.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-                  <Sparkles size={22} className="text-slate-600" />
-                  <p className="text-sm text-slate-400">No matches for “{q}”.</p>
+                  <Sparkles size={22} className="text-fg-muted" />
+                  <p className="text-sm text-fg-secondary">No matches for “{q}”.</p>
                 </div>
               ) : (
                 groups.map((g) => (
                   <div key={g.heading} className="px-2 pb-1">
-                    <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{g.heading}</p>
+                    <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">{g.heading}</p>
                     {g.items.map((item) => {
                       runningIndex += 1;
                       const active = runningIndex === cursor;
@@ -180,13 +180,13 @@ export default function CommandPalette({ open, setOpen, onPick }) {
                           onMouseEnter={() => setCursor(idx)}
                           onClick={() => choose(item)}
                           className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                            active ? 'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/25' : 'text-slate-300 hover:bg-white/[0.04]'
+                            active ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/25' : 'text-fg-secondary hover:bg-surface-1'
                           }`}
                         >
-                          {Icon && <Icon size={17} className={active ? 'text-aurora-cyan' : 'text-slate-500'} />}
+                          {Icon && <Icon size={17} className={active ? 'text-aurora-cyan' : 'text-fg-muted'} />}
                           <span className="flex-1 truncate">{item.label}</span>
-                          {item.hint && <span className="shrink-0 text-[11px] text-slate-500">{item.hint}</span>}
-                          {active && <CornerDownLeft size={14} className="shrink-0 text-slate-500" />}
+                          {item.hint && <span className="shrink-0 text-[11px] text-fg-muted">{item.hint}</span>}
+                          {active && <CornerDownLeft size={14} className="shrink-0 text-fg-muted" />}
                         </button>
                       );
                     })}
@@ -196,7 +196,7 @@ export default function CommandPalette({ open, setOpen, onPick }) {
             </div>
 
             {/* footer hints */}
-            <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-2.5 text-[11px] text-slate-500">
+            <div className="flex items-center justify-between gap-3 border-t border-subtle px-4 py-2.5 text-[11px] text-fg-muted">
               <span className="flex items-center gap-3">
                 <span className="flex items-center gap-1"><ArrowUp size={11} /><ArrowDown size={11} /> navigate</span>
                 <span className="flex items-center gap-1"><CornerDownLeft size={11} /> select</span>

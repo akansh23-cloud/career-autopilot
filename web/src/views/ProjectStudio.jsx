@@ -69,7 +69,7 @@ function CopyBtn({ text, label = 'Copy' }) {
 }
 
 function Chips({ items, tone = 'cyan' }) {
-  if (!items?.length) return <span className="text-xs text-slate-500">—</span>;
+  if (!items?.length) return <span className="text-xs text-fg-muted">—</span>;
   return <div className="flex flex-wrap gap-1.5">{items.map((s, i) => <Badge key={i} tone={tone}>{s}</Badge>)}</div>;
 }
 
@@ -122,22 +122,22 @@ function MilestoneCard({ index, phase, tasks, last, defaultOpen }) {
     <div className="relative pl-9 sm:pl-12">
       {/* timeline rail */}
       <span className="absolute left-2 top-1 z-10 grid h-7 w-7 place-items-center rounded-full bg-aurora-cta text-[12px] font-semibold text-ink-950 shadow-glow sm:left-3">{index + 1}</span>
-      {!last && <span className="absolute left-[1.37rem] top-9 h-[calc(100%-1.25rem)] w-px bg-white/10 sm:left-[1.62rem]" />}
-      <div className="mb-3 overflow-hidden rounded-2xl border border-white/10 bg-ink-950/55">
-        <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03]">
+      {!last && <span className="absolute left-[1.37rem] top-9 h-[calc(100%-1.25rem)] w-px bg-surface-2 sm:left-[1.62rem]" />}
+      <div className="mb-3 overflow-hidden rounded-2xl border border-subtle bg-base/55">
+        <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-surface-1">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-aurora-cyan">Phase {index + 1}</p>
-            <p className="truncate font-display text-[15px] font-semibold text-white">{phase}</p>
+            <p className="truncate font-display text-[15px] font-semibold text-fg">{phase}</p>
           </div>
-          <span className="shrink-0 text-[11px] text-slate-500">{list.length} task{list.length === 1 ? '' : 's'}</span>
-          <ChevronDown size={16} className={`shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <span className="shrink-0 text-[11px] text-fg-muted">{list.length} task{list.length === 1 ? '' : 's'}</span>
+          <ChevronDown size={16} className={`shrink-0 text-fg-muted transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
         <AnimatePresence initial={false}>
           {open && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-              <ul className="space-y-2 border-t border-white/8 px-4 py-3">
+              <ul className="space-y-2 border-t border-subtle px-4 py-3">
                 {list.map((t, k) => (
-                  <li key={k} className="flex items-start gap-2.5 text-[13px] leading-relaxed text-slate-300">
+                  <li key={k} className="flex items-start gap-2.5 text-[13px] leading-relaxed text-fg-secondary">
                     <Circle size={7} className="mt-1.5 shrink-0 fill-aurora-cyan/40 text-aurora-cyan" />
                     <span>{t}</span>
                   </li>
@@ -165,7 +165,7 @@ function RoadmapTimeline({ steps }) {
 function GenerateSkeleton() {
   return (
     <div className="gradient-border overflow-hidden">
-      <div className="space-y-3 border-b border-white/10 p-5 sm:p-6">
+      <div className="space-y-3 border-b border-subtle p-5 sm:p-6">
         <Skeleton className="h-5 w-24 rounded-full" />
         <Skeleton className="h-8 w-2/3 rounded-xl" />
         <div className="flex gap-2"><Skeleton className="h-6 w-28 rounded-full" /><Skeleton className="h-6 w-24 rounded-full" /></div>
@@ -190,14 +190,14 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
   return (
     <div className="gradient-border overflow-hidden">
       {/* header — always-visible actions (preserved) */}
-      <div className="border-b border-white/10 p-5 sm:p-6">
+      <div className="border-b border-subtle p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge tone={p.generatedBy === 'ai' ? 'violet' : 'cyan'}>{p.generatedBy === 'ai' ? 'AI-tailored' : 'Template'}</Badge>
               <Badge tone="mint">{p.type}</Badge>
             </div>
-            <h2 className="font-display text-2xl font-semibold text-white">{p.title}</h2>
+            <h2 className="font-display text-2xl font-semibold text-fg">{p.title}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               <Badge tone="violet"><Target size={11} /> {p.targetRole}</Badge>
               <Badge tone="amber"><Gauge size={11} /> {p.difficulty}</Badge>
@@ -213,10 +213,10 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
       </div>
 
       {/* tabs — horizontally scrollable on mobile */}
-      <div className="flex gap-1 overflow-x-auto border-b border-white/10 px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-1 overflow-x-auto border-b border-subtle px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map(([id, label, Icon]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${tab === id ? 'bg-aurora-violet/20 text-white ring-1 ring-aurora-violet/40' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${tab === id ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-1 hover:text-fg'}`}>
             <Icon size={14} /> {label}
           </button>
         ))}
@@ -227,13 +227,13 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
         {tab === 'overview' && (
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <Panel title="Problem"><p className="text-[13px] leading-relaxed text-slate-300">{p.problemStatement}</p></Panel>
-              <Panel title="Real-world use case"><p className="text-[13px] leading-relaxed text-slate-300">{p.useCase}</p></Panel>
+              <Panel title="Problem"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.problemStatement}</p></Panel>
+              <Panel title="Real-world use case"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.useCase}</p></Panel>
             </div>
             <Panel title="Skills covered"><Chips items={p.skillsCovered} /></Panel>
             {p.industry?.businessContext?.coreWorkflows?.length > 0 && (
               <Panel title="Core workflows">
-                <ul className="grid gap-1.5 text-[13px] text-slate-300 sm:grid-cols-2">
+                <ul className="grid gap-1.5 text-[13px] text-fg-secondary sm:grid-cols-2">
                   {p.industry.businessContext.coreWorkflows.map((w, i) => (
                     <li key={i} className="flex items-start gap-2"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-aurora-mint" /><span>{w}</span></li>
                   ))}
@@ -242,8 +242,8 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
             )}
             {p.industry?.overview && (
               <div className="grid gap-3 md:grid-cols-2">
-                <Panel title="Who should build this"><p className="text-[13px] leading-relaxed text-slate-300">{p.industry.overview.whoShouldBuild}</p></Panel>
-                <Panel title="Expected outcome"><p className="text-[13px] leading-relaxed text-slate-300">{p.industry.overview.expectedOutcome}</p></Panel>
+                <Panel title="Who should build this"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.industry.overview.whoShouldBuild}</p></Panel>
+                <Panel title="Expected outcome"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.industry.overview.expectedOutcome}</p></Panel>
               </div>
             )}
           </div>
@@ -252,7 +252,7 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
         {tab === 'roadmap' && (
           <div>
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h3 className="font-display text-base font-semibold text-white">Step-by-step roadmap</h3>
+              <h3 className="font-display text-base font-semibold text-fg">Step-by-step roadmap</h3>
               <Badge tone="cyan">{p.steps?.length || 0} phases</Badge>
             </div>
             <RoadmapTimeline steps={p.steps} />
@@ -263,15 +263,15 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <Panel title="Recommended tech stack"><Chips items={p.techStack} tone="violet" /></Panel>
-              <Panel title="Architecture"><p className="text-[13px] leading-relaxed text-slate-300">{p.architecture}</p></Panel>
+              <Panel title="Architecture"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.architecture}</p></Panel>
             </div>
-            <Panel title="Repo structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre></Panel>
+            <Panel title="Repo structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-fg-secondary">{p.repoStructure}</pre></Panel>
             {p.databaseSchema?.length > 0 && (
-              <Panel title="Database schema"><ul className="list-disc space-y-0.5 pl-4 font-mono text-[11px] text-slate-400">{p.databaseSchema.map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
+              <Panel title="Database schema"><ul className="list-disc space-y-0.5 pl-4 font-mono text-[11px] text-fg-secondary">{p.databaseSchema.map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
             )}
             <div className="grid gap-3 md:grid-cols-2">
-              <Panel title="Deployment plan"><ul className="list-disc space-y-0.5 pl-4 text-[12px] text-slate-400 marker:text-aurora-mint">{(p.deploymentPlan || []).map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
-              <Panel title="Testing plan"><ul className="list-disc space-y-0.5 pl-4 text-[12px] text-slate-400 marker:text-amber-glow">{(p.testingPlan || []).map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
+              <Panel title="Deployment plan"><ul className="list-disc space-y-0.5 pl-4 text-[12px] text-fg-secondary marker:text-aurora-mint">{(p.deploymentPlan || []).map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
+              <Panel title="Testing plan"><ul className="list-disc space-y-0.5 pl-4 text-[12px] text-fg-secondary marker:text-amber-glow">{(p.testingPlan || []).map((d, i) => <li key={i}>{d}</li>)}</ul></Panel>
             </div>
           </div>
         )}
@@ -279,27 +279,27 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
         {tab === 'github' && (
           <div className="space-y-4">
             <Panel title="GitHub README" action={<CopyBtn text={p.readme} label="Copy README" />}>
-              <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.readme}</pre>
+              <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-fg-secondary">{p.readme}</pre>
             </Panel>
-            <Panel title="Repo structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.repoStructure}</pre></Panel>
+            <Panel title="Repo structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-fg-secondary">{p.repoStructure}</pre></Panel>
           </div>
         )}
 
         {tab === 'resume' && (
           <div className="space-y-4">
             <Panel title="Resume bullet points" action={<CopyBtn text={(p.resumeBullets || []).map((b) => '\u2022 ' + b).join('\n')} />}>
-              <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-300 marker:text-aurora-violet">{(p.resumeBullets || []).map((b, i) => <li key={i}>{b}</li>)}</ul>
+              <ul className="list-disc space-y-1 pl-4 text-[13px] text-fg-secondary marker:text-aurora-violet">{(p.resumeBullets || []).map((b, i) => <li key={i}>{b}</li>)}</ul>
             </Panel>
             <div className="grid gap-3 md:grid-cols-2">
               <Panel title="LinkedIn post" action={<CopyBtn text={p.linkedinPost} />}>
-                <pre className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-300">{p.linkedinPost}</pre>
+                <pre className="whitespace-pre-wrap text-[12px] leading-relaxed text-fg-secondary">{p.linkedinPost}</pre>
               </Panel>
               <Panel title="Interview Q&A">
                 <div className="space-y-2">
                   {(p.interviewQuestions || []).slice(0, 5).map((qa, i) => (
-                    <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
-                      <summary className="cursor-pointer font-medium text-slate-200">{qa.q}</summary>
-                      <p className="mt-1 text-slate-400">{qa.a}</p>
+                    <details key={i} className="rounded-lg bg-surface-1 p-2 text-[12px]">
+                      <summary className="cursor-pointer font-medium text-fg">{qa.q}</summary>
+                      <p className="mt-1 text-fg-secondary">{qa.a}</p>
                     </details>
                   ))}
                 </div>
@@ -315,10 +315,10 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
 /* ---------------- Workspace card + modal ---------------- */
 function TabBar({ tabs, active, onPick }) {
   return (
-    <div className="sticky top-0 z-10 -mx-5 mb-4 flex gap-1 overflow-x-auto border-b border-white/10 bg-ink-900/95 px-5 pb-2 pt-1 backdrop-blur-xl sm:-mx-6 sm:px-6">
+    <div className="sticky top-0 z-10 -mx-5 mb-4 flex gap-1 overflow-x-auto border-b border-subtle bg-menu px-5 pb-2 pt-1 backdrop-blur-xl sm:-mx-6 sm:px-6">
       {tabs.map(([id, label, Icon]) => (
         <button key={id} onClick={() => onPick(id)}
-          className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${active === id ? 'bg-aurora-violet/20 text-white ring-1 ring-aurora-violet/40' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+          className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${active === id ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-1 hover:text-fg'}`}>
           <Icon size={13} /> {label}
         </button>
       ))}
@@ -328,9 +328,9 @@ function TabBar({ tabs, active, onPick }) {
 
 function Panel({ title, children, action }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
+    <div className="rounded-xl border border-subtle bg-base/55 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{title}</div>
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-fg-muted">{title}</div>
         {action}
       </div>
       {children}
@@ -432,7 +432,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={14} /> {buildLabel(p)}</Button>
-        <span className="text-[11px] text-slate-500">Builder Mode walks you through setup → deployment → proof, step by step.</span>
+        <span className="text-[11px] text-fg-muted">Builder Mode walks you through setup → deployment → proof, step by step.</span>
       </div>
 
       <div className="mt-3" />
@@ -461,9 +461,9 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
               </div>
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-3 text-[12.5px]">
-              <div><span className="text-slate-500">Progress: </span><span className="text-white">{b.buildProgress}%</span> ({b.completedTasks}/{b.totalTasks})</div>
-              <div><span className="text-slate-500">Current stage: </span><span className="text-white">{b.currentStage}</span></div>
-              <div className="truncate"><span className="text-slate-500">Next: </span><span className="text-white">{b.nextTask || '—'}</span></div>
+              <div><span className="text-fg-muted">Progress: </span><span className="text-fg">{b.buildProgress}%</span> ({b.completedTasks}/{b.totalTasks})</div>
+              <div><span className="text-fg-muted">Current stage: </span><span className="text-fg">{b.currentStage}</span></div>
+              <div className="truncate"><span className="text-fg-muted">Next: </span><span className="text-fg">{b.nextTask || '—'}</span></div>
             </div>
             <div className="mt-2.5 flex flex-wrap gap-2">
               <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={13} /> {b.ctaLabel}</Button>
@@ -474,9 +474,9 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
       })()}
 
       {tab === 'proof' && (
-        <div className="rounded-xl border border-aurora-cyan/25 bg-aurora-cyan/5 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-slate-300">
+        <div className="rounded-xl border border-aurora-cyan/25 bg-aurora-cyan/5 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-fg-secondary">
           <ShieldCheck size={13} className="mr-1.5 inline text-aurora-cyan" />
-          <span className="text-white">Build progress ≠ Verified proof.</span> Completing build tasks measures execution. Proof is verified only from real evidence — a synced GitHub repo and/or a verified live demo. Statuses: Missing → Submitted → System Verified → Reviewer Verified (Rejected if evidence fails).
+          <span className="text-fg">Build progress ≠ Verified proof.</span> Completing build tasks measures execution. Proof is verified only from real evidence — a synced GitHub repo and/or a verified live demo. Statuses: Missing → Submitted → System Verified → Reviewer Verified (Rejected if evidence fails).
         </div>
       )}
 
@@ -486,9 +486,9 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
           <div className="space-y-3">
             <Panel title="Links">
               <div className="space-y-1.5 text-[13px]">
-                <div><span className="text-slate-500">GitHub repo: </span>{pub.githubUrl ? <a className="text-aurora-cyan underline" href={pub.githubUrl} target="_blank" rel="noreferrer">{pub.githubUrl}</a> : <span className="text-slate-500">Not linked</span>}</div>
-                <div><span className="text-slate-500">Live demo: </span>{pub.liveUrl ? <a className="text-aurora-cyan underline" href={pub.liveUrl} target="_blank" rel="noreferrer">{pub.liveUrl}</a> : <span className="text-slate-500">Not linked</span>}</div>
-                <div><span className="text-slate-500">README: </span><span className="text-white">{pub.readmeStatus}</span></div>
+                <div><span className="text-fg-muted">GitHub repo: </span>{pub.githubUrl ? <a className="text-aurora-cyan underline" href={pub.githubUrl} target="_blank" rel="noreferrer">{pub.githubUrl}</a> : <span className="text-fg-muted">Not linked</span>}</div>
+                <div><span className="text-fg-muted">Live demo: </span>{pub.liveUrl ? <a className="text-aurora-cyan underline" href={pub.liveUrl} target="_blank" rel="noreferrer">{pub.liveUrl}</a> : <span className="text-fg-muted">Not linked</span>}</div>
+                <div><span className="text-fg-muted">README: </span><span className="text-fg">{pub.readmeStatus}</span></div>
               </div>
             </Panel>
             <Panel title="Visibility">
@@ -501,8 +501,8 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
               <div className="space-y-1.5">
                 {pub.checklist.map((c, i) => (
                   <div key={i} className="flex items-center gap-2 text-[13px]">
-                    {c.done ? <CheckCircle2 size={14} className="text-aurora-mint" /> : <Circle size={14} className="text-slate-500" />}
-                    <span className={c.done ? 'text-slate-200' : 'text-slate-400'}>{c.label}</span>
+                    {c.done ? <CheckCircle2 size={14} className="text-aurora-mint" /> : <Circle size={14} className="text-fg-muted" />}
+                    <span className={c.done ? 'text-fg' : 'text-fg-secondary'}>{c.label}</span>
                   </div>
                 ))}
               </div>
@@ -517,8 +517,8 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
         <div className="space-y-3">
           {!cons.ok && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100"><AlertTriangle size={13} className="mr-1.5 inline" /> {cons.warning}</div>}
           <div>
-            <div className="mb-1 flex justify-between text-[11px] text-slate-400"><span>Task completion</span><span>{progress}%</span></div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${progress}%` }} /></div>
+            <div className="mb-1 flex justify-between text-[11px] text-fg-secondary"><span>Task completion</span><span>{progress}%</span></div>
+            <div className="h-2 overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${progress}%` }} /></div>
           </div>
           {(() => {
             const build = buildProgressFor(p);
@@ -527,33 +527,33 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-aurora-violet"><Rocket size={13} /> Build progress</div>
-                    <p className="mt-1 text-[12px] leading-snug text-slate-400">{build.nextAction || 'Open Builder Mode to start building step by step.'}</p>
+                    <p className="mt-1 text-[12px] leading-snug text-fg-secondary">{build.nextAction || 'Open Builder Mode to start building step by step.'}</p>
                   </div>
                   <Button size="sm" variant="soft" onClick={() => onBuild?.(p)} className="shrink-0"><Rocket size={13} /> {buildLabel(p)}</Button>
                 </div>
                 <div className="mt-2.5">
-                  <div className="mb-1 flex justify-between text-[10px] text-slate-500"><span>{build.completedTasks}/{build.totalTasks} tasks · stage {Math.min(build.completedStages + 1, build.totalStages || 1)}/{build.totalStages}</span><span>{build.progressPercent}%</span></div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-violet transition-all" style={{ width: `${build.progressPercent}%` }} /></div>
+                  <div className="mb-1 flex justify-between text-[10px] text-fg-muted"><span>{build.completedTasks}/{build.totalTasks} tasks · stage {Math.min(build.completedStages + 1, build.totalStages || 1)}/{build.totalStages}</span><span>{build.progressPercent}%</span></div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full bg-aurora-violet transition-all" style={{ width: `${build.progressPercent}%` }} /></div>
                 </div>
               </div>
             );
           })()}
           {ind.overview && (
             <div className="grid gap-3 md:grid-cols-2">
-              <Panel title="Who should build it"><p className="text-[13px] leading-relaxed text-slate-300">{ind.overview.whoShouldBuild}</p></Panel>
-              <Panel title="Expected outcome"><p className="text-[13px] leading-relaxed text-slate-300">{ind.overview.expectedOutcome}</p></Panel>
+              <Panel title="Who should build it"><p className="text-[13px] leading-relaxed text-fg-secondary">{ind.overview.whoShouldBuild}</p></Panel>
+              <Panel title="Expected outcome"><p className="text-[13px] leading-relaxed text-fg-secondary">{ind.overview.expectedOutcome}</p></Panel>
             </div>
           )}
           <div className="grid gap-3 md:grid-cols-2">
-            <Panel title="Problem"><p className="text-[13px] leading-relaxed text-slate-300">{p.problemStatement}</p></Panel>
-            <Panel title="Real-world use case"><p className="text-[13px] leading-relaxed text-slate-300">{p.useCase}</p></Panel>
+            <Panel title="Problem"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.problemStatement}</p></Panel>
+            <Panel title="Real-world use case"><p className="text-[13px] leading-relaxed text-fg-secondary">{p.useCase}</p></Panel>
           </div>
           {ind.businessContext && (
             <Panel title="Business / use-case context">
-              <div className="space-y-2 text-[12px] text-slate-300">
-                <p><span className="text-slate-500">Personas:</span> {ind.businessContext.personas.join(', ')}</p>
-                <p><span className="text-slate-500">Core workflows:</span> {ind.businessContext.coreWorkflows.join(' → ')}</p>
-                <p><span className="text-slate-500">Industry scenario:</span> {ind.businessContext.industryScenario}</p>
+              <div className="space-y-2 text-[12px] text-fg-secondary">
+                <p><span className="text-fg-muted">Personas:</span> {ind.businessContext.personas.join(', ')}</p>
+                <p><span className="text-fg-muted">Core workflows:</span> {ind.businessContext.coreWorkflows.join(' → ')}</p>
+                <p><span className="text-fg-muted">Industry scenario:</span> {ind.businessContext.industryScenario}</p>
               </div>
             </Panel>
           )}
@@ -563,11 +563,11 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                 {[['Must-have', ind.features.mustHave, 'mint'], ['Good-to-have', ind.features.goodToHave, 'cyan'], ['Advanced', ind.features.advanced, 'violet']].map(([t, items, tone]) => (
                   <div key={t}>
                     <Badge tone={tone}>{t}</Badge>
-                    <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[12px] text-slate-400">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                    <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[12px] text-fg-secondary">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-slate-500">Non-functional: {ind.features.nonFunctional.join(' · ')}</p>
+              <p className="mt-2 text-[11px] text-fg-muted">Non-functional: {ind.features.nonFunctional.join(' · ')}</p>
             </Panel>
           )}
           <Panel title="Skills covered"><Chips items={p.skillsCovered} /></Panel>
@@ -586,27 +586,27 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
               height={440}
             />
           </Panel>
-          <Panel title="Architecture notes"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{safeText(p.architecture, 'No architecture notes yet.')}</p></Panel>
+          <Panel title="Architecture notes"><p className="whitespace-pre-line text-[13px] leading-relaxed text-fg-secondary">{safeText(p.architecture, 'No architecture notes yet.')}</p></Panel>
           {safeObject(ind.technicalArchitecture) && (
             <Panel title="Technical architecture">
               <div className="grid gap-1.5 text-[12px] sm:grid-cols-2">
                 {Object.entries(safeObject(ind.technicalArchitecture)).map(([k, v]) => (
-                  <div key={k} className="flex gap-2"><span className="w-28 shrink-0 capitalize text-slate-500">{k}</span><span className="text-slate-300">{safeText(v)}</span></div>
+                  <div key={k} className="flex gap-2"><span className="w-28 shrink-0 capitalize text-fg-muted">{k}</span><span className="text-fg-secondary">{safeText(v)}</span></div>
                 ))}
               </div>
             </Panel>
           )}
           {typeof ind.technicalArchitecture === 'string' && (
-            <Panel title="Technical architecture"><p className="whitespace-pre-line text-[13px] leading-relaxed text-slate-300">{ind.technicalArchitecture}</p></Panel>
+            <Panel title="Technical architecture"><p className="whitespace-pre-line text-[13px] leading-relaxed text-fg-secondary">{ind.technicalArchitecture}</p></Panel>
           )}
           {safeArray(ind.dataModel).length > 0 && (
             <Panel title="Data model / schema">
               <div className="space-y-2">
                 {safeArray(ind.dataModel).map((m, i) => (
-                  <div key={i} className="rounded-lg bg-white/[0.03] p-2">
-                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-white"><Database size={12} className="text-aurora-cyan" /> {safeText(m?.name || `Entity ${i + 1}`)}</div>
-                    {safeArray(m?.fields).length > 0 && <ul className="mt-1 list-disc pl-4 font-mono text-[11px] text-slate-400">{safeArray(m.fields).map((f, j) => <li key={j}>{safeText(f)}</li>)}</ul>}
-                    {m?.sample != null && <pre className="mt-1 overflow-x-auto rounded bg-ink-950/70 p-1.5 font-mono text-[10px] text-slate-400">{safeText(m.sample)}</pre>}
+                  <div key={i} className="rounded-lg bg-surface-1 p-2">
+                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-fg"><Database size={12} className="text-aurora-cyan" /> {safeText(m?.name || `Entity ${i + 1}`)}</div>
+                    {safeArray(m?.fields).length > 0 && <ul className="mt-1 list-disc pl-4 font-mono text-[11px] text-fg-secondary">{safeArray(m.fields).map((f, j) => <li key={j}>{safeText(f)}</li>)}</ul>}
+                    {m?.sample != null && <pre className="mt-1 overflow-x-auto rounded bg-base/70 p-1.5 font-mono text-[10px] text-fg-secondary">{safeText(m.sample)}</pre>}
                   </div>
                 ))}
               </div>
@@ -616,12 +616,12 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <Panel title="API design">
               <div className="space-y-1.5">
                 {safeArray(ind.apiDesign).map((a, i) => (
-                  <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
-                    <summary className="cursor-pointer text-slate-200"><span className="font-mono font-semibold text-aurora-cyan">{safeText(a?.method || 'API')}</span> <span className="font-mono">{safeText(a?.endpoint || `/endpoint-${i + 1}`)}</span> — {safeText(a?.purpose || 'Project API')} {a?.auth && <Badge tone="amber">auth</Badge>}</summary>
-                    <div className="mt-1 space-y-0.5 text-slate-400">
-                      <p><span className="text-slate-500">Request:</span> <code>{safeText(a?.request)}</code></p>
-                      <p><span className="text-slate-500">Response:</span> <code>{safeText(a?.response)}</code></p>
-                      <p><span className="text-slate-500">Validation:</span> {safeText(a?.validation)}</p>
+                  <details key={i} className="rounded-lg bg-surface-1 p-2 text-[12px]">
+                    <summary className="cursor-pointer text-fg"><span className="font-mono font-semibold text-aurora-cyan">{safeText(a?.method || 'API')}</span> <span className="font-mono">{safeText(a?.endpoint || `/endpoint-${i + 1}`)}</span> — {safeText(a?.purpose || 'Project API')} {a?.auth && <Badge tone="amber">auth</Badge>}</summary>
+                    <div className="mt-1 space-y-0.5 text-fg-secondary">
+                      <p><span className="text-fg-muted">Request:</span> <code>{safeText(a?.request)}</code></p>
+                      <p><span className="text-fg-muted">Response:</span> <code>{safeText(a?.response)}</code></p>
+                      <p><span className="text-fg-muted">Validation:</span> {safeText(a?.validation)}</p>
                     </div>
                   </details>
                 ))}
@@ -629,7 +629,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             </Panel>
           )}
           <Panel title="Folder structure">
-            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{safeText(p.repoStructure, 'No folder structure generated yet.')}</pre>
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-fg-secondary">{safeText(p.repoStructure, 'No folder structure generated yet.')}</pre>
           </Panel>
         </div>
         </TabCrashBoundary>
@@ -637,16 +637,16 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
       {tab === 'builder' && (
         <div className="space-y-3">
-          <p className="text-[12px] text-slate-400">A beginner-friendly, milestone-based build guide. Tick mentor tasks as you finish them.</p>
+          <p className="text-[12px] text-fg-secondary">A beginner-friendly, milestone-based build guide. Tick mentor tasks as you finish them.</p>
           {(ind.milestones || []).map((m) => (
-            <details key={m.n} className="rounded-xl border border-white/10 bg-ink-950/55 p-3" open={m.n <= 2}>
-              <summary className="cursor-pointer text-[13px] font-semibold text-white">Milestone {m.n}: {m.title}</summary>
-              <div className="mt-2 space-y-1.5 text-[12px] text-slate-300">
-                <p><span className="text-slate-500">Goal:</span> {m.goal}</p>
-                <div><span className="text-slate-500">Tasks:</span><ul className="ml-1 mt-0.5 list-disc pl-4 text-slate-400">{m.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>
-                <p><span className="text-slate-500">Expected output:</span> {m.expectedOutput}</p>
+            <details key={m.n} className="rounded-xl border border-subtle bg-base/55 p-3" open={m.n <= 2}>
+              <summary className="cursor-pointer text-[13px] font-semibold text-fg">Milestone {m.n}: {m.title}</summary>
+              <div className="mt-2 space-y-1.5 text-[12px] text-fg-secondary">
+                <p><span className="text-fg-muted">Goal:</span> {m.goal}</p>
+                <div><span className="text-fg-muted">Tasks:</span><ul className="ml-1 mt-0.5 list-disc pl-4 text-fg-secondary">{m.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>
+                <p><span className="text-fg-muted">Expected output:</span> {m.expectedOutput}</p>
                 <p className="text-amber-100/80"><AlertTriangle size={11} className="mr-1 inline" />Common mistake: {m.commonMistakes}</p>
-                <div><span className="text-slate-500">Verify:</span><ul className="ml-1 mt-0.5 list-disc pl-4 text-aurora-mint/90">{m.verification.map((v, i) => <li key={i}>{v}</li>)}</ul></div>
+                <div><span className="text-fg-muted">Verify:</span><ul className="ml-1 mt-0.5 list-disc pl-4 text-aurora-mint/90">{m.verification.map((v, i) => <li key={i}>{v}</li>)}</ul></div>
               </div>
             </details>
           ))}
@@ -654,17 +654,17 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <Panel title="Mentor tasks (detailed)">
               <div className="space-y-2">
                 {p.guideTasks.map((t) => (
-                  <div key={t.id} className="rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+                  <div key={t.id} className="rounded-lg border border-subtle bg-surface-1 p-2.5">
                     <button onClick={() => toggleGuide(t.id)} className="flex w-full items-start gap-2 text-left">
-                      {t.status === 'done' ? <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-aurora-mint" /> : <Circle size={15} className="mt-0.5 shrink-0 text-slate-600" />}
-                      <span className={`text-[13px] font-medium ${t.status === 'done' ? 'text-slate-500 line-through' : 'text-white'}`}>{t.title}</span>
+                      {t.status === 'done' ? <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-aurora-mint" /> : <Circle size={15} className="mt-0.5 shrink-0 text-fg-muted" />}
+                      <span className={`text-[13px] font-medium ${t.status === 'done' ? 'text-fg-muted line-through' : 'text-fg'}`}>{t.title}</span>
                     </button>
-                    <div className="mt-1.5 space-y-1 pl-7 text-[11px] text-slate-400">
-                      <p><span className="text-slate-500">Why:</span> {t.why}</p>
-                      <p><span className="text-slate-500">Files:</span> <code>{t.filesToCreate.join(', ')}</code></p>
-                      <div><span className="text-slate-500">Steps:</span><ol className="ml-1 list-decimal pl-4">{t.steps.map((s, i) => <li key={i}>{s}</li>)}</ol></div>
-                      <p><span className="text-slate-500">Expected:</span> {t.expectedOutput}</p>
-                      <p><span className="text-slate-500">Test:</span> {t.howToTest}</p>
+                    <div className="mt-1.5 space-y-1 pl-7 text-[11px] text-fg-secondary">
+                      <p><span className="text-fg-muted">Why:</span> {t.why}</p>
+                      <p><span className="text-fg-muted">Files:</span> <code>{t.filesToCreate.join(', ')}</code></p>
+                      <div><span className="text-fg-muted">Steps:</span><ol className="ml-1 list-decimal pl-4">{t.steps.map((s, i) => <li key={i}>{s}</li>)}</ol></div>
+                      <p><span className="text-fg-muted">Expected:</span> {t.expectedOutput}</p>
+                      <p><span className="text-fg-muted">Test:</span> {t.howToTest}</p>
                       <p className="text-amber-100/80">Avoid: {t.commonMistakes}</p>
                     </div>
                   </div>
@@ -676,19 +676,19 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <Panel title="Testing plan">
               <div className="grid gap-2 text-[12px] sm:grid-cols-2">
                 {Object.entries(ind.testingPlan).map(([k, items]) => (
-                  <div key={k}><span className="capitalize text-slate-500">{k}:</span><ul className="ml-1 list-disc pl-4 text-slate-400">{items.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
+                  <div key={k}><span className="capitalize text-fg-muted">{k}:</span><ul className="ml-1 list-disc pl-4 text-fg-secondary">{items.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
                 ))}
               </div>
             </Panel>
           )}
           {ind.deploymentPlan && (
             <Panel title="Deployment plan">
-              <div className="space-y-1 text-[12px] text-slate-300">
-                <p><span className="text-slate-500">Frontend:</span> {ind.deploymentPlan.frontend.join(' · ')}</p>
-                <p><span className="text-slate-500">Backend:</span> {(ind.deploymentPlan.backend || []).join(' · ')}</p>
-                <p><span className="text-slate-500">Database:</span> {ind.deploymentPlan.database.join(' · ')}</p>
-                <p><span className="text-slate-500">Env vars:</span> <code>{ind.deploymentPlan.envVars.join(', ')}</code></p>
-                <p><span className="text-slate-500">Verify:</span> {ind.deploymentPlan.verification.join(' · ')}</p>
+              <div className="space-y-1 text-[12px] text-fg-secondary">
+                <p><span className="text-fg-muted">Frontend:</span> {ind.deploymentPlan.frontend.join(' · ')}</p>
+                <p><span className="text-fg-muted">Backend:</span> {(ind.deploymentPlan.backend || []).join(' · ')}</p>
+                <p><span className="text-fg-muted">Database:</span> {ind.deploymentPlan.database.join(' · ')}</p>
+                <p><span className="text-fg-muted">Env vars:</span> <code>{ind.deploymentPlan.envVars.join(', ')}</code></p>
+                <p><span className="text-fg-muted">Verify:</span> {ind.deploymentPlan.verification.join(' · ')}</p>
               </div>
             </Panel>
           )}
@@ -700,9 +700,9 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
           <Panel title="Roadmap checklist">
             <div className="space-y-1.5">
               {p.checklist.map((c, i) => (
-                <button key={i} onClick={() => toggleCheck(i)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-slate-300 hover:bg-white/5">
-                  {c.done ? <CheckCircle2 size={15} className="text-aurora-mint" /> : <Circle size={15} className="text-slate-600" />}
-                  <span className={c.done ? 'text-slate-500 line-through' : ''}>{c.label}</span>
+                <button key={i} onClick={() => toggleCheck(i)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-fg-secondary hover:bg-surface-1">
+                  {c.done ? <CheckCircle2 size={15} className="text-aurora-mint" /> : <Circle size={15} className="text-fg-muted" />}
+                  <span className={c.done ? 'text-fg-muted line-through' : ''}>{c.label}</span>
                 </button>
               ))}
             </div>
@@ -710,19 +710,19 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
           <Panel title="Task board">
             <div className="grid gap-3 md:grid-cols-3">
               {cols.map(([key, label, Icon]) => (
-                <div key={key} className="rounded-lg border border-white/8 bg-white/[0.02] p-2">
-                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-slate-300"><Icon size={12} /> {label} <span className="text-slate-600">({p.tasks.filter((t) => t.status === key).length})</span></div>
+                <div key={key} className="rounded-lg border border-subtle bg-surface-1 p-2">
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-fg-secondary"><Icon size={12} /> {label} <span className="text-fg-muted">({p.tasks.filter((t) => t.status === key).length})</span></div>
                   <div className="space-y-1.5">
                     {p.tasks.filter((t) => t.status === key).map((t) => (
-                      <div key={t.id} className="rounded-md bg-ink-950/70 p-2 text-[11px] text-slate-300">
+                      <div key={t.id} className="rounded-md bg-base/70 p-2 text-[11px] text-fg-secondary">
                         <p className="leading-snug">{t.title}</p>
                         <div className="mt-1.5 flex gap-1">
-                          {key !== 'todo' && <button onClick={() => moveTask(t.id, key === 'done' ? 'inprogress' : 'todo')} className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-white/10">←</button>}
-                          {key !== 'done' && <button onClick={() => moveTask(t.id, key === 'todo' ? 'inprogress' : 'done')} className="rounded bg-aurora-violet/20 px-1.5 py-0.5 text-[10px] text-white hover:bg-aurora-violet/30">→</button>}
+                          {key !== 'todo' && <button onClick={() => moveTask(t.id, key === 'done' ? 'inprogress' : 'todo')} className="rounded bg-surface-1 px-1.5 py-0.5 text-[10px] text-fg-secondary hover:bg-surface-2">←</button>}
+                          {key !== 'done' && <button onClick={() => moveTask(t.id, key === 'todo' ? 'inprogress' : 'done')} className="rounded bg-aurora-violet/20 px-1.5 py-0.5 text-[10px] text-fg hover:bg-aurora-violet/30">→</button>}
                         </div>
                       </div>
                     ))}
-                    {!p.tasks.filter((t) => t.status === key).length && <p className="px-1 py-2 text-[11px] text-slate-600">Empty</p>}
+                    {!p.tasks.filter((t) => t.status === key).length && <p className="px-1 py-2 text-[11px] text-fg-muted">Empty</p>}
                   </div>
                 </div>
               ))}
@@ -736,28 +736,28 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
               </div>
               <ul className="space-y-1">
                 {(p.resources || []).map((r, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 rounded-md bg-white/[0.03] px-2 py-1 text-[12px] text-slate-300">
+                  <li key={i} className="flex items-center justify-between gap-2 rounded-md bg-surface-1 px-2 py-1 text-[12px] text-fg-secondary">
                     <span className="truncate">{r}</span>
-                    <button onClick={() => patch({ resources: p.resources.filter((_, idx) => idx !== i) })} className="text-slate-500 hover:text-rose-400"><Trash2 size={12} /></button>
+                    <button onClick={() => patch({ resources: p.resources.filter((_, idx) => idx !== i) })} className="text-fg-muted hover:text-rose-400"><Trash2 size={12} /></button>
                   </li>
                 ))}
-                {!(p.resources || []).length && <li className="text-[11px] text-slate-600">No resources yet.</li>}
+                {!(p.resources || []).length && <li className="text-[11px] text-fg-muted">No resources yet.</li>}
               </ul>
             </Panel>
             <Panel title="Screenshots" action={<Button size="sm" variant="soft" onClick={addScreenshot}><ImageIcon size={13} /> Add</Button>}>
               <div className="flex flex-wrap gap-2">
                 {(p.screenshots || []).map((s, i) => (
-                  <div key={i} className="relative grid h-16 w-20 place-items-center rounded-lg border border-dashed border-white/15 bg-white/[0.02] text-[9px] text-slate-500">
+                  <div key={i} className="relative grid h-16 w-20 place-items-center rounded-lg border border-dashed border-strong bg-surface-1 text-[9px] text-fg-muted">
                     {s.label}
-                    <button onClick={() => patch({ screenshots: p.screenshots.filter((_, idx) => idx !== i) })} className="absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full bg-ink-900 text-slate-400 ring-1 ring-white/15 hover:text-rose-400"><X size={10} /></button>
+                    <button onClick={() => patch({ screenshots: p.screenshots.filter((_, idx) => idx !== i) })} className="absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full bg-base text-fg-secondary ring-1 ring-strong hover:text-rose-400"><X size={10} /></button>
                   </div>
                 ))}
-                {!(p.screenshots || []).length && <p className="text-[11px] text-slate-600">Add slots to boost the proof score.</p>}
+                {!(p.screenshots || []).length && <p className="text-[11px] text-fg-muted">Add slots to boost the proof score.</p>}
               </div>
             </Panel>
           </div>
           <Field label="Notes">
-            <textarea value={p.notes || ''} onChange={(e) => patch({ notes: e.target.value })} placeholder="Working notes, decisions, blockers…" className="h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+            <textarea value={p.notes || ''} onChange={(e) => patch({ notes: e.target.value })} placeholder="Working notes, decisions, blockers…" className="h-24 w-full resize-y rounded-xl border border-field-border bg-field p-3 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
           </Field>
         </div>
       )}
@@ -765,37 +765,37 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
       {tab === 'proof' && (
         <div className="space-y-3">
           <Panel title="Connect GitHub repo">
-            <p className="mb-2 text-[12px] text-slate-400">Paste a public repo URL (github.com/user/repo or user/repo). OAuth account connect can be added later — public URL analysis needs no token.</p>
+            <p className="mb-2 text-[12px] text-fg-secondary">Paste a public repo URL (github.com/user/repo or user/repo). OAuth account connect can be added later — public URL analysis needs no token.</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input value={repoInput} onChange={(e) => setRepoInput(e.target.value)} placeholder="https://github.com/you/project" />
               <Button onClick={runGithub} disabled={busy === 'github'}><GitBranch size={15} /> {busy === 'github' ? 'Analyzing…' : 'Connect / Analyze'}</Button>
             </div>
             {ghMsg && <p className="mt-2 text-[12px] text-aurora-cyan">{ghMsg}</p>}
-            {p.github?.lastSyncedAt && <p className="mt-1 text-[11px] text-slate-500">Last synced {new Date(p.github.lastSyncedAt).toLocaleString()}.</p>}
+            {p.github?.lastSyncedAt && <p className="mt-1 text-[11px] text-fg-muted">Last synced {new Date(p.github.lastSyncedAt).toLocaleString()}.</p>}
           </Panel>
           {p.github?.success && (
             <>
               <div className="grid gap-3 md:grid-cols-2">
                 <Panel title="Repository" action={<Badge tone={p.github.githubScore >= 60 ? 'mint' : 'amber'}>{p.github.githubScore}/100</Badge>}>
-                  <div className="space-y-0.5 text-[12px] text-slate-300">
-                    <p className="font-medium text-white">{p.github.repo.fullName}</p>
-                    {p.github.repo.description && <p className="text-slate-400">{p.github.repo.description}</p>}
-                    <p className="text-slate-500">★ {p.github.repo.stars} · forks {p.github.repo.forks} · branch {p.github.repo.defaultBranch}</p>
-                    <p className="text-slate-500">Updated {p.github.repo.pushedAt ? new Date(p.github.repo.pushedAt).toLocaleDateString() : '—'} · {p.github.repo.license || 'no license'}</p>
+                  <div className="space-y-0.5 text-[12px] text-fg-secondary">
+                    <p className="font-medium text-fg">{p.github.repo.fullName}</p>
+                    {p.github.repo.description && <p className="text-fg-secondary">{p.github.repo.description}</p>}
+                    <p className="text-fg-muted">★ {p.github.repo.stars} · forks {p.github.repo.forks} · branch {p.github.repo.defaultBranch}</p>
+                    <p className="text-fg-muted">Updated {p.github.repo.pushedAt ? new Date(p.github.repo.pushedAt).toLocaleDateString() : '—'} · {p.github.repo.license || 'no license'}</p>
                   </div>
                 </Panel>
-                <Panel title="Detected tech stack"><div className="flex flex-wrap gap-1.5">{(p.github.detectedTechStack || []).map((s, i) => <Badge key={i} tone="violet">{s}</Badge>)}{Object.keys(p.github.languages || {}).length > 0 && <span className="text-[11px] text-slate-500">Langs: {Object.keys(p.github.languages).join(', ')}</span>}</div></Panel>
+                <Panel title="Detected tech stack"><div className="flex flex-wrap gap-1.5">{(p.github.detectedTechStack || []).map((s, i) => <Badge key={i} tone="violet">{s}</Badge>)}{Object.keys(p.github.languages || {}).length > 0 && <span className="text-[11px] text-fg-muted">Langs: {Object.keys(p.github.languages).join(', ')}</span>}</div></Panel>
               </div>
               <Panel title="Detected files & evidence">
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(p.github.files || {}).filter(([, v]) => v).map(([k]) => <Badge key={k} tone="mint">{k}</Badge>)}
                 </div>
-                {(p.github.structure || []).length > 0 && <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] text-slate-400">{p.github.structure.join('\n')}</pre>}
+                {(p.github.structure || []).length > 0 && <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] text-fg-secondary">{p.github.structure.join('\n')}</pre>}
               </Panel>
               {(p.github.warnings?.length > 0 || p.github.recommendations?.length > 0) && (
                 <Panel title="Missing items & recommendations">
                   <ul className="list-disc space-y-0.5 pl-4 text-[12px] text-amber-100/90">{(p.github.warnings || []).map((w, i) => <li key={i}>{w}</li>)}</ul>
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12px] text-slate-400">{(p.github.recommendations || []).map((r, i) => <li key={i}>{r}</li>)}</ul>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12px] text-fg-secondary">{(p.github.recommendations || []).map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </Panel>
               )}
             </>
@@ -807,9 +807,9 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
         <div className="space-y-3">
           <Panel title="Project status" action={<StatusBadge status={statusInfo.status} />}>
             <div className="mb-2 grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg bg-white/[0.03] p-2"><div className="font-display text-lg text-white">{p.proofScore}</div><div className="text-[9px] uppercase tracking-widest text-slate-500">Proof</div></div>
-              <div className="rounded-lg bg-white/[0.03] p-2"><div className="font-display text-lg text-white">{statusInfo.githubScore}</div><div className="text-[9px] uppercase tracking-widest text-slate-500">GitHub</div></div>
-              <div className="rounded-lg bg-white/[0.03] p-2"><div className="font-display text-lg text-white">{statusInfo.checklistPct}%</div><div className="text-[9px] uppercase tracking-widest text-slate-500">Checklist</div></div>
+              <div className="rounded-lg bg-surface-1 p-2"><div className="font-display text-lg text-fg">{p.proofScore}</div><div className="text-[9px] uppercase tracking-widest text-fg-muted">Proof</div></div>
+              <div className="rounded-lg bg-surface-1 p-2"><div className="font-display text-lg text-fg">{statusInfo.githubScore}</div><div className="text-[9px] uppercase tracking-widest text-fg-muted">GitHub</div></div>
+              <div className="rounded-lg bg-surface-1 p-2"><div className="font-display text-lg text-fg">{statusInfo.checklistPct}%</div><div className="text-[9px] uppercase tracking-widest text-fg-muted">Checklist</div></div>
             </div>
             {statusInfo.status === 'Recruiter Ready'
               ? <p className="text-[12px] text-aurora-mint">This project is Recruiter Ready — fully proven.</p>
@@ -827,7 +827,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                 <Badge tone={p.liveVerification.reachable ? 'mint' : 'rose'}>{p.liveVerification.reachable ? 'Verified reachable' : p.liveVerification.statusCode ? 'Not reachable' : 'Needs manual review'}</Badge>
                 {p.liveVerification.statusCode > 0 && <Badge>HTTP {p.liveVerification.statusCode}</Badge>}
                 {p.liveVerification.responseTimeMs > 0 && <Badge>{p.liveVerification.responseTimeMs}ms</Badge>}
-                <span className="text-[11px] text-slate-500">checked {new Date(p.liveVerification.checkedAt).toLocaleTimeString()}</span>
+                <span className="text-[11px] text-fg-muted">checked {new Date(p.liveVerification.checkedAt).toLocaleTimeString()}</span>
               </div>
             )}
           </Panel>
@@ -836,9 +836,9 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             <div className="space-y-1">
               {proofScoreBreakdown(p).rows.map((r) => (
                 <div key={r.key} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-40 shrink-0 text-slate-400">{r.label}</span>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${(r.score / r.max) * 100}%` }} /></div>
-                  <span className="w-10 text-right font-mono text-slate-300">{r.score}/{r.max}</span>
+                  <span className="w-40 shrink-0 text-fg-secondary">{r.label}</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${(r.score / r.max) * 100}%` }} /></div>
+                  <span className="w-10 text-right font-mono text-fg-secondary">{r.score}/{r.max}</span>
                 </div>
               ))}
             </div>
@@ -850,7 +850,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
           ) : null; })()}
 
           <Panel title="Recruiter summary" action={<Button size="sm" variant="soft" onClick={genRecruiterSummary}><Sparkles size={13} /> Generate</Button>}>
-            {p.recruiterSummary ? <p className="text-[13px] text-slate-300">{p.recruiterSummary}</p> : <p className="text-[12px] text-slate-500">No recruiter summary yet — generate one (required to publish).</p>}
+            {p.recruiterSummary ? <p className="text-[13px] text-fg-secondary">{p.recruiterSummary}</p> : <p className="text-[12px] text-fg-muted">No recruiter summary yet — generate one (required to publish).</p>}
           </Panel>
         </div>
       )}
@@ -858,25 +858,25 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
       {tab === 'resume' && (
         <div className="space-y-3">
           <Panel title="Resume bullet points" action={<div className="flex gap-2"><CopyBtn text={(p.resumeBullets || []).map((b) => '• ' + b).join('\n')} /><Button size="sm" variant="soft" onClick={() => regen('bullets')} disabled={busy === 'bullets'}><RefreshCw size={13} /> {busy === 'bullets' ? '…' : 'Regenerate'}</Button></div>}>
-            <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-300 marker:text-aurora-violet">{(p.resumeBullets || []).map((b, i) => <li key={i}>{b}</li>)}</ul>
+            <ul className="list-disc space-y-1 pl-4 text-[13px] text-fg-secondary marker:text-aurora-violet">{(p.resumeBullets || []).map((b, i) => <li key={i}>{b}</li>)}</ul>
           </Panel>
           <div className="grid gap-3 md:grid-cols-2">
             <Panel title="LinkedIn post" action={<div className="flex gap-2"><CopyBtn text={p.linkedinPost} /><Button size="sm" variant="soft" onClick={() => regen('linkedin')} disabled={busy === 'linkedin'}><RefreshCw size={13} /></Button></div>}>
-              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-slate-300">{p.linkedinPost}</pre>
+              <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-fg-secondary">{p.linkedinPost}</pre>
             </Panel>
             <Panel title="Interview Q&A" action={<Button size="sm" variant="soft" onClick={() => regen('interview')} disabled={busy === 'interview'}><RefreshCw size={13} /> {busy === 'interview' ? '…' : 'Regenerate'}</Button>}>
               <div className="max-h-48 space-y-2 overflow-y-auto">
                 {(p.interviewQuestions || []).slice(0, 8).map((qa, i) => (
-                  <details key={i} className="rounded-lg bg-white/[0.03] p-2 text-[12px]">
-                    <summary className="cursor-pointer font-medium text-slate-200">{qa.q}</summary>
-                    <p className="mt-1 text-slate-400">{qa.a}</p>
+                  <details key={i} className="rounded-lg bg-surface-1 p-2 text-[12px]">
+                    <summary className="cursor-pointer font-medium text-fg">{qa.q}</summary>
+                    <p className="mt-1 text-fg-secondary">{qa.a}</p>
                   </details>
                 ))}
               </div>
             </Panel>
           </div>
           <Panel title="GitHub README" action={<div className="flex gap-2"><CopyBtn text={p.readme} label="Copy README" /><Button size="sm" variant="soft" onClick={() => regen('readme')} disabled={busy === 'readme'}><RefreshCw size={13} /> {busy === 'readme' ? '…' : 'Regenerate'}</Button></div>}>
-            <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{p.readme}</pre>
+            <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-fg-secondary">{p.readme}</pre>
           </Panel>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="soft" onClick={onOpenEditor}><PenLine size={14} /> Open in Resume Editor</Button>
@@ -884,7 +884,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-subtle pt-4">
         <Button onClick={() => onPublish(p)} variant={p.published ? 'soft' : 'primary'}>
           <Rocket size={15} /> {p.published ? 'Published — update sandbox' : 'Publish to Sandbox'}
         </Button>
@@ -904,10 +904,10 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild, onGuided }) {
   const st = calculateProjectStatus(p);
   const build = buildProgressFor(p);
   return (
-    <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
+    <div className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
       <div className="flex items-start justify-between gap-2">
-        <h4 className="font-medium leading-tight text-white">{p.title}</h4>
-        <button onClick={() => onDelete(p.id)} className="text-slate-600 hover:text-rose-400"><Trash2 size={14} /></button>
+        <h4 className="font-medium leading-tight text-fg">{p.title}</h4>
+        <button onClick={() => onDelete(p.id)} className="text-fg-muted hover:text-rose-400"><Trash2 size={14} /></button>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         <StatusBadge status={st.status} />
@@ -918,16 +918,16 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild, onGuided }) {
         {p.published && <Badge tone="cyan">Published</Badge>}
       </div>
       <div className="mt-3">
-        <div className="mb-1 flex justify-between text-[10px] text-slate-500"><span>Progress</span><span>{progress}%</span></div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${progress}%` }} /></div>
+        <div className="mb-1 flex justify-between text-[10px] text-fg-muted"><span>Progress</span><span>{progress}%</span></div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${progress}%` }} /></div>
       </div>
       {build.totalTasks > 0 && (build.progressPercent > 0) && (
         <div className="mt-2">
-          <div className="mb-1 flex justify-between text-[10px] text-slate-500"><span>Build</span><span>{build.progressPercent}%</span></div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-violet" style={{ width: `${build.progressPercent}%` }} /></div>
+          <div className="mb-1 flex justify-between text-[10px] text-fg-muted"><span>Build</span><span>{build.progressPercent}%</span></div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full bg-aurora-violet" style={{ width: `${build.progressPercent}%` }} /></div>
         </div>
       )}
-      <p className="mt-2 line-clamp-2 text-[11px] text-slate-500">{whyNotVerified(p)}</p>
+      <p className="mt-2 line-clamp-2 text-[11px] text-fg-muted">{whyNotVerified(p)}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button size="sm" variant="soft" onClick={() => onOpen(p)}><Layers size={14} /> Project Details</Button>
         <Button size="sm" onClick={() => onBuild?.(p)}><Rocket size={14} /> {buildLabel(p)}</Button>
@@ -1069,21 +1069,21 @@ export default function ProjectStudio({ go, openProjectId }) {
         }
       />
       {wsError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/8 px-4 py-3 text-[12.5px] text-rose-200">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/8 px-4 py-3 text-[12.5px] text-danger">
           <span>Workspace generation failed: {wsError}</span>
-          <button onClick={() => setWsError('')} className="shrink-0 text-rose-300 underline">Dismiss</button>
+          <button onClick={() => setWsError('')} className="shrink-0 text-danger underline">Dismiss</button>
         </div>
       )}
 
-      {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-slate-100">{toast}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-fg">{toast}</div>}
 
       {(seed?.job || seed?.idea) && (
-        <div className="mb-4 rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 px-4 py-3 text-sm text-slate-200">
+        <div className="mb-4 rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 px-4 py-3 text-sm text-fg">
           <Sparkles size={15} className="mr-1.5 inline text-aurora-violet" />
           {seed?.idea ? (
-            <>Marketplace idea loaded: <span className="font-medium text-white">{seed.idea.title}</span>. Generate it into a guided startup-grade project roadmap.</>
+            <>Marketplace idea loaded: <span className="font-medium text-fg">{seed.idea.title}</span>. Generate it into a guided startup-grade project roadmap.</>
           ) : (
-            <>Project generated from gaps in <span className="font-medium text-white">{seed.job.title}</span>{seed.job.company ? <> at <span className="font-medium text-white">{seed.job.company}</span></> : null}.</>
+            <>Project generated from gaps in <span className="font-medium text-fg">{seed.job.title}</span>{seed.job.company ? <> at <span className="font-medium text-fg">{seed.job.company}</span></> : null}.</>
           )}
         </div>
       )}
@@ -1092,25 +1092,25 @@ export default function ProjectStudio({ go, openProjectId }) {
           <SectionCard title="Project setup">
             <div className="space-y-3">
               <Field label="Target role">
-                <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+                <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full rounded-xl border border-field-border bg-field px-3 text-sm text-fg">
                   {!ALL_ROLES.includes(role) && <option>{role}</option>}
                   {Object.entries(ROLE_GROUPS).map(([g, roles]) => <optgroup key={g} label={g}>{roles.map((r) => <option key={r}>{r}</option>)}</optgroup>)}
                 </select>
               </Field>
               <Field label="Experience level">
-                <div className="flex flex-wrap gap-1.5">{LEVELS.map((l) => <button key={l} onClick={() => setLevel(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${level === l ? 'bg-aurora-violet/20 text-white ring-1 ring-aurora-violet/40' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{l}</button>)}</div>
+                <div className="flex flex-wrap gap-1.5">{LEVELS.map((l) => <button key={l} onClick={() => setLevel(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${level === l ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'bg-surface-1 text-fg-secondary hover:bg-surface-2'}`}>{l}</button>)}</div>
               </Field>
               <Field label="Project duration">
-                <div className="flex flex-wrap gap-1.5">{DURATIONS.map((d) => <button key={d} onClick={() => setDuration(d)} className={`rounded-lg px-3 py-1.5 text-xs transition ${duration === d ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{d}</button>)}</div>
+                <div className="flex flex-wrap gap-1.5">{DURATIONS.map((d) => <button key={d} onClick={() => setDuration(d)} className={`rounded-lg px-3 py-1.5 text-xs transition ${duration === d ? 'bg-aurora-cyan/15 text-fg ring-1 ring-aurora-cyan/30' : 'bg-surface-1 text-fg-secondary hover:bg-surface-2'}`}>{d}</button>)}</div>
               </Field>
               <Field label="Project type">
-                <div className="flex flex-wrap gap-1.5">{TYPES.map((t) => <button key={t} onClick={() => setType(t)} className={`rounded-lg px-3 py-1.5 text-xs transition ${type === t ? 'bg-aurora-mint/15 text-white ring-1 ring-aurora-mint/30' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{t}</button>)}</div>
+                <div className="flex flex-wrap gap-1.5">{TYPES.map((t) => <button key={t} onClick={() => setType(t)} className={`rounded-lg px-3 py-1.5 text-xs transition ${type === t ? 'bg-aurora-mint/15 text-fg ring-1 ring-aurora-mint/30' : 'bg-surface-1 text-fg-secondary hover:bg-surface-2'}`}>{t}</button>)}</div>
               </Field>
               <Field label="Project idea or problem statement (optional)">
-                <textarea value={problemStatement} onChange={(e) => setProblemStatement(e.target.value)} placeholder="Describe your idea or the real problem you want to solve…" className="h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+                <textarea value={problemStatement} onChange={(e) => setProblemStatement(e.target.value)} placeholder="Describe your idea or the real problem you want to solve…" className="h-20 w-full resize-y rounded-xl border border-field-border bg-field p-3 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
               </Field>
               <Field label="Paste a job description (optional)">
-                <textarea value={jd} onChange={(e) => setJd(e.target.value)} placeholder="Paste a JD to extract target skills…" className="h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+                <textarea value={jd} onChange={(e) => setJd(e.target.value)} placeholder="Paste a JD to extract target skills…" className="h-24 w-full resize-y rounded-xl border border-field-border bg-field p-3 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
               </Field>
               <Button className="w-full" onClick={generate} disabled={status === 'loading'}>
                 <Wand2 size={16} /> {status === 'loading' ? 'Generating roadmap…' : 'Generate Project Roadmap'}
@@ -1124,12 +1124,12 @@ export default function ProjectStudio({ go, openProjectId }) {
               <>
                 <div className="mb-2 flex items-center justify-between">
                   <Chips items={gaps} tone="rose" />
-                  <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-400"><input type="checkbox" checked={useGaps} onChange={(e) => setUseGaps(e.target.checked)} /> use these</label>
+                  <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-secondary"><input type="checkbox" checked={useGaps} onChange={(e) => setUseGaps(e.target.checked)} /> use these</label>
                 </div>
-                <p className="text-[12px] leading-relaxed text-slate-400">These gaps were detected from the selected job. The generated project will cover them, explain how it strengthens your resume, and what recruiter-visible proof it creates (a deployed app + README + demo).</p>
+                <p className="text-[12px] leading-relaxed text-fg-secondary">These gaps were detected from the selected job. The generated project will cover them, explain how it strengthens your resume, and what recruiter-visible proof it creates (a deployed app + README + demo).</p>
               </>
             ) : (
-              <p className="text-[12px] text-slate-500">No gaps passed in. Open a job in <button onClick={() => go?.('jobs')} className="text-aurora-cyan underline">Jobs</button> and click “Build project for gaps”, or paste a JD above.</p>
+              <p className="text-[12px] text-fg-muted">No gaps passed in. Open a job in <button onClick={() => go?.('jobs')} className="text-aurora-cyan underline">Jobs</button> and click “Build project for gaps”, or paste a JD above.</p>
             )}
           </SectionCard>
         </div>
@@ -1141,7 +1141,7 @@ export default function ProjectStudio({ go, openProjectId }) {
           <div className="gradient-border p-6">
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-glow/12 text-amber-glow ring-1 ring-amber-glow/25"><AlertTriangle size={22} /></span>
-              <p className="text-sm text-slate-300">We couldn't generate your project roadmap. Please try again.</p>
+              <p className="text-sm text-fg-secondary">We couldn't generate your project roadmap. Please try again.</p>
               <Button variant="outline" size="sm" onClick={generate}><RefreshCw size={15} /> Retry</Button>
             </div>
           </div>
@@ -1187,7 +1187,7 @@ export default function ProjectStudio({ go, openProjectId }) {
               <div className="space-y-5">
                 {sections.map((s) => (
                   <div key={s.key}>
-                    <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.label} <Badge tone="default">{s.items.length}</Badge></div>
+                    <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-fg-secondary">{s.label} <Badge tone="default">{s.items.length}</Badge></div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {s.items.map((p) => <WorkspaceCard key={p.id} p={p} onOpen={setOpenWs} onDelete={(id) => { deleteProject(id); setProjects(getProjects()); }} onBuild={openBuilder} onGuided={(proj) => <WorkspaceOpenButton project={proj} go={go} onError={setWsError} />} />)}
                     </div>

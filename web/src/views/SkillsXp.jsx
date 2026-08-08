@@ -9,9 +9,9 @@ const LEVEL_TONE = { Beginner: 'default', Basic: 'cyan', Intermediate: 'cyan', A
 
 function StatCard({ icon: Icon, label, value, tone }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-      <div className="flex items-center gap-2 text-[12px] text-slate-400"><Icon size={14} className={tone} /> {label}</div>
-      <div className="mt-1 font-display text-2xl text-white">{value}</div>
+    <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
+      <div className="flex items-center gap-2 text-[12px] text-fg-secondary"><Icon size={14} className={tone} /> {label}</div>
+      <div className="mt-1 font-display text-2xl text-fg">{value}</div>
     </div>
   );
 }
@@ -19,11 +19,11 @@ function StatCard({ icon: Icon, label, value, tone }) {
 function SkillRow({ s }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.02]">
+    <div className="rounded-xl border border-subtle bg-surface-1">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left">
         <div className="flex min-w-0 items-center gap-2">
-          {open ? <ChevronDown size={15} className="shrink-0 text-slate-500" /> : <ChevronRight size={15} className="shrink-0 text-slate-500" />}
-          <span className="truncate text-sm text-slate-200 capitalize">{s.skillName}</span>
+          {open ? <ChevronDown size={15} className="shrink-0 text-fg-muted" /> : <ChevronRight size={15} className="shrink-0 text-fg-muted" />}
+          <span className="truncate text-sm text-fg capitalize">{s.skillName}</span>
           <Badge tone={LEVEL_TONE[s.level] || 'default'}>{s.level}</Badge>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-[11px]">
@@ -32,11 +32,11 @@ function SkillRow({ s }) {
         </div>
       </button>
       {open && (
-        <div className="border-t border-white/8 px-3 py-2.5 text-[12px] text-slate-400">
+        <div className="border-t border-subtle px-3 py-2.5 text-[12px] text-fg-secondary">
           <div className="grid grid-cols-3 gap-2">
             <div><span className="text-aurora-mint">{s.verifiedXp}</span> verified XP</div>
             <div><span className="text-amber-glow">{s.pendingXp}</span> pending XP</div>
-            <div><span className="text-rose-300">{s.rejectedXp}</span> rejected XP</div>
+            <div><span className="text-danger">{s.rejectedXp}</span> rejected XP</div>
           </div>
           <div className="mt-2 flex flex-wrap gap-3">
             <span>Verified projects: {s.verifiedProjectIds?.length || 0}</span>
@@ -106,16 +106,16 @@ export default function SkillsXp() {
             <Field label="Contribution type"><Input value={form.contributionType} onChange={f('contributionType')} placeholder="solo / team / open-source" /></Field>
             <Field label="Complexity">
               <div className="relative">
-                <select value={form.complexityLevel} onChange={f('complexityLevel')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
+                <select value={form.complexityLevel} onChange={f('complexityLevel')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-field-border bg-field px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50">
                   {COMPLEXITY.map((c) => <option key={c} value={c} className="capitalize">{c}</option>)}
                 </select>
-                <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
               </div>
             </Field>
           </div>
           <div className="mt-3"><Field label="Claimed skills (comma-separated)"><Input value={form.claimedSkills} onChange={f('claimedSkills')} placeholder="docker, kubernetes, terraform" /></Field></div>
           <div className="mt-3"><Field label="What you built / outcome">
-            <textarea value={form.outcome} onChange={f('outcome')} placeholder="Describe what you built and measurable impact…" className="h-24 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50" />
+            <textarea value={form.outcome} onChange={f('outcome')} placeholder="Describe what you built and measurable impact…" className="h-24 w-full resize-none rounded-xl border border-field-border bg-field p-3 text-sm text-fg outline-none focus:border-aurora-violet/50" />
           </Field></div>
           {err && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
           <div className="mt-3 flex gap-2">
@@ -131,28 +131,28 @@ export default function SkillsXp() {
             <Badge tone={lastResult.projectVerificationStatus === 'verified' ? 'mint' : lastResult.projectVerificationStatus === 'needs_review' ? 'amber' : 'cyan'}>
               {lastResult.projectVerificationStatus.replace('_', ' ')}
             </Badge>
-            <span className="text-sm text-slate-300">+{lastResult.xpAwarded} verified XP · {lastResult.xpPending} pending</span>
+            <span className="text-sm text-fg-secondary">+{lastResult.xpAwarded} verified XP · {lastResult.xpPending} pending</span>
           </div>
           {lastResult.verifiedSkills?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{lastResult.verifiedSkills.map((s) => <Badge key={s} tone="mint"><ShieldCheck size={11} /> {s}</Badge>)}</div>}
           {lastResult.pendingSkills?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{lastResult.pendingSkills.map((s) => <Badge key={s} tone="amber"><Clock size={11} /> {s}</Badge>)}</div>}
           {lastResult.verificationNotes?.length > 0 && (
             <ul className="mt-2 space-y-1">
-              {lastResult.verificationNotes.map((n, i) => <li key={i} className="text-[12px] text-slate-400">• {n}</li>)}
+              {lastResult.verificationNotes.map((n, i) => <li key={i} className="text-[12px] text-fg-secondary">• {n}</li>)}
             </ul>
           )}
-          {!lastResult.db && <p className="mt-2 text-[11px] text-slate-500">Preview only — connect a database to persist XP.</p>}
+          {!lastResult.db && <p className="mt-2 text-[11px] text-fg-muted">Preview only — connect a database to persist XP.</p>}
         </SectionCard>
       )}
 
       {loading ? (
-        <SectionCard><div className="flex items-center gap-2 py-6 text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading skill XP…</div></SectionCard>
+        <SectionCard><div className="flex items-center gap-2 py-6 text-fg-secondary"><Loader2 size={16} className="animate-spin" /> Loading skill XP…</div></SectionCard>
       ) : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard icon={Award} label="Total verified XP" value={xp?.totalVerifiedXp ?? 0} tone="text-aurora-mint" />
             <StatCard icon={Clock} label="Total pending XP" value={xp?.totalPendingXp ?? 0} tone="text-amber-glow" />
             <StatCard icon={ShieldCheck} label="Verified skills" value={verifiedSkills.length} tone="text-aurora-cyan" />
-            <StatCard icon={XCircle} label="Rejected XP" value={xp?.totalRejectedXp ?? 0} tone="text-rose-300" />
+            <StatCard icon={XCircle} label="Rejected XP" value={xp?.totalRejectedXp ?? 0} tone="text-danger" />
           </div>
 
           <SectionCard title="Verified skills (count toward resume, jobs & recruiters)">
@@ -179,14 +179,14 @@ export default function SkillsXp() {
               : (
                 <div className="space-y-2">
                   {subs.map((s) => (
-                    <div key={s.id} className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                    <div key={s.id} className="rounded-xl border border-subtle bg-surface-1 px-3 py-2.5">
                       <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm text-slate-200">{s.title}</span>
+                        <span className="truncate text-sm text-fg">{s.title}</span>
                         <Badge tone={s.verificationStatus === 'verified' ? 'mint' : s.verificationStatus === 'needs_review' ? 'amber' : s.verificationStatus === 'rejected' ? 'rose' : 'cyan'}>
                           {String(s.verificationStatus).replace('_', ' ')}
                         </Badge>
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-fg-muted">
                         <span className="text-aurora-mint">+{s.xpAwarded} XP</span>
                         {s.xpPending > 0 && <span className="text-amber-glow">{s.xpPending} pending</span>}
                         {s.githubUrl && <span className="inline-flex items-center gap-1"><Github size={11} /> repo</span>}

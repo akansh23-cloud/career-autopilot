@@ -15,20 +15,20 @@ export default function WorkspaceHeader({ plan, busy = {}, onPreviewPack, onDown
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="truncate font-display text-2xl font-extrabold text-white">{plan?.title || 'Project Workspace'}</h1>
+            <h1 className="truncate font-display text-2xl font-extrabold text-fg">{plan?.title || 'Project Workspace'}</h1>
             <Badge tone="cyan">Phase: {phase}</Badge>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12.5px]">
-            <span className="text-slate-400"><span className="font-semibold text-white">{prog.percentDone}%</span> done ({prog.doneTasks + prog.verifiedTasks}/{prog.totalTasks} tasks)</span>
-            <span className="text-slate-400"><span className="font-semibold text-[#C9B8FF]">{prog.percentVerified}%</span> verified</span>
-            {prog.blockedTasks > 0 && <span className="text-rose-300">{prog.blockedTasks} blocked</span>}
+            <span className="text-fg-secondary"><span className="font-semibold text-fg">{prog.percentDone}%</span> done ({prog.doneTasks + prog.verifiedTasks}/{prog.totalTasks} tasks)</span>
+            <span className="text-fg-secondary"><span className="font-semibold text-brand">{prog.percentVerified}%</span> verified</span>
+            {prog.blockedTasks > 0 && <span className="text-danger">{prog.blockedTasks} blocked</span>}
             {score != null && (
-              <span className="text-slate-400" title="Quality of the proposed architecture — not implementation proof.">
-                Architecture design score: <span className="font-semibold text-white">{score}</span>
+              <span className="text-fg-secondary" title="Quality of the proposed architecture — not implementation proof.">
+                Architecture design score: <span className="font-semibold text-fg">{score}</span>
               </span>
             )}
           </div>
-          <div className="mt-3 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-white/8">
+          <div className="mt-3 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-surface-1">
             <div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${prog.percentDone}%` }} />
           </div>
         </div>

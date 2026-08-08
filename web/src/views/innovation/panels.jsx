@@ -20,8 +20,8 @@ const Chips = ({ items, tone = 'default' }) => (
   </div>
 );
 const List = ({ items }) => (
-  <ul className="space-y-1 text-[13px] text-slate-300">
-    {(items || []).map((x, i) => <li key={i} className="flex gap-2"><span className="text-slate-600">•</span><span>{x}</span></li>)}
+  <ul className="space-y-1 text-[13px] text-fg-secondary">
+    {(items || []).map((x, i) => <li key={i} className="flex gap-2"><span className="text-fg-muted">•</span><span>{x}</span></li>)}
   </ul>
 );
 
@@ -31,19 +31,19 @@ export function SourceEvidencePanel({ cluster }) {
   return (
     <SectionCard title="Source evidence" eyebrow={`${cluster?.signalCount || 0} signal(s) · ${(cluster?.sources || []).join(', ') || '—'}`}>
       {sources.length === 0
-        ? <p className="text-[13px] text-slate-500">No linkable sources captured for this cluster.</p>
+        ? <p className="text-[13px] text-fg-muted">No linkable sources captured for this cluster.</p>
         : (
           <ul className="space-y-2">
             {sources.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+              <li key={i} className="flex items-start gap-2 rounded-lg border border-subtle bg-surface-1 p-2.5">
                 <Badge tone="cyan">{s.source}</Badge>
-                <span className="flex-1 text-[13px] text-slate-300">{s.title}</span>
-                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white"><ExternalLink size={14} /></a>}
+                <span className="flex-1 text-[13px] text-fg-secondary">{s.title}</span>
+                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-fg"><ExternalLink size={14} /></a>}
               </li>
             ))}
           </ul>
         )}
-      <p className="mt-2 text-[11px] text-slate-500">Links open the original source. The system stores summaries only — it never re-fetches arbitrary URLs.</p>
+      <p className="mt-2 text-[11px] text-fg-muted">Links open the original source. The system stores summaries only — it never re-fetches arbitrary URLs.</p>
     </SectionCard>
   );
 }
@@ -59,12 +59,12 @@ export function BuildBlueprintPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="Build blueprint" action={<Button size="sm" variant={bp ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{bp ? 'Regenerate' : 'Generate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!bp ? <EmptyState icon={Boxes} title="No blueprint yet" hint="Generate a practical, start-tomorrow build plan." />
         : (
           <div className="space-y-4 text-[13px]">
             {bp.confidence === 'low' && <Badge tone="amber"><AlertTriangle size={12} /> Low-confidence draft</Badge>}
-            {bp.productDefinition && <p className="text-slate-300">{bp.productDefinition}</p>}
+            {bp.productDefinition && <p className="text-fg-secondary">{bp.productDefinition}</p>}
             <Grid>
               <Block title="MVP scope"><List items={bp.mvpScope} /></Block>
               <Block title="Out of scope"><List items={bp.outOfScope} /></Block>
@@ -73,13 +73,13 @@ export function BuildBlueprintPanel({ project, projectId, persisted }) {
               <Block title="Database schema"><List items={bp.databaseSchema} /></Block>
               <Block title="GitHub repo structure"><List items={bp.githubRepoStructure} /></Block>
             </Grid>
-            {bp.systemArchitecture && <Block title="System architecture"><p className="text-slate-300">{bp.systemArchitecture}</p></Block>}
-            {bp.dataFlow && <Block title="Data flow"><p className="text-slate-300">{bp.dataFlow}</p></Block>}
-            {bp.coreAlgorithm && <Block title="Core algorithm"><p className="text-slate-300">{bp.coreAlgorithm}</p></Block>}
+            {bp.systemArchitecture && <Block title="System architecture"><p className="text-fg-secondary">{bp.systemArchitecture}</p></Block>}
+            {bp.dataFlow && <Block title="Data flow"><p className="text-fg-secondary">{bp.dataFlow}</p></Block>}
+            {bp.coreAlgorithm && <Block title="Core algorithm"><p className="text-fg-secondary">{bp.coreAlgorithm}</p></Block>}
             {bp.weeklyRoadmap?.length > 0 && <Block title="Weekly roadmap"><List items={bp.weeklyRoadmap} /></Block>}
             {bp.testPlan?.length > 0 && <Block title="Test plan"><List items={bp.testPlan} /></Block>}
-            {bp.demoScript && <Block title="Demo script"><p className="text-slate-300">{bp.demoScript}</p></Block>}
-            {bp.deploymentPlan && <Block title="Deployment plan"><p className="text-slate-300">{bp.deploymentPlan}</p></Block>}
+            {bp.demoScript && <Block title="Demo script"><p className="text-fg-secondary">{bp.demoScript}</p></Block>}
+            {bp.deploymentPlan && <Block title="Deployment plan"><p className="text-fg-secondary">{bp.deploymentPlan}</p></Block>}
             {bp.evidenceChecklist?.length > 0 && <Block title="Evidence checklist"><List items={bp.evidenceChecklist} /></Block>}
           </div>
         )}
@@ -98,7 +98,7 @@ export function FeasibilityCostPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="MVP feasibility & cost" action={<Button size="sm" variant={c ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <IndianRupee size={14} />}{c ? 'Re-estimate' : 'Estimate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!c ? <EmptyState icon={IndianRupee} title="No estimate yet" hint="Realistic India cost bands, team & skills." />
         : (
           <div className="space-y-4 text-[13px]">
@@ -122,10 +122,10 @@ export function FeasibilityCostPanel({ project, projectId, persisted }) {
               <Block title="Good-to-have"><Chips items={c.goodToHaveSkills} /></Block>
               <Block title="Resources"><List items={c.resourcesRequired} /></Block>
             </Grid>
-            {c.cloudApiHardwareNotes && <Block title="Cloud / API / hardware"><p className="text-slate-300">{c.cloudApiHardwareNotes}</p></Block>}
+            {c.cloudApiHardwareNotes && <Block title="Cloud / API / hardware"><p className="text-fg-secondary">{c.cloudApiHardwareNotes}</p></Block>}
             {c.executionRisks?.length > 0 && <Block title="Execution risks"><List items={c.executionRisks} /></Block>}
-            {c.mvpVsAdvanced && <Block title="MVP vs advanced"><p className="text-slate-300">{c.mvpVsAdvanced}</p></Block>}
-            {c.shouldYouBuildVerdict && <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/[0.05] p-3 text-[#BDF5DC]"><span className="font-semibold">Should you build this? </span>{c.shouldYouBuildVerdict}</div>}
+            {c.mvpVsAdvanced && <Block title="MVP vs advanced"><p className="text-fg-secondary">{c.mvpVsAdvanced}</p></Block>}
+            {c.shouldYouBuildVerdict && <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/[0.05] p-3 text-ok"><span className="font-semibold">Should you build this? </span>{c.shouldYouBuildVerdict}</div>}
           </div>
         )}
     </SectionCard>
@@ -153,23 +153,23 @@ export function IPReadinessPanel({ project, projectId, persisted, refreshKey }) 
   };
   return (
     <SectionCard title="Patent / IP readiness" action={<Button size="sm" variant={ip ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <ScrollText size={14} />}{ip ? 'Re-assess' : 'Assess'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!ip ? <EmptyState icon={ScrollText} title="Not assessed yet" hint="Backend-owned scoring with hard caps — no inflated scores." />
         : (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={scoreTone(ip.overall)} className="text-[13px]">{ip.overall}/100</Badge>
-              <span className="text-sm font-semibold text-slate-200">{ip.label}</span>
+              <span className="text-sm font-semibold text-fg">{ip.label}</span>
               <Badge tone="violet">Route: {ip.recommendedIPRoute}</Badge>
             </div>
             {ip.capApplied != null && (
-              <div className="rounded-lg border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">
+              <div className="rounded-lg border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-warn">
                 Score capped at {ip.capApplied}. {ip.appliedCaps.map((c) => c.reason).join('; ')}.
               </div>
             )}
-            <p className="text-[12px] text-slate-400">{ip.priorArtStatus}</p>
+            <p className="text-[12px] text-fg-secondary">{ip.priorArtStatus}</p>
             {ip.section3kWarning && (
-              <div className="rounded-lg border border-rose-400/25 bg-rose-500/[0.06] p-2.5 text-[12px] text-rose-200">
+              <div className="rounded-lg border border-rose-400/25 bg-rose-500/[0.06] p-2.5 text-[12px] text-danger">
                 <AlertTriangle size={13} className="mr-1 inline" />{ip.section3kWarning}
               </div>
             )}
@@ -181,7 +181,7 @@ export function IPReadinessPanel({ project, projectId, persisted, refreshKey }) 
             {ip.requiredEvidenceToImprove?.length > 0 && (
               <Block title="Required evidence to improve"><List items={ip.requiredEvidenceToImprove} /></Block>
             )}
-            {ip.narrative && <Block title="Technical-contribution note"><p className="text-[13px] text-slate-300">{ip.narrative}</p></Block>}
+            {ip.narrative && <Block title="Technical-contribution note"><p className="text-[13px] text-fg-secondary">{ip.narrative}</p></Block>}
             <NotLegalAdvice text={ip.disclaimer} />
           </div>
         )}
@@ -208,7 +208,7 @@ export function PriorArtWorkspace({ project, projectId, persisted, onChange }) {
     } catch (e) { setErr(e?.message || 'Failed to add record.'); } finally { setBusy(false); }
   };
 
-  const sel = 'h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-100 outline-none focus:border-aurora-violet/50';
+  const sel = 'h-11 w-full rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50';
   return (
     <SectionCard title="Prior-art workspace" eyebrow={persisted ? `${records.length} record(s)` : 'Saving requires DB'}>
       {!persisted && <p className="mb-3 text-[12px] text-amber-glow/80">Prior-art records persist only when the database is enabled. Until at least one record is added, prior-art risk is reported as unknown.</p>}
@@ -221,14 +221,14 @@ export function PriorArtWorkspace({ project, projectId, persisted, onChange }) {
         <Field label="Differentiator"><Input value={form.differentiator} onChange={(e) => setForm({ ...form, differentiator: e.target.value })} placeholder="How yours differs" /></Field>
         <Field label="Blocking risk"><select className={sel} value={form.blockingRisk} onChange={(e) => setForm({ ...form, blockingRisk: e.target.value })}>{['Unknown', 'Low', 'Medium', 'High'].map((s) => <option key={s}>{s}</option>)}</select></Field>
       </div>
-      {err && <p className="mt-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mt-2 text-[12px] text-danger">{err}</p>}
       <div className="mt-3"><Button size="sm" onClick={add} disabled={busy || !persisted}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}Add prior-art record</Button></div>
       {records.length > 0 && (
         <ul className="mt-4 space-y-2">
           {records.map((r) => (
-            <li key={r.id} className="rounded-lg border border-white/8 bg-white/[0.02] p-3 text-[13px]">
-              <div className="flex items-center gap-2"><Badge tone="cyan">{r.sourceType}</Badge><span className="font-medium text-slate-200">{r.title}</span>{r.sourceUrl && <a href={r.sourceUrl} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan"><ExternalLink size={13} /></a>}</div>
-              {r.differentiator && <p className="mt-1 text-slate-400">Differentiator: {r.differentiator}</p>}
+            <li key={r.id} className="rounded-lg border border-subtle bg-surface-1 p-3 text-[13px]">
+              <div className="flex items-center gap-2"><Badge tone="cyan">{r.sourceType}</Badge><span className="font-medium text-fg">{r.title}</span>{r.sourceUrl && <a href={r.sourceUrl} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan"><ExternalLink size={13} /></a>}</div>
+              {r.differentiator && <p className="mt-1 text-fg-secondary">Differentiator: {r.differentiator}</p>}
               <div className="mt-1 flex gap-2"><Badge tone="default">Similarity: {r.similarityRisk}</Badge><Badge tone="default">Blocking: {r.blockingRisk}</Badge></div>
             </li>
           ))}
@@ -247,10 +247,10 @@ export function DisclosurePackagePanel({ project, projectId, persisted }) {
     try { const r = await Innovation.disclosure(projectId, bodyFor(project, persisted)); setD(r.disclosure); }
     catch (e) { setErr(e?.message || 'Failed to generate disclosure.'); } finally { setBusy(false); }
   };
-  const F = ({ label, value }) => value ? <Block title={label}><p className="whitespace-pre-line text-[13px] text-slate-300">{value}</p></Block> : null;
+  const F = ({ label, value }) => value ? <Block title={label}><p className="whitespace-pre-line text-[13px] text-fg-secondary">{value}</p></Block> : null;
   return (
     <SectionCard title="Invention disclosure draft" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <FileStack size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!d ? <EmptyState icon={FileStack} title="No disclosure yet" hint="A disclosure draft for IP-cell review — not a filing." />
         : (
           <div className="space-y-3">
@@ -270,7 +270,7 @@ export function DisclosurePackagePanel({ project, projectId, persisted }) {
             <F label="Prior-art comparison" value={d.priorArtComparison} />
             {d.possibleClaimDirections?.length > 0 && <Block title="Possible claim directions"><List items={d.possibleClaimDirections} /></Block>}
             {d.drawingsChecklist?.length > 0 && <Block title="Drawings / diagram checklist"><List items={d.drawingsChecklist} /></Block>}
-            <div className="rounded-lg border border-rose-400/25 bg-rose-500/[0.06] p-2.5 text-[12px] text-rose-200"><AlertTriangle size={13} className="mr-1 inline" />{d.publicDisclosureWarning}</div>
+            <div className="rounded-lg border border-rose-400/25 bg-rose-500/[0.06] p-2.5 text-[12px] text-danger"><AlertTriangle size={13} className="mr-1 inline" />{d.publicDisclosureWarning}</div>
             <F label="Attorney / IP-cell review notes" value={d.attorneyReviewNotes} />
             <NotLegalAdvice text={d.disclaimer} />
           </div>
@@ -303,13 +303,13 @@ export function ConvertButtons({ project, projectId, persisted, go }) {
     } catch (e) { setMsg(e?.message || 'Convert failed.'); } finally { setBusy(''); }
   };
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={toProject} disabled={!!busy}>{busy === 'project' ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}Convert to Project</Button>
         <Button variant="outline" onClick={toPatent} disabled={!!busy}>{busy === 'patent' ? <Loader2 size={15} className="animate-spin" /> : <ScrollText size={15} />}Convert to Patent Workspace</Button>
         {msg && <span className="inline-flex items-center gap-1.5 text-[13px] text-aurora-mint"><CheckCircle2 size={14} />{msg}</span>}
       </div>
-      <p className="mt-2 text-[11px] text-slate-500">Convert to Project saves a real project record (title, problem, solution, roadmap, checklists). Convert to Patent Workspace creates a Patent OS idea carrying the source-backed problem, novelty angle and readiness.</p>
+      <p className="mt-2 text-[11px] text-fg-muted">Convert to Project saves a real project record (title, problem, solution, roadmap, checklists). Convert to Patent Workspace creates a Patent OS idea carrying the source-backed problem, novelty angle and readiness.</p>
     </div>
   );
 }
@@ -319,16 +319,16 @@ function Grid({ children }) { return <div className="grid gap-4 sm:grid-cols-2">
 function Block({ title, children }) {
   return (
     <div>
-      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{title}</h4>
+      <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{title}</h4>
       {children}
     </div>
   );
 }
 function Money({ label, value }) {
   return (
-    <div className="rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
-      <div className="text-[11px] text-slate-500">{label}</div>
-      <div className="mt-0.5 inline-flex items-center gap-1 text-sm font-semibold text-slate-100"><IndianRupee size={13} className="text-aurora-mint" />{String(value || '—').replace(/^₹/, '')}</div>
+    <div className="rounded-lg border border-subtle bg-surface-1 p-2.5">
+      <div className="text-[11px] text-fg-muted">{label}</div>
+      <div className="mt-0.5 inline-flex items-center gap-1 text-sm font-semibold text-fg"><IndianRupee size={13} className="text-aurora-mint" />{String(value || '—').replace(/^₹/, '')}</div>
     </div>
   );
 }
@@ -336,7 +336,7 @@ function Money({ label, value }) {
 /* ============================================================
    Patent OS world-class upgrade — new panels
    ============================================================ */
-const SEL = 'rounded-lg border border-white/12 bg-white/[0.03] px-2.5 py-1.5 text-[12.5px] text-slate-200 focus:border-aurora-violet/50 focus:outline-none';
+const SEL = 'rounded-lg border border-subtle bg-surface-1 px-2.5 py-1.5 text-[12.5px] text-fg focus:border-aurora-violet/50 focus:outline-none';
 const riskTone = (r) => (r === 'high' ? 'rose' : r === 'medium' ? 'amber' : 'mint');
 
 /* ---------------- Simple Explanation ("Explain What To Build") ---------------- */
@@ -364,7 +364,7 @@ export function SimpleExplanationPanel({ project, projectId, persisted }) {
         <Button size="sm" variant={data ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{data ? 'Regenerate' : 'Explain'}</Button>
       </div>
     }>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!data ? <EmptyState icon={Boxes} title="No explanation yet" hint="Turn this project into plain language for your chosen audience." />
         : (
           <div className="space-y-4 text-[13px]">
@@ -372,24 +372,24 @@ export function SimpleExplanationPanel({ project, projectId, persisted }) {
               <Badge tone="cyan">{data.audience}</Badge>
               <Badge tone={data.confidence === 'low' ? 'amber' : 'mint'}>{data.confidence}-confidence</Badge>
             </div>
-            {data.oneLineSummary && <p className="text-[14px] font-medium text-white">{data.oneLineSummary}</p>}
+            {data.oneLineSummary && <p className="text-[14px] font-medium text-fg">{data.oneLineSummary}</p>}
             <Grid>
-              <Block title="The pain"><p className="text-slate-300">{data.painPoint}</p></Block>
-              <Block title="Who faces it"><p className="text-slate-300">{data.whoFacesIt}</p></Block>
-              <Block title="Real-world scenario"><p className="text-slate-300">{data.realWorldScenario}</p></Block>
-              <Block title="Today's workaround"><p className="text-slate-300">{data.currentWorkaround}</p></Block>
-              <Block title="Why existing solutions fail"><p className="text-slate-300">{data.whyExistingSolutionsFail}</p></Block>
-              <Block title="How it solves the problem"><p className="text-slate-300">{data.howItSolvesProblem}</p></Block>
+              <Block title="The pain"><p className="text-fg-secondary">{data.painPoint}</p></Block>
+              <Block title="Who faces it"><p className="text-fg-secondary">{data.whoFacesIt}</p></Block>
+              <Block title="Real-world scenario"><p className="text-fg-secondary">{data.realWorldScenario}</p></Block>
+              <Block title="Today's workaround"><p className="text-fg-secondary">{data.currentWorkaround}</p></Block>
+              <Block title="Why existing solutions fail"><p className="text-fg-secondary">{data.whyExistingSolutionsFail}</p></Block>
+              <Block title="How it solves the problem"><p className="text-fg-secondary">{data.howItSolvesProblem}</p></Block>
             </Grid>
-            <Block title="What to build"><p className="text-slate-300">{data.whatToBuild}</p></Block>
+            <Block title="What to build"><p className="text-fg-secondary">{data.whatToBuild}</p></Block>
             {data.mvpModules?.length > 0 && <Block title="MVP modules"><List items={data.mvpModules} /></Block>}
-            {data.demoMoment && <Block title="The demo moment"><p className="text-slate-300">{data.demoMoment}</p></Block>}
+            {data.demoMoment && <Block title="The demo moment"><p className="text-fg-secondary">{data.demoMoment}</p></Block>}
             {data.skillsNeeded?.length > 0 && <Block title="Skills needed"><Chips items={data.skillsNeeded} tone="violet" /></Block>}
             {data.firstWeekTasks?.length > 0 && <Block title="First-week tasks"><List items={data.firstWeekTasks} /></Block>}
             {data.whatNotToBuildYet?.length > 0 && <Block title="What NOT to build yet"><List items={data.whatNotToBuildYet} /></Block>}
-            {data.patentAngleSimple && <Block title="Patent angle (simple)"><p className="text-slate-300">{data.patentAngleSimple}</p></Block>}
-            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Clarity</h4>
+            {data.patentAngleSimple && <Block title="Patent angle (simple)"><p className="text-fg-secondary">{data.patentAngleSimple}</p></Block>}
+            <div className="rounded-xl border border-subtle bg-surface-1 p-3">
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Clarity</h4>
               <div className="grid gap-3 sm:grid-cols-2">
                 <ScoreBar label="Pain clarity" value={cs.painClarity} />
                 <ScoreBar label="Build clarity" value={cs.buildClarity} />
@@ -415,17 +415,17 @@ export function IndiaCriPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="India CRI / Section 3(k)" eyebrow="Software patentability risk" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <ScrollText size={14} />}{d ? 'Re-check' : 'Validate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!d ? <EmptyState icon={ScrollText} title="Not validated yet" hint="Check Section 3(k) risk (computer-program / algorithm / business-method per se)." />
         : (
           <div className="space-y-3 text-[13px]">
             <Badge tone={riskTone(d.section3kRisk)}>Section 3(k) risk: {d.section3kRisk}</Badge>
             {d.riskReasons?.length > 0 && <Block title="Why"><List items={d.riskReasons} /></Block>}
             <Grid>
-              <Block title="Technical effect"><p className="text-slate-300">{d.technicalEffect}</p></Block>
-              <Block title="Technical problem"><p className="text-slate-300">{d.technicalProblem}</p></Block>
-              <Block title="Technical means"><p className="text-slate-300">{d.technicalMeans}</p></Block>
-              <Block title="Verdict"><p className="text-slate-300">{d.patentRouteVerdict}</p></Block>
+              <Block title="Technical effect"><p className="text-fg-secondary">{d.technicalEffect}</p></Block>
+              <Block title="Technical problem"><p className="text-fg-secondary">{d.technicalProblem}</p></Block>
+              <Block title="Technical means"><p className="text-fg-secondary">{d.technicalMeans}</p></Block>
+              <Block title="Verdict"><p className="text-fg-secondary">{d.patentRouteVerdict}</p></Block>
             </Grid>
             {d.improvementSuggestions?.length > 0 && <Block title="How to strengthen"><List items={d.improvementSuggestions} /></Block>}
             <NotLegalAdvice />
@@ -446,11 +446,11 @@ export function PriorArtSearchPlanPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="Prior-art search plan" eyebrow="Queries + what to look for" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!d ? <EmptyState icon={Search} title="No search plan yet" hint="Generate patent / paper / product / GitHub search queries and a differentiation checklist." />
         : (
           <div className="space-y-4 text-[13px]">
-            <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">{d.disclaimer}</div>
+            <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-warn">{d.disclaimer}</div>
             <Grid>
               <Block title="Patent search queries"><List items={d.patentSearchQueries} /></Block>
               <Block title="Paper / arXiv queries"><List items={d.paperSearchQueries} /></Block>
@@ -478,11 +478,11 @@ export function ClaimDirectionsPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="Claim directions" eyebrow="Plain-language aid — not legal claims" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <ScrollText size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!d ? <EmptyState icon={ScrollText} title="No claim directions yet" hint="Get safe, plain-language claim DIRECTIONS for IP-cell / patent-agent review." />
         : (
           <div className="space-y-3 text-[13px]">
-            {d.plainLanguageClaimIdea && <Block title="Plain-language claim idea"><p className="text-slate-300">{d.plainLanguageClaimIdea}</p></Block>}
+            {d.plainLanguageClaimIdea && <Block title="Plain-language claim idea"><p className="text-fg-secondary">{d.plainLanguageClaimIdea}</p></Block>}
             <Grid>
               <Block title="Possible claim elements"><List items={d.possibleClaimElements} /></Block>
               <Block title="Dependent directions"><List items={d.dependentDirections} /></Block>
@@ -501,7 +501,7 @@ export function ClaimDirectionsPanel({ project, projectId, persisted }) {
   );
 }
 function RiskBox({ label, value }) {
-  return <div className="rounded-lg border border-white/8 bg-white/[0.02] p-2.5"><div className="text-[11px] text-slate-500">{label} risk</div><div className="mt-0.5 text-[12.5px] text-slate-200">{value}</div></div>;
+  return <div className="rounded-lg border border-subtle bg-surface-1 p-2.5"><div className="text-[11px] text-fg-muted">{label} risk</div><div className="mt-0.5 text-[12.5px] text-fg">{value}</div></div>;
 }
 
 /* ---------------- Prototype evidence ---------------- */
@@ -530,27 +530,27 @@ export function PrototypeEvidencePanel({ project, projectId, persisted, onChange
   };
   return (
     <SectionCard title="Prototype evidence" eyebrow={`Evidence score: ${score}${ip != null ? ` · IP readiness: ${ip}` : ''}`} action={<Button size="sm" variant={checklist ? 'soft' : 'primary'} onClick={gen} disabled={!!busy}>{busy === 'checklist' ? <Loader2 size={14} className="animate-spin" /> : <FileStack size={14} />}{checklist ? 'Regenerate checklist' : 'Generate checklist'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
-      <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.02] p-3">
-        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Attach evidence</h4>
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
+      <div className="mb-4 rounded-xl border border-subtle bg-surface-1 p-3">
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Attach evidence</h4>
         <div className="flex flex-wrap items-end gap-2">
           <select className={SEL} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
             <option value="github">GitHub</option><option value="live_demo">Live demo</option><option value="benchmark">Benchmark</option><option value="screenshot">Screenshot</option><option value="video">Video</option><option value="upload">Upload</option><option value="manual">Manual</option>
           </select>
           <Input className="min-w-[160px] flex-1" placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <Input className="min-w-[160px] flex-1" placeholder="URL (optional)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-slate-400"><input type="checkbox" checked={form.verified} onChange={(e) => setForm({ ...form, verified: e.target.checked })} /> verified</label>
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-fg-secondary"><input type="checkbox" checked={form.verified} onChange={(e) => setForm({ ...form, verified: e.target.checked })} /> verified</label>
           <Button size="sm" onClick={add} disabled={!!busy}>{busy === 'add' ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}Add</Button>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">Adding a verified repo/demo lifts the prototype cap and recomputes IP-readiness honestly. Private repo details are never exposed publicly.</p>
+        <p className="mt-2 text-[11px] text-fg-muted">Adding a verified repo/demo lifts the prototype cap and recomputes IP-readiness honestly. Private repo details are never exposed publicly.</p>
       </div>
       {evidence.length > 0 && (
         <ul className="mb-4 space-y-1.5">
           {evidence.map((e, i) => (
-            <li key={i} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2 text-[12.5px]">
-              <Badge tone="cyan">{e.source}</Badge><span className="flex-1 text-slate-300">{e.title}</span>
+            <li key={i} className="flex items-center gap-2 rounded-lg border border-subtle bg-surface-1 p-2 text-[12.5px]">
+              <Badge tone="cyan">{e.source}</Badge><span className="flex-1 text-fg-secondary">{e.title}</span>
               {e.verified && <Badge tone="mint"><CheckCircle2 size={11} /> verified</Badge>}
-              {e.url && <a href={e.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white"><ExternalLink size={13} /></a>}
+              {e.url && <a href={e.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-fg"><ExternalLink size={13} /></a>}
             </li>
           ))}
         </ul>
@@ -595,7 +595,7 @@ export function ConfidentialityPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="Confidentiality & disclosure" eyebrow="Protect novelty before going public">
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       <div className="space-y-3 text-[13px]">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Confidentiality status"><select className={`${SEL} w-full`} value={conf.confidentialityStatus} onChange={(e) => setConf({ ...conf, confidentialityStatus: e.target.value })}><option value="private">Private</option><option value="shared_with_faculty">Shared with faculty</option><option value="shared_with_ip_cell">Shared with IP cell</option><option value="public_safe">Public-safe</option></select></Field>
@@ -607,8 +607,8 @@ export function ConfidentialityPanel({ project, projectId, persisted }) {
           <Button size="sm" onClick={save} disabled={!!busy}>{busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}Save</Button>
           {msg && <span className="text-[12px] text-aurora-mint">{msg}</span>}
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Check disclosure risk before an action</h4>
+        <div className="rounded-xl border border-subtle bg-surface-1 p-3">
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Check disclosure risk before an action</h4>
           <div className="flex flex-wrap items-center gap-2">
             <select className={SEL} value={action} onChange={(e) => setAction(e.target.value)}>
               <option value="make_public">Make public</option><option value="export_recruiter">Export recruiter-safe</option><option value="post_linkedin">Post on LinkedIn</option><option value="publish_github">Publish GitHub repo</option><option value="share_disclosure">Share full disclosure</option><option value="move_to_patent_review">Move to patent review</option>
@@ -619,7 +619,7 @@ export function ConfidentialityPanel({ project, projectId, persisted }) {
             <div className="mt-3 space-y-2">
               <Badge tone={riskTone(risk.riskLevel)}>Risk: {risk.riskLevel}</Badge>
               {risk.warnings?.length > 0 && <List items={risk.warnings} />}
-              {risk.safeToShareSummary && <Block title="Safe-to-share summary"><p className="text-slate-300">{risk.safeToShareSummary}</p></Block>}
+              {risk.safeToShareSummary && <Block title="Safe-to-share summary"><p className="text-fg-secondary">{risk.safeToShareSummary}</p></Block>}
               {risk.doNotShare?.length > 0 && <Block title="Do NOT share"><List items={risk.doNotShare} /></Block>}
               {risk.recommendedNextSteps?.length > 0 && <Block title="Recommended next steps"><List items={risk.recommendedNextSteps} /></Block>}
             </div>
@@ -654,18 +654,18 @@ export function DiagramPlanPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="Patent diagram plan" eyebrow="Visual Mermaid diagrams + patent figure plan" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {copied && <p className="mb-2 text-[12px] text-aurora-mint">Copied {copied} Mermaid text.</p>}
       {!d ? <EmptyState icon={Boxes} title="No diagram plan yet" hint="Generate patent figure plans with rendered Mermaid architecture/process diagrams." />
         : (
           <div className="space-y-4 text-[13px]">
             {(d.figures || []).map((f, i) => (
-              <div key={i} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-                <div className="flex items-center gap-2"><Badge tone="violet">{f.figureNumber}</Badge><span className="font-medium text-slate-200">{f.title}</span></div>
-                <p className="mt-1.5 text-slate-400">{f.purpose}</p>
+              <div key={i} className="rounded-xl border border-subtle bg-surface-1 p-3">
+                <div className="flex items-center gap-2"><Badge tone="violet">{f.figureNumber}</Badge><span className="font-medium text-fg">{f.title}</span></div>
+                <p className="mt-1.5 text-fg-secondary">{f.purpose}</p>
                 {f.components?.length > 0 && <div className="mt-2"><Chips items={f.components} /></div>}
-                {f.flow?.length > 0 && <p className="mt-2 text-[12px] text-slate-500">Flow: {f.flow.join(' → ')}</p>}
-                {f.notesForDrawing && <p className="mt-2 text-[12px] text-slate-500">{f.notesForDrawing}</p>}
+                {f.flow?.length > 0 && <p className="mt-2 text-[12px] text-fg-muted">Flow: {f.flow.join(' → ')}</p>}
+                {f.notesForDrawing && <p className="mt-2 text-[12px] text-fg-muted">{f.notesForDrawing}</p>}
               </div>
             ))}
             {d.mermaidDiagrams?.length > 0 && (
@@ -675,15 +675,15 @@ export function DiagramPlanPanel({ project, projectId, persisted }) {
                     const code = mermaidCode(m);
                     const title = mermaidTitle(m, i);
                     return (
-                      <div key={i} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+                      <div key={i} className="rounded-xl border border-subtle bg-surface-1 p-3">
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="font-medium text-slate-200">{title}</span>
+                          <span className="font-medium text-fg">{title}</span>
                           <Button size="sm" variant="ghost" onClick={() => copy(code, title)}><Copy size={13} />Copy Mermaid</Button>
                         </div>
                         <MermaidDiagram chart={code} />
                         <details className="mt-2">
-                          <summary className="cursor-pointer text-[12px] text-slate-400 hover:text-white">Show Mermaid text</summary>
-                          <pre className="mt-2 overflow-x-auto rounded-lg border border-white/8 bg-black/30 p-2.5 text-[11.5px] text-slate-300">{code}</pre>
+                          <summary className="cursor-pointer text-[12px] text-fg-secondary hover:text-fg">Show Mermaid text</summary>
+                          <pre className="mt-2 overflow-x-auto rounded-lg border border-subtle bg-sunken p-2.5 text-[11.5px] text-fg-secondary">{code}</pre>
                         </details>
                       </div>
                     );
@@ -709,27 +709,27 @@ export function ExperimentPlanPanel({ project, projectId, persisted }) {
   };
   return (
     <SectionCard title="Benchmark / experiment plan" eyebrow="Prove the technical effect" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <FileStack size={14} />}{d ? 'Regenerate' : 'Generate'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!d ? <EmptyState icon={FileStack} title="No experiment plan yet" hint="Plan a baseline vs. proposed benchmark with metrics and a result table." />
         : (
           <div className="space-y-3 text-[13px]">
             <Grid>
-              <Block title="Baseline"><p className="text-slate-300">{d.baseline}</p></Block>
-              <Block title="Proposed method"><p className="text-slate-300">{d.proposedMethod}</p></Block>
+              <Block title="Baseline"><p className="text-fg-secondary">{d.baseline}</p></Block>
+              <Block title="Proposed method"><p className="text-fg-secondary">{d.proposedMethod}</p></Block>
             </Grid>
             {d.metrics?.length > 0 && <Block title="Metrics"><Chips items={d.metrics} tone="cyan" /></Block>}
             {d.testSetup?.length > 0 && <Block title="Test setup"><List items={d.testSetup} /></Block>}
             {d.sampleScenarios?.length > 0 && <Block title="Sample scenarios"><List items={d.sampleScenarios} /></Block>}
             {d.resultTableTemplate?.length > 0 && (
               <Block title="Result table (template)">
-                <div className="overflow-x-auto"><table className="w-full text-[12px]"><thead><tr className="text-slate-500">{Object.keys(d.resultTableTemplate[0]).map((k) => <th key={k} className="border-b border-white/8 px-2 py-1 text-left font-medium">{k}</th>)}</tr></thead>
-                  <tbody>{d.resultTableTemplate.map((row, i) => <tr key={i}>{Object.keys(d.resultTableTemplate[0]).map((k) => <td key={k} className="border-b border-white/6 px-2 py-1 text-slate-300">{row[k] || '—'}</td>)}</tr>)}</tbody></table></div>
+                <div className="overflow-x-auto"><table className="w-full text-[12px]"><thead><tr className="text-fg-muted">{Object.keys(d.resultTableTemplate[0]).map((k) => <th key={k} className="border-b border-subtle px-2 py-1 text-left font-medium">{k}</th>)}</tr></thead>
+                  <tbody>{d.resultTableTemplate.map((row, i) => <tr key={i}>{Object.keys(d.resultTableTemplate[0]).map((k) => <td key={k} className="border-b border-subtle px-2 py-1 text-fg-secondary">{row[k] || '—'}</td>)}</tr>)}</tbody></table></div>
               </Block>
             )}
             {d.successCriteria?.length > 0 && <Block title="Success criteria"><List items={d.successCriteria} /></Block>}
             <Grid>
-              <Block title="IP evidence value"><p className="text-slate-300">{d.ipEvidenceValue}</p></Block>
-              <Block title="Recruiter demo value"><p className="text-slate-300">{d.recruiterDemoValue}</p></Block>
+              <Block title="IP evidence value"><p className="text-fg-secondary">{d.ipEvidenceValue}</p></Block>
+              <Block title="Recruiter demo value"><p className="text-fg-secondary">{d.recruiterDemoValue}</p></Block>
             </Grid>
           </div>
         )}
@@ -748,15 +748,15 @@ export function SimilarMemoryPanel({ projectId }) {
   };
   return (
     <SectionCard title="Similar ideas (memory)" eyebrow="Avoid duplicates · learn from the past" action={<Button size="sm" variant={d ? 'soft' : 'primary'} onClick={run} disabled={busy}>{busy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}{d ? 'Refresh' : 'Find similar'}</Button>}>
-      {err && <p className="mb-2 text-[12px] text-rose-300">{err}</p>}
+      {err && <p className="mb-2 text-[12px] text-danger">{err}</p>}
       {!d ? <EmptyState icon={Search} title="Not searched yet" hint="Find similar past projects/ideas from your innovation memory." />
         : (d.results?.length ? (
           <div className="space-y-2 text-[13px]">
-            {d.similarityWarnings?.length > 0 && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">{d.similarityWarnings.join(' ')}</div>}
+            {d.similarityWarnings?.length > 0 && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-warn">{d.similarityWarnings.join(' ')}</div>}
             {d.results.map((r, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+              <div key={i} className="flex items-center gap-2 rounded-lg border border-subtle bg-surface-1 p-2.5">
                 <Badge tone={r.similarity >= 78 ? 'rose' : r.similarity >= 50 ? 'amber' : 'cyan'}>{r.similarity}%</Badge>
-                <span className="flex-1 text-slate-300">{r.title}</span>
+                <span className="flex-1 text-fg-secondary">{r.title}</span>
                 <Badge tone="default">{r.sourceType}</Badge>
               </div>
             ))}

@@ -9,10 +9,10 @@ function ScoreBar({ label, value }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]">
-        <span className="text-slate-300">{label}</span>
-        <span className="tabular-nums text-slate-400">{pct}/100</span>
+        <span className="text-fg-secondary">{label}</span>
+        <span className="tabular-nums text-fg-secondary">{pct}/100</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-1">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .6s ease' }} />
       </div>
     </div>
@@ -45,7 +45,7 @@ export default function ArchitectureValidationPanel({ validation }) {
           <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-amber-glow">Missing production-readiness items</p>
           <ul className="space-y-1.5">
             {missingCriticalItems.map((m, i) => (
-              <li key={i} className="flex gap-2 text-[13px] text-slate-300">
+              <li key={i} className="flex gap-2 text-[13px] text-fg-secondary">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-glow" /> {m}
               </li>
             ))}
@@ -55,15 +55,15 @@ export default function ArchitectureValidationPanel({ validation }) {
 
       {failing.length > 0 && (
         <div>
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">Failed checks</p>
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-fg-muted">Failed checks</p>
           <ul className="space-y-2">
             {failing.map((c) => (
-              <li key={c.id} className="rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+              <li key={c.id} className="rounded-lg border border-subtle bg-surface-1 p-2.5">
                 <div className="flex items-center gap-2">
                   <Badge tone={checkTone(c.severity)}>{c.severity}</Badge>
-                  <span className="text-[13px] text-slate-200">{c.message}</span>
+                  <span className="text-[13px] text-fg">{c.message}</span>
                 </div>
-                {c.recommendation && <p className="mt-1.5 text-[12px] text-slate-400">{c.recommendation}</p>}
+                {c.recommendation && <p className="mt-1.5 text-[12px] text-fg-secondary">{c.recommendation}</p>}
               </li>
             ))}
           </ul>
@@ -78,10 +78,10 @@ export default function ArchitectureValidationPanel({ validation }) {
 
       {recommendations.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-[12px] text-slate-400">Recommendations ({recommendations.length})</summary>
+          <summary className="cursor-pointer text-[12px] text-fg-secondary">Recommendations ({recommendations.length})</summary>
           <ul className="mt-2 space-y-1.5">
             {recommendations.map((r, i) => (
-              <li key={i} className="text-[13px] text-slate-300">• {r}</li>
+              <li key={i} className="text-[13px] text-fg-secondary">• {r}</li>
             ))}
           </ul>
         </details>

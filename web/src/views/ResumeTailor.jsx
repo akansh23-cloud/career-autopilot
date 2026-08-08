@@ -19,13 +19,13 @@ function FitDelta({ before, after }) {
   return (
     <div className="flex items-center justify-center gap-3">
       <div className="text-center">
-        <div className="font-display text-2xl text-white">{before ?? '—'}</div>
-        <div className="text-[11px] text-slate-500">Job fit before</div>
+        <div className="font-display text-2xl text-fg">{before ?? '—'}</div>
+        <div className="text-[11px] text-fg-muted">Job fit before</div>
       </div>
-      <div className="text-slate-500">→</div>
+      <div className="text-fg-muted">→</div>
       <div className="text-center">
-        <div className="font-display text-2xl text-white">{after ?? '—'}</div>
-        <div className="text-[11px] text-slate-500">Job fit after</div>
+        <div className="font-display text-2xl text-fg">{after ?? '—'}</div>
+        <div className="text-[11px] text-fg-muted">Job fit after</div>
       </div>
       <Badge tone={tone}>{delta >= 0 ? `+${delta}` : delta}</Badge>
     </div>
@@ -129,7 +129,7 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
         <Field label="Target role">
           <div className="relative">
             <select value={role} onChange={(e) => setRole(e.target.value)}
-              className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
+              className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-field-border bg-field px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50">
               <option value="">General (no specific role)</option>
               {Object.entries(ROLE_GROUPS).map(([grp, roles]) => (
                 <optgroup key={grp} label={grp}>
@@ -137,20 +137,20 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
                 </optgroup>
               ))}
             </select>
-            <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
           </div>
         </Field>
 
         <textarea value={jd} onChange={(e) => setJd(e.target.value)}
           placeholder="Paste the full job description here…"
-          className="mt-3 h-40 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-relaxed text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+          className="mt-3 h-40 w-full resize-none rounded-xl border border-field-border bg-field p-4 text-sm leading-relaxed text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
 
         <div className="mt-3 flex flex-wrap gap-2">
           {MODES.map(([id, label, hint]) => (
             <button key={id} onClick={() => setMode(id)} title={hint}
-              className={`rounded-xl border px-3 py-2 text-left text-xs transition ${mode === id ? 'border-aurora-violet/60 bg-aurora-violet/10 text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/25'}`}>
+              className={`rounded-xl border px-3 py-2 text-left text-xs transition ${mode === id ? 'border-aurora-violet/60 bg-aurora-violet/10 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
               <div className="font-medium">{label}</div>
-              <div className="text-[10px] text-slate-500">{hint}</div>
+              <div className="text-[10px] text-fg-muted">{hint}</div>
             </button>
           ))}
         </div>
@@ -173,7 +173,7 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
           </Button>
           <Button variant="soft" onClick={() => saveVersion('base')}><Save size={16} /> Save base version</Button>
           {role && <Button variant="soft" onClick={() => saveVersion('role')}><Save size={16} /> Save role version</Button>}
-          <span className="ml-auto text-[11.5px] text-slate-500">
+          <span className="ml-auto text-[11.5px] text-fg-muted">
             {isUnlimited(tailorsLeft) ? 'Unlimited tailoring on your plan' : `${tailorsLeft} tailoring run${tailorsLeft === 1 ? '' : 's'} left this month`}
           </span>
         </div>
@@ -183,11 +183,11 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
         <>
           <SectionCard title="Job fit (separate from resume score)">
             <FitDelta before={result.jobFitScoreBefore} after={result.jobFitScoreAfter} />
-            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3 text-center sm:grid-cols-3">
+            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-subtle pt-3 text-center sm:grid-cols-3">
               {Object.entries(result.jobFitBreakdownAfter || {}).map(([k, v]) => (
                 <div key={k}>
-                  <div className="font-display text-base text-white">{v}</div>
-                  <div className="text-[10px] capitalize text-slate-500">{k.replace(/([A-Z])/g, ' $1')}</div>
+                  <div className="font-display text-base text-fg">{v}</div>
+                  <div className="text-[10px] capitalize text-fg-muted">{k.replace(/([A-Z])/g, ' $1')}</div>
                 </div>
               ))}
             </div>
@@ -202,9 +202,9 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
             {hasRisks && (
               <ul className="mt-3 space-y-2">
                 {result.fabricationRisks.map((r, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-slate-300">
-                    <ShieldAlert size={15} className="mt-0.5 shrink-0 text-rose-300" />
-                    <span><span className="text-rose-300">{r.type?.replace(/_/g, ' ')}:</span> {r.detail}</span>
+                  <li key={i} className="flex gap-2 text-sm text-fg-secondary">
+                    <ShieldAlert size={15} className="mt-0.5 shrink-0 text-danger" />
+                    <span><span className="text-danger">{r.type?.replace(/_/g, ' ')}:</span> {r.detail}</span>
                   </li>
                 ))}
               </ul>
@@ -214,7 +214,7 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
           {result.safeChanges?.length > 0 && (
             <SectionCard title="Safe changes applied">
               <ul className="space-y-2">
-                {result.safeChanges.map((s, i) => <li key={i} className="flex gap-2 text-sm text-slate-300"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-aurora-mint" /> {s}</li>)}
+                {result.safeChanges.map((s, i) => <li key={i} className="flex gap-2 text-sm text-fg-secondary"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-aurora-mint" /> {s}</li>)}
               </ul>
             </SectionCard>
           )}
@@ -222,7 +222,7 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
           {result.needsReview?.length > 0 && (
             <SectionCard title="Suggestions (add only if true)">
               <ul className="space-y-2">
-                {result.needsReview.map((s, i) => <li key={i} className="flex gap-2 text-sm text-slate-300"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-glow" /> {s}</li>)}
+                {result.needsReview.map((s, i) => <li key={i} className="flex gap-2 text-sm text-fg-secondary"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-glow" /> {s}</li>)}
               </ul>
             </SectionCard>
           )}
@@ -231,13 +231,13 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
             <SectionCard title="Keywords">
               {result.keywordsAdded?.length > 0 && (
                 <div className="mb-3">
-                  <div className="mb-1 text-[11px] text-slate-500">Now emphasized</div>
+                  <div className="mb-1 text-[11px] text-fg-muted">Now emphasized</div>
                   <div className="flex flex-wrap gap-2">{result.keywordsAdded.map((k) => <Badge key={k} tone="mint">{k}</Badge>)}</div>
                 </div>
               )}
               {result.keywordsMissing?.length > 0 && (
                 <div>
-                  <div className="mb-1 text-[11px] text-slate-500">Still missing (not inserted)</div>
+                  <div className="mb-1 text-[11px] text-fg-muted">Still missing (not inserted)</div>
                   <div className="flex flex-wrap gap-2">{result.keywordsMissing.map((k) => <Badge key={k} tone="violet">{k}</Badge>)}</div>
                 </div>
               )}
@@ -246,7 +246,7 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
 
           <SectionCard title="Tailored resume (review before use)" action={<Button size="sm" variant="soft" onClick={() => saveVersion('job')}><Save size={14} /> Save job version</Button>}>
             <textarea readOnly value={result.tailoredResume?.text || ''}
-              className="h-72 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs leading-relaxed text-slate-200 outline-none" />
+              className="h-72 w-full resize-none rounded-xl border border-field-border bg-field p-4 text-xs leading-relaxed text-fg outline-none" />
             {savedMsg && <p className="mt-2 flex items-center gap-1.5 text-xs text-aurora-mint"><CheckCircle2 size={13} /> {savedMsg}</p>}
           </SectionCard>
         </>
@@ -258,20 +258,20 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
         ) : (
           <div className="space-y-2">
             {versions.map((v) => (
-              <div key={v.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2">
+              <div key={v.id} className="flex items-center justify-between gap-3 rounded-xl border border-subtle bg-surface-1 px-3 py-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm text-slate-200">
+                  <div className="flex items-center gap-2 text-sm text-fg">
                     <FileText size={14} className="shrink-0 text-aurora-cyan" />
                     <span className="truncate">{v.title}</span>
                     <Badge tone={v.kind === 'job' ? 'violet' : v.kind === 'role' ? 'cyan' : 'default'}>{v.kind}</Badge>
                   </div>
-                  <div className="mt-0.5 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                  <div className="mt-0.5 flex flex-wrap gap-3 text-[11px] text-fg-muted">
                     {v.targetRole && <span>Role: {v.targetRole}</span>}
                     {v.resumeScore != null && <span>Resume: {v.resumeScore}/100</span>}
                     {v.jobFitScore != null && <span>Job fit: {v.jobFitScore}/100</span>}
                   </div>
                 </div>
-                <button onClick={() => removeVersion(v.id)} className="rounded-md p-1.5 text-slate-500 hover:text-rose-300" title="Delete version"><Trash2 size={15} /></button>
+                <button onClick={() => removeVersion(v.id)} className="rounded-md p-1.5 text-fg-muted hover:text-danger" title="Delete version"><Trash2 size={15} /></button>
               </div>
             ))}
           </div>

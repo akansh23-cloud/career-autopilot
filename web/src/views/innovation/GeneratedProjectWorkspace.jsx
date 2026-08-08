@@ -37,9 +37,9 @@ const TABS = [
 function FramingRow({ label, value }) {
   if (!value) return null;
   return (
-    <div className="border-t border-white/6 py-2.5 first:border-t-0 first:pt-0">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
-      <p className="mt-1 text-[13px] leading-relaxed text-slate-300">{value}</p>
+    <div className="border-t border-subtle py-2.5 first:border-t-0 first:pt-0">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
+      <p className="mt-1 text-[13px] leading-relaxed text-fg-secondary">{value}</p>
     </div>
   );
 }
@@ -69,7 +69,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-slate-400 hover:text-white"><ArrowLeft size={15} /> Back</button>
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-fg-secondary hover:text-fg"><ArrowLeft size={15} /> Back</button>
 
       <PageIntro eyebrow="Generated project" title={project.title} sub={project.simplified?.oneLineSummary || project.proposedSolution} />
 
@@ -85,7 +85,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
       </div>
 
       {(communityOnly || distinctTypes >= 2 || cites.length > 0) && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <SourceMix citations={cites} />
             {communityOnly
@@ -93,7 +93,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
               : distinctTypes >= 2 ? <Badge tone="mint">Corroborated across sources</Badge> : null}
           </div>
           {communityOnly && (
-            <p className="mt-2 text-[12px] text-[#F3E3B2]">Community discussions are early signals, not verified evidence. Validate with technical sources, a prior-art search, and prototype evidence before treating this as IP-worthy. IP-readiness is capped at 55 while evidence is community-only.</p>
+            <p className="mt-2 text-[12px] text-warn">Community discussions are early signals, not verified evidence. Validate with technical sources, a prior-art search, and prototype evidence before treating this as IP-worthy. IP-readiness is capped at 55 while evidence is community-only.</p>
           )}
           {typeof buildClarity === 'number' && (
             <div className="mt-3 max-w-xs"><ScoreBar label="Build clarity" value={buildClarity} /></div>
@@ -102,7 +102,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
       )}
 
       <SectionCard title="Why this is worth building" eyebrow="Framing & curiosity">
-        <div className="divide-y divide-white/6">
+        <div className="divide-y divide-subtle">
           <FramingRow label="The pain" value={fr.painPoint || project.painPoint} />
           <FramingRow label="Who faces it" value={fr.whoFacesIt || project.affectedUsers} />
           <FramingRow label="Today's broken workaround" value={fr.brokenWorkaround || project.currentWorkaround} />
@@ -113,8 +113,8 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
         </div>
         {project.mvpScope?.length > 0 && (
           <div className="mt-4">
-            <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">MVP scope</h4>
-            <ul className="space-y-1 text-[13px] text-slate-300">{project.mvpScope.map((m, i) => <li key={i} className="flex gap-2"><span className="text-slate-600">•</span>{m}</li>)}</ul>
+            <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">MVP scope</h4>
+            <ul className="space-y-1 text-[13px] text-fg-secondary">{project.mvpScope.map((m, i) => <li key={i} className="flex gap-2"><span className="text-fg-muted">•</span>{m}</li>)}</ul>
           </div>
         )}
       </SectionCard>
@@ -126,7 +126,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
         {TABS.map((t) => {
           const Icon = t.Icon;
           return (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-medium transition ${tab === t.id ? 'border-aurora-violet/45 bg-aurora-violet/12 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}>
+            <button key={t.id} onClick={() => setTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-medium transition ${tab === t.id ? 'border-aurora-violet/45 bg-aurora-violet/12 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
               <Icon size={13} /> {t.label}
             </button>
           );
@@ -157,14 +157,14 @@ function ProblemEvidence({ cites = [], project }) {
   return (
     <SectionCard title="Problem evidence" eyebrow={`${cites.length} source citation(s)`}>
       {cites.length === 0
-        ? <p className="text-[13px] text-slate-500">No source citations captured (fallback draft or DB off).</p>
+        ? <p className="text-[13px] text-fg-muted">No source citations captured (fallback draft or DB off).</p>
         : (
           <ul className="space-y-2">
             {cites.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+              <li key={i} className="flex items-start gap-2 rounded-lg border border-subtle bg-surface-1 p-2.5">
                 <Badge tone={COMMUNITY.includes(s.source) ? 'amber' : 'cyan'}>{s.source}</Badge>
-                <span className="flex-1 text-[13px] text-slate-300">{s.title}</span>
-                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white">↗</a>}
+                <span className="flex-1 text-[13px] text-fg-secondary">{s.title}</span>
+                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-fg">↗</a>}
               </li>
             ))}
           </ul>
@@ -176,18 +176,18 @@ function ProblemEvidence({ cites = [], project }) {
 function CommunitySignals({ cites = [] }) {
   return (
     <SectionCard title="Community signals" eyebrow="Early signals — not verified facts">
-      <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-[#F3E3B2]">
+      <div className="mb-3 rounded-xl border border-amber-glow/30 bg-amber-glow/[0.06] p-2.5 text-[12px] text-warn">
         Community discussions are early pain signals, never verified market proof. Usernames are never stored or shown. Strong recommendations require corroboration from technical sources.
       </div>
       {cites.length === 0
-        ? <p className="text-[13px] text-slate-500">No community signals contributed to this project.</p>
+        ? <p className="text-[13px] text-fg-muted">No community signals contributed to this project.</p>
         : (
           <ul className="space-y-2">
             {cites.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+              <li key={i} className="flex items-start gap-2 rounded-lg border border-subtle bg-surface-1 p-2.5">
                 <Badge tone="amber">{s.source}</Badge>
-                <span className="flex-1 text-[13px] text-slate-300">{s.title}</span>
-                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white">↗</a>}
+                <span className="flex-1 text-[13px] text-fg-secondary">{s.title}</span>
+                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-fg">↗</a>}
               </li>
             ))}
           </ul>

@@ -58,6 +58,37 @@ import {
   WORK_MODES, EXPERIENCE_LEVELS, JOB_TYPES,
 } from '../utils/jobFilters.js';
 
+/* Name the filters a fallback step actually relaxed, relative to what the user
+   asked for. "Broader matches (30-day window)" does not tell someone who picked
+   "24h" that their freshness filter was dropped — this does. Only reports a
+   relaxation when it genuinely changed the user's own value. */
+export function describeRelaxations(step = {}, baseCriteria = {}) {
+  const relax = step.relax || {};
+  const out = [];
+  if (relax.freshness && relax.freshness !== baseCriteria.freshness) {
+    const LABEL = { '24h': 'last 24 hours', '1d': 'last 24 hours', '3d': 'last 3 days', '7d': 'last week', '30d': 'last 30 days', latest: 'any date' };
+    out.push({
+      filter: 'freshness',
+      from: LABEL[baseCriteria.freshness] || baseCriteria.freshness || 'any date',
+      to: LABEL[relax.freshness] || relax.freshness,
+      label: `Posting date widened to ${LABEL[relax.freshness] || relax.freshness}`,
+    });
+  }
+  if (relax.includeUndated) {
+    out.push({ filter: 'freshness', label: 'Included postings whose source published no date' });
+  }
+  if (relax.broadRole && baseCriteria.role) {
+    out.push({ filter: 'role', from: baseCriteria.role, label: `Role matched loosely around "${baseCriteria.role}" instead of exactly` });
+  }
+  if (relax.anyLocation && baseCriteria.location) {
+    out.push({ filter: 'location', from: baseCriteria.location, label: `Location filter "${baseCriteria.location}" dropped` });
+  }
+  if (relax.anyMode && baseCriteria.mode && baseCriteria.mode !== 'any') {
+    out.push({ filter: 'workMode', from: baseCriteria.mode, label: `Work mode filter "${baseCriteria.mode}" dropped` });
+  }
+  return out;
+}
+
 export function registerJobSearchRoute(app, deps = {}) {
   const {
     jobsLimiter,
@@ -190,19 +221,13 @@ export function registerJobSearchRoute(app, deps = {}) {
            0 exact -> 1 30-day -> 2 source-listed -> 3 broad role -> 4 global.
          `baseRemoved` still reports why the EXACT search was empty, so the
          user gets a reason rather than a blank page. */
-      let gated = progressiveGate(jobs, baseCriteria, helpers, { minResults, maxLevel: 4 });
-
-      /* ENGINE BUG WORKAROUND — do not remove.
-         progressiveGate() only returns a step's candidates when that step
-         reaches `minResults`. If the ladder is exhausted without any step
-         clearing the bar it returns an EMPTY list, even when the last step
-         found real jobs (e.g. minResults=5, level 4 found 3 -> returns 0).
-         That reproduces the exact "no jobs found" symptom the engine was
-         written to fix. Retry with minResults=1 so a thin result set is
-         still shown, clearly labelled as a fallback. */
-      if (!gated.candidates.length && gated.attempts.some((a) => a.count > 0)) {
-        gated = progressiveGate(jobs, baseCriteria, helpers, { minResults: 1, maxLevel: 4 });
-      }
+      /* The engine now returns the best non-empty candidate set on its own when
+         no step reaches `minResults` (see progressiveGate's `best` tracking), so
+         the old "ENGINE BUG WORKAROUND" second call at minResults=1 is gone.
+         A thin-but-real result set arrives here directly, flagged via
+         `thinResults`, and an empty one now genuinely means zero postings
+         survived at every relaxation level. */
+      const gated = progressiveGate(jobs, baseCriteria, helpers, { minResults, maxLevel: 4 });
 
       let candidates = rankJobs(gated.candidates, baseCriteria, helpers);
       candidates = balancedBySource ? balancedBySource(candidates, limit * 2) : candidates.slice(0, limit * 2);
@@ -246,13 +271,84 @@ export function registerJobSearchRoute(app, deps = {}) {
         verifiedRemoved,
       });
 
-      /* When nothing survives even at level 4, the cause is almost always
-         upstream coverage, not the filters. Say so plainly instead of
-         showing an empty list with no explanation. */
-      const noIndiaSource = !RAPIDAPI_KEY && !process.env.ADZUNA_APP_ID && !process.env.SERPAPI_KEY;
-      const coverageHint = (!kept.length && noIndiaSource && /india|pune|mumbai|bengaluru|bangalore|hyderabad|delhi|chennai|noida|gurgaon|gurugram|kolkata/i.test(String(loc)))
-        ? 'No India-focused job source is configured on this deployment. The active sources (Remotive, RemoteOK, Jobicy, Arbeitnow) list remote and European roles only. Set ADZUNA_APP_ID / ADZUNA_APP_KEY or RAPIDAPI_KEY to search Indian listings.'
-        : '';
+      /* ---------------- provider diagnostics ---------------------------
+         `ctx.diag` is populated by the JSearch source with the real upstream
+         outcome — INVALID_KEY (401), NOT_SUBSCRIBED (403 + RapidAPI's
+         subscription body), RATE_LIMITED (429), UPSTREAM (other non-2xx),
+         NETWORK (unreachable) or NO_RESULTS. The route created that object and
+         then never read it back, so every one of those failures reached the
+         user as an unexplained "No jobs found". It is surfaced now.
+
+         Everything here is already sanitized at the source: the key itself is
+         never placed on `diag`, only a classification and a human message. */
+      const providerDiag = ctx.diag || {};
+      const PROVIDER_ERROR_LABELS = {
+        INVALID_KEY: 'The configured RapidAPI key was rejected (HTTP 401/403). Check RAPIDAPI_KEY.',
+        NOT_SUBSCRIBED: 'The RapidAPI key is valid but this account is not subscribed to the JSearch API. Subscribe on RapidAPI (the free Basic plan is enough) and retry.',
+        RATE_LIMITED: 'The job provider rate-limited this deployment (HTTP 429). Wait a minute before searching again, or raise the JSearch plan quota.',
+        UPSTREAM: 'The job provider returned an unexpected error. This is upstream of Career Autopilot; retry shortly.',
+        NETWORK: 'The job provider could not be reached from this deployment.',
+        NO_RESULTS: 'The job provider was reachable and authorised but returned no postings for this query.',
+      };
+
+      /* A provider FAILURE is not the same as a provider returning nothing.
+         Only the former is a configuration/health problem worth escalating. */
+      const providerFailed = !!providerDiag.errorCode && providerDiag.errorCode !== 'NO_RESULTS';
+
+      const configuredProviders = {
+        rapidapi: !!RAPIDAPI_KEY,
+        adzuna: !!(process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY),
+        serpapi: !!process.env.SERPAPI_KEY,
+      };
+      const anyRegionalProvider = configuredProviders.rapidapi || configuredProviders.adzuna || configuredProviders.serpapi;
+
+      /* Regional coverage. The always-on fallbacks (Remotive, RemoteOK, Jobicy,
+         Arbeitnow, The Muse) are remote/EU/US boards — none of them index
+         Indian on-site listings, so an India/Pune search against those alone
+         cannot succeed no matter how far the filters are relaxed. */
+      const REGIONAL_QUERY = /india|bharat|pune|mumbai|bengaluru|bangalore|hyderabad|delhi|chennai|noida|gurgaon|gurugram|kolkata|ahmedabad|jaipur|indore|nashik|coimbatore|kochi/i;
+      const wantsRegional = REGIONAL_QUERY.test(String(loc));
+
+      /* Every source we actually ran threw. That is a total upstream/network
+         outage and is NOT the same as "no provider configured" — without this
+         branch a blocked network reported the misleading "only free boards are
+         configured" message while the real cause was that all of them failed. */
+      const attemptedSources = sources.filter((s) => s.active || s.error);
+      const failedSources = sources.filter((s) => s.error);
+      const anySourceSucceeded = sources.some((s) => s.ok);
+      const allSourcesFailed = failedSources.length > 0 && !anySourceSucceeded;
+
+      let errorCode = null;
+      let coverageHint = '';
+
+      if (allSourcesFailed && !kept.length) {
+        errorCode = 'ALL_SOURCES_FAILED';
+        coverageHint = `Every configured job source failed to respond (${failedSources.slice(0, 4).map((s) => s.source).join(', ')}). This is a network or upstream outage, not a filter problem — no postings could be retrieved.`;
+      } else if (providerFailed) {
+        /* Loudest signal first: a configured provider actually failed. This is
+           reported whether or not fallback boards happened to return something,
+           because silently degrading to remote-only results while the India
+           provider is 401-ing is exactly the "silently shows no jobs" failure. */
+        errorCode = providerDiag.errorCode;
+        coverageHint = PROVIDER_ERROR_LABELS[providerDiag.errorCode] || providerDiag.errorMessage || 'The job provider returned an error.';
+      } else if (wantsRegional && !anyRegionalProvider && !kept.length) {
+        /* `!kept.length` matters: a fallback board can legitimately carry a
+           remote role that matches an Indian search. When that happens the
+           search SUCCEEDED, and raising a coverage error over a working result
+           list would be plainly wrong. This fires only when the missing
+           regional provider actually cost the user their results. */
+        /* NEVER a bare "No jobs found" here — this is a configuration gap, and
+           the user is told so explicitly rather than being left to conclude
+           there are no DevOps jobs in Pune. */
+        errorCode = 'NO_REGIONAL_SOURCE';
+        coverageHint = 'No India-capable job source is configured on this deployment, so this location cannot return results. The active sources (Remotive, RemoteOK, Jobicy, Arbeitnow, The Muse) index remote, European and US roles only. Set RAPIDAPI_KEY, or ADZUNA_APP_ID + ADZUNA_APP_KEY, or SERPAPI_KEY to search Indian listings.';
+      } else if (!kept.length && providerDiag.errorCode === 'NO_RESULTS') {
+        errorCode = 'PROVIDER_NO_RESULTS';
+        coverageHint = `${PROVIDER_ERROR_LABELS.NO_RESULTS} Try a broader role title or clear the location.`;
+      } else if (!kept.length && !anyRegionalProvider) {
+        errorCode = 'NO_SEARCH_PROVIDER';
+        coverageHint = 'Only the free remote-job boards are configured on this deployment. Set RAPIDAPI_KEY, ADZUNA_APP_ID/ADZUNA_APP_KEY or SERPAPI_KEY for broader coverage.';
+      }
 
       const payload = {
         jobs: kept,
@@ -270,20 +366,51 @@ export function registerJobSearchRoute(app, deps = {}) {
           fallbackGroup: gated.step.group,
           fallbackLabel: gated.step.label,
           usedFallback: gated.step.level > 0,
+          /* Which filters the fallback step actually relaxed, named, so the UI
+             can say WHICH ones were dropped instead of "broader matches". */
+          relaxedFilters: describeRelaxations(gated.step, baseCriteria),
+          /* Real postings, but fewer than the requested minimum. Previously
+             this state was indistinguishable from "no jobs found". */
+          thinResults: !!gated.thinResults,
+          requestedMinResults: minResults,
           removedByFilter: gated.baseRemoved,
           removedByVerification: verifiedRemoved,
           attempts: gated.attempts,
+          providerError: providerFailed ? { code: providerDiag.errorCode, message: coverageHint } : null,
           applied: { role, location: loc, mode, experience, jobType, freshness, filterMode },
         },
 
         audit: gated.audit,
+
+        /* Sanitized provider health. Never contains the key itself — only
+           whether one is configured, the classified outcome and a message the
+           UI can show verbatim. */
         diagnostics: {
           apiKeyDetected: !!RAPIDAPI_KEY,
           host: RAPIDAPI_HOST,
           country: jsearchCountry(loc),
           strictFreshness: strict,
-          errorCode: noIndiaSource ? 'NO_REGIONAL_SOURCE' : null,
+          errorCode,
           errorMessage: coverageHint || null,
+          providersConfigured: configuredProviders,
+          regionalProviderRequired: wantsRegional,
+          regionalProviderConfigured: anyRegionalProvider,
+          sourcesAttempted: attemptedSources.length,
+          sourcesFailed: failedSources.map((s) => ({ source: s.source, error: String(s.error).slice(0, 200) })),
+          allSourcesFailed,
+          provider: {
+            name: 'JSearch / RapidAPI',
+            attempted: !!providerDiag.apiKeyDetected,
+            reachable: providerDiag.reachable ?? null,
+            statusCode: providerDiag.statusCode ?? null,
+            query: providerDiag.query || null,
+            freshnessUsed: providerDiag.usedFreshness || null,
+            returnedCount: providerDiag.returnedCount ?? null,
+            cached: !!providerDiag.cached,
+            errorCode: providerDiag.errorCode || null,
+            errorMessage: providerDiag.errorMessage || null,
+            broadened: providerDiag.broadened || null,
+          },
         },
         sourceSummary: {
           active: sources.filter((s) => s.active).map((s) => s.source),

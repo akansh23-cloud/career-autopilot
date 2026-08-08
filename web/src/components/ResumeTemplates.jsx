@@ -30,20 +30,20 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
     <div
       className={`group flex flex-col overflow-hidden rounded-2xl border transition ${
         selected ? 'border-aurora-violet/60 ring-1 ring-aurora-violet/30 bg-aurora-violet/5'
-                  : 'border-white/10 bg-white/[0.02] hover:border-white/25'
+                  : 'border-subtle bg-surface-1 hover:border-strong'
       }`}
     >
       {/* live thumbnail */}
       <button
         type="button"
         onClick={() => onPreview(tpl.id)}
-        className="relative block h-[176px] w-full overflow-hidden border-b border-white/8 bg-[#e9edf5]"
+        className="relative block h-[176px] w-full overflow-hidden border-b border-subtle bg-[#e9edf5]"
         title="Click to preview"
       >
         <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2">
           <ResumePaper data={data} templateId={tpl.id} mode={tpl.pages === 'multi' ? 'multi' : 'auto'} scale={0.205} />
         </div>
-        <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100">
+        <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-sunken group-hover:opacity-100">
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-ink-950">
             <Eye size={13} /> Preview
           </span>
@@ -58,21 +58,21 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
       {/* info */}
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[13px] font-semibold leading-tight text-white">{tpl.name}</p>
+          <p className="text-[13px] font-semibold leading-tight text-fg">{tpl.name}</p>
           <Badge tone={tpl.tone} className="shrink-0 text-[9px]">{tpl.atsSafe ? 'ATS-safe' : tpl.atsLabel || 'Visual'}</Badge>
         </div>
-        <p className="text-[10.5px] leading-snug text-slate-500">{tpl.fit}</p>
+        <p className="text-[10.5px] leading-snug text-fg-muted">{tpl.fit}</p>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5 text-[9.5px] text-slate-400">
+          <span className="inline-flex items-center gap-1 rounded-md bg-surface-1 px-1.5 py-0.5 text-[9.5px] text-fg-secondary">
             {tpl.pages === 'multi' ? <Layers size={9} /> : <FileText size={9} />}
             {tpl.pages === 'multi' ? 'Multi-page' : 'Single-page'}
           </span>
-          <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[9.5px] text-slate-400">{tpl.atsLabel} ATS</span>
+          <span className="rounded-md bg-surface-1 px-1.5 py-0.5 text-[9.5px] text-fg-secondary">{tpl.atsLabel} ATS</span>
         </div>
         <div className="mt-auto flex gap-2 pt-1">
           <button
             onClick={() => onPreview(tpl.id)}
-            className="flex-1 rounded-lg border border-white/12 bg-white/[0.04] py-1.5 text-[11px] font-medium text-slate-200 transition hover:bg-white/10"
+            className="flex-1 rounded-lg border border-subtle bg-surface-1 py-1.5 text-[11px] font-medium text-fg transition hover:bg-surface-2"
           >
             <Eye size={11} className="mr-1 inline" /> Preview
           </button>
@@ -153,13 +153,13 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse })
           <Badge tone={tpl.tone}>{tpl.atsSafe ? 'ATS-safe' : tpl.atsLabel || 'Visual, not ATS-first'}</Badge>
           <Badge>{tpl.pages === 'multi' ? 'Multi-page' : 'Single-page'} layout</Badge>
         </div>
-        <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+        <div className="flex items-center gap-1 rounded-xl border border-subtle bg-surface-1 p-1">
           {['auto', 'single', 'multi'].map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
               className={`rounded-lg px-2.5 py-1 text-[11px] font-medium capitalize transition ${
-                mode === m ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'text-slate-400 hover:text-white'
+                mode === m ? 'bg-aurora-cyan/15 text-fg ring-1 ring-aurora-cyan/30' : 'text-fg-secondary hover:text-fg'
               }`}
             >
               {m === 'auto' ? 'Auto' : m === 'single' ? 'Single page' : 'Multi page'}
@@ -168,13 +168,13 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse })
         </div>
       </div>
 
-      <p className="mb-3 text-xs leading-relaxed text-slate-400">{tpl.desc}</p>
+      <p className="mb-3 text-xs leading-relaxed text-fg-secondary">{tpl.desc}</p>
 
-      <div ref={wrapRef} className="flex justify-center rounded-2xl border border-white/10 bg-[#e9edf5] p-2">
+      <div ref={wrapRef} className="flex justify-center rounded-2xl border border-subtle bg-[#e9edf5] p-2">
         <ResumePaper key={mode} data={data} templateId={templateId} mode={mode} scale={scale} className="rounded shadow-lift" />
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-subtle pt-4">
         {onUse && (
           <Button onClick={() => { onUse(templateId); onClose?.(); }}>
             <Check size={15} /> Use this template

@@ -41,7 +41,7 @@ function Meter({ value, max, tone = 'violet' }) {
     mint: 'bg-aurora-mint', amber: 'bg-amber-glow', rose: 'bg-rose-400',
   }[tone];
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/8">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-1">
       <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
     </div>
   );
@@ -554,7 +554,7 @@ export function MatchesModal({ open, onClose, requisition, matches = [], loading
                   {Object.entries(match.parts).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-2 text-[11px]">
                       <span className="w-28 shrink-0 text-fg-secondary">{k}</span>
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-1">
                         <div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.min(100, v * 2.5)}%` }} />
                       </div>
                       <span className="w-5 text-right font-mono text-fg-secondary">{v}</span>
@@ -617,7 +617,7 @@ export function PipelineBoard({ pipeline = [], stages = [], requisitions = [] })
         <select
           value={reqFilter}
           onChange={(e) => setReqFilter(e.target.value)}
-          className="h-9 rounded-xl border border-subtle bg-base px-2.5 text-[12px] text-fg"
+          className="h-9 rounded-xl border border-field-border bg-field px-2.5 text-[12px] text-fg"
         >
           <option value="">All requisitions</option>
           {requisitions.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
@@ -649,7 +649,7 @@ export function PipelineBoard({ pipeline = [], stages = [], requisitions = [] })
                     <p className="mt-1 truncate text-[10px] text-fg-muted">{p.requisitionTitle}</p>
                     {p.ctcLpa && <div className="mt-1.5"><Badge tone="mint">{p.ctcLpa} LPA</Badge></div>}
                     {p.stage === 'sourced' && p.mustHaveMissing?.length > 0 && (
-                      <p className="mt-1.5 truncate text-[10px] text-rose-300/70">missing: {p.mustHaveMissing.join(', ')}</p>
+                      <p className="mt-1.5 truncate text-[10px] text-danger/70">missing: {p.mustHaveMissing.join(', ')}</p>
                     )}
                   </div>
                 ))}
@@ -692,21 +692,21 @@ export function SkillGap({ gaps = [], partners = [] }) {
       <div className="mt-2 space-y-1.5">
         <div className="flex items-center gap-2 text-[11px]">
           <span className="w-16 shrink-0 text-fg-muted">Demand</span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-1">
             <div className="h-full rounded-full bg-amber-glow" style={{ width: `${(g.demand / maxScale) * 100}%` }} />
           </div>
           <span className="w-7 text-right font-mono text-fg-secondary">{g.demand}</span>
         </div>
         <div className="flex items-center gap-2 text-[11px]">
           <span className="w-16 shrink-0 text-fg-muted">Proven</span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-1">
             <div className="h-full rounded-full bg-aurora-mint" style={{ width: `${(g.provenSupply / maxScale) * 100}%` }} />
           </div>
           <span className="w-7 text-right font-mono text-fg-secondary">{g.provenSupply}</span>
         </div>
         <div className="flex items-center gap-2 text-[11px]">
           <span className="w-16 shrink-0 text-fg-muted">Claimed</span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-1">
             <div className="h-full rounded-full bg-aurora-cyan/60" style={{ width: `${(g.claimedSupply / maxScale) * 100}%` }} />
           </div>
           <span className="w-7 text-right font-mono text-fg-secondary">{g.claimedSupply}</span>

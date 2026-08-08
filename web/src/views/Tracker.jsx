@@ -34,7 +34,7 @@ export default function Tracker() {
       <PageIntro title="Application tracker" sub="Track real jobs you save or add. No demo applications are preloaded."
         action={<Button onClick={() => setOpen(true)}><Plus size={16} /> Add application</Button>} />
 
-      {total === 0 && <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300">No applications yet. Save a job from Jobs or add one manually.</div>}
+      {total === 0 && <div className="mb-4 rounded-2xl border border-subtle bg-surface-1 p-4 text-sm text-fg-secondary">No applications yet. Save a job from Jobs or add one manually.</div>}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map((col, ci) => {
@@ -43,28 +43,28 @@ export default function Tracker() {
             <div key={col.id} className="gradient-border p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white">{col.label}</h3>
+                  <h3 className="text-sm font-semibold text-fg">{col.label}</h3>
                   <Badge tone={col.tone}>{board[col.id].length}</Badge>
                 </div>
               </div>
               <div className="space-y-2.5">
                 {board[col.id].length === 0 && (
-                  <div className="rounded-xl border border-dashed border-white/10 py-8 text-center text-xs text-slate-600">Empty</div>
+                  <div className="rounded-xl border border-dashed border-subtle py-8 text-center text-xs text-fg-muted">Empty</div>
                 )}
                 {board[col.id].map((card) => (
-                  <div key={card.id} className="group rounded-xl border border-white/8 bg-white/[0.02] p-3 transition hover:border-white/20">
+                  <div key={card.id} className="group rounded-xl border border-subtle bg-surface-1 p-3 transition hover:border-strong">
                     <div className="flex items-start gap-2">
-                      <GripVertical size={15} className="mt-0.5 text-slate-600" />
+                      <GripVertical size={15} className="mt-0.5 text-fg-muted" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white">{card.role}</p>
-                        <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-slate-500"><Building2 size={11} /> {card.company || '—'}</p>
+                        <p className="truncate text-sm font-medium text-fg">{card.role}</p>
+                        <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-fg-muted"><Building2 size={11} /> {card.company || '—'}</p>
                       </div>
-                      {card.url && <a href={card.url} target="_blank" rel="noreferrer" className="rounded-md p-1 text-slate-500 hover:bg-white/8 hover:text-white"><ExternalLink size={14} /></a>}
+                      {card.url && <a href={card.url} target="_blank" rel="noreferrer" className="rounded-md p-1 text-fg-muted hover:bg-surface-1 hover:text-fg"><ExternalLink size={14} /></a>}
                     </div>
                     <div className="mt-2 flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
-                      {ci > 0 && <button onClick={() => move(col.id, card.id, -1)} title="Move back" className="rounded-md p-1 text-slate-500 hover:bg-white/8 hover:text-white"><ArrowLeft size={14} /></button>}
-                      {ci < COLUMNS.length - 1 && <button onClick={() => move(col.id, card.id, 1)} title="Move forward" className="rounded-md p-1 text-slate-500 hover:bg-white/8 hover:text-white"><ArrowRight size={14} /></button>}
-                      {canRemove && <button onClick={() => askRemove(col.id, card)} title="Remove from tracker" className="rounded-md p-1 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"><Trash2 size={14} /></button>}
+                      {ci > 0 && <button onClick={() => move(col.id, card.id, -1)} title="Move back" className="rounded-md p-1 text-fg-muted hover:bg-surface-1 hover:text-fg"><ArrowLeft size={14} /></button>}
+                      {ci < COLUMNS.length - 1 && <button onClick={() => move(col.id, card.id, 1)} title="Move forward" className="rounded-md p-1 text-fg-muted hover:bg-surface-1 hover:text-fg"><ArrowRight size={14} /></button>}
+                      {canRemove && <button onClick={() => askRemove(col.id, card)} title="Remove from tracker" className="rounded-md p-1 text-fg-muted hover:bg-rose-500/15 hover:text-danger"><Trash2 size={14} /></button>}
                     </div>
                   </div>
                 ))}
@@ -88,7 +88,7 @@ export default function Tracker() {
 
       <Modal open={!!confirm} onClose={() => setConfirm(null)} title="Remove this job from tracker?">
         <div className="space-y-4">
-          <p className="text-sm text-slate-300">Remove <span className="font-medium text-white">{confirm?.role}</span> from your tracker? This can’t be undone, but you can always save the job again from Jobs.</p>
+          <p className="text-sm text-fg-secondary">Remove <span className="font-medium text-fg">{confirm?.role}</span> from your tracker? This can’t be undone, but you can always save the job again from Jobs.</p>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setConfirm(null)}>Cancel</Button>
             <Button variant="soft" onClick={doRemove}><Trash2 size={15} /> Remove</Button>

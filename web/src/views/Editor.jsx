@@ -73,13 +73,13 @@ function SectionAdder({ resume, onChange }) {
   if (!resume || resume.trim().length < 30) return null;
 
   return (
-    <div className="mt-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">
-      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Edit sections</p>
+    <div className="mt-3 rounded-xl border border-subtle bg-surface-1 p-3">
+      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Edit sections</p>
       {sections.length > 0 && (
         <div className="mb-2.5 flex flex-wrap gap-1.5">
           {sections.map((s) => (
             <button key={s} onClick={() => { setActive(active === s ? null : s); setBullet(''); setShowNew(false); }}
-              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] transition ${active === s ? 'border-aurora-violet/50 bg-aurora-violet/12 text-white' : 'border-white/10 text-slate-400 hover:border-white/22 hover:text-white'}`}>
+              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] transition ${active === s ? 'border-aurora-violet/50 bg-aurora-violet/12 text-fg' : 'border-subtle text-fg-secondary hover:border-strong hover:text-fg'}`}>
               <Plus size={9} /> {s[0] + s.slice(1).toLowerCase()}
             </button>
           ))}
@@ -90,9 +90,9 @@ function SectionAdder({ resume, onChange }) {
           <input autoFocus value={bullet} onChange={(e) => setBullet(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') appendBullet(active, bullet); if (e.key === 'Escape') setActive(null); }}
             placeholder={`Add bullet to ${active[0] + active.slice(1).toLowerCase()}…`}
-            className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
-          <button onClick={() => appendBullet(active, bullet)} disabled={!bullet.trim()} className="h-8 rounded-lg bg-aurora-violet/20 px-3 text-[11px] font-medium text-white hover:bg-aurora-violet/30 disabled:opacity-40">Add</button>
-          <button onClick={() => setActive(null)} className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">✕</button>
+            className="h-8 flex-1 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
+          <button onClick={() => appendBullet(active, bullet)} disabled={!bullet.trim()} className="h-8 rounded-lg bg-aurora-violet/20 px-3 text-[11px] font-medium text-fg hover:bg-aurora-violet/30 disabled:opacity-40">Add</button>
+          <button onClick={() => setActive(null)} className="h-8 rounded-lg bg-surface-1 px-3 text-[11px] text-fg-secondary hover:bg-surface-1">✕</button>
         </div>
       )}
       {showNew ? (
@@ -106,13 +106,13 @@ function SectionAdder({ resume, onChange }) {
             <input autoFocus value={custom} onChange={(e) => setCustom(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addSection(custom); if (e.key === 'Escape') setShowNew(false); }}
               placeholder="Custom section name…"
-              className="h-8 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+              className="h-8 flex-1 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
             <button onClick={() => addSection(custom)} disabled={!custom.trim()} className="h-8 rounded-lg bg-aurora-cyan/15 px-3 text-[11px] text-aurora-cyan hover:bg-aurora-cyan/25 disabled:opacity-40">Add</button>
-            <button onClick={() => { setShowNew(false); setCustom(''); }} className="h-8 rounded-lg bg-white/5 px-3 text-[11px] text-slate-400 hover:bg-white/8">Cancel</button>
+            <button onClick={() => { setShowNew(false); setCustom(''); }} className="h-8 rounded-lg bg-surface-1 px-3 text-[11px] text-fg-secondary hover:bg-surface-1">Cancel</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => { setShowNew(true); setActive(null); }} className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/12 px-3 py-1.5 text-[11px] text-slate-500 transition hover:border-aurora-cyan/40 hover:text-aurora-cyan">
+        <button onClick={() => { setShowNew(true); setActive(null); }} className="flex items-center gap-1.5 rounded-lg border border-dashed border-subtle px-3 py-1.5 text-[11px] text-fg-muted transition hover:border-aurora-cyan/40 hover:text-aurora-cyan">
           <Plus size={11} /> Add new section
         </button>
       )}
@@ -196,35 +196,35 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
 
   if (!allowed) {
     return (
-      <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5 text-center">
-        <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/[0.05] text-aurora-violet ring-1 ring-white/10"><Lock size={18} /></div>
-        <p className="text-[13px] font-semibold text-white">Custom template upload</p>
-        <p className="text-[11px] leading-snug text-slate-500">Upload a resume template image/PDF and we’ll rebuild your resume in that design. Available on Pro & Premium.</p>
+      <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-strong bg-surface-1 p-5 text-center">
+        <div className="grid h-11 w-11 place-items-center rounded-xl bg-surface-1 text-aurora-violet ring-1 ring-strong"><Lock size={18} /></div>
+        <p className="text-[13px] font-semibold text-fg">Custom template upload</p>
+        <p className="text-[11px] leading-snug text-fg-muted">Upload a resume template image/PDF and we’ll rebuild your resume in that design. Available on Pro & Premium.</p>
         <Button size="sm" className="mt-1" onClick={() => promptUpgrade('Custom template upload is a Pro feature.', 'pro')}><Sparkles size={13} /> Upgrade to unlock</Button>
       </div>
     );
   }
 
   return (
-    <div className={`flex flex-col overflow-hidden rounded-2xl border transition ${selected ? 'border-aurora-violet/60 ring-1 ring-aurora-violet/30 bg-aurora-violet/5' : 'border-dashed border-white/15 bg-white/[0.02]'}`}>
-      <div className="relative flex h-[176px] items-center justify-center border-b border-white/8 bg-[#0d1018] p-2">
+    <div className={`flex flex-col overflow-hidden rounded-2xl border transition ${selected ? 'border-aurora-violet/60 ring-1 ring-aurora-violet/30 bg-aurora-violet/5' : 'border-dashed border-strong bg-surface-1'}`}>
+      <div className="relative flex h-[176px] items-center justify-center border-b border-subtle bg-[#0d1018] p-2">
         {preview ? (
           <>
             <img src={preview} alt="uploaded template" className="max-h-full max-w-full rounded object-contain" />
-            {status === 'analyzing' && <div className="absolute inset-0 grid place-items-center bg-black/55"><span className="flex items-center gap-1.5 text-[11px] text-white"><Loader2 size={13} className="animate-spin" /> Analysing layout…</span></div>}
+            {status === 'analyzing' && <div className="absolute inset-0 grid place-items-center bg-scrim"><span className="flex items-center gap-1.5 text-[11px] text-fg"><Loader2 size={13} className="animate-spin" /> Analysing layout…</span></div>}
           </>
         ) : (
           <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 text-center">
-            <Upload size={20} className="text-slate-500" />
-            <span className="text-xs font-medium text-slate-300">My Uploaded Template</span>
-            <span className="px-3 text-[10px] leading-snug text-slate-600">PNG · JPG · JPEG · PDF — we read the layout and rebuild your resume in it</span>
+            <Upload size={20} className="text-fg-muted" />
+            <span className="text-xs font-medium text-fg-secondary">My Uploaded Template</span>
+            <span className="px-3 text-[10px] leading-snug text-fg-muted">PNG · JPG · JPEG · PDF — we read the layout and rebuild your resume in it</span>
             <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf,.pdf" className="hidden" onChange={onPick} />
           </label>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="flex items-center justify-between">
-          <p className="text-[13px] font-semibold text-white">My Uploaded Template</p>
+          <p className="text-[13px] font-semibold text-fg">My Uploaded Template</p>
           {tpl ? <Badge tone={tpl.atsSafe ? 'mint' : 'amber'} className="text-[9px]">{tpl.atsLabel || (tpl.atsSafe ? 'ATS-safe' : 'Visual')}</Badge> : <Badge tone="violet" className="text-[9px]">From upload</Badge>}
         </div>
 
@@ -233,11 +233,11 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
         {status === 'done' && (
           <>
             <p className="flex items-center gap-1.5 text-[11px] text-aurora-mint"><Check size={12} /> Matched: {tpl.layout === 'twocol' ? 'two-column' : tpl.layout === 'darkheader' ? 'banner header' : 'single-column'} layout.</p>
-            {source === 'fallback' && <p className="text-[10px] text-slate-500">Template matched using fallback mode — try “Re-analyse”.</p>}
+            {source === 'fallback' && <p className="text-[10px] text-fg-muted">Template matched using fallback mode — try “Re-analyse”.</p>}
             {twoCol && !atsSafe && <p className="flex items-center gap-1.5 text-[10px] text-amber-glow"><AlertTriangle size={11} /> Two-column may lower ATS parsing. Use ATS-safe for applications.</p>}
-            <div className="mt-0.5 flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-0.5 text-[10px]">
-              <button onClick={() => toggleAtsSafe(false)} className={`flex-1 rounded-md px-2 py-1 transition ${!atsSafe ? 'bg-aurora-violet/25 text-white' : 'text-slate-400'}`}>Visual</button>
-              <button onClick={() => toggleAtsSafe(true)} className={`flex-1 rounded-md px-2 py-1 transition ${atsSafe ? 'bg-aurora-mint/20 text-white' : 'text-slate-400'}`}><Shield size={9} className="mr-0.5 inline" />ATS-safe</button>
+            <div className="mt-0.5 flex items-center gap-1 rounded-lg border border-subtle bg-surface-1 p-0.5 text-[10px]">
+              <button onClick={() => toggleAtsSafe(false)} className={`flex-1 rounded-md px-2 py-1 transition ${!atsSafe ? 'bg-aurora-violet/25 text-fg' : 'text-fg-secondary'}`}>Visual</button>
+              <button onClick={() => toggleAtsSafe(true)} className={`flex-1 rounded-md px-2 py-1 transition ${atsSafe ? 'bg-aurora-mint/20 text-fg' : 'text-fg-secondary'}`}><Shield size={9} className="mr-0.5 inline" />ATS-safe</button>
             </div>
           </>
         )}
@@ -248,13 +248,13 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
               <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-aurora-violet/25 text-ink-950 ring-1 ring-aurora-violet/40' : 'btn-primary text-ink-950 hover:brightness-110'}`}>
                 {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this custom template'}
               </button>
-              <button onClick={reAnalyze} title="Re-analyse template" className="rounded-lg border border-white/12 px-2.5 py-1.5 text-[11px] text-slate-300 hover:bg-white/10"><RefreshCw size={12} /></button>
-              <button onClick={clear} className="rounded-lg border border-white/12 px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-red-400">Remove</button>
+              <button onClick={reAnalyze} title="Re-analyse template" className="rounded-lg border border-subtle px-2.5 py-1.5 text-[11px] text-fg-secondary hover:bg-surface-2"><RefreshCw size={12} /></button>
+              <button onClick={clear} className="rounded-lg border border-subtle px-2.5 py-1.5 text-[11px] text-fg-secondary hover:text-red-400">Remove</button>
             </>
           ) : preview ? (
-            <button onClick={clear} className="flex-1 rounded-lg border border-white/12 py-1.5 text-[11px] text-slate-400 hover:text-red-400">Remove upload</button>
+            <button onClick={clear} className="flex-1 rounded-lg border border-subtle py-1.5 text-[11px] text-fg-secondary hover:text-red-400">Remove upload</button>
           ) : (
-            <button onClick={() => inputRef.current?.click()} className="flex-1 rounded-lg border border-white/12 bg-white/[0.04] py-1.5 text-[11px] font-medium text-slate-200 hover:bg-white/10">Choose file</button>
+            <button onClick={() => inputRef.current?.click()} className="flex-1 rounded-lg border border-subtle bg-surface-1 py-1.5 text-[11px] font-medium text-fg hover:bg-surface-2">Choose file</button>
           )}
         </div>
       </div>
@@ -399,10 +399,10 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
       <PageIntro title="Resume editor" sub="Edit your resume, pick a template, preview it as a real A4 page, then export a clean PDF or DOCX." />
 
       {selectedJob && (
-        <div className="mb-4 rounded-2xl border border-aurora-cyan/20 bg-aurora-cyan/10 px-4 py-3 text-sm text-slate-200">
+        <div className="mb-4 rounded-2xl border border-aurora-cyan/20 bg-aurora-cyan/10 px-4 py-3 text-sm text-fg">
           <Briefcase size={15} className="mr-1.5 inline text-aurora-cyan" />
-          Editing package for <span className="font-medium text-white">{selectedJob.title}</span> at <span className="font-medium text-white">{selectedJob.company}</span>.
-          {last.out && <span className="ml-1 text-slate-300">Tailored resume loaded from Jobs.</span>}
+          Editing package for <span className="font-medium text-fg">{selectedJob.title}</span> at <span className="font-medium text-fg">{selectedJob.company}</span>.
+          {last.out && <span className="ml-1 text-fg-secondary">Tailored resume loaded from Jobs.</span>}
         </div>
       )}
 
@@ -414,7 +414,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
             action={storedResume.fileName && <Badge tone="mint"><FileText size={11} /> {storedResume.fileName}</Badge>}
           >
             {out && (
-              <div className="mb-3 rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-xs text-slate-200">
+              <div className="mb-3 rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-xs text-fg">
                 Job-specific resume loaded. Edit here — the preview and downloads update live.
               </div>
             )}
@@ -422,7 +422,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
               value={activeText}
               onChange={(e) => { if (out) setOut(e.target.value); else setResume(e.target.value); }}
               placeholder="Paste your current resume… keep ALL-CAPS section headings and • bullets for the cleanest template output."
-              className="h-52 w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+              className="h-52 w-full resize-y rounded-xl border border-field-border bg-field p-3.5 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50"
             />
             <SectionAdder resume={activeText} onChange={(v) => { if (out) setOut(v); else setResume(v); }} />
           </SectionCard>
@@ -430,16 +430,16 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
           <SectionCard title="Target job description">
             <textarea value={jd} onChange={(e) => setJd(e.target.value)}
               placeholder="Paste the job description or choose Tailor from a job card…"
-              className="h-40 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50" />
+              className="h-40 w-full resize-none rounded-xl border border-field-border bg-field p-3.5 text-sm text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
           </SectionCard>
 
           <SectionCard title="Resume length">
             <div className="flex flex-wrap items-center gap-2">
               {LENGTHS.map((l) => (
-                <button key={l} onClick={() => setLen(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-white ring-1 ring-aurora-cyan/30' : 'text-slate-400 hover:bg-white/5'}`}>{l}</button>
+                <button key={l} onClick={() => setLen(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-fg ring-1 ring-aurora-cyan/30' : 'text-fg-secondary hover:bg-surface-1'}`}>{l}</button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-slate-500">Single page fits everything cleanly on one A4. Multi page keeps sections intact across pages.</p>
+            <p className="mt-2 text-xs text-fg-muted">Single page fits everything cleanly on one A4. Multi page keeps sections intact across pages.</p>
             {err && <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
             <Button className="mt-3 w-full" onClick={tailor} disabled={status === 'loading'}>
               <Wand2 size={16} /> {status === 'loading' ? 'Tailoring…' : 'Tailor with AI'}
@@ -484,17 +484,17 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
             }
           >
             {activeText.trim().length < 30 ? (
-              <div className="grid place-items-center rounded-xl border border-dashed border-white/10 py-16 text-center">
+              <div className="grid place-items-center rounded-xl border border-dashed border-subtle py-16 text-center">
                 <PenLine size={24} className="mb-3 text-aurora-cyan" />
-                <p className="text-sm text-slate-300">Add resume content to see the live A4 preview</p>
-                <p className="mt-1 text-xs text-slate-500">Using template: <span className="text-slate-300">{selectedTpl.name}</span></p>
+                <p className="text-sm text-fg-secondary">Add resume content to see the live A4 preview</p>
+                <p className="mt-1 text-xs text-fg-muted">Using template: <span className="text-fg-secondary">{selectedTpl.name}</span></p>
               </div>
             ) : (
-              <div className="flex justify-center rounded-xl border border-white/10 bg-[#e9edf5] p-3">
+              <div className="flex justify-center rounded-xl border border-subtle bg-[#e9edf5] p-3">
                 <ResumePaper key={tplId + len} data={data} templateId={tplId} mode={lenToMode(len)} scale={0.52} className="rounded shadow-lift" />
               </div>
             )}
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-subtle pt-4">
               <Button onClick={doPDF} disabled={busy === 'pdf'}>
                 <Download size={15} /> {busy === 'pdf' ? 'Building PDF…' : 'Download PDF'}
               </Button>
@@ -505,8 +505,8 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
                 <Download size={15} /> TXT
               </Button>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">
-              PDF is generated directly (no browser headers/footers) at A4 with smart page breaks. Downloads use the selected template: <span className="text-slate-300">{selectedTpl.name}</span>.
+            <p className="mt-2 text-[11px] text-fg-muted">
+              PDF is generated directly (no browser headers/footers) at A4 with smart page breaks. Downloads use the selected template: <span className="text-fg-secondary">{selectedTpl.name}</span>.
             </p>
           </SectionCard>
         </div>

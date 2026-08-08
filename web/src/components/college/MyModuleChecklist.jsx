@@ -26,8 +26,8 @@ const NEXT_STATUS = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
 const STATUS_LABEL = { todo: 'Not started', in_progress: 'In progress', done: 'Done' };
 const STATUS_STYLE = {
   todo: 'border-subtle text-fg-muted',
-  in_progress: 'border-amber-400/40 text-amber-300',
-  done: 'border-emerald-400/40 text-emerald-300',
+  in_progress: 'border-amber-400/40 text-warn',
+  done: 'border-emerald-400/40 text-ok',
 };
 
 function ModuleRow({ projectId, name, module: mod, onChanged }) {
@@ -69,7 +69,7 @@ function ModuleRow({ projectId, name, module: mod, onChanged }) {
               value={evidence}
               onChange={(e) => setEvidence(e.target.value)}
               placeholder="https://github.com/… commit, PR, or deployed page"
-              className="min-w-0 flex-1 rounded-lg border border-subtle bg-surface-1 px-2.5 py-1.5 text-[12px] text-fg outline-none focus:border-strong"
+              className="min-w-0 flex-1 rounded-lg border border-field-border bg-field px-2.5 py-1.5 text-[12px] text-fg outline-none focus:border-strong"
             />
             <button
               type="button"
@@ -82,7 +82,7 @@ function ModuleRow({ projectId, name, module: mod, onChanged }) {
           </div>
         ) : mod.evidenceUrl ? (
           <div className="flex items-center gap-2 text-[11px]">
-            <a href={mod.evidenceUrl} target="_blank" rel="noreferrer" className="truncate text-emerald-300 underline">
+            <a href={mod.evidenceUrl} target="_blank" rel="noreferrer" className="truncate text-ok underline">
               Evidence attached
             </a>
             <button type="button" onClick={() => setEditing(true)} className="text-fg-muted underline">change</button>

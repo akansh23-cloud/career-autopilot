@@ -12,7 +12,7 @@ function RoleField({ def, value, onChange }) {
   if (def.type === 'select') {
     return (
       <Field label={def.label}>
-        <select value={value || ''} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+        <select value={value || ''} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-xl border border-field-border bg-field px-3 text-sm text-fg">
           <option value="">Select…</option>
           {def.options.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
@@ -22,7 +22,7 @@ function RoleField({ def, value, onChange }) {
   if (def.type === 'role') {
     return (
       <Field label={def.label}>
-        <select value={value || ''} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+        <select value={value || ''} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-xl border border-field-border bg-field px-3 text-sm text-fg">
           <option value="">Select a role…</option>
           {Object.entries(ROLE_GROUPS).map(([g, roles]) => (
             <optgroup key={g} label={g}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</optgroup>
@@ -64,10 +64,10 @@ export default function Onboarding({ onDone }) {
       >
         <div className="mb-6 flex items-center gap-2.5">
           <span className="grid h-9 w-9 place-items-center rounded-xl btn-primary text-ink-950 shadow-glow"><Zap size={18} strokeWidth={2.5} /></span>
-          <span className="font-display text-[16px] font-semibold tracking-tight text-white">Career Autopilot</span>
+          <span className="font-display text-[16px] font-semibold tracking-tight text-fg">Career Autopilot</span>
         </div>
 
-        <h2 className="font-display text-2xl font-semibold text-white">What best describes you?</h2>
+        <h2 className="font-display text-2xl font-semibold text-fg">What best describes you?</h2>
         <p className="mt-1.5 text-sm text-muted">We’ll tailor your dashboard and tools to your goals.</p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -78,12 +78,12 @@ export default function Onboarding({ onDone }) {
               <button
                 key={c.role}
                 onClick={() => { setRole(c.role); setValues({}); }}
-                className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${on ? 'border-aurora-violet/50 bg-aurora-violet/[0.08] ring-1 ring-aurora-violet/25' : 'border-white/10 bg-white/[0.02] hover:border-white/25'}`}
+                className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${on ? 'border-aurora-violet/50 bg-aurora-violet/[0.08] ring-1 ring-aurora-violet/25' : 'border-subtle bg-surface-1 hover:border-strong'}`}
               >
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? 'bg-aurora-violet/20 text-aurora-cyan' : 'bg-white/[0.04] text-slate-300'}`}><Icon size={20} /></span>
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? 'bg-aurora-violet/20 text-aurora-cyan' : 'bg-surface-1 text-fg-secondary'}`}><Icon size={20} /></span>
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-white">{c.label}{on && <Check size={14} className="text-aurora-mint" />}</span>
-                  <span className="mt-0.5 block text-xs text-slate-400">{c.hint}</span>
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-fg">{c.label}{on && <Check size={14} className="text-aurora-mint" />}</span>
+                  <span className="mt-0.5 block text-xs text-fg-secondary">{c.hint}</span>
                 </span>
               </button>
             );
@@ -100,7 +100,7 @@ export default function Onboarding({ onDone }) {
               ))}
             </div>
             {role === 'professional' && (
-              <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-400">
+              <p className="mt-3 rounded-xl border border-subtle bg-surface-1 px-3 py-2 text-xs text-fg-secondary">
                 Tip: upload your resume in the Resume tab after this to unlock tailored analysis.
               </p>
             )}
@@ -108,7 +108,7 @@ export default function Onboarding({ onDone }) {
         )}
 
         <div className="mt-7 flex items-center justify-between gap-3">
-          <p className="text-xs text-slate-500">You can change these later in Settings.</p>
+          <p className="text-xs text-fg-muted">You can change these later in Settings.</p>
           <Button onClick={finish} disabled={!ready}>Continue <ArrowRight size={16} /></Button>
         </div>
       </motion.div>

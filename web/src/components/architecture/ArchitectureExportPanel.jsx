@@ -59,8 +59,8 @@ export default function ArchitectureExportPanel({ spec, view }) {
       </div>
       {err && <p className="text-[12px] text-amber-glow">{err}</p>}
       <details>
-        <summary className="cursor-pointer text-[11px] text-slate-500">Mermaid source</summary>
-        <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-white/8 bg-ink-950/60 p-3 text-[11px] text-slate-400">{mermaid}</pre>
+        <summary className="cursor-pointer text-[11px] text-fg-muted">Mermaid source</summary>
+        <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-subtle bg-base/60 p-3 text-[11px] text-fg-secondary">{mermaid}</pre>
       </details>
     </div>
   );

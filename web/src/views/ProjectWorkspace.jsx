@@ -292,7 +292,7 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
   }
 
   if (loading) {
-    return <div className="grid min-h-[40vh] place-items-center"><div className="flex flex-col items-center gap-3"><Spinner className="h-7 w-7" /><p className="text-[13px] text-slate-500">Preparing your workspace…</p></div></div>;
+    return <div className="grid min-h-[40vh] place-items-center"><div className="flex flex-col items-center gap-3"><Spinner className="h-7 w-7" /><p className="text-[13px] text-fg-muted">Preparing your workspace…</p></div></div>;
   }
 
   if (!plan) {
@@ -309,8 +309,8 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
           sub={hasProject || needsGenerate ? 'This project is saved — generate its guided workspace plan.' : (error || 'No workspace yet.')}
         />
         <Card className="p-8 text-center">
-          {error && !hasProject && <p className="mb-3 text-[13px] text-rose-300">{error}</p>}
-          <p className="text-[13.5px] text-slate-400">
+          {error && !hasProject && <p className="mb-3 text-[13px] text-danger">{error}</p>}
+          <p className="text-[13.5px] text-fg-secondary">
             {hasProject || needsGenerate
               ? 'This project is saved. Generate a guided workspace plan to get screens, APIs, tasks, tests, deployment steps, proof checklist, and starter-pack guidance.'
               : 'Open a project from Project OS, or create a custom project to get a guided build plan.'}
@@ -339,9 +339,9 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
         onPreviewPack={previewPack} onDownloadPack={downloadPack}
         onRegenerate={regenerate} onRecalculate={recalculate} onVerify={() => verify(null)} onExport={exportPlan}
       />
-      {error && <Card className="border-rose-400/30 bg-rose-500/8 p-3.5 text-[12.5px] text-rose-200">{error}</Card>}
+      {error && <Card className="border-rose-400/30 bg-rose-500/8 p-3.5 text-[12.5px] text-danger">{error}</Card>}
       {notice && (
-        <Card className="flex items-center justify-between gap-3 border-amber-glow/25 bg-amber-glow/8 p-3.5 text-[12.5px] text-[#F3E3B2]">
+        <Card className="flex items-center justify-between gap-3 border-amber-glow/25 bg-amber-glow/8 p-3.5 text-[12.5px] text-warn">
           <span>{notice}</span>
           <div className="flex shrink-0 gap-2">
             <Button size="sm" variant="ghost" onClick={() => { setNotice(''); recalculate(); }}>Recalculate now</Button>
@@ -364,7 +364,7 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
             <Button size="sm" variant="ghost" onClick={() => setMode('build')}>
               <ChevronLeft size={14} /> Back to guided build
             </Button>
-            <span className="text-[11.5px] text-slate-500">Blueprint — the full plan behind your build. Explore freely; nothing here is required to finish.</span>
+            <span className="text-[11.5px] text-fg-muted">Blueprint — the full plan behind your build. Explore freely; nothing here is required to finish.</span>
           </div>
           <div className="flex flex-col gap-5 lg:flex-row">
             <WorkspaceSidebar active={tab} onSelect={changeTab} counts={counts} />
@@ -401,10 +401,10 @@ export default function ProjectWorkspace({ go, projectId = '', createCustom = fa
         <div className="fixed inset-0 z-40 flex justify-end 2xl:hidden">
           <button
             aria-label="Close inspector"
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-scrim backdrop-blur-sm"
             onClick={() => setSelected(null)}
           />
-          <div className="relative h-full w-full max-w-[400px] overflow-y-auto border-l border-white/10 bg-ink-950 p-4 shadow-2xl">
+          <div className="relative h-full w-full max-w-[400px] overflow-y-auto border-l border-subtle bg-base p-4 shadow-2xl">
             <WorkspaceInspector plan={plan} selected={selected} onClose={() => setSelected(null)} onPreviewCode={previewCode} />
           </div>
         </div>

@@ -33,13 +33,13 @@ const AUDIENCES = [
 function ProgressBar({ pct, overdue }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-1">
         <div
           className={`h-full rounded-full ${overdue ? 'bg-amber-glow' : 'bg-gradient-to-r from-aurora-indigo/60 to-aurora-mint'}`}
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />
       </div>
-      <span className="w-9 text-right text-sm text-slate-300">{pct}%</span>
+      <span className="w-9 text-right text-sm text-fg-secondary">{pct}%</span>
     </div>
   );
 }
@@ -85,7 +85,11 @@ export default function InterventionsPanel() {
 
   useEffect(() => {
     if (taskOpen || nudgeOpen) resolveAudience(audience);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    /* The deps are intentionally narrower than the hook body: resolveAudience is
+       re-created every render and adding it would refetch the audience on every
+       keystroke. The eslint-disable comment that used to sit here referenced
+       react-hooks/exhaustive-deps, which this project's flat config never
+       registers — so ESLint 9 reported it as a hard error on every lint run. */
   }, [audience, taskOpen, nudgeOpen]);
 
   const assign = async () => {
@@ -145,7 +149,7 @@ export default function InterventionsPanel() {
           </div>
         }
       >
-        {status && <p className="mb-3 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm text-slate-300">{status}</p>}
+        {status && <p className="mb-3 rounded-lg border border-subtle bg-surface-1 px-3 py-2 text-sm text-fg-secondary">{status}</p>}
 
         {loading ? (
           <div className="flex items-center gap-2 py-10 text-sm text-muted"><Spinner /> Loading interventions…</div>
@@ -161,7 +165,7 @@ export default function InterventionsPanel() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
                 <tr>
                   <th className="px-2 py-2">Task</th>
                   <th className="px-2 py-2 text-right">Assigned</th>
@@ -173,15 +177,15 @@ export default function InterventionsPanel() {
               </thead>
               <tbody>
                 {tasks.map((t) => (
-                  <tr key={t.id} className="border-t border-white/6 hover:bg-white/[0.02]">
+                  <tr key={t.id} className="border-t border-subtle hover:bg-surface-1">
                     <td className="px-2 py-2">
-                      <span className="text-slate-200">{t.title}</span>
-                      {t.description && <span className="block max-w-md truncate text-xs text-slate-500">{t.description}</span>}
+                      <span className="text-fg">{t.title}</span>
+                      {t.description && <span className="block max-w-md truncate text-xs text-fg-muted">{t.description}</span>}
                     </td>
-                    <td className="px-2 py-2 text-right text-slate-400">{t.assigned}</td>
-                    <td className="px-2 py-2 text-right text-slate-300">{t.done}</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{t.assigned}</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{t.done}</td>
                     <td className="px-2 py-2"><ProgressBar pct={t.completionRate} overdue={t.overdue} /></td>
-                    <td className="px-2 py-2 text-slate-400">
+                    <td className="px-2 py-2 text-fg-secondary">
                       {t.dueAt ? new Date(t.dueAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
                     </td>
                     <td className="px-2 py-2">
@@ -219,7 +223,7 @@ export default function InterventionsPanel() {
           <AudiencePicker value={audience} onChange={setAudience} resolved={resolved} />
           <Field label="Title"><Input value={nudge.title} onChange={(e) => setNudge((n) => ({ ...n, title: e.target.value }))} placeholder="Leave blank for a sensible default" /></Field>
           <Field label="Message"><Input value={nudge.message} onChange={(e) => setNudge((n) => ({ ...n, message: e.target.value }))} placeholder="What you want them to do" /></Field>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-fg-muted">
             Delivered in the student’s workspace immediately. Email goes out too when SMTP is configured — the
             confirmation will tell you exactly how many of each actually sent.
           </p>
@@ -238,21 +242,21 @@ export default function InterventionsPanel() {
 function AudiencePicker({ value, onChange, resolved }) {
   return (
     <div>
-      <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white"><Users size={14} /> Who gets this?</p>
+      <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-fg"><Users size={14} /> Who gets this?</p>
       <div className="flex flex-wrap gap-2">
         {AUDIENCES.map((a) => (
           <button
             key={a.id} onClick={() => onChange(a.id)}
             className={`rounded-xl border px-3 py-1.5 text-left text-xs transition ${
-              value === a.id ? 'border-white/25 bg-white/[0.06] text-white' : 'border-white/8 bg-white/[0.02] text-slate-300 hover:border-white/20'
+              value === a.id ? 'border-strong bg-surface-1 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
             }`}
           >
             {a.label}
-            <span className="block text-[10px] text-slate-500">{a.hint}</span>
+            <span className="block text-[10px] text-fg-muted">{a.hint}</span>
           </button>
         ))}
       </div>
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+      <p className="mt-2 flex items-center gap-1.5 text-xs text-fg-secondary">
         {resolved.loading
           ? <><Spinner /> counting…</>
           : <><RefreshCw size={11} /> {resolved.count} student(s) match this audience right now.</>}

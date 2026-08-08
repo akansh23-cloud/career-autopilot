@@ -54,7 +54,7 @@ function JoinCodeCard({ college, onChanged }) {
   return (
     <SectionCard title="Student join code" eyebrow="Share in class groups, orientation decks, notice boards" icon={KeyRound}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="rounded-xl border border-aurora-violet/40 bg-aurora-violet/10 px-4 py-2 font-mono text-xl tracking-[0.25em] text-white">
+        <span className="rounded-xl border border-aurora-violet/40 bg-aurora-violet/10 px-4 py-2 font-mono text-xl tracking-[0.25em] text-fg">
           {college.joinCode || '—'}
         </span>
         <Button size="sm" variant="soft" onClick={copy}>{copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}</Button>
@@ -68,13 +68,13 @@ function JoinCodeCard({ college, onChanged }) {
           ['autoApproveCodeJoins', 'Auto-approve students who join with this code', 'Off = code joins land in “Pending memberships” below for your review.'],
           ['autoApproveDomainJoins', 'Auto-bind sign-ins from your verified email domains', 'Students signing in with a listed domain link to your college automatically.'],
         ].map(([key, label, hint]) => (
-          <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-white/[0.03] p-3 transition hover:bg-white/[0.05]">
+          <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border border-subtle bg-surface-1 p-3 transition hover:bg-surface-1">
             <input type="checkbox" className="mt-0.5 h-4 w-4 accent-violet-400"
               checked={!!s[key]} disabled={busy === key}
               onChange={(e) => toggle(key, e.target.checked)} />
             <span>
-              <span className="block text-[13px] font-medium text-white">{label}</span>
-              <span className="block text-[11.5px] text-slate-500">{hint}</span>
+              <span className="block text-[13px] font-medium text-fg">{label}</span>
+              <span className="block text-[11.5px] text-fg-muted">{hint}</span>
             </span>
           </label>
         ))}
@@ -111,11 +111,11 @@ function DomainsCard({ college, onChanged }) {
   return (
     <SectionCard title="Verified email domains" eyebrow="e.g. yourcollege.ac.in — subdomains match automatically" icon={Globe}>
       <div className="flex flex-wrap gap-2">
-        {(college.domains || []).length === 0 && <p className="text-[12px] text-slate-500">No domains yet. Add your institute domain so student sign-ins auto-link.</p>}
+        {(college.domains || []).length === 0 && <p className="text-[12px] text-fg-muted">No domains yet. Add your institute domain so student sign-ins auto-link.</p>}
         {(college.domains || []).map((d) => (
-          <span key={d} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[12px] text-slate-200">
+          <span key={d} className="inline-flex items-center gap-1.5 rounded-lg border border-subtle bg-surface-1 px-2.5 py-1 text-[12px] text-fg">
             {d}
-            <button onClick={() => remove(d)} className="text-slate-500 transition hover:text-rose-400" aria-label={`Remove ${d}`}><XCircle size={13} /></button>
+            <button onClick={() => remove(d)} className="text-fg-muted transition hover:text-rose-400" aria-label={`Remove ${d}`}><XCircle size={13} /></button>
           </span>
         ))}
       </div>
@@ -176,7 +176,7 @@ function RosterCard({ onImported }) {
         onChange={(e) => setCsv(e.target.value)}
         placeholder={ROSTER_TEMPLATE}
         rows={5}
-        className="w-full rounded-xl border border-white/10 bg-white/[0.03] p-3 font-mono text-[12px] text-slate-200 placeholder:text-slate-600 focus:border-aurora-violet/50 focus:outline-none"
+        className="w-full rounded-xl border border-field-border bg-field p-3 font-mono text-[12px] text-fg placeholder:text-fg-muted focus:border-aurora-violet/50 focus:outline-none"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={doImport} disabled={busy || csv.trim().length < 3}>
@@ -185,28 +185,28 @@ function RosterCard({ onImported }) {
         <Button size="sm" variant="soft" onClick={() => fileRef.current?.click()}>Upload .csv file</Button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
           onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
-        <span className="text-[11px] text-slate-500">Columns: email (required), name, branch, batch, rollno. Header row optional.</span>
+        <span className="text-[11px] text-fg-muted">Columns: email (required), name, branch, batch, rollno. Header row optional.</span>
       </div>
 
       {result && (
-        <div className={`mt-3 rounded-xl border p-3 text-[12.5px] ${result.ok ? 'border-aurora-mint/30 bg-aurora-mint/5 text-slate-200' : 'border-amber-glow/30 bg-amber-glow/5 text-amber-glow'}`}>
+        <div className={`mt-3 rounded-xl border p-3 text-[12.5px] ${result.ok ? 'border-aurora-mint/30 bg-aurora-mint/5 text-fg' : 'border-amber-glow/30 bg-amber-glow/5 text-amber-glow'}`}>
           {result.ok
             ? <>Imported <b>{result.imported ?? 0}</b> row{(result.imported ?? 0) === 1 ? '' : 's'} ({result.updated ?? 0} updated). <b>{result.autoLinked ?? 0}</b> already-registered student{(result.autoLinked ?? 0) === 1 ? '' : 's'} linked instantly. Everyone else links the moment they sign in with their listed email.</>
             : <>{result.message || 'Import failed.'}{result.parseErrors?.length ? ` First issues: ${result.parseErrors.slice(0, 3).join(' · ')}` : ''}</>}
         </div>
       )}
 
-      <div className="mt-4 max-h-72 overflow-y-auto rounded-xl border border-white/8">
+      <div className="mt-4 max-h-72 overflow-y-auto rounded-xl border border-subtle">
         {loading ? <div className="p-6"><Spinner /></div> : rows.length === 0 ? (
           <EmptyState icon={FileSpreadsheet} title="No roster yet" hint="Import your student list above — it's the fastest way to onboard a full batch." />
         ) : (
           <table className="w-full text-left text-[12px]">
-            <thead className="sticky top-0 bg-ink-900 text-[10px] uppercase tracking-wider text-slate-500">
+            <thead className="sticky top-0 bg-base text-[10px] uppercase tracking-wider text-fg-muted">
               <tr>{['Email', 'Name', 'Branch', 'Batch', 'Status'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-t border-white/5 text-slate-300">
+                <tr key={r.id} className="border-t border-subtle text-fg-secondary">
                   <td className="px-3 py-1.5 font-mono text-[11px]">{r.email}</td>
                   <td className="px-3 py-1.5">{r.name || '—'}</td>
                   <td className="px-3 py-1.5">{r.branch || '—'}</td>
@@ -243,12 +243,12 @@ function PendingCard({ refreshKey }) {
   return (
     <SectionCard title="Pending memberships" eyebrow="Students who joined by code, awaiting your approval" icon={Users}>
       {loading ? <Spinner /> : members.length === 0 ? (
-        <p className="text-[12.5px] text-slate-500">Nothing pending. With auto-approve on, code joins activate instantly and never appear here.</p>
+        <p className="text-[12.5px] text-fg-muted">Nothing pending. With auto-approve on, code joins activate instantly and never appear here.</p>
       ) : members.map((m) => (
-        <div key={m.id} className="flex items-center justify-between gap-3 border-b border-white/5 py-2 last:border-0">
+        <div key={m.id} className="flex items-center justify-between gap-3 border-b border-subtle py-2 last:border-0">
           <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium text-white">{m.name || m.email}</p>
-            <p className="truncate text-[11px] text-slate-500">{m.email} · via {m.membership?.via || 'code'}</p>
+            <p className="truncate text-[13px] font-medium text-fg">{m.name || m.email}</p>
+            <p className="truncate text-[11px] text-fg-muted">{m.email} · via {m.membership?.via || 'code'}</p>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button size="xs" onClick={() => act(m.id, 'approve')} disabled={busy === m.id + 'approve'}>
@@ -287,7 +287,7 @@ export default function OnboardingPanel() {
         </div>
       )}
       {!emailConfigured && (
-        <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-3 text-[12px] text-slate-400">
+        <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 p-3 text-[12px] text-fg-secondary">
           <Mail size={14} className="shrink-0" /> Email delivery isn't configured on this deployment — nudges and task assignments are delivered in-app (guaranteed), and email switches on automatically once SMTP is set.
         </div>
       )}

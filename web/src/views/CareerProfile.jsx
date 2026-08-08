@@ -47,7 +47,7 @@ function ProofCard({ p, isPrivate }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-lg font-semibold text-white">{p.name}</p>
+          <p className="text-lg font-semibold text-fg">{p.name}</p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {p.targetRole && <Badge tone="cyan"><Target size={11} /> {p.targetRole}</Badge>}
             {p.location && <Badge tone="default"><MapPin size={11} /> {p.location}</Badge>}
@@ -64,22 +64,22 @@ function ProofCard({ p, isPrivate }) {
       </div>
       {(m.topSkills || []).length > 0 && (
         <div>
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Top skills</div>
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Top skills</div>
           <div className="flex flex-wrap gap-1.5">{m.topSkills.map((s) => <Badge key={s.name} tone="cyan">{s.name} · {s.xp}xp</Badge>)}</div>
         </div>
       )}
       <div>
-        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Recruiter-ready summary</div>
-        <p className="text-sm leading-relaxed text-slate-300">{p.recruiterSummary}</p>
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Recruiter-ready summary</div>
+        <p className="text-sm leading-relaxed text-fg-secondary">{p.recruiterSummary}</p>
       </div>
       <div>
-        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Best published projects</div>
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Best published projects</div>
         {(m.bestProjects || []).length ? (
           <div className="grid gap-2.5 sm:grid-cols-2">
             {m.bestProjects.map((b) => (
-              <div key={b.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <div key={b.id} className="rounded-xl border border-subtle bg-surface-1 p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="truncate text-sm font-medium text-white">{b.title}</p>
+                  <p className="truncate text-sm font-medium text-fg">{b.title}</p>
                   <Badge tone={b.proofScore >= 70 ? 'mint' : b.proofScore >= 40 ? 'cyan' : 'amber'}>{b.proofScore}</Badge>
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">{(b.skills || []).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div>
@@ -91,11 +91,11 @@ function ProofCard({ p, isPrivate }) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-slate-500">No published projects yet.</p>
+          <p className="text-sm text-fg-muted">No published projects yet.</p>
         )}
       </div>
       {(p.links?.github || p.links?.linkedin || p.links?.portfolio) && (
-        <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
+        <div className="flex flex-wrap gap-2 border-t border-subtle pt-3">
           {p.links.github && <a href={p.links.github} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Github size={14} /> GitHub</Button></a>}
           {p.links.linkedin && <a href={p.links.linkedin} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Linkedin size={14} /> LinkedIn</Button></a>}
           {p.links.portfolio && <a href={p.links.portfolio} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Globe size={14} /> Portfolio</Button></a>}
@@ -116,7 +116,7 @@ export function PublicProfile({ userId, onBack }) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
       <div className="mb-5 flex items-center justify-between">
-        <h1 className="font-display text-xl font-semibold text-white">Career Proof Profile</h1>
+        <h1 className="font-display text-xl font-semibold text-fg">Career Proof Profile</h1>
         {onBack && <Button variant="soft" size="sm" onClick={onBack}>Back to app</Button>}
       </div>
       <SectionCard>
@@ -186,9 +186,9 @@ export default function CareerProfile({ go, publicUserId }) {
       <SectionCard className="mb-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-aurora-violet/15 text-aurora-cyan ring-1 ring-white/10"><User size={22} /></span>
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-aurora-violet/15 text-aurora-cyan ring-1 ring-strong"><User size={22} /></span>
             <div>
-              <p className="text-lg font-semibold text-white">{user?.name || 'You'}</p>
+              <p className="text-lg font-semibold text-fg">{user?.name || 'You'}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <Badge tone="violet">{ROLE_LABELS[access.role] || 'Member'}</Badge>
                 {me.targetRole && <Badge tone="cyan"><Target size={11} /> {me.targetRole}</Badge>}
@@ -206,7 +206,7 @@ export default function CareerProfile({ go, publicUserId }) {
             <ScoreRing score={m.jobSwitchReadiness} label="Switch" size={52} />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-subtle pt-4">
           <Button size="sm" variant="soft" onClick={copy}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy public link'}</Button>
           <Button size="sm" variant="soft" onClick={() => setPreviewOpen(true)}><Eye size={14} /> Preview recruiter view</Button>
           <Button size="sm" variant="soft" onClick={() => setEditOpen(true)}><Sparkles size={14} /> Update availability</Button>
@@ -234,7 +234,7 @@ export default function CareerProfile({ go, publicUserId }) {
           <SectionCard title="Boost your profile" action={<Badge tone="violet">{me.completeness}% complete</Badge>}>
             <div className="space-y-2">
               {suggestions.map((s, i) => (
-                <button key={i} onClick={() => { if (s.editor) setEditOpen(true); else go?.(s.cta); }} className="flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-2.5 text-left text-[13px] text-slate-200 hover:border-white/20">
+                <button key={i} onClick={() => { if (s.editor) setEditOpen(true); else go?.(s.cta); }} className="flex w-full items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-4 py-2.5 text-left text-[13px] text-fg hover:border-strong">
                   <Sparkles size={15} className="shrink-0 text-aurora-cyan" /> {s.text}
                 </button>
               ))}
@@ -248,7 +248,7 @@ export default function CareerProfile({ go, publicUserId }) {
           {skillXP.length ? (
             <div className="space-y-2.5">
               {skillXP.slice(0, 6).map((s) => <XpBar key={s.skillName} skill={s} />)}
-              <p className="pt-1 text-[12px] text-slate-400">{nextStepFor(skillXP[0])}</p>
+              <p className="pt-1 text-[12px] text-fg-secondary">{nextStepFor(skillXP[0])}</p>
             </div>
           ) : (
             <EmptyState icon={TrendingUp} title="No XP yet" hint="Complete project tasks, add a GitHub repo and a live demo to earn Skill XP from real proof." />
@@ -263,17 +263,17 @@ export default function CareerProfile({ go, publicUserId }) {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <SectionCard title="Availability & visibility">
           <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between"><span className="text-slate-400">Profile visibility</span><Badge tone={me.visibility === 'public' ? 'mint' : me.visibility === 'published_only' ? 'cyan' : 'default'}>{VISIBILITY_OPTIONS.find((v) => v.id === me.visibility)?.label}</Badge></div>
+            <div className="flex items-center justify-between"><span className="text-fg-secondary">Profile visibility</span><Badge tone={me.visibility === 'public' ? 'mint' : me.visibility === 'published_only' ? 'cyan' : 'default'}>{VISIBILITY_OPTIONS.find((v) => v.id === me.visibility)?.label}</Badge></div>
             {AVAILABILITY.map(([k, label]) => (
-              <div key={k} className="flex items-center justify-between"><span className="text-slate-400">{label}</span>{me[k] ? <Badge tone="mint"><Check size={11} /> Yes</Badge> : <Badge tone="default">No</Badge>}</div>
+              <div key={k} className="flex items-center justify-between"><span className="text-fg-secondary">{label}</span>{me[k] ? <Badge tone="mint"><Check size={11} /> Yes</Badge> : <Badge tone="default">No</Badge>}</div>
             ))}
-            <div className="flex items-center justify-between"><span className="text-slate-400">Show email</span>{me.showEmail ? <Badge tone="amber">Visible</Badge> : <Badge tone="default">Hidden</Badge>}</div>
+            <div className="flex items-center justify-between"><span className="text-fg-secondary">Show email</span>{me.showEmail ? <Badge tone="amber">Visible</Badge> : <Badge tone="default">Hidden</Badge>}</div>
           </div>
           <Button size="sm" variant="soft" className="mt-3" onClick={() => setEditOpen(true)}>Manage settings</Button>
         </SectionCard>
 
         <SectionCard title="Recruiter-ready summary">
-          <p className="text-sm leading-relaxed text-slate-300">{me.recruiterSummary}</p>
+          <p className="text-sm leading-relaxed text-fg-secondary">{me.recruiterSummary}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {me.links.github && <Badge tone="violet"><Github size={11} /> GitHub linked</Badge>}
             {me.links.linkedin && <Badge tone="cyan"><Linkedin size={11} /> LinkedIn linked</Badge>}
@@ -289,9 +289,9 @@ export default function CareerProfile({ go, publicUserId }) {
               {published.map((p) => {
                 const bd = proofScoreBreakdown(p);
                 return (
-                  <div key={p.id} className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                  <div key={p.id} className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0"><h4 className="truncate font-medium text-white">{p.title}</h4><p className="mt-0.5 truncate text-xs text-slate-400">{p.targetRole}</p></div>
+                      <div className="min-w-0"><h4 className="truncate font-medium text-fg">{p.title}</h4><p className="mt-0.5 truncate text-xs text-fg-secondary">{p.targetRole}</p></div>
                       <ScoreRing score={bd.score} />
                     </div>
                     <div className="mt-2.5 flex flex-wrap gap-1.5">{(p.skillsCovered || []).slice(0, 4).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div>
@@ -356,22 +356,22 @@ function EditProfileModal({ open, onClose }) {
         <Field label="Location" hint="optional · shown only on public profiles"><Input value={np.location || ''} onChange={(e) => setNp({ ...np, location: e.target.value })} placeholder="Pune, India" /></Field>
 
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-slate-300">Profile visibility</span>
+          <span className="mb-1.5 block text-[13px] font-medium text-fg-secondary">Profile visibility</span>
           <div className="space-y-2">
             {VISIBILITY_OPTIONS.map((v) => (
-              <button key={v.id} onClick={() => setNp({ ...np, visibility: v.id })} className={`flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition ${np.visibility === v.id ? 'border-aurora-violet/50 bg-aurora-violet/[0.08]' : 'border-white/10 bg-white/[0.02] hover:border-white/20'}`}>
-                <span className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${np.visibility === v.id ? 'border-aurora-cyan bg-aurora-cyan/40' : 'border-white/30'}`} />
-                <span><span className="block text-sm font-medium text-white">{v.label}</span><span className="block text-xs text-slate-400">{v.hint}</span></span>
+              <button key={v.id} onClick={() => setNp({ ...np, visibility: v.id })} className={`flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition ${np.visibility === v.id ? 'border-aurora-violet/50 bg-aurora-violet/[0.08]' : 'border-subtle bg-surface-1 hover:border-strong'}`}>
+                <span className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border ${np.visibility === v.id ? 'border-aurora-cyan bg-aurora-cyan/40' : 'border-strong'}`} />
+                <span><span className="block text-sm font-medium text-fg">{v.label}</span><span className="block text-xs text-fg-secondary">{v.hint}</span></span>
               </button>
             ))}
           </div>
         </div>
 
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-slate-300">Availability</span>
+          <span className="mb-1.5 block text-[13px] font-medium text-fg-secondary">Availability</span>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {AVAILABILITY.map(([k, label]) => (
-              <button key={k} onClick={() => setNp({ ...np, [k]: !np[k] })} className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm transition ${np[k] ? 'border-aurora-mint/40 bg-aurora-mint/10 text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20'}`}>
+              <button key={k} onClick={() => setNp({ ...np, [k]: !np[k] })} className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm transition ${np[k] ? 'border-aurora-mint/40 bg-aurora-mint/10 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
                 <span>{label}</span>{np[k] && <Check size={15} className="text-aurora-mint" />}
               </button>
             ))}
@@ -384,15 +384,15 @@ function EditProfileModal({ open, onClose }) {
           <Field label="Portfolio URL" hint={errors.portfolio}><Input value={np.links.portfolio || ''} onChange={(e) => setLink('portfolio', e.target.value)} placeholder="https://yoursite.dev" className={errors.portfolio ? 'border-rose-400/50' : ''} /></Field>
         </div>
 
-        <button onClick={() => setNp({ ...np, showEmail: !np.showEmail })} className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-sm transition ${np.showEmail ? 'border-amber-glow/40 bg-amber-glow/10 text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20'}`}>
-          <span>Show my email on public profile <span className="text-xs text-slate-500">(hidden by default)</span></span>{np.showEmail && <Check size={15} className="text-amber-glow" />}
+        <button onClick={() => setNp({ ...np, showEmail: !np.showEmail })} className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-sm transition ${np.showEmail ? 'border-amber-glow/40 bg-amber-glow/10 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
+          <span>Show my email on public profile <span className="text-xs text-fg-muted">(hidden by default)</span></span>{np.showEmail && <Check size={15} className="text-amber-glow" />}
         </button>
 
-        <p className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+        <p className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 text-[11px] leading-relaxed text-fg-muted">
           XP, badges, proof score, role-fit and trust are computed from your real project evidence and cannot be edited directly. Your profile syncs across devices when a backend database is configured.
         </p>
 
-        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-subtle pt-4">
           {saved && <span className="mr-auto inline-flex items-center gap-1.5 text-[13px] text-aurora-mint"><Check size={15} /> Saved</span>}
           <Button variant="soft" onClick={onClose}>Cancel</Button>
           <Button onClick={save}><Check size={15} /> Save profile</Button>

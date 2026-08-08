@@ -197,14 +197,14 @@ function SequenceSvg({ data }) {
 export default function MermaidDiagram({ chart, className = '' }) {
   const data = useMemo(() => parse(chart), [chart]);
   if (!data) {
-    return <pre className="overflow-x-auto rounded-xl border border-white/8 bg-black/30 p-3 text-[11.5px] text-slate-300">{chart}</pre>;
+    return <pre className="overflow-x-auto rounded-xl border border-subtle bg-sunken p-3 text-[11.5px] text-fg-secondary">{chart}</pre>;
   }
   return (
     <div className={className}>
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/25 p-3">
+      <div className="overflow-x-auto rounded-xl border border-subtle bg-sunken p-3">
         {data.type === 'sequence' ? <SequenceSvg data={data} /> : <FlowSvg data={data} />}
       </div>
-      <p className="mt-2 text-[11px] text-slate-500">Rendered from Mermaid text. Use “Copy Mermaid” for external Mermaid editors or formal export.</p>
+      <p className="mt-2 text-[11px] text-fg-muted">Rendered from Mermaid text. Use “Copy Mermaid” for external Mermaid editors or formal export.</p>
     </div>
   );
 }

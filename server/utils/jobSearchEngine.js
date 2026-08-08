@@ -192,6 +192,21 @@ export function rankJobs(jobs = [], criteria = {}, helpers = {}) {
 export function progressiveGate(jobs = [], baseCriteria = {}, helpers = {}, { minResults = 1, maxLevel = 4 } = {}) {
   const maxDaysOf = helpers.maxDaysOf || (() => Infinity);
   let base = null;
+  /* BEST NON-EMPTY CANDIDATE SET SEEN SO FAR.
+     This is the fix for the bug the route used to work around. The old loop
+     returned a step's candidates ONLY when that step reached `minResults`, and
+     otherwise fell through to `candidates: []`. So minResults=5 with level 4
+     finding 3 real, verified jobs returned ZERO — reproducing the exact
+     "no jobs found" symptom this engine exists to prevent, while the jobs sat
+     right there in the last attempt. jobSearchRoute.js carried an explicit
+     "ENGINE BUG WORKAROUND — do not remove" second call at minResults=1 to
+     paper over it.
+
+     We now remember the shallowest (least-relaxed) step that produced ANY
+     candidates. If no step clears `minResults`, that best set is returned
+     instead of an empty list, with its own step so the UI still reports
+     honestly which relaxations were applied. */
+  let best = null;
   const attempts = [];
   for (const step of FALLBACK_STEPS) {
     if (step.level > maxLevel) break;
@@ -205,6 +220,12 @@ export function progressiveGate(jobs = [], baseCriteria = {}, helpers = {}, { mi
     const pass = gateJobs(jobs.map((j) => ({ ...j })), criteria, helpers);
     attempts.push({ level: step.level, group: step.group, label: step.label, count: pass.candidates.length });
     if (step.level === 0) { base = pass; }
+
+    /* Keep the FIRST step that yielded anything: earlier steps are less
+       relaxed, so their results are closer to what the user actually asked
+       for. A later step can only add breadth, never precision. */
+    if (!best && pass.candidates.length > 0) best = { pass, step };
+
     if (pass.candidates.length >= minResults) {
       return {
         candidates: pass.candidates,
@@ -213,11 +234,43 @@ export function progressiveGate(jobs = [], baseCriteria = {}, helpers = {}, { mi
         baseCount: base.candidates.length,
         audit: pass.audit,
         attempts,
+        /* true when we cleared the requested threshold outright */
+        satisfiedMinResults: true,
+        minResults,
       };
     }
   }
-  // every step failed — return the base pass so diagnostics still explain why
-  return { candidates: [], step: FALLBACK_STEPS[Math.min(maxLevel, FALLBACK_STEPS.length - 1)], baseRemoved: base.removed, baseCount: base.candidates.length, audit: base.audit, attempts };
+
+  /* No step cleared minResults. Return the best non-empty set we found rather
+     than throwing away real postings. */
+  if (best) {
+    return {
+      candidates: best.pass.candidates,
+      step: best.step,
+      baseRemoved: base.removed,
+      baseCount: base.candidates.length,
+      audit: best.pass.audit,
+      attempts,
+      satisfiedMinResults: false,
+      minResults,
+      /* Signals the UI can use to say "thin, but real". */
+      thinResults: true,
+    };
+  }
+
+  // Genuinely nothing survived at any level — return the base pass so
+  // diagnostics still explain why.
+  return {
+    candidates: [],
+    step: FALLBACK_STEPS[Math.min(maxLevel, FALLBACK_STEPS.length - 1)],
+    baseRemoved: base.removed,
+    baseCount: base.candidates.length,
+    audit: base.audit,
+    attempts,
+    satisfiedMinResults: false,
+    minResults,
+    exhausted: true,
+  };
 }
 
 /* ------------------------------ explanation ----------------------------- */

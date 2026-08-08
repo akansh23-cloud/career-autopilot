@@ -33,6 +33,7 @@
    ============================================================ */
 import { z } from 'zod';
 import engine from '../utils/teamProjectEngine.js';
+import progressEngine from '../utils/teamProgressEngine.js';
 import { verifyDeployment, verifyGithubRepo, verifyReadme, verifyCiRun } from '../utils/workspace/proofVerification.js';
 import { emailEnabled, sendMail, nudgeEmail } from '../utils/mailer.js';
 import { DEMO_COLLEGE_ID, demoModeEnabled } from '../utils/demoCollegeData.js';
@@ -141,17 +142,39 @@ export function registerTeamProjectRoutes(app, deps = {}) {
     if (studentIds.length) {
       pool = resolveMembers(cohort, studentIds).found;
     } else {
+      /* Auto-selection. Two things matter here and neither used to:
+
+         1. ORDER. `slice(limit)` over the raw cohort took whatever the database
+            returned first, which is registration order — for a multi-year
+            college that is the entire first-year intake of one branch. The
+            resulting teams averaged under three declared skills between four
+            students, so the brief could not be matched to anything and came
+            back generic. Ranking by readiness first means the coordinator sees
+            teams built from students who actually have something to build with.
+         2. EMPTY MEMBERS. A student with no declared skills contributes
+            nothing to coverage and occupies a seat. They are excluded from
+            AUTO-selection only — a coordinator can still hand-pick them via
+            studentIds, which is how you deliberately pair a junior with a
+            strong team. */
       pool = cohort.filter((s) => {
         if (filters.branch && String(s.branch).toLowerCase() !== filters.branch.toLowerCase()) return false;
         if (filters.batch && String(s.batch) !== filters.batch) return false;
         if (filters.year && !String(s.year).toLowerCase().includes(filters.year.toLowerCase())) return false;
         if (filters.minReadiness != null && Number(s.readinessScore || 0) < Number(filters.minReadiness)) return false;
-        return true;
-      }).slice(0, limit);
+        return (s.skills || []).length > 0;
+      })
+        .sort((a, b) => Number(b.readinessScore || 0) - Number(a.readinessScore || 0))
+        .slice(0, limit);
     }
 
     if (pool.length < 2) {
-      return res.status(400).json({ ok: false, error: 'not_enough_students', message: 'Select at least two students in your college to form a team.' });
+      return res.status(400).json({
+        ok: false,
+        error: 'not_enough_students',
+        message: studentIds.length
+          ? 'Select at least two students in your college to form a team.'
+          : 'No students matched those filters with any declared skills. Widen the filters, or pick students by hand.',
+      });
     }
 
     const result = engine.suggestTeams({ students: pool, teamSize, strategy });
@@ -271,6 +294,11 @@ export function registerTeamProjectRoutes(app, deps = {}) {
         requireLiveUrl: req.body.requireLiveUrl !== false,
         members,
         brief,
+        /* Seed a progress row per member at assign time. An ABSENT row and a
+           ZERO row mean different things to a coordinator, so every member has
+           one from day one. Projects assigned before this shipped self-heal:
+           reconcileProgress() rebuilds missing rows from the brief on read. */
+        memberProgress: progressEngine.initMemberProgress(brief),
         analysis: engine.analyzeTeamSkills(found),
         assignedByEmail: me(req).email,
         collegeName: college?.name || '',
