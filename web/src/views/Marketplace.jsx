@@ -47,7 +47,7 @@ function ScorePill({ score }) {
 
 function ListingCard({ l, onOpen, onSave, onClone }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
+    <div className="flex flex-col rounded-2xl border border-white/8 bg-white/[0.02] p-4 transition hover:border-white/20">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -56,22 +56,22 @@ function ListingCard({ l, onOpen, onSave, onClone }) {
             {l.isRecruiterReady && <Badge tone="cyan"><UserCheck size={11} /> Recruiter ready</Badge>}
             {l.isFeatured && <Badge tone="amber"><Star size={11} /> Featured</Badge>}
           </div>
-          <button onClick={() => onOpen(l)} className="mt-2 block text-left text-sm font-semibold text-fg hover:text-aurora-cyan">{l.title}</button>
+          <button onClick={() => onOpen(l)} className="mt-2 block text-left text-sm font-semibold text-white hover:text-aurora-cyan">{l.title}</button>
         </div>
         <ScorePill score={l.marketplaceScore || 0} />
       </div>
-      {l.summary && <p className="mt-1.5 line-clamp-2 text-[13px] text-fg-secondary">{l.summary}</p>}
-      {l.targetRole && <div className="mt-2 flex items-center gap-1 text-[11px] text-fg-muted"><Target size={11} /> {l.targetRole}</div>}
+      {l.summary && <p className="mt-1.5 line-clamp-2 text-[13px] text-slate-400">{l.summary}</p>}
+      {l.targetRole && <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-500"><Target size={11} /> {l.targetRole}</div>}
       {l.tags?.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">{l.tags.slice(0, 5).map((t) => <span key={t} className="rounded-md bg-surface-1 px-2 py-0.5 text-[10px] text-fg-secondary">{t}</span>)}</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">{l.tags.slice(0, 5).map((t) => <span key={t} className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] text-slate-400">{t}</span>)}</div>
       )}
-      <div className="mt-3 flex items-center gap-3 text-[11px] text-fg-muted">
+      <div className="mt-3 flex items-center gap-3 text-[11px] text-slate-500">
         <span className="inline-flex items-center gap-1"><Eye size={11} /> {l.viewCount || 0}</span>
         <span className="inline-flex items-center gap-1"><Copy size={11} /> {l.cloneCount || 0}</span>
         <span className="inline-flex items-center gap-1"><Users size={11} /> {l.applicationCount || 0}</span>
         {l.githubUrl && <Github size={11} />} {l.liveDemoUrl && <Globe size={11} />}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 border-t border-subtle pt-3">
+      <div className="mt-3 flex flex-wrap gap-2 border-t border-white/8 pt-3">
         <Button size="sm" onClick={() => onOpen(l)}>Open</Button>
         {(l.ctas || []).includes('clone_roadmap') && <Button size="sm" variant="soft" onClick={() => onClone(l)}><Copy size={14} /> Clone</Button>}
         <Button size="sm" variant="soft" onClick={() => onSave(l)}>{l.saved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}</Button>
@@ -150,7 +150,7 @@ export default function MarketplaceView() {
       <div className="mb-4 flex flex-wrap gap-2">
         {SECTIONS.map(([id, label]) => (
           <button key={id} onClick={() => setSection(id)}
-            className={`rounded-xl border px-3 py-1.5 text-xs transition ${section === id ? 'border-aurora-violet/60 bg-aurora-violet/10 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
+            className={`rounded-xl border px-3 py-1.5 text-xs transition ${section === id ? 'border-aurora-violet/60 bg-aurora-violet/10 text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/25'}`}>
             {label}
           </button>
         ))}
@@ -159,37 +159,37 @@ export default function MarketplaceView() {
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px]">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search listings…"
-            className="h-10 w-full rounded-xl border border-subtle bg-surface-1 pl-9 pr-3 text-sm text-fg outline-none focus:border-aurora-violet/50" />
+            className="h-10 w-full rounded-xl border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-slate-100 outline-none focus:border-aurora-violet/50" />
         </div>
         <div className="relative">
-          <select value={sort} onChange={(e) => setSort(e.target.value)} className="h-10 cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 pl-3 pr-9 text-sm text-fg outline-none focus:border-aurora-violet/50">
+          <select value={sort} onChange={(e) => setSort(e.target.value)} className="h-10 cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] pl-3 pr-9 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
             {SORTS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
-          <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted" />
+          <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
         </div>
         <Button variant="soft" onClick={() => setShowFilters((v) => !v)}><Filter size={15} /> Filters</Button>
       </div>
 
       {showFilters && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-subtle bg-surface-1 p-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] p-3">
           <div className="relative">
-            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-9 cursor-pointer appearance-none rounded-lg border border-subtle bg-surface-1 pl-3 pr-8 text-xs text-fg outline-none">
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-9 cursor-pointer appearance-none rounded-lg border border-white/10 bg-white/[0.03] pl-3 pr-8 text-xs text-slate-100 outline-none">
               <option value="">Any role</option>
               {Object.values(ROLE_GROUPS).flat().map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-            <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
           </div>
-          <label className="flex items-center gap-1.5 text-xs text-fg-secondary"><input type="checkbox" checked={hasGithub} onChange={(e) => setHasGithub(e.target.checked)} /> Has GitHub</label>
-          <label className="flex items-center gap-1.5 text-xs text-fg-secondary"><input type="checkbox" checked={hasLiveDemo} onChange={(e) => setHasLiveDemo(e.target.checked)} /> Has live demo</label>
+          <label className="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" checked={hasGithub} onChange={(e) => setHasGithub(e.target.checked)} /> Has GitHub</label>
+          <label className="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" checked={hasLiveDemo} onChange={(e) => setHasLiveDemo(e.target.checked)} /> Has live demo</label>
         </div>
       )}
 
       {toast && <div className="mb-3 rounded-lg border border-aurora-mint/30 bg-aurora-mint/10 px-3 py-2 text-xs text-aurora-mint">{toast}</div>}
 
       {loading ? (
-        <SectionCard><div className="flex items-center gap-2 py-8 text-fg-secondary"><Loader2 size={16} className="animate-spin" /> Loading marketplace…</div></SectionCard>
+        <SectionCard><div className="flex items-center gap-2 py-8 text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading marketplace…</div></SectionCard>
       ) : filtered.length === 0 ? (
         <EmptyState icon={Store} title="Nothing here yet" hint={section === 'mine' ? 'Publish your first listing to share your work.' : 'Be the first to publish in this section.'} action={<Button size="sm" onClick={() => setShowPublish(true)}><Plus size={14} /> Publish a listing</Button>} />
       ) : (
@@ -201,7 +201,7 @@ export default function MarketplaceView() {
       {/* Detail modal */}
       {open && (
         <Modal open onClose={() => setOpen(null)} title={open.title}>
-          {!detail ? <div className="flex items-center gap-2 py-6 text-fg-secondary"><Loader2 size={16} className="animate-spin" /> Loading…</div> : (
+          {!detail ? <div className="flex items-center gap-2 py-6 text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading…</div> : (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="violet">{TYPE_LABELS[detail.listingType] || detail.listingType}</Badge>
@@ -209,21 +209,21 @@ export default function MarketplaceView() {
                 {detail.isRecruiterReady && <Badge tone="cyan"><UserCheck size={11} /> Recruiter ready</Badge>}
                 <ScorePill score={detail.marketplaceScore || 0} />
               </div>
-              {detail.summary && <p className="text-sm text-fg-secondary">{detail.summary}</p>}
-              {detail.problemStatement && <div><div className="text-[11px] uppercase tracking-wide text-fg-muted">Problem</div><p className="text-sm text-fg-secondary">{detail.problemStatement}</p></div>}
-              {detail.description && <div><div className="text-[11px] uppercase tracking-wide text-fg-muted">Details</div><p className="whitespace-pre-wrap text-sm text-fg-secondary">{detail.description}</p></div>}
-              {detail.techStack?.length > 0 && <div className="flex flex-wrap gap-1.5">{detail.techStack.map((t) => <span key={t} className="rounded-md bg-surface-1 px-2 py-0.5 text-[11px] text-fg-secondary">{t}</span>)}</div>}
-              {detail.verifiedSkills?.length > 0 && <div><div className="mb-1 text-[11px] uppercase tracking-wide text-fg-muted">Verified skills</div><div className="flex flex-wrap gap-1.5">{detail.verifiedSkills.map((s) => <Badge key={s} tone="mint">{s}</Badge>)}</div></div>}
+              {detail.summary && <p className="text-sm text-slate-300">{detail.summary}</p>}
+              {detail.problemStatement && <div><div className="text-[11px] uppercase tracking-wide text-slate-500">Problem</div><p className="text-sm text-slate-300">{detail.problemStatement}</p></div>}
+              {detail.description && <div><div className="text-[11px] uppercase tracking-wide text-slate-500">Details</div><p className="whitespace-pre-wrap text-sm text-slate-300">{detail.description}</p></div>}
+              {detail.techStack?.length > 0 && <div className="flex flex-wrap gap-1.5">{detail.techStack.map((t) => <span key={t} className="rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">{t}</span>)}</div>}
+              {detail.verifiedSkills?.length > 0 && <div><div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">Verified skills</div><div className="flex flex-wrap gap-1.5">{detail.verifiedSkills.map((s) => <Badge key={s} tone="mint">{s}</Badge>)}</div></div>}
               {detail.milestones?.length > 0 && (
-                <div><div className="mb-1 text-[11px] uppercase tracking-wide text-fg-muted">Milestones</div>
-                  <ol className="list-decimal space-y-1 pl-5 text-sm text-fg-secondary">{detail.milestones.slice(0, 8).map((m, i) => <li key={i}>{typeof m === 'string' ? m : (m.phase || m.title || JSON.stringify(m))}</li>)}</ol></div>
+                <div><div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">Milestones</div>
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-300">{detail.milestones.slice(0, 8).map((m, i) => <li key={i}>{typeof m === 'string' ? m : (m.phase || m.title || JSON.stringify(m))}</li>)}</ol></div>
               )}
               <div className="flex flex-wrap gap-2">
                 {detail.githubUrl && <a href={detail.githubUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Github size={14} /> Repo</Button></a>}
                 {detail.liveDemoUrl && <a href={detail.liveDemoUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Globe size={14} /> Live</Button></a>}
               </div>
               {/* CTAs from backend */}
-              <div className="flex flex-wrap gap-2 border-t border-subtle pt-3">
+              <div className="flex flex-wrap gap-2 border-t border-white/8 pt-3">
                 {(detail.ctas || []).map((cta) => (
                   <Button key={cta} size="sm" variant={cta === 'report' ? 'soft' : undefined} onClick={() => runCta(cta, detail)}>
                     {cta === 'shortlist_candidate' && <UserCheck size={14} />} {cta === 'contact_candidate' && <Mail size={14} />}
@@ -233,12 +233,12 @@ export default function MarketplaceView() {
                 ))}
               </div>
               {reviews.length > 0 && (
-                <div className="border-t border-subtle pt-3">
-                  <div className="mb-2 text-[11px] uppercase tracking-wide text-fg-muted">Reviews</div>
+                <div className="border-t border-white/8 pt-3">
+                  <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Reviews</div>
                   {reviews.map((r) => (
-                    <div key={r.id} className="mb-2 text-sm text-fg-secondary">
-                      <span className="text-aurora-mint">{'★'.repeat(r.rating || 0)}</span> <span className="text-fg-secondary">{r.reviewerName}</span>
-                      {r.comment && <div className="text-[13px] text-fg-secondary">{r.comment}</div>}
+                    <div key={r.id} className="mb-2 text-sm text-slate-300">
+                      <span className="text-aurora-mint">{'★'.repeat(r.rating || 0)}</span> <span className="text-slate-400">{r.reviewerName}</span>
+                      {r.comment && <div className="text-[13px] text-slate-400">{r.comment}</div>}
                     </div>
                   ))}
                 </div>
@@ -277,33 +277,33 @@ function PublishModal({ onClose, onPublished }) {
       <div className="space-y-3">
         <Field label="Listing type">
           <div className="relative">
-            <select value={form.listingType} onChange={f('listingType')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50">
+            <select value={form.listingType} onChange={f('listingType')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
               {PUBLISH_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
             </select>
-            <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
           </div>
         </Field>
         <Field label="Title"><Input value={form.title} onChange={f('title')} placeholder="e.g. Real-time CI/CD dashboard" /></Field>
         <Field label="One-line summary"><Input value={form.summary} onChange={f('summary')} placeholder="What is it, in one line?" /></Field>
         <Field label="Problem statement">
-          <textarea value={form.problemStatement} onChange={f('problemStatement')} className="h-20 w-full resize-none rounded-xl border border-subtle bg-surface-1 p-3 text-sm text-fg outline-none focus:border-aurora-violet/50" />
+          <textarea value={form.problemStatement} onChange={f('problemStatement')} className="h-20 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50" />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Target role">
             <div className="relative">
-              <select value={form.targetRole} onChange={f('targetRole')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50">
+              <select value={form.targetRole} onChange={f('targetRole')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
                 <option value="">Any</option>
                 {Object.values(ROLE_GROUPS).flat().map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
-              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             </div>
           </Field>
           <Field label="Difficulty">
             <div className="relative">
-              <select value={form.difficulty} onChange={f('difficulty')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50">
+              <select value={form.difficulty} onChange={f('difficulty')} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
                 {['Beginner', 'Intermediate', 'Advanced'].map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
-              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             </div>
           </Field>
         </div>
@@ -318,7 +318,7 @@ function PublishModal({ onClose, onPublished }) {
           <Button onClick={submit} disabled={busy}>{busy ? <><Loader2 size={16} className="animate-spin" /> Publishing…</> : <><Plus size={16} /> Publish</>}</Button>
           <Button variant="soft" onClick={onClose}>Cancel</Button>
         </div>
-        <p className="text-[11px] text-fg-muted">Verification &amp; ranking are decided by the backend from attached proof. Adding a real GitHub/live link raises your marketplace score.</p>
+        <p className="text-[11px] text-slate-500">Verification &amp; ranking are decided by the backend from attached proof. Adding a real GitHub/live link raises your marketplace score.</p>
       </div>
     </Modal>
   );

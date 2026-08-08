@@ -117,12 +117,12 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
         <div className="space-y-4">
           {/* ---- Identity connection state ---- */}
           {!connected ? (
-            <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
               <div className="flex items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-surface-1 text-fg ring-1 ring-white/10"><Github size={20} /></span>
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/5 text-slate-200 ring-1 ring-white/10"><Github size={20} /></span>
                 <div className="min-w-0">
-                  <p className="font-medium text-fg">GitHub identity</p>
-                  <p className="text-[12px] text-fg-secondary">Connect to verify ownership and sync public stats. Minimal scopes only (read:user, user:email) — no repo access.</p>
+                  <p className="font-medium text-white">GitHub identity</p>
+                  <p className="text-[12px] text-slate-400">Connect to verify ownership and sync public stats. Minimal scopes only (read:user, user:email) — no repo access.</p>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -137,9 +137,9 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
                 <div className="flex items-center gap-3">
                   {conn.avatarUrl
                     ? <img src={conn.avatarUrl} alt="" className="h-11 w-11 rounded-2xl ring-1 ring-white/10" />
-                    : <span className="grid h-11 w-11 place-items-center rounded-2xl bg-surface-1 text-fg ring-1 ring-white/10"><Github size={20} /></span>}
+                    : <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/5 text-slate-200 ring-1 ring-white/10"><Github size={20} /></span>}
                   <div>
-                    <p className="font-medium text-fg">@{conn.handle}</p>
+                    <p className="font-medium text-white">@{conn.handle}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <Badge tone="mint"><ShieldCheck size={11} /> Connected via GitHub</Badge>
                       {conn.stats?.publicRepoCount != null && <Badge tone="cyan"><Boxes size={11} /> {conn.stats.publicRepoCount} repos</Badge>}
@@ -153,23 +153,23 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
                   {conn.stats.topLanguages.slice(0, 6).map((l) => <Badge key={l.name} tone="violet">{l.name}</Badge>)}
                 </div>
               )}
-              <div className="mt-3 flex flex-wrap gap-2 border-t border-subtle pt-3">
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
                 <Button size="sm" variant="soft" onClick={doSync} disabled={busy === 'sync'}>{busy === 'sync' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync profile</Button>
                 {conn.url && <a href={conn.url} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Globe size={14} /> Open GitHub</Button></a>}
                 <Button size="sm" variant="soft" onClick={doDisconnect} disabled={busy === 'disconnect'}><Unlink size={14} /> Disconnect</Button>
               </div>
-              {conn.lastSyncedAt && <p className="mt-2 text-[11px] text-fg-muted">Last synced {new Date(conn.lastSyncedAt).toLocaleString()}</p>}
+              {conn.lastSyncedAt && <p className="mt-2 text-[11px] text-slate-500">Last synced {new Date(conn.lastSyncedAt).toLocaleString()}</p>}
             </div>
           )}
 
           {/* ---- GitHub App (repository verification) ---- */}
-          <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="grid h-11 w-11 place-items-center rounded-2xl bg-aurora-violet/15 text-aurora-cyan ring-1 ring-white/10"><PlugZap size={20} /></span>
                 <div className="min-w-0">
-                  <p className="font-medium text-fg">Repository verification (GitHub App)</p>
-                  <p className="text-[12px] text-fg-secondary">Read-only access to the repositories you choose — public or private. Used to verify real proof-of-work.</p>
+                  <p className="font-medium text-white">Repository verification (GitHub App)</p>
+                  <p className="text-[12px] text-slate-400">Read-only access to the repositories you choose — public or private. Used to verify real proof-of-work.</p>
                 </div>
               </div>
             </div>
@@ -182,7 +182,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
               </div>
             ) : (
               <div className="mt-3 space-y-3">
-                <div className="flex flex-wrap items-center gap-2 text-[12px] text-fg-secondary">
+                <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-300">
                   {installations.map((i) => (
                     <Badge key={i.installationId} tone="cyan"><Boxes size={11} /> {i.accountLogin || 'installation'} · {i.repositorySelection === 'all' ? 'all repos' : 'selected repos'}</Badge>
                   ))}
@@ -205,7 +205,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
           {repos.length > 0 && (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <p className="text-[12px] font-semibold uppercase tracking-widest text-fg-muted">Repositories</p>
+                <p className="text-[12px] font-semibold uppercase tracking-widest text-slate-500">Repositories</p>
                 <Badge tone="violet">{summary.repositoriesAnalyzed || 0} analyzed</Badge>
               </div>
               {repos.map((r) => (
@@ -223,7 +223,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
             </div>
           )}
 
-          <p className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 text-[11px] leading-relaxed text-fg-muted">
+          <p className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-slate-500">
             <Info size={12} className="-mt-0.5 mr-1 inline" />
             Private repositories are never exposed on your public or recruiter profile unless you opt in to a safe proof summary. Career Autopilot only ever reads proof files (README, dependency, CI/CD, Docker/Kubernetes/Terraform) — never secrets like .env or keys.
           </p>
@@ -233,14 +233,14 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
       {/* ---- Install explainer modal (private-repo safety) ---- */}
       <Modal open={installExplainerOpen} onClose={() => setInstallExplainerOpen(false)} title="Verify repositories with the GitHub App" width="max-w-xl">
         <div className="space-y-4">
-          <p className="text-sm leading-relaxed text-fg-secondary">{PRIVATE_EXPLAINER}</p>
-          <ul className="space-y-1.5 text-[13px] text-fg-secondary">
+          <p className="text-sm leading-relaxed text-slate-300">{PRIVATE_EXPLAINER}</p>
+          <ul className="space-y-1.5 text-[13px] text-slate-300">
             <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-aurora-mint" /> Read-only access to only the repos you select</li>
             <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-aurora-mint" /> Private repos stay private by default</li>
             <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-aurora-mint" /> No write, admin, secret or delete permissions</li>
             <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-aurora-mint" /> Revoke anytime from GitHub settings</li>
           </ul>
-          <div className="flex items-center justify-end gap-2 border-t border-subtle pt-4">
+          <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
             <Button variant="soft" onClick={() => setInstallExplainerOpen(false)}>Cancel</Button>
             <a href={GithubIntegration.installUrl()}><Button><Boxes size={15} /> Install GitHub App and choose repositories</Button></a>
           </div>
@@ -287,16 +287,16 @@ function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport, onViva
   const [open, setOpen] = useState(false);
   const analyzed = repo.analysisStatus === 'complete' || repo.analysisStatus === 'partial';
   return (
-    <div className={`rounded-2xl border bg-surface-1 p-3.5 ${repo.private ? 'border-amber-glow/20' : 'border-subtle'}`}>
+    <div className={`rounded-2xl border bg-white/[0.02] p-3.5 ${repo.private ? 'border-amber-glow/20' : 'border-white/10'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <FileCode2 size={15} className="shrink-0 text-fg-secondary" />
-            <p className="truncate font-medium text-fg">{repo.fullName || repo.name}</p>
+            <FileCode2 size={15} className="shrink-0 text-slate-400" />
+            <p className="truncate font-medium text-white">{repo.fullName || repo.name}</p>
             {repo.private ? <Badge tone="amber"><Lock size={11} /> Private</Badge> : <Badge tone="cyan"><Globe size={11} /> Public</Badge>}
             {!repo.accessible && <Badge tone="default">No longer accessible</Badge>}
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-secondary">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
             {repo.language && <Badge tone="default">{repo.language}</Badge>}
             {repo.pushedAt && <span>Updated {new Date(repo.pushedAt).toLocaleDateString()}</span>}
             {repo.linkedProjectId && <Badge tone="violet"><Link2 size={10} /> Linked</Badge>}
@@ -320,7 +320,7 @@ function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport, onViva
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2 border-t border-subtle pt-3">
+      <div className="mt-3 flex flex-wrap gap-2 border-t border-white/8 pt-3">
         <Button size="sm" variant={analyzed ? 'soft' : 'primary'} onClick={onAnalyze} disabled={busy || !repo.accessible}>
           {busy ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />} {analyzed ? 'Re-analyze' : 'Analyze'}
         </Button>
@@ -337,8 +337,8 @@ function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport, onViva
         <div className="mt-2.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {repo.evidence.map((e) => (
             <div key={e.key} className="flex items-center gap-2 text-[12px]">
-              {e.present ? <CheckCircle2 size={13} className="text-aurora-mint" /> : <AlertTriangle size={13} className="text-fg-muted" />}
-              <span className={e.present ? 'text-fg' : 'text-fg-muted'}>{e.label}</span>
+              {e.present ? <CheckCircle2 size={13} className="text-aurora-mint" /> : <AlertTriangle size={13} className="text-slate-500" />}
+              <span className={e.present ? 'text-slate-200' : 'text-slate-500'}>{e.label}</span>
             </div>
           ))}
         </div>
@@ -363,10 +363,10 @@ function VisibilityModal({ repo, onClose, onSaved }) {
   return (
     <Modal open={!!repo} onClose={onClose} title="Proof visibility" width="max-w-md">
       <div className="space-y-4">
-        <p className="text-[13px] text-fg-secondary">{repo.fullName || repo.name}</p>
+        <p className="text-[13px] text-slate-300">{repo.fullName || repo.name}</p>
         {repo.private ? (
           <div className="space-y-2">
-            <p className="text-[12px] text-fg-secondary">Private repositories are hidden by default. You can choose to publish a safe proof summary only (skills + evidence categories + score). Raw file names and content are never shared.</p>
+            <p className="text-[12px] text-slate-400">Private repositories are hidden by default. You can choose to publish a safe proof summary only (skills + evidence categories + score). Raw file names and content are never shared.</p>
             <Choice active={!priv} label="Keep fully private" hint="No proof appears on your public or recruiter profile." onClick={() => setPriv(false)} icon={EyeOff} />
             <Choice active={priv} label="Show safe proof summary only" hint="Verified skills, evidence categories and proof score — no repo name, URL or files." onClick={() => setPriv(true)} icon={ShieldCheck} />
           </div>
@@ -376,7 +376,7 @@ function VisibilityModal({ repo, onClose, onSaved }) {
             <Choice active={pub} label="Show on public profile" hint="Repo name, proof score and detected skills are shown to recruiters." onClick={() => setPub(true)} icon={Eye} />
           </div>
         )}
-        <div className="flex items-center justify-end gap-2 border-t border-subtle pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
           <Button variant="soft" onClick={onClose}>Cancel</Button>
           <Button onClick={save} disabled={saving}>{saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Save</Button>
         </div>
@@ -387,9 +387,9 @@ function VisibilityModal({ repo, onClose, onSaved }) {
 
 function Choice({ active, label, hint, onClick, icon: Icon }) {
   return (
-    <button onClick={onClick} className={`flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition ${active ? 'border-aurora-violet/50 bg-aurora-violet/[0.08]' : 'border-subtle bg-surface-1 hover:border-strong'}`}>
-      <Icon size={16} className={`mt-0.5 shrink-0 ${active ? 'text-aurora-cyan' : 'text-fg-secondary'}`} />
-      <span><span className="block text-sm font-medium text-fg">{label}</span><span className="block text-xs text-fg-secondary">{hint}</span></span>
+    <button onClick={onClick} className={`flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition ${active ? 'border-aurora-violet/50 bg-aurora-violet/[0.08]' : 'border-white/10 bg-white/[0.02] hover:border-white/20'}`}>
+      <Icon size={16} className={`mt-0.5 shrink-0 ${active ? 'text-aurora-cyan' : 'text-slate-400'}`} />
+      <span><span className="block text-sm font-medium text-white">{label}</span><span className="block text-xs text-slate-400">{hint}</span></span>
     </button>
   );
 }
@@ -407,20 +407,20 @@ function LinkProjectModal({ repo, projects, onClose, onSaved }) {
   return (
     <Modal open={!!repo} onClose={onClose} title="Link repository to a project" width="max-w-md">
       <div className="space-y-3">
-        <p className="text-[13px] text-fg-secondary">Linking adds this repository's verified evidence to a Career Autopilot project. Submit the project for verification to turn evidence into verified skills.</p>
+        <p className="text-[13px] text-slate-300">Linking adds this repository's verified evidence to a Career Autopilot project. Submit the project for verification to turn evidence into verified skills.</p>
         {projects.length ? (
           <div className="max-h-64 space-y-1.5 overflow-y-auto">
             {projects.map((p) => (
-              <button key={p.id} onClick={() => setSel(p.id)} className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition ${sel === p.id ? 'border-aurora-violet/50 bg-aurora-violet/[0.08] text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
+              <button key={p.id} onClick={() => setSel(p.id)} className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition ${sel === p.id ? 'border-aurora-violet/50 bg-aurora-violet/[0.08] text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20'}`}>
                 <span className="truncate">{p.title || 'Untitled project'}</span>
                 {sel === p.id && <CheckCircle2 size={15} className="text-aurora-cyan" />}
               </button>
             ))}
           </div>
         ) : (
-          <p className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 text-[12px] text-fg-secondary">No projects yet — use "Import as project" to create one from this repo.</p>
+          <p className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[12px] text-slate-400">No projects yet — use "Import as project" to create one from this repo.</p>
         )}
-        <div className="flex items-center justify-end gap-2 border-t border-subtle pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
           <Button variant="soft" onClick={onClose}>Cancel</Button>
           <Button onClick={save} disabled={!sel || saving}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />} Link</Button>
         </div>
@@ -440,19 +440,19 @@ function AnalysisDetailModal({ data, onClose }) {
           <Badge tone={a.visibility === 'private' ? 'amber' : 'cyan'}>{a.visibility === 'private' ? <Lock size={11} /> : <Globe size={11} />} {a.visibility}</Badge>
         </div>
         {(a.detectedStack || []).length > 0 && (
-          <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Detected stack</p><div className="flex flex-wrap gap-1.5">{a.detectedStack.map((s) => <Badge key={s} tone="violet">{s}</Badge>)}</div></div>
+          <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Detected stack</p><div className="flex flex-wrap gap-1.5">{a.detectedStack.map((s) => <Badge key={s} tone="violet">{s}</Badge>)}</div></div>
         )}
         {(a.detectedSkills || []).length > 0 && (
-          <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Detected skills (evidence)</p><div className="flex flex-wrap gap-1.5">{a.detectedSkills.map((s) => <Badge key={s} tone="cyan">{s}</Badge>)}</div></div>
+          <div><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Detected skills (evidence)</p><div className="flex flex-wrap gap-1.5">{a.detectedSkills.map((s) => <Badge key={s} tone="cyan">{s}</Badge>)}</div></div>
         )}
         {(a.evidence || []).length > 0 && (
           <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Evidence checklist</p>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Evidence checklist</p>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {a.evidence.map((e) => (
                 <div key={e.key} className="flex items-center gap-2 text-[12px]">
-                  {e.present ? <CheckCircle2 size={13} className="text-aurora-mint" /> : <AlertTriangle size={13} className="text-fg-muted" />}
-                  <span className={e.present ? 'text-fg' : 'text-fg-muted'}>{e.label}</span>
+                  {e.present ? <CheckCircle2 size={13} className="text-aurora-mint" /> : <AlertTriangle size={13} className="text-slate-500" />}
+                  <span className={e.present ? 'text-slate-200' : 'text-slate-500'}>{e.label}</span>
                 </div>
               ))}
             </div>
@@ -461,12 +461,12 @@ function AnalysisDetailModal({ data, onClose }) {
         {a.truncated && <p className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100">Repository too large for full analysis. Partial proof analysis completed.</p>}
         {(a.recommendations || []).length > 0 && (
           <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Recommended improvements</p>
-            <ul className="space-y-1 text-[12px] text-fg-secondary">{a.recommendations.map((r, i) => <li key={i} className="flex gap-2"><span className="text-aurora-cyan">›</span> {r}</li>)}</ul>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Recommended improvements</p>
+            <ul className="space-y-1 text-[12px] text-slate-300">{a.recommendations.map((r, i) => <li key={i} className="flex gap-2"><span className="text-aurora-cyan">›</span> {r}</li>)}</ul>
           </div>
         )}
-        {a.verificationSummary && <p className="text-[12px] leading-relaxed text-fg-secondary">{a.verificationSummary}</p>}
-        <div className="flex justify-end border-t border-subtle pt-4"><Button variant="soft" onClick={onClose}>Close</Button></div>
+        {a.verificationSummary && <p className="text-[12px] leading-relaxed text-slate-400">{a.verificationSummary}</p>}
+        <div className="flex justify-end border-t border-white/10 pt-4"><Button variant="soft" onClick={onClose}>Close</Button></div>
       </div>
     </Modal>
   );

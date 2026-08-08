@@ -67,7 +67,7 @@ export default function VerificationStatus({ go }) {
       <>
         <PageIntro title={title} sub="Your verified access is active." />
         <SectionCard title="Access approved" action={<Badge tone="mint"><ShieldCheck size={11} /> Approved</Badge>}>
-          <div className="flex flex-col gap-3 text-sm text-fg-secondary">
+          <div className="flex flex-col gap-3 text-sm text-slate-300">
             <p>Your verified workspace is available.</p>
             <div><Button onClick={() => go?.(isCollege ? 'college' : 'recruiter')}>Open workspace</Button></div>
           </div>
@@ -84,9 +84,9 @@ export default function VerificationStatus({ go }) {
         action={<Badge tone={statusTone(status)}><Icon size={11} /> {status === 'none' ? 'Not requested' : status}</Badge>}
       >
         <div className="space-y-4">
-          <div className="rounded-2xl border border-subtle bg-surface-1 p-4 text-sm text-fg-secondary">
-            <p className="font-medium text-fg">Access is locked until approval.</p>
-            <p className="mt-1 text-fg-secondary">Your onboarding role is treated as intent only. Recruiter and placement-cell data require server-approved verification.</p>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-sm text-slate-300">
+            <p className="font-medium text-white">Access is locked until approval.</p>
+            <p className="mt-1 text-slate-400">Your onboarding role is treated as intent only. Recruiter and placement-cell data require server-approved verification.</p>
           </div>
 
           {status === 'pending' ? (
@@ -96,7 +96,7 @@ export default function VerificationStatus({ go }) {
           ) : (
             <div className="grid gap-3 md:grid-cols-[1fr,auto] md:items-end">
               <div>
-                <label className="mb-1 block text-xs font-medium text-fg-secondary">
+                <label className="mb-1 block text-xs font-medium text-slate-400">
                   {isCollege ? 'College ID / official college identifier' : 'Organization ID / company identifier'}
                 </label>
                 {isCollege ? (
@@ -116,7 +116,7 @@ export default function VerificationStatus({ go }) {
               Your previous request was rejected. Update the identifier above and submit again if needed.
             </div>
           )}
-          {message && <p className="text-sm text-fg-secondary">{message}</p>}
+          {message && <p className="text-sm text-slate-300">{message}</p>}
         </div>
       </SectionCard>
     </>

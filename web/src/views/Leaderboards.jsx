@@ -20,13 +20,13 @@ function Row({ entry, idx, segment, onView }) {
         ? <Badge tone="violet">{m.referralContributions} referrals offered</Badge>
         : <ScoreRing score={entry.score ?? m.readiness ?? 0} label="Score" />;
   return (
-    <div className={`rounded-2xl border p-4 transition ${isMe ? 'border-aurora-cyan/40 bg-aurora-cyan/[0.05]' : 'border-subtle bg-surface-1 hover:border-strong'}`}>
+    <div className={`rounded-2xl border p-4 transition ${isMe ? 'border-aurora-cyan/40 bg-aurora-cyan/[0.05]' : 'border-white/10 bg-white/[0.02] hover:border-white/25'}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-violet/15 font-display text-sm font-bold text-aurora-cyan">#{idx + 1}</span>
           <div>
-            <p className="font-medium text-fg">{entry.name}{isMe && <span className="ml-2 text-[11px] text-aurora-cyan">You</span>}</p>
-            <p className="text-xs text-fg-secondary">{entry.targetRole || '—'} · {m.level || 'Beginner'} · {m.careerXP || 0} XP</p>
+            <p className="font-medium text-white">{entry.name}{isMe && <span className="ml-2 text-[11px] text-aurora-cyan">You</span>}</p>
+            <p className="text-xs text-slate-400">{entry.targetRole || '—'} · {m.level || 'Beginner'} · {m.careerXP || 0} XP</p>
           </div>
         </div>
         {headline}
@@ -37,7 +37,7 @@ function Row({ entry, idx, segment, onView }) {
         <Badge tone={trustTone(entry.trustLevel)}><ShieldCheck size={11} /> {entry.trustScore}</Badge>
         {m.topProject && <Badge tone="default">Best: {m.topProject.title}</Badge>}
       </div>
-      <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
+      <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
         <div className="flex gap-1.5">
           {m.hasGithubVerified && <Badge tone="violet"><Github size={11} /> Verified</Badge>}
           {m.missionStreak > 0 && <Badge tone="amber"><Flame size={11} /> {m.missionStreak}w</Badge>}
@@ -74,7 +74,7 @@ export default function Leaderboards({ go }) {
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         {LEADERBOARD_SEGMENTS.map((s) => (
           <button key={s.id} onClick={() => setSeg(s.id)}
-            className={`whitespace-nowrap rounded-xl border px-3.5 py-2 text-[13px] transition ${seg === s.id ? 'border-aurora-violet/50 bg-aurora-violet/15 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
+            className={`whitespace-nowrap rounded-xl border px-3.5 py-2 text-[13px] transition ${seg === s.id ? 'border-aurora-violet/50 bg-aurora-violet/15 text-white' : 'border-white/10 bg-white/[0.02] text-slate-400 hover:border-white/20'}`}>
             {s.title}
           </button>
         ))}
@@ -94,7 +94,7 @@ export default function Leaderboards({ go }) {
         )}
       </SectionCard>
 
-      <p className="mt-4 text-center text-[11px] text-fg-muted">
+      <p className="mt-4 text-center text-[11px] text-slate-500">
         Cross-user leaderboards populate as members make profiles public and publish verified projects. With no backend database configured, only your own eligible profile appears.
       </p>
     </>

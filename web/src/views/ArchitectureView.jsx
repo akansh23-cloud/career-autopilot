@@ -36,8 +36,8 @@ function Bar({ label, value, max }) {
   const tone = pct >= 80 ? '#57E6A8' : pct >= 50 ? '#6EE0F2' : '#EAC97C';
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-fg-secondary">{label}</span><span className="tabular-nums text-fg-secondary">{value}/{max}</span></div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .8s ease' }} /></div>
+      <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-slate-300">{label}</span><span className="tabular-nums text-slate-400">{value}/{max}</span></div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .8s ease' }} /></div>
     </div>
   );
 }
@@ -46,7 +46,7 @@ function ListBlock({ title, items }) {
   if (!items?.length) return null;
   return (
     <SectionCard title={title}>
-      <ul className="space-y-1.5">{items.map((s, i) => <li key={i} className="text-[13px] text-fg-secondary">• {typeof s === 'string' ? s : JSON.stringify(s)}</li>)}</ul>
+      <ul className="space-y-1.5">{items.map((s, i) => <li key={i} className="text-[13px] text-slate-300">• {typeof s === 'string' ? s : JSON.stringify(s)}</li>)}</ul>
     </SectionCard>
   );
 }
@@ -54,10 +54,10 @@ function ListBlock({ title, items }) {
 function Select({ value, onChange, options }) {
   return (
     <div className="relative">
-      <select value={value} onChange={onChange} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50">
+      <select value={value} onChange={onChange} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50">
         {options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
       </select>
-      <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+      <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
     </div>
   );
 }
@@ -132,7 +132,7 @@ export default function ArchitectureView() {
           <Field label="Project title"><Input value={form.title} onChange={f('title')} placeholder="e.g. Real-time CI/CD cost dashboard" /></Field>
           <div className="mt-3"><Field label="Tech stack (comma-separated)"><Input value={form.techStack} onChange={f('techStack')} placeholder="React, Node.js, PostgreSQL, Redis, Docker, AWS" /></Field></div>
           <div className="mt-3"><Field label="Description">
-            <textarea value={form.description} onChange={f('description')} placeholder="What does it do? Any scale, auth, async or AI needs?" className="h-24 w-full resize-none rounded-xl border border-subtle bg-surface-1 p-3 text-sm text-fg outline-none focus:border-aurora-violet/50" />
+            <textarea value={form.description} onChange={f('description')} placeholder="What does it do? Any scale, auth, async or AI needs?" className="h-24 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50" />
           </Field></div>
           <div className="mt-3 grid grid-cols-2 gap-3">
             <Field label="Maturity level"><Select value={form.level} onChange={f('level')} options={LEVELS} /></Field>
@@ -148,7 +148,7 @@ export default function ArchitectureView() {
 
         <div className="space-y-4">
           {!result && !spec ? (
-            <SectionCard><div className="py-10 text-center text-sm text-fg-muted"><Boxes size={28} className="mx-auto mb-2 text-fg-muted" /> Your architecture, diagrams and quality score appear here.</div></SectionCard>
+            <SectionCard><div className="py-10 text-center text-sm text-slate-500"><Boxes size={28} className="mx-auto mb-2 text-slate-600" /> Your architecture, diagrams and quality score appear here.</div></SectionCard>
           ) : (
             <>
               {result && (
@@ -159,9 +159,9 @@ export default function ArchitectureView() {
                     <Badge tone="default">{LEVELS.find((l) => l[0] === result.level)?.[1] || result.level}</Badge>
                     {spec?.pattern && <Badge tone="cyan">{spec.pattern.name} · {spec.pattern.confidence} confidence</Badge>}
                   </div>
-                  <p className="text-sm text-fg-secondary">{result.executiveSummary}</p>
-                  <p className="mt-2 text-[13px] text-fg-secondary">{result.recommendedStyle.rationale}</p>
-                  {narrative && <p className="mt-3 whitespace-pre-wrap border-t border-subtle pt-3 text-[13px] text-fg-secondary">{narrative}</p>}
+                  <p className="text-sm text-slate-300">{result.executiveSummary}</p>
+                  <p className="mt-2 text-[13px] text-slate-400">{result.recommendedStyle.rationale}</p>
+                  {narrative && <p className="mt-3 whitespace-pre-wrap border-t border-white/8 pt-3 text-[13px] text-slate-300">{narrative}</p>}
                 </SectionCard>
               )}
 
@@ -173,7 +173,7 @@ export default function ArchitectureView() {
                   </div>
                   {activeView && (
                     <>
-                      {activeView.description && <p className="mb-2 text-[12px] text-fg-muted">{activeView.description}</p>}
+                      {activeView.description && <p className="mb-2 text-[12px] text-slate-500">{activeView.description}</p>}
                       <ArchitectureCanvas view={activeView} height={460} />
                       <div className="mt-3">
                         <ArchitectureExportPanel spec={spec} view={activeView} />
@@ -181,15 +181,15 @@ export default function ArchitectureView() {
                     </>
                   )}
                   {/* Refine with instructions */}
-                  <div className="mt-4 border-t border-subtle pt-3">
-                    <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-fg-muted">Refine this architecture</p>
+                  <div className="mt-4 border-t border-white/8 pt-3">
+                    <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">Refine this architecture</p>
                     <div className="flex gap-2">
                       <Input value={refineText} onChange={(e) => setRefineText(e.target.value)} placeholder='e.g. "Add Redis cache, SQS queue, worker service, monitoring, backup flow, and CI/CD"' onKeyDown={(e) => { if (e.key === 'Enter') refine(); }} />
                       <Button variant="soft" onClick={refine} disabled={refining || refineText.trim().length < 3}>
                         {refining ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} Refine
                       </Button>
                     </div>
-                    {refineMsg && <p className="mt-2 text-[12px] text-fg-secondary">{refineMsg}</p>}
+                    {refineMsg && <p className="mt-2 text-[12px] text-slate-400">{refineMsg}</p>}
                   </div>
                 </SectionCard>
               ) : result && (
@@ -197,15 +197,15 @@ export default function ArchitectureView() {
                 <SectionCard title="Diagrams">
                   <div className="mb-3 flex flex-wrap gap-2">
                     {LEGACY_DIAGRAMS.map(([id, label, Icon]) => (
-                      <button key={id} onClick={() => setDiagram(id)} className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition ${diagram === id ? 'border-aurora-violet/60 bg-aurora-violet/10 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
+                      <button key={id} onClick={() => setDiagram(id)} className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition ${diagram === id ? 'border-aurora-violet/60 bg-aurora-violet/10 text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/25'}`}>
                         <Icon size={13} /> {label}
                       </button>
                     ))}
                   </div>
                   <LegacyMermaidDiagram mermaid={result.diagrams[diagram]} height={340} />
                   <details className="mt-2">
-                    <summary className="cursor-pointer text-[11px] text-fg-muted">Copy Mermaid source</summary>
-                    <pre className="mt-2 overflow-x-auto rounded-lg border border-subtle bg-base/60 p-3 text-[11px] text-fg-secondary">{result.diagrams[diagram]}</pre>
+                    <summary className="cursor-pointer text-[11px] text-slate-500">Copy Mermaid source</summary>
+                    <pre className="mt-2 overflow-x-auto rounded-lg border border-white/8 bg-ink-950/60 p-3 text-[11px] text-slate-400">{result.diagrams[diagram]}</pre>
                   </details>
                 </SectionCard>
               )}
@@ -229,7 +229,7 @@ export default function ArchitectureView() {
 
               {result?.gaps?.length > 0 && (
                 <SectionCard title="Architecture gaps">
-                  <ul className="space-y-2">{result.gaps.map((g, i) => <li key={i} className="flex gap-2 text-sm text-fg-secondary"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-glow" /> {g}</li>)}</ul>
+                  <ul className="space-y-2">{result.gaps.map((g, i) => <li key={i} className="flex gap-2 text-sm text-slate-300"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-glow" /> {g}</li>)}</ul>
                 </SectionCard>
               )}
 

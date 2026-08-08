@@ -60,22 +60,22 @@ export default function AdminCollegesPanel() {
         </Button>
         <Button size="sm" variant="soft" onClick={load}><RefreshCw size={13} /></Button>
       </div>}>
-      {seedMsg && <p className="mb-3 rounded-xl border border-aurora-violet/30 bg-aurora-violet/[0.07] p-3 text-[12.5px] text-fg">{seedMsg}</p>}
+      {seedMsg && <p className="mb-3 rounded-xl border border-aurora-violet/30 bg-aurora-violet/[0.07] p-3 text-[12.5px] text-slate-200">{seedMsg}</p>}
       {loading ? <Spinner /> : error ? (
         <EmptyState icon={Building2} title="Couldn't load the registry" hint={error} />
       ) : colleges.length === 0 ? (
-        <p className="text-[12.5px] text-fg-muted">No colleges registered yet. TPOs register from Settings → My College; new registrations land here for activation.</p>
+        <p className="text-[12.5px] text-slate-500">No colleges registered yet. TPOs register from Settings → My College; new registrations land here for activation.</p>
       ) : (
         <div className="space-y-1">
           {[...pending, ...active].map((c) => (
-            <div key={c.key} className="flex flex-wrap items-center justify-between gap-3 border-b border-subtle py-2 last:border-0">
+            <div key={c.key} className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 py-2 last:border-0">
               <div className="min-w-0">
-                <p className="flex items-center gap-2 text-[13.5px] font-medium text-fg">
+                <p className="flex items-center gap-2 text-[13.5px] font-medium text-white">
                   {c.name}
                   <Badge tone={c.status === 'active' ? 'mint' : c.status === 'pending' ? 'amber' : 'default'}>{c.status}</Badge>
                   {c.demo && <Badge tone="violet">demo</Badge>}
                 </p>
-                <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-fg-muted">
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-slate-500">
                   <span className="font-mono">{c.key}</span>
                   {c.city && <span>{c.city}</span>}
                   {(c.domains || []).length > 0 && <span className="inline-flex items-center gap-1"><Globe size={10} /> {(c.domains || []).join(', ')}</span>}

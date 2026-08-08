@@ -36,7 +36,7 @@ export function CodePreviewPanel({ open, onClose, loading, generatedFiles = [], 
             <div className="mt-3 flex flex-wrap gap-1.5">
               {generatedFiles.map((f, i) => (
                 <button key={f.path} onClick={() => setActive(i)}
-                  className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] transition ${i === active ? 'border-aurora-violet/40 bg-aurora-violet/10 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
+                  className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] transition ${i === active ? 'border-aurora-violet/40 bg-aurora-violet/10 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}>
                   {f.path}
                 </button>
               ))}
@@ -45,16 +45,16 @@ export function CodePreviewPanel({ open, onClose, loading, generatedFiles = [], 
           {file && (
             <>
               <div className="mt-3 flex items-center justify-between gap-2">
-                <span className="truncate font-mono text-[12px] text-fg-secondary">{file.path}</span>
+                <span className="truncate font-mono text-[12px] text-slate-400">{file.path}</span>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={copy}>{copied ? <Check size={14} /> : <Copy size={14} />} Copy</Button>
                   <Button variant="ghost" size="sm" onClick={downloadFile}><Download size={14} /> Download file</Button>
                 </div>
               </div>
-              <pre className="mt-2 max-h-[50vh] overflow-auto rounded-xl bg-sunken p-4 font-mono text-[11.5px] leading-relaxed text-fg">{file.content}</pre>
+              <pre className="mt-2 max-h-[50vh] overflow-auto rounded-xl bg-black/40 p-4 font-mono text-[11.5px] leading-relaxed text-slate-200">{file.content}</pre>
             </>
           )}
-          {!generatedFiles.length && <p className="mt-4 text-center text-[13px] text-fg-muted">No template is available for this selection yet.</p>}
+          {!generatedFiles.length && <p className="mt-4 text-center text-[13px] text-slate-500">No template is available for this selection yet.</p>}
           {warnings.length > 0 && (
             <ul className="mt-3 space-y-1">{warnings.map((w, i) => <li key={i} className="text-[12px] text-amber-200/80">• {w}</li>)}</ul>
           )}
@@ -74,21 +74,21 @@ export function StarterPackPreview({ open, onClose, loading, files = [], setupCo
         <>
           <div className="mt-4">
             <div className="mb-2 flex items-center justify-between">
-              <span className="font-mono text-[10px] uppercase tracking-widest text-fg-muted">Included files ({files.length})</span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Included files ({files.length})</span>
               <Badge tone="cyan">Templates only</Badge>
             </div>
-            <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-xl border border-subtle bg-sunken p-3">
+            <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-xl border border-white/8 bg-black/20 p-3">
               {files.map((f, i) => (
                 <div key={i} className="flex items-center justify-between font-mono text-[11.5px]">
-                  <span className="truncate text-fg-secondary">{typeof f === 'string' ? f : f.path}</span>
-                  {f.bytes != null && <span className="shrink-0 text-fg-muted">{f.bytes} B</span>}
+                  <span className="truncate text-slate-300">{typeof f === 'string' ? f : f.path}</span>
+                  {f.bytes != null && <span className="shrink-0 text-slate-600">{f.bytes} B</span>}
                 </div>
               ))}
             </div>
           </div>
           <div className="mt-4">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-fg-muted">Setup commands</span>
-            <pre className="mt-1.5 rounded-xl bg-sunken p-3 font-mono text-[12px] text-fg">{(setupCommands || []).join('\n')}</pre>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Setup commands</span>
+            <pre className="mt-1.5 rounded-xl bg-black/30 p-3 font-mono text-[12px] text-slate-200">{(setupCommands || []).join('\n')}</pre>
           </div>
           {warnings.length > 0 && (
             <ul className="mt-3 space-y-1">{warnings.map((w, i) => <li key={i} className="text-[12px] text-amber-200/80">• {w}</li>)}</ul>

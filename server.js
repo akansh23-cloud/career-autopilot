@@ -6,7 +6,6 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import * as db from './db.js';
-import demoTalent from './server/utils/demoTalentData.js';
 import * as subs from './paymentsStore.js';
 import * as access from './access.js';
 import { FAQS, QUICK_ACTIONS, matchFaq } from './support-kb.js';
@@ -63,10 +62,6 @@ import { registerProjectStoreRoutes } from './server/routes/projectStoreRoutes.j
 import { registerOpsRoutes } from './server/routes/opsRoutes.js';
 import { registerCollegeRoutes } from './server/routes/collegeRoutes.js';
 import { registerTeamProjectRoutes } from './server/routes/teamProjectRoutes.js';
-import { registerTeamProgressRoutes } from './server/routes/teamProgressRoutes.js';
-import { registerJobSearchRoute } from './server/routes/jobSearchRoute.js';
-import { patchAppAsync, installProcessGuards, errorMiddleware } from './server/utils/asyncRoute.js';
-import progressEngine from './server/utils/teamProgressEngine.js';
 import { requestIdMiddleware, createErrorHandler } from './server/utils/observability.js';
 import { createQuotaMiddleware } from './server/utils/quotaMiddleware.js';
 import { generateArchitectureSpec } from './server/utils/architecture/index.js';
@@ -106,14 +101,6 @@ config.assertEnvOrExit(logger);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-
-/* Express 4 does not catch rejections from `async (req, res)` handlers, and this
-   app registers ~100 of them with no try/catch. Without this, one throw becomes
-   an unhandled rejection and Node terminates the process. patchAppAsync wraps
-   every handler registered from here on; installProcessGuards is the backstop
-   for rejections that escape from timers and fire-and-forget calls. */
-patchAppAsync(app);
-installProcessGuards(logger);
 
 app.set('trust proxy', 1); // honor X-Forwarded-Proto (Vercel/Render/etc.) so Secure cookies work
 app.disable('x-powered-by'); // do not advertise Express
@@ -187,6 +174,8 @@ app.use(session({
 app.use(csrfCookieIssuer);
 app.use(csrfProtection);
 
+/* Gentle global rate ceiling (skipped in the test env). */
+app.use(globalLimiter);
 
 /* Serve the frontend so the whole tool runs from one origin (no CORS for same-origin calls).
    Prefer the built React/Vite app in dist/. Fall back to the legacy single-file UI if dist
@@ -200,17 +189,6 @@ const UI_INDEX = HAS_DIST
   : path.join(__dirname, 'legacy_index.html');
 
 app.use(express.static(UI_DIR));
-
-/* Gentle global rate ceiling (skipped in the test env).
-   Mounted AFTER express.static and exempting asset requests on purpose: the
-   limiter falls back to keying on req.ip for unauthenticated requests, and a
-   college computer lab shares one NAT public IP. With this before static, a
-   single cohort cold-loading the SPA blew the per-minute bucket on JS chunks
-   alone and every subsequent API call 429'd. */
-app.use((req, res, next) => {
-  if (req.method === 'GET' && /\.(js|mjs|css|woff2?|png|jpe?g|svg|ico|webp|map|txt)$/i.test(req.path)) return next();
-  return globalLimiter(req, res, next);
-});
 
 /* Explicit root route for platforms like Vercel where static index serving can be skipped. */
 app.get('/', (req, res) => {
@@ -996,28 +974,171 @@ app.post('/jobs/verify', async (req, res) => {
 });
 
 /* ============================================================
-   GET /jobs/search  — registered from server/routes/jobSearchRoute.js
-   ------------------------------------------------------------
-   The inline route that used to live here gated jobs in ONE hard
-   pass (role -> location -> mode) and returned an empty array the
-   moment any filter failed, with no explanation. That is what
-   produced "unable to find any job with any filter".
-
-   server/utils/jobSearchEngine.js already contained a tested
-   five-step progressive fallback ladder, and jobFilters.js the
-   canonical filter vocabulary — neither was ever imported here.
-   registerJobSearchRoute wires both in. Fetching, verification and
-   caching are unchanged; only gating, ranking and the explanation
-   returned to the UI are different.
+   GET /jobs/search  — fetch -> normalise -> freshness gate ->
+   filter -> de-dupe -> verify URLs -> return only verified jobs
+   query: role, location, mode, freshness(24h|3d|7d), limit, verify(0|1)
    ============================================================ */
-registerJobSearchRoute(app, {
-  jobsLimiter, SOURCES, configuredSources, sourceKey, sourceAllowed,
-  requestedSources, inferSource, sourceFromUrl, balancedBySource,
-  jobKey, verifyMany, withBudget, jobCacheGet, jobCacheSet,
-  maxFreshDaysFromQuery, passesFreshness,
-  validRoleMatch, validLocationMatch,
-  jsearchCountry, logger,
-  RAPIDAPI_KEY, RAPIDAPI_HOST, STRICT_JOB_VERIFICATION, JOB_SEARCH_BUDGET,
+app.get('/jobs/search', jobsLimiter, async (req, res) => {
+  try {
+    const role = req.query.role || 'software engineer';
+    const loc = req.query.location || '';
+    const mode = req.query.mode || 'Any';
+    const maxDays = maxFreshDaysFromQuery(req.query.freshness || '7d');
+    const limit = Math.max(1, Math.min(40, Number(req.query.limit || 12)));
+    const verify = req.query.verify !== '0';
+    const strict = req.query.strict != null
+      ? (req.query.strict === '1' || req.query.strict === 'true')
+      : STRICT_JOB_VERIFICATION;
+    const selected = requestedSources(req);
+
+    // Serve identical recent searches from cache (cuts latency, protects quotas).
+    const cacheKey = JSON.stringify({ role, loc, mode, maxDays, limit, verify, strict, selected: selected ? [...selected].sort() : null });
+    const cached = jobCacheGet(cacheKey);
+    if (cached) return res.json({ ...cached, cached: true });
+
+    const ctx = { role, location: loc, mode, freshness: req.query.freshness || '7d', selectedSources: selected, strict, diag: {} };
+
+    const runnable = SOURCES.filter(s => !selected || sourceAllowed(s.name, selected) || ['SerpAPI','JSearch'].includes(s.name));
+    // Each source already has its own per-fetch timeout; the overall budget is a
+    // hard ceiling so one hung source can never stall the whole response.
+    const settled = await withBudget(
+      Promise.allSettled(runnable.map(s => s.fetch(role, ctx))),
+      JOB_SEARCH_BUDGET,
+      runnable.map(() => ({ status: 'fulfilled', value: [] })),
+    );
+    const configured = configuredSources();
+    const sources = configured.map(x => ({ source: x.source, ok: false, count: 0, active: x.active, integration: x.integration, reason: x.reason || '' }));
+    const sourceIndex = new Map(sources.map((s, i) => [sourceKey(s.source), i]));
+    let jobs = [];
+    runnable.forEach((src, i) => {
+      const r = settled[i];
+      if (r.status === 'fulfilled') {
+        const arr = (r.value || []).map(j => ({ ...j, source: inferSource(j, src.name) }));
+        jobs.push(...arr);
+        const grouped = new Map();
+        arr.forEach(j => grouped.set(j.source, (grouped.get(j.source) || 0) + 1));
+        for (const [name, count] of grouped) {
+          const ix = sourceIndex.get(sourceKey(name));
+          if (ix != null) { sources[ix].ok = true; sources[ix].active = true; sources[ix].count += count; sources[ix].reason = ''; }
+          else sources.push({ source: name, ok: true, active: true, count, integration: src.name, reason: '' });
+        }
+        const pix = sourceIndex.get(sourceKey(src.name));
+        if (pix != null && !grouped.size) { sources[pix].ok = true; sources[pix].active = true; }
+      } else {
+        const ix = sourceIndex.get(sourceKey(src.name));
+        if (ix != null) { sources[ix].ok = false; sources[ix].active = true; sources[ix].error = r.reason?.message || String(r.reason); }
+        else sources.push({ source: src.name, ok: false, active: true, count: 0, error: r.reason?.message || String(r.reason) });
+      }
+    });
+    if (selected) jobs = jobs.filter(j => sourceAllowed(j.source, selected));
+
+    const audit = [];
+    const seen = new Set();
+    let candidates = [];
+    for (const j of jobs) {
+      j.source = inferSource(j, j.source || sourceFromUrl(j.url));
+      let reason = '';
+      if (!j.title || !j.company) reason = 'missing title/company';
+      else if (!j.url || !/^https?:\/\//i.test(j.url)) reason = 'missing direct job URL';
+      else {
+        const fr = passesFreshness(typeof j.postedDays === 'number' ? j.postedDays : null, req.query.freshness || '7d');
+        if (!fr.ok) reason = fr.reason;
+        else if (!validRoleMatch(j, role)) reason = 'role mismatch';
+        else if (!validLocationMatch(j, loc)) reason = 'location mismatch';
+        else if (!validModeMatch(j, mode)) reason = 'work mode mismatch';
+      }
+      const k = jobKey(j);
+      if (!reason && seen.has(k)) reason = 'duplicate';
+      // One audit row per job, mutated in place later if it goes to verification.
+      const row = {
+        title: j.title || '—', company: j.company || '—', source: j.source || '—',
+        postedDate: j.postedDate || '(none)', ageDays: typeof j.postedDays === 'number' ? j.postedDays : 'unknown',
+        decision: reason ? 'EXCLUDED' : 'CANDIDATE', reason: reason || 'passed filters; pending URL verification'
+      };
+      audit.push(row);
+      if (!reason) { seen.add(k); j._auditRow = row; candidates.push(j); }
+    }
+
+    // newest first, then balanced by source so RemoteOK/Remotive cannot dominate the returned set
+    candidates.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
+    const balanced = balancedBySource(candidates, limit * 2);
+    const chosenKeys = new Set(balanced.map(j => jobKey(j)));
+    const overflow = candidates.filter(j => !chosenKeys.has(jobKey(j)));
+    overflow.forEach(j => { if (j._auditRow) { j._auditRow.decision = 'EXCLUDED'; j._auditRow.reason = `beyond balanced result cap (${limit})`; } });
+    candidates = balanced;
+
+    let kept = candidates;
+    if (verify) {
+      const checked = await verifyMany(candidates, 6);
+      kept = [];
+      for (const j of checked) {
+        const row = j._auditRow;
+        if (j.verified) {
+          kept.push(j);
+          if (row) { row.decision = 'INCLUDED'; row.reason = j.verifyLevel === 'live' ? 'verified open (URL reachable)' : 'source-listed active (URL not crawlable)'; }
+        } else if (row) {
+          row.decision = 'EXCLUDED'; row.reason = `URL verification failed: ${j.verifyReason}`;
+        }
+      }
+    } else {
+      candidates.forEach(j => { if (j._auditRow) { j._auditRow.decision = 'INCLUDED'; j._auditRow.reason = 'structured-source job (verification disabled)'; } });
+    }
+
+    kept.sort((a, b) => (a.postedDays ?? 99) - (b.postedDays ?? 99));
+    kept = balancedBySource(kept, limit);
+    // Provider-backed board targets are not direct API calls; do not label them as failed merely because
+    // JSearch/SerpAPI did not return that exact board in this query.
+    // Honest per-source status. A board is NEVER marked "ready"/active unless it
+    // actually returned jobs in THIS search. Provider-backed boards that returned
+    // nothing are reported as no_results, not ready.
+    for (const s of sources) {
+      if (s.ok && Number(s.count || 0) > 0) {
+        s.status = 'fetched';
+      } else if (s.error) {
+        s.status = 'failed';
+        s.reason = s.error;
+      } else if (/SerpAPI|JSearch|search provider/i.test(s.integration || '')) {
+        s.active = false;
+        s.status = 'no_results';
+        s.reason = 'No jobs from this board in this search (discovery runs via JSearch/SerpAPI, not a direct integration).';
+      } else {
+        s.active = false;
+        s.status = 'inactive';
+      }
+    }
+    // strip internal helper before returning
+    kept.forEach(j => { delete j._auditRow; });
+
+    const payload = {
+      jobs: kept, sources, audit, verified: verify,
+      diagnostics: {
+        apiKeyDetected: !!RAPIDAPI_KEY,
+        host: RAPIDAPI_HOST,
+        country: ctx.diag.country || jsearchCountry(loc),
+        query: ctx.diag.query || `${role} jobs in ${loc}`,
+        jsearchReachable: ctx.diag.reachable ?? null,
+        statusCode: ctx.diag.statusCode ?? null,
+        returnedCount: ctx.diag.returnedCount ?? 0,
+        firstPublishers: ctx.diag.firstPublishers || [],
+        strictFreshness: strict,
+        errorCode: ctx.diag.errorCode || (!RAPIDAPI_KEY ? 'MISSING_KEY' : null),
+        errorMessage: ctx.diag.errorMessage || (!RAPIDAPI_KEY ? 'RAPIDAPI_KEY not set. Add it in .env / Vercel env vars and subscribe to JSearch on RapidAPI.' : null)
+      },
+      sourceSummary: {
+        active: sources.filter(s => s.active).map(s => s.source),
+        inactive: sources.filter(s => !s.active).map(s => ({ source: s.source, reason: s.reason })),
+        returned: Object.fromEntries([...new Set(kept.map(j => j.source))].map(src => [src, kept.filter(j => j.source === src).length]))
+      },
+      freshnessDays: maxDays, fetchedAt: new Date().toISOString(),
+      note: verify ? 'Only structured-source jobs that passed URL verification are returned. No AI-generated jobs.'
+                   : 'URL verification disabled (verify=0). Still structured-source only — no AI-generated jobs.'
+    };
+    jobCacheSet(cacheKey, payload);
+    res.json(payload);
+  } catch (e) {
+    logger.error('Job search failed', { message: e.message });
+    res.status(500).json({ error: 'job_search_failed', message: 'Job search failed. Please try again.' });
+  }
 });
 
 /* ============================================================
@@ -2933,14 +3054,6 @@ registerTeamProjectRoutes(app, {
   currentUser, db, logger, computeReadiness,
 });
 
-/* Per-member progress for team projects. Mounted separately so the 586 lines of
-   working tenancy logic in teamProjectRoutes.js stay untouched; same guards,
-   same college scoping. This is what makes individual contribution visible to a
-   placement coordinator instead of only a team-level status. */
-registerTeamProgressRoutes(app, {
-  requireAuth, requireRole, requireCollegeScope, currentUser, db, logger,
-});
-
 /* Recruiter candidate shortlist — ranked by VERIFIED signals only. */
 app.get('/api/recruiter/candidates', requireAuth, requireRole('recruiter', 'admin'), async (req, res) => {
   const filters = { skill: req.query.skill || '', category: req.query.category || '', minScore: req.query.minScore || '' };
@@ -2960,39 +3073,6 @@ app.get('/api/recruiter/candidates', requireAuth, requireRole('recruiter', 'admi
 });
 
 /* Admin: project verification queue (pending / needs_review). */
-/* ============================================================
-   ADMIN — DEMO WORLD SEEDING
-   ------------------------------------------------------------
-   The same seed as `npm run seed:demo`, over HTTP, for a deployment
-   where opening a shell against the cluster is inconvenient. Admin
-   only (ADMIN_EMAILS / persisted admin role).
-
-   `reset: true` rebuilds from scratch. It can only ever delete
-   records tagged demo or addressed @demo-institute.test, so it
-   cannot touch a real college or a real recruiter.
-   ============================================================ */
-app.post('/api/admin/demo/seed', requireAuth, requireAdmin, async (req, res) => {
-  const body = req.body || {};
-  const result = await db.seedDemoCollege({
-    reset: body.reset === true,
-    count: Number(body.perBranch) || 0,
-    talent: body.talent !== false,
-  });
-  res.status(result.ok ? 200 : 400).json(result);
-});
-
-/* Recruiter side only — for a database whose cohort is already seeded and
-   predates the recruiter world. */
-app.post('/api/admin/demo/recruiter-seed', requireAuth, requireAdmin, async (req, res) => {
-  const result = await db.seedDemoTalent({ reset: (req.body || {}).reset === true });
-  res.status(result.ok ? 200 : 400).json(result);
-});
-
-app.get('/api/admin/demo/status', requireAuth, requireAdmin, async (req, res) => {
-  const recruiter = await db.demoTalentStatus().catch(() => ({ seeded: false }));
-  res.json({ ok: true, recruiter, db: db.dbEnabled() });
-});
-
 app.get('/api/admin/verification-queue', requireAuth, requireAdmin, async (req, res) => {
   const queue = await db.verificationQueue({ limit: 100 });
   res.json({ ok: true, queue, db: db.dbEnabled() });
@@ -3123,139 +3203,6 @@ app.post('/api/network/shortlists', requireAuth, requireRole('recruiter', 'admin
     candidateUserId: body.candidateUserId, note: body.note,
   });
   res.status(persistenceStatus(result)).json({ ...result, db: db.dbEnabled() });
-});
-
-/* ============================================================
-   RECRUITER — CAMPUS BRIDGE
-   ------------------------------------------------------------
-   The recruiter-facing counterpart to /api/college/*. Same guard
-   posture as the rest of candidate discovery: recruiter-or-admin
-   only, behind requireAuth.
-
-   Two sources, one shape:
-     · database attached  → the seeded recruiter world, scoped to the
-       caller's own organisation (db.resolveRecruiterOrg). Candidate
-       ids are real user ids, so every row in the pipeline opens a
-       profile that exists.
-     · no database, DEMO_MODE=1 → the in-memory world, for local
-       recording. Nothing is written and nothing persists.
-
-   A caller with no organisation still gets empty collections rather
-   than someone else's requisitions — the client renders its own
-   empty states, the same contract the college routes use. `demo` on
-   every response stays true for seeded data, so a viewer is never
-   invited to mistake it for their own records.
-   ============================================================ */
-const recruiterGuard = [requireAuth, requireRole('recruiter', 'admin')];
-const talentDemoActive = () => demoTalent.demoModeEnabled() && !db.dbEnabled();
-
-/* Which organisation's console the caller sees, or null. requireVerifiedRole
-   has already resolved the access context onto req.userRole. */
-async function recruiterOrgFor(req) {
-  if (!db.dbEnabled()) return null;
-  const ctx = req.userRole || {};
-  try {
-    return await db.resolveRecruiterOrg({
-      organizationId: ctx.organizationId || '',
-      isAdmin: ctx.isAdmin === true,
-    });
-  } catch {
-    return null;
-  }
-}
-
-app.get('/api/recruiter/summary', ...recruiterGuard, async (req, res) => {
-  if (talentDemoActive()) {
-    return res.json({ ok: true, demo: true, summary: demoTalent.demoTalentSummary(), db: false });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) return res.json({ ok: true, demo: false, summary: null, db: db.dbEnabled() });
-  const summary = await db.getRecruiterSummary(orgKey);
-  res.json({ ok: true, demo: !!summary, summary, db: db.dbEnabled() });
-});
-
-app.get('/api/recruiter/requisitions', ...recruiterGuard, async (req, res) => {
-  const status = String(req.query.status || '');
-  if (talentDemoActive()) {
-    let list = demoTalent.demoRequisitions();
-    if (status) list = list.filter((r) => r.status === status);
-    return res.json({ ok: true, demo: true, requisitions: list, db: false });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) return res.json({ ok: true, demo: false, requisitions: [], db: db.dbEnabled() });
-  const requisitions = await db.listRecruiterRequisitions(orgKey, { status });
-  res.json({ ok: true, demo: true, requisitions, db: db.dbEnabled() });
-});
-
-/* Ranked, eligibility-gated candidates for one requisition. This is the bridge
-   mechanic itself: the requisition's criteria are run against the connected
-   campus cohort, and the response explains every match rather than just
-   scoring it. */
-app.get('/api/recruiter/requisitions/:id/matches', ...recruiterGuard, async (req, res) => {
-  const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 25));
-  const id = String(req.params.id);
-
-  if (talentDemoActive()) {
-    const out = demoTalent.demoMatchesForRequisition(id, { limit });
-    if (!out.requisition) return res.status(404).json({ ok: false, error: 'requisition_not_found' });
-    return res.json({ ok: true, demo: true, ...out, db: false });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) return res.json({ ok: true, demo: false, requisition: null, matches: [], db: db.dbEnabled() });
-  const out = await db.getRecruiterMatches(orgKey, id, { limit });
-  if (!out.requisition) return res.status(404).json({ ok: false, error: 'requisition_not_found' });
-  res.json({ ok: true, demo: true, ...out, db: db.dbEnabled() });
-});
-
-app.get('/api/recruiter/pipeline', ...recruiterGuard, async (req, res) => {
-  const filters = {
-    requisitionId: String(req.query.requisitionId || ''),
-    stage: String(req.query.stage || ''),
-  };
-  if (talentDemoActive()) {
-    return res.json({
-      ok: true, demo: true, pipeline: demoTalent.demoPipeline(filters),
-      stages: demoTalent.PIPELINE_STAGES, db: false,
-    });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) {
-    return res.json({ ok: true, demo: false, pipeline: [], stages: demoTalent.PIPELINE_STAGES, db: db.dbEnabled() });
-  }
-  const pipeline = await db.listRecruiterPipeline(orgKey, filters);
-  res.json({ ok: true, demo: true, pipeline, stages: demoTalent.PIPELINE_STAGES, db: db.dbEnabled() });
-});
-
-app.get('/api/recruiter/campus-partners', ...recruiterGuard, async (req, res) => {
-  if (talentDemoActive()) {
-    return res.json({ ok: true, demo: true, partners: demoTalent.demoCampusPartners(), db: false });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) return res.json({ ok: true, demo: false, partners: [], db: db.dbEnabled() });
-  const partners = await db.listRecruiterCampusPartners(orgKey);
-  res.json({ ok: true, demo: true, partners, db: db.dbEnabled() });
-});
-
-/* What our open roles need vs what the connected cohort can actually prove.
-   The one view a recruiter and a placement cell can act on together. */
-app.get('/api/recruiter/skill-gap', ...recruiterGuard, async (req, res) => {
-  if (talentDemoActive()) {
-    return res.json({ ok: true, demo: true, gaps: demoTalent.demoSkillGap(), db: false });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) return res.json({ ok: true, demo: false, gaps: [], db: db.dbEnabled() });
-  const gaps = await db.getRecruiterSkillGap(orgKey);
-  res.json({ ok: true, demo: true, gaps, db: db.dbEnabled() });
-});
-
-app.get('/api/recruiter/interviews', ...recruiterGuard, async (req, res) => {
-  if (talentDemoActive()) {
-    return res.json({ ok: true, demo: true, interviews: demoTalent.demoInterviews(), db: false });
-  }
-  const orgKey = await recruiterOrgFor(req);
-  if (!orgKey) return res.json({ ok: true, demo: false, interviews: [], db: db.dbEnabled() });
-  const interviews = await db.listRecruiterInterviews(orgKey);
-  res.json({ ok: true, demo: true, interviews, db: db.dbEnabled() });
 });
 
 /* ============================================================
@@ -4579,22 +4526,12 @@ function psFallbackProject(input = {}) {
   const role = input.targetRole || 'Software Engineer';
   const type = input.type || 'Full Stack';
   const skills = Array.from(new Set([...(input.sourceMissingSkills || []), ...psTechStack(type)])).slice(0, 12);
-  /* IDENTITY IS THE CALLER'S. When the student clicks "Build this" on a
-     recommendation, that recommendation's title and problem statement ARE the
-     project. This template only fills in what the caller did NOT supply.
-     Previously it unconditionally overwrote the title with a generic
-     "Production-grade <type> project for <role>", so every build in a session
-     came back with the same name — and then deduped into the same workspace. */
-  const title = String(input.title || '').trim()
-    || `Production-grade ${type} project for ${role}`;
-  const problemStatement = String(input.problemStatement || '').trim()
-    || `Demonstrate ${skills.slice(0, 3).join(', ')} with a deployable, recruiter-visible project.`;
+  const title = `Production-grade ${type} project for ${role}`;
   return {
     title, targetRole: role, type, difficulty: input.difficulty || 'Intermediate', duration: input.duration || '1 week',
     skillsCovered: skills, sourceMissingSkills: input.sourceMissingSkills || [],
-    problemStatement,
-    useCase: String(input.useCase || '').trim()
-      || `A practical ${type} project producing real proof-of-work: a deployment, README and measurable results.`,
+    problemStatement: `Demonstrate ${skills.slice(0, 3).join(', ')} with a deployable, recruiter-visible project.`,
+    useCase: `A practical ${type} project producing real proof-of-work: a deployment, README and measurable results.`,
     techStack: psTechStack(type),
     architecture: `Cleanly separated ${type} architecture with tests, CI/CD and a public deployment.`,
     steps: [
@@ -4651,23 +4588,9 @@ app.post('/api/projects/generate-roadmap', requireAuth, generationLimiter, async
     return project;
   };
 
-  /* The caller may have already chosen WHAT to build (a recommendation the
-     student clicked). If so the model designs the *roadmap* for that project —
-     it does not get to rename it. */
-  const pinnedTitle = String(input.title || '').trim();
-  const pinnedProblem = String(input.problemStatement || '').trim();
-  const pinned = pinnedTitle
-    ? `\n\nThe project is ALREADY CHOSEN and must not be renamed or replaced. Use exactly this title: "${pinnedTitle}".${pinnedProblem ? ` Its problem statement is: "${pinnedProblem.slice(0, 600)}". Keep the same problem and users.` : ''} Design the roadmap, stack and architecture FOR THIS project.`
-    : '';
-
-  const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.${pinned}`;
+  const prompt = `You are a senior engineer designing a portfolio project. Return ONLY JSON (no prose) with keys: title, targetRole, type, difficulty, duration, skillsCovered (array), problemStatement, useCase, techStack (array), architecture, steps (array of {phase, tasks[]}). Base it on role="${input.targetRole}", level="${input.difficulty}", duration="${input.duration}", type="${input.type}", missingSkills=${JSON.stringify(input.sourceMissingSkills || [])}, and this JD (optional): """${(input.jd || '').slice(0, 1500)}""". The project must specifically cover the missing skills.`;
   const ai = parseJSONLoose(await anthropicJSON(prompt, 1800));
-  if (ai && ai.title) {
-    // Belt and braces: even a well-prompted model drifts on titles.
-    if (pinnedTitle) ai.title = pinnedTitle;
-    if (pinnedProblem) ai.problemStatement = pinnedProblem;
-    return res.json({ ok: true, project: attachArchitecture(ai), generatedBy: 'ai' });
-  }
+  if (ai && ai.title) return res.json({ ok: true, project: attachArchitecture(ai), generatedBy: 'ai' });
   res.json({ ok: true, project: attachArchitecture(psFallbackProject(input)), generatedBy: 'template' });
 });
 app.post('/api/projects/generate-readme', requireAuth, generationLimiter, async (req, res) => {
@@ -5554,11 +5477,6 @@ app.post('/api/templates/analyze-custom-template', requireAuth, generationLimite
 
 /* JSON 404 for unmatched backend routes (so the SPA fallback never swallows a
    mistyped API path and returns HTML to an API client). */
-/* Terminal error handler. Every async handler is wrapped by patchAppAsync, so a
-   rejection lands here as a clean 500 carrying a requestId the student can quote
-   — instead of killing the process. Must sit after all routes and before the 404. */
-app.use(errorMiddleware(logger));
-
 app.use(['/jobs', '/auth', '/apply', '/ai', '/api', '/contacts', '/opportunities', '/support', '/dashboard', '/profile'], (req, res) => {
   res.status(404).json({ error: 'not_found', message: `No such endpoint: ${req.method} ${req.path}` });
 });

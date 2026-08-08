@@ -24,7 +24,6 @@ import demo from '../server/utils/demoCollegeData.js';
 const store = {
   users: [], states: [], xp: [], subs: [], resumes: [],
   activity: [], roster: [], tasks: [], generic: [], colleges: [],
-  network: [],
 };
 
 /** Minimal chainable stub: only the shapes seedDemoCollege actually calls. */
@@ -36,12 +35,6 @@ function stubModel(bucket) {
     findOne: () => ({ lean: async () => null, select: () => ({ lean: async () => null }) }),
     deleteMany: async () => ({ deletedCount: 0 }),
     find: () => ({ select: () => ({ lean: async () => [] }), lean: async () => [] }),
-    /* The recruiter seed upserts the talent pool. Only the $set payload
-       matters here — capture it as the written document. */
-    bulkWrite: async (ops) => {
-      for (const op of ops) store[bucket].push(op.updateOne?.update?.$set || {});
-      return { upsertedCount: ops.length };
-    },
   };
 }
 
@@ -64,7 +57,6 @@ before(async () => {
     ['ProjectSubmission', 'subs'], ['ResumeAnalysis', 'resumes'],
     ['Activity', 'activity'], ['RosterEntry', 'roster'],
     ['CollegeTask', 'tasks'], ['College', 'colleges'], ['GenericDoc', 'generic'],
-    ['NetworkProfile', 'network'],
   ]) mongoose.models[name] = stubModel(bucket);
 
   db = await import('../db.js');
@@ -264,68 +256,4 @@ test('readiness is persisted so the college overview has something to average', 
   assert.ok(store.states.every((s) => typeof s.readiness?.score === 'number'));
   const avg = store.states.reduce((a, s) => a + s.readiness.score, 0) / store.states.length;
   assert.ok(avg > 0 && avg < 100, `implausible average readiness: ${avg}`);
-});
-
-/* ---------------- recruiter bridge ----------------
-   The recruiter world is written in the same pass as the cohort, against the
-   very ids the cohort was written under. If that link breaks, a recruiter
-   clicks a candidate on a deployment and opens nothing — the one failure the
-   bridge exists to rule out. */
-
-test('the recruiter world is seeded alongside the cohort', () => {
-  const kinds = (k) => store.generic.filter((d) => d.kind === k);
-  assert.equal(kinds('recruiter_org').length, 1);
-  assert.equal(kinds('recruiter_requisition').length, 6);
-  assert.ok(kinds('recruiter_pipeline').length > 0, 'an empty pipeline shows an empty board');
-  assert.ok(kinds('recruiter_campus_partner').length > 0);
-  assert.ok(store.network.length > 0, 'no talent profiles — candidate discovery would be empty');
-});
-
-test('recruiter records are scoped to the org, not the college', () => {
-  const org = store.generic.filter((d) => String(d.kind).startsWith('recruiter_'));
-  for (const d of org) {
-    assert.equal(d.collegeId, 'demo-northwind-systems',
-      'recruiter records under the college scope would be deleted with it');
-  }
-});
-
-test('pipeline and interviews point at real user ids', () => {
-  const userIds = new Set(store.users.map((u) => String(u._id)));
-  const pipeline = store.generic.filter((d) => d.kind === 'recruiter_pipeline');
-  const interviews = store.generic.filter((d) => d.kind === 'recruiter_interview');
-
-  for (const row of pipeline) {
-    assert.ok(!String(row.data.candidateId).startsWith('demo_'),
-      'pipeline row still carries a synthetic candidate id');
-    assert.ok(userIds.has(String(row.data.candidateId)),
-      'pipeline row references a student who was never written');
-  }
-  const pipelineIds = new Set(pipeline.map((d) => d.data.id));
-  for (const iv of interviews) {
-    assert.ok(userIds.has(String(iv.data.candidateId)));
-    assert.ok(pipelineIds.has(iv.data.pipelineId), `orphaned interview ${iv.data.id}`);
-  }
-});
-
-test('talent profiles carry the campus context recruiter filters read', () => {
-  const userIds = new Set(store.users.map((u) => String(u._id)));
-  for (const p of store.network) {
-    assert.ok(userIds.has(String(p.userId)), 'talent profile for a non-existent user');
-    assert.equal(p.demo, true, 'seeded profile must be marked demo so a wipe can find it');
-    assert.equal(p.campus?.collegeId, 'demo-institute-of-technology');
-    assert.ok(typeof p.campus?.branch === 'string' && p.campus.branch.length > 0);
-    assert.ok(typeof p.campus?.cgpa === 'number', 'CGPA gates eligibility and must survive the write');
-    assert.ok(['public', 'published_only'].includes(p.visibility),
-      'a private profile must never be seeded into a recruiter-visible pool');
-  }
-});
-
-test('every seeded candidate is one a recruiter is allowed to see', () => {
-  /* Consent is the load-bearing rule: the pool may only contain students whose
-     proof a recruiter can actually open. */
-  const profileIds = new Set(store.network.map((p) => String(p.userId)));
-  for (const row of store.generic.filter((d) => d.kind === 'recruiter_pipeline')) {
-    assert.ok(profileIds.has(String(row.data.candidateId)),
-      'a candidate is in the funnel without a consent-gated profile');
-  }
 });

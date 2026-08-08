@@ -41,8 +41,8 @@ function ScoreRing({ value = 0, category = '' }) {
         <text x="42" y="47" textAnchor="middle" fill="#EDF2EE" fontSize="19" fontWeight="700">{v}</text>
       </svg>
       <div>
-        <div className="font-display text-sm text-fg">{category || '—'}</div>
-        <div className="text-[11px] uppercase tracking-wider text-fg-muted">Placement readiness</div>
+        <div className="font-display text-sm text-white">{category || '—'}</div>
+        <div className="text-[11px] uppercase tracking-wider text-slate-500">Placement readiness</div>
       </div>
     </div>
   );
@@ -58,7 +58,7 @@ function ComponentBars({ components = {} }) {
     <div className="space-y-2">
       {rows.map(([label, v]) => (
         <div key={label}>
-          <div className="mb-0.5 flex justify-between text-[11px] text-fg-secondary"><span>{label}</span><span className="font-mono">{v}</span></div>
+          <div className="mb-0.5 flex justify-between text-[11px] text-slate-400"><span>{label}</span><span className="font-mono">{v}</span></div>
           <div className="h-1.5 overflow-hidden rounded-full bg-white/6">
             <div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.max(2, v)}%` }} />
           </div>
@@ -81,7 +81,7 @@ function ResumeTrend({ history = [] }) {
         <path d={path} fill="none" stroke="#8FE3F7" strokeWidth="2" strokeLinecap="round" />
         {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.score)} r="3" fill="#BCA8FF" />)}
       </svg>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-fg-muted">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
         {history.slice(0, 3).map((p, i) => (
           <span key={i} className="font-mono">{p.score}/100 · {p.targetRole || 'General'} · {fmtDate(p.at)}</span>
         ))}
@@ -124,13 +124,13 @@ export default function StudentDrilldown({ studentId, seed = null, open, onClose
       {!state.loading && !state.error && s && (
         <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
           {/* Identity + readiness header */}
-          <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-subtle bg-surface-1 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-white/8 bg-white/[0.02] p-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-display text-lg text-fg">{s.name || s.email}</span>
+                <span className="font-display text-lg text-white">{s.name || s.email}</span>
                 {s.readiness?.category && <Badge tone={s.readiness.score >= 65 ? 'mint' : s.readiness.score >= 45 ? 'cyan' : 'amber'}>{s.readiness.category}</Badge>}
               </div>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-fg-secondary">
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-400">
                 <span>{s.email}</span>
                 {s.branch && <span>{s.branch}{s.batch ? ` · ${s.batch}` : ''}</span>}
                 {s.targetRole && <span className="inline-flex items-center gap-1"><Target size={11} /> {s.targetRole}</span>}
@@ -142,29 +142,29 @@ export default function StudentDrilldown({ studentId, seed = null, open, onClose
 
           <div className="grid gap-4 md:grid-cols-2">
             {/* Readiness components + gaps */}
-            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-fg"><BarChart3 size={14} className="text-aurora-cyan" /> Readiness breakdown</div>
+            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200"><BarChart3 size={14} className="text-aurora-cyan" /> Readiness breakdown</div>
               <ComponentBars components={s.readiness?.components || {}} />
               {(s.readiness?.gaps || []).length > 0 && (
-                <ul className="mt-3 space-y-1 border-t border-white/6 pt-3 text-[12px] text-fg-secondary">
+                <ul className="mt-3 space-y-1 border-t border-white/6 pt-3 text-[12px] text-slate-400">
                   {s.readiness.gaps.slice(0, 4).map((g, i) => <li key={i} className="flex gap-1.5"><span className="text-amber-glow">→</span> {g}</li>)}
                 </ul>
               )}
             </div>
 
             {/* Skills: verified ledger vs declared */}
-            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-fg"><ShieldCheck size={14} className="text-aurora-mint" /> Skill ledger</div>
+            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200"><ShieldCheck size={14} className="text-aurora-mint" /> Skill ledger</div>
               {s.skillLedger.length === 0 && <p className="text-sm text-muted">No skill XP yet.</p>}
               <div className="flex flex-wrap gap-1.5">
                 {s.skillLedger.slice(0, 14).map((r) => (
-                  <span key={r.skill} className={`rounded-lg border px-2 py-0.5 text-[11px] ${r.verifiedXp > 0 ? 'border-aurora-mint/30 bg-aurora-mint/10 text-[#BDF5DC]' : 'border-subtle bg-surface-1 text-fg-secondary'}`}>
+                  <span key={r.skill} className={`rounded-lg border px-2 py-0.5 text-[11px] ${r.verifiedXp > 0 ? 'border-aurora-mint/30 bg-aurora-mint/10 text-[#BDF5DC]' : 'border-white/10 bg-white/[0.03] text-slate-400'}`}>
                     {r.skill} <span className="font-mono opacity-70">{r.verifiedXp > 0 ? `${r.verifiedXp}xp` : `${r.pendingXp}xp pending`}</span>
                   </span>
                 ))}
               </div>
               {(s.skills || []).length > 0 && (
-                <p className="mt-3 border-t border-white/6 pt-2 text-[11px] text-fg-muted">
+                <p className="mt-3 border-t border-white/6 pt-2 text-[11px] text-slate-500">
                   Declared on profile: {(s.skills || []).slice(0, 10).join(', ')}{(s.skills || []).length > 10 ? '…' : ''}
                 </p>
               )}
@@ -172,22 +172,22 @@ export default function StudentDrilldown({ studentId, seed = null, open, onClose
           </div>
 
           {/* Project verification pipeline */}
-          <div className="rounded-xl border border-subtle bg-surface-1 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-fg"><FolderCheck size={14} className="text-aurora-violet" /> Projects ({s.projects.length})</div>
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200"><FolderCheck size={14} className="text-aurora-violet" /> Projects ({s.projects.length})</div>
             {s.projects.length === 0 && <p className="text-sm text-muted">No project submissions yet.</p>}
             <ul className="space-y-2">
               {s.projects.slice(0, 8).map((p) => (
-                <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/6 bg-surface-1 px-3 py-2">
+                <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/6 bg-white/[0.015] px-3 py-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm text-fg">{p.title}</div>
-                    <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-fg-muted">
+                    <div className="truncate text-sm text-slate-200">{p.title}</div>
+                    <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
                       {(p.status === 'verified' ? p.verifiedSkills : p.claimedSkills).slice(0, 4).map((sk) => <span key={sk} className="font-mono">{sk}</span>)}
                       <span>{rel(p.updatedAt)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {p.githubUrl && <a href={p.githubUrl} target="_blank" rel="noreferrer" className="text-fg-secondary hover:text-fg"><Github size={14} /></a>}
-                    {p.liveDemoUrl && <a href={p.liveDemoUrl} target="_blank" rel="noreferrer" className="text-fg-secondary hover:text-fg"><ExternalLink size={14} /></a>}
+                    {p.githubUrl && <a href={p.githubUrl} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-white"><Github size={14} /></a>}
+                    {p.liveDemoUrl && <a href={p.liveDemoUrl} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-white"><ExternalLink size={14} /></a>}
                     <Badge tone={STATUS_TONE[p.status] || 'default'}>{p.status.replace('_', ' ')}</Badge>
                   </div>
                 </li>
@@ -197,19 +197,19 @@ export default function StudentDrilldown({ studentId, seed = null, open, onClose
 
           <div className="grid gap-4 md:grid-cols-2">
             {/* Resume trend */}
-            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-fg"><FileText size={14} className="text-aurora-cyan" /> Resume trend</div>
+            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200"><FileText size={14} className="text-aurora-cyan" /> Resume trend</div>
               <ResumeTrend history={s.resumeHistory} />
             </div>
             {/* Activity feed */}
-            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-fg"><ActivityIcon size={14} className="text-aurora-mint" /> Recent activity</div>
+            <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-200"><ActivityIcon size={14} className="text-aurora-mint" /> Recent activity</div>
               {s.activity.length === 0 && <p className="text-sm text-muted">No recorded activity.</p>}
               <ul className="space-y-1.5 text-[12px]">
                 {s.activity.slice(0, 8).map((a, i) => (
-                  <li key={i} className="flex justify-between gap-3 text-fg-secondary">
+                  <li key={i} className="flex justify-between gap-3 text-slate-400">
                     <span className="min-w-0 truncate">{a.text}</span>
-                    <span className="shrink-0 font-mono text-fg-muted">{rel(a.at)}</span>
+                    <span className="shrink-0 font-mono text-slate-600">{rel(a.at)}</span>
                   </li>
                 ))}
               </ul>
@@ -219,8 +219,8 @@ export default function StudentDrilldown({ studentId, seed = null, open, onClose
           {/* Quick actions */}
           <div className="flex flex-wrap items-center gap-2 border-t border-white/6 pt-3">
             <Button size="sm" variant="soft" onClick={nudge}><Bell size={13} /> Nudge student</Button>
-            {notifyStatus && <span className="text-[12px] text-fg-muted">{notifyStatus}</span>}
-            <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-fg-muted"><Sparkles size={11} /> Scores are deterministic — verified signals only</span>
+            {notifyStatus && <span className="text-[12px] text-slate-500">{notifyStatus}</span>}
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-slate-600"><Sparkles size={11} /> Scores are deterministic — verified signals only</span>
           </div>
         </div>
       )}

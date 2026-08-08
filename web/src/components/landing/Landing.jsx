@@ -156,7 +156,7 @@ function Logo() {
       <span className="grid h-9 w-9 place-items-center rounded-full btn-primary shadow-glow ring-1 ring-white/25">
         <ShieldCheck size={17} strokeWidth={2.5} className="relative z-[2] text-ink-950" />
       </span>
-      <span className="font-display text-[17px] font-extrabold tracking-tight text-fg">Career&nbsp;Autopilot</span>
+      <span className="font-display text-[17px] font-extrabold tracking-tight text-white">Career&nbsp;Autopilot</span>
     </div>
   );
 }
@@ -181,12 +181,12 @@ function Nav({ onSignIn }) {
     <header className="fixed inset-x-0 top-0 z-50 px-3">
       <div className={cx(
         'mx-auto flex max-w-7xl items-center justify-between rounded-2xl border px-4 transition-all duration-300 sm:px-5',
-        scrolled ? 'mt-2 border-subtle bg-base/80 py-2 shadow-lift backdrop-blur-xl' : 'mt-4 border-transparent bg-transparent py-3'
+        scrolled ? 'mt-2 border-white/10 bg-ink-900/80 py-2 shadow-lift backdrop-blur-xl' : 'mt-4 border-transparent bg-transparent py-3'
       )}>
         <Logo />
         <nav className="hidden items-center gap-7 md:flex">
           {links.map(([l, h]) => (
-            <a key={l} href={h} className="group relative text-sm text-fg-secondary transition hover:text-fg">
+            <a key={l} href={h} className="group relative text-sm text-slate-400 transition hover:text-white">
               {l}
               <span className="absolute -bottom-1 left-0 h-px w-0 bg-aurora-violet transition-all duration-300 group-hover:w-full" />
             </a>
@@ -195,13 +195,13 @@ function Nav({ onSignIn }) {
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onSignIn} className="hidden sm:inline-flex">Sign in</Button>
           <Button size="sm" onClick={onSignIn}>Get started <ArrowRight size={15} /></Button>
-          <button onClick={() => setOpen((v) => !v)} className="grid h-9 w-9 place-items-center rounded-xl border border-subtle text-fg md:hidden">{open ? <X size={18} /> : <Menu size={18} />}</button>
+          <button onClick={() => setOpen((v) => !v)} className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 text-slate-200 md:hidden">{open ? <X size={18} /> : <Menu size={18} />}</button>
         </div>
       </div>
       {open && (
-        <div className="mx-auto mt-2 max-w-7xl rounded-2xl border border-subtle bg-base/95 p-4 backdrop-blur-xl md:hidden">
+        <div className="mx-auto mt-2 max-w-7xl rounded-2xl border border-white/10 bg-ink-900/95 p-4 backdrop-blur-xl md:hidden">
           {links.map(([l, h]) => (
-            <a key={l} href={h} onClick={() => setOpen(false)} className="block border-b border-subtle py-3 font-display text-xl text-fg">{l}</a>
+            <a key={l} href={h} onClick={() => setOpen(false)} className="block border-b border-white/8 py-3 font-display text-xl text-white">{l}</a>
           ))}
           <Button className="mt-4 w-full justify-center" onClick={() => { setOpen(false); onSignIn(); }}>Get started <ArrowRight size={15} /></Button>
         </div>
@@ -214,11 +214,11 @@ function FloatCard({ className, icon: Icon, tone, title, sub, delay = 0 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay, duration: 0.7 }}
-      className={cx('absolute z-20 flex items-center gap-2.5 rounded-2xl border border-white/12 bg-elevated/85 px-3.5 py-2.5 shadow-lift backdrop-blur-xl', className)}
+      className={cx('absolute z-20 flex items-center gap-2.5 rounded-2xl border border-white/12 bg-ink-850/85 px-3.5 py-2.5 shadow-lift backdrop-blur-xl', className)}
     >
       <span className={cx('grid h-8 w-8 shrink-0 place-items-center rounded-lg', tone)}><Icon size={15} /></span>
       <div className="leading-tight">
-        <div className="text-[13px] font-semibold text-fg">{title}</div>
+        <div className="text-[13px] font-semibold text-white">{title}</div>
         <div className="text-[11px] text-muted">{sub}</div>
       </div>
     </motion.div>
@@ -243,7 +243,7 @@ function Hero({ onSignIn }) {
             Your career, on autopilot
           </motion.span>
 
-          <h1 className="mt-5 font-display text-[clamp(42px,6.6vw,84px)] font-extrabold leading-[0.94] text-fg">
+          <h1 className="mt-5 font-display text-[clamp(42px,6.6vw,84px)] font-extrabold leading-[0.94] text-white">
             <motion.span initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.06 }} className="block">From résumé to</motion.span>
             <motion.span initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.14 }} className="block">
               <span className="text-flow"><Decode text="offer letter" /></span>,
@@ -253,7 +253,7 @@ function Hero({ onSignIn }) {
 
           <motion.p
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.3 }}
-            className="mt-6 max-w-xl text-[17px] leading-relaxed text-fg-secondary/90"
+            className="mt-6 max-w-xl text-[17px] leading-relaxed text-slate-300/90"
           >
             One flight deck that screens roles, tailors your résumé, builds proof-of-work projects, and reaches out — so you land the role faster, with less guesswork.
           </motion.p>
@@ -270,7 +270,7 @@ function Hero({ onSignIn }) {
 
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.5 }}
-            className="mt-7 flex items-center gap-3 text-sm text-fg-secondary"
+            className="mt-7 flex items-center gap-3 text-sm text-slate-400"
           >
             <div className="flex -space-x-2">
               {['#BCA8FF', '#6EE0F2', '#57E6A8', '#7C6BF2'].map((c) => (
@@ -278,12 +278,12 @@ function Hero({ onSignIn }) {
               ))}
             </div>
             <span className="flex items-center gap-1 text-amber-glow">{[0, 1, 2, 3, 4].map((i) => <Star key={i} size={13} fill="currentColor" />)}</span>
-            <span>loved by <b className="text-fg">12,000+</b> job-seekers</span>
+            <span>loved by <b className="text-white">12,000+</b> job-seekers</span>
           </motion.div>
 
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.58 }}
-            className="mt-9 grid max-w-md grid-cols-3 gap-6 border-t border-subtle pt-6"
+            className="mt-9 grid max-w-md grid-cols-3 gap-6 border-t border-white/8 pt-6"
           >
             <Stat value={18} suffix=" days" label="Avg. time to offer" />
             <Stat value={96} suffix="%" label="Match precision" />
@@ -295,7 +295,7 @@ function Hero({ onSignIn }) {
           {/* orbital rings */}
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <div className="h-[380px] w-[380px] animate-spin-slow rounded-full border border-aurora-violet/15" />
-            <div className="absolute h-[300px] w-[300px] rounded-full border border-dashed border-subtle" />
+            <div className="absolute h-[300px] w-[300px] rounded-full border border-dashed border-white/10" />
           </div>
           <div className="absolute inset-0 grid place-items-center"><NetworkSphere /></div>
           <FloatCard className="left-0 top-6" icon={ShieldCheck} tone="bg-aurora-mint/15 text-aurora-mint" title="Profile verified" sub="Proof-of-work confirmed" delay={0.6} />
@@ -311,15 +311,15 @@ function Marquee() {
   const items = ['Résumé Studio', 'Verified Jobs', 'Proof-of-Work', 'GitHub Sync', 'Smart Outreach', 'Skill Badges', 'Referral Exchange', 'Leaderboards'];
   const row = [...items, ...items];
   return (
-    <div className="relative mt-24 space-y-3 overflow-hidden border-y border-subtle py-6 pause-on-hover">
+    <div className="relative mt-24 space-y-3 overflow-hidden border-y border-white/8 py-6 pause-on-hover">
       <div className="mask-fade-x flex w-max animate-marquee gap-10">
         {row.map((t, i) => (
-          <span key={`a${i}`} className="flex items-center gap-10 whitespace-nowrap font-display text-lg font-semibold text-fg-secondary/55">{t}<span className="text-aurora-violet/50">◆</span></span>
+          <span key={`a${i}`} className="flex items-center gap-10 whitespace-nowrap font-display text-lg font-semibold text-slate-400/55">{t}<span className="text-aurora-violet/50">◆</span></span>
         ))}
       </div>
       <div className="mask-fade-x flex w-max animate-marquee-rev gap-10 opacity-60">
         {row.map((t, i) => (
-          <span key={`b${i}`} className="flex items-center gap-10 whitespace-nowrap font-display text-lg font-medium text-fg-muted/50">{t}<span className="text-aurora-cyan/40">◆</span></span>
+          <span key={`b${i}`} className="flex items-center gap-10 whitespace-nowrap font-display text-lg font-medium text-slate-500/50">{t}<span className="text-aurora-cyan/40">◆</span></span>
         ))}
       </div>
     </div>
@@ -330,8 +330,8 @@ function SectionHead({ kicker, title, sub, id }) {
   return (
     <div id={id} className="mx-auto max-w-2xl text-center">
       <V><Tele>{kicker}</Tele></V>
-      <V i={1}><h2 className="mt-3 font-display text-[clamp(30px,4.4vw,54px)] font-extrabold leading-[1.02] text-fg">{title}</h2></V>
-      {sub && <V i={2}><p className="mt-4 text-[16px] text-fg-secondary">{sub}</p></V>}
+      <V i={1}><h2 className="mt-3 font-display text-[clamp(30px,4.4vw,54px)] font-extrabold leading-[1.02] text-white">{title}</h2></V>
+      {sub && <V i={2}><p className="mt-4 text-[16px] text-slate-400">{sub}</p></V>}
     </div>
   );
 }
@@ -357,8 +357,8 @@ function MatchRing({ pct = 96 }) {
         </defs>
       </svg>
       <div className="absolute text-center">
-        <div className="font-display text-2xl font-extrabold text-fg">{pct}%</div>
-        <div className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">match</div>
+        <div className="font-display text-2xl font-extrabold text-white">{pct}%</div>
+        <div className="font-mono text-[9px] uppercase tracking-widest text-slate-500">match</div>
       </div>
     </div>
   );
@@ -375,24 +375,24 @@ function Bento() {
             <div className="gradient-border spotlight ticks lift relative flex h-full flex-col overflow-hidden p-7 hover:border-aurora-violet/35 hover:shadow-lift">
               <div className="flex items-center justify-between">
                 <span className="grid h-12 w-12 place-items-center rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 text-aurora-violet"><FileText size={22} /></span>
-                <span className="font-mono text-xs text-fg-muted">01</span>
+                <span className="font-mono text-xs text-slate-600">01</span>
               </div>
-              <h3 className="mt-5 font-display text-[26px] font-extrabold text-fg">Résumé Studio</h3>
-              <p className="mt-2 max-w-md text-[15px] leading-relaxed text-fg-secondary">AI rewrites every bullet against the live job description, tunes for ATS, and exports a recruiter-ready PDF in seconds.</p>
+              <h3 className="mt-5 font-display text-[26px] font-extrabold text-white">Résumé Studio</h3>
+              <p className="mt-2 max-w-md text-[15px] leading-relaxed text-slate-400">AI rewrites every bullet against the live job description, tunes for ATS, and exports a recruiter-ready PDF in seconds.</p>
               {/* mini before/after */}
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-fg-muted">Before</div>
-                  <p className="mt-2 text-sm leading-relaxed text-fg-muted line-through decoration-rose-400/40">Worked on the backend and helped the team ship features.</p>
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Before</div>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-500 line-through decoration-rose-400/40">Worked on the backend and helped the team ship features.</p>
                 </div>
                 <div className="rounded-2xl border border-aurora-mint/25 bg-aurora-mint/[0.06] p-4">
                   <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[#BDF5DC]"><Sparkles size={11} /> Tailored</div>
-                  <p className="mt-2 text-sm leading-relaxed text-fg">Shipped 6 Go microservices cutting p95 latency 38%, unblocking 4 product launches.</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-200">Shipped 6 Go microservices cutting p95 latency 38%, unblocking 4 product launches.</p>
                 </div>
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 {['ATS-tuned', 'Per-role tailoring', 'PDF export', 'Keyword gaps'].map((c) => (
-                  <span key={c} className="rounded-full border border-subtle bg-surface-1 px-3 py-1 text-xs font-medium text-fg-secondary">{c}</span>
+                  <span key={c} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-slate-300">{c}</span>
                 ))}
               </div>
             </div>
@@ -406,8 +406,8 @@ function Bento() {
               <MatchRing pct={96} />
               <div>
                 <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-aurora-cyan"><Radar size={11} /> Job Engine</span>
-                <h3 className="mt-1.5 font-display text-[20px] font-extrabold text-fg">Verified roles, ranked.</h3>
-                <p className="mt-1.5 text-sm text-fg-secondary">Real match scores, tracked from applied to offer.</p>
+                <h3 className="mt-1.5 font-display text-[20px] font-extrabold text-white">Verified roles, ranked.</h3>
+                <p className="mt-1.5 text-sm text-slate-400">Real match scores, tracked from applied to offer.</p>
               </div>
             </div>
           </Tilt>
@@ -419,10 +419,10 @@ function Bento() {
             <div className="gradient-border spotlight lift flex h-full flex-col overflow-hidden p-6 hover:border-aurora-violet/35 hover:shadow-lift">
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-aurora-violet"><Wand2 size={11} /> Project Studio</span>
-                <span className="inline-flex items-center gap-1 text-[11px] text-fg-muted"><GitBranch size={12} /> synced</span>
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><GitBranch size={12} /> synced</span>
               </div>
-              <h3 className="mt-2 font-display text-[20px] font-extrabold text-fg">Proof recruiters trust.</h3>
-              <p className="mt-1.5 text-sm text-fg-secondary">Generate projects, sync GitHub, earn evidence-based badges.</p>
+              <h3 className="mt-2 font-display text-[20px] font-extrabold text-white">Proof recruiters trust.</h3>
+              <p className="mt-1.5 text-sm text-slate-400">Generate projects, sync GitHub, earn evidence-based badges.</p>
               <div className="mt-auto flex flex-wrap gap-2 pt-4">
                 {['React', 'Node', 'Docker', '+ badge'].map((c) => (
                   <span key={c} className="rounded-full border border-aurora-mint/25 bg-aurora-mint/10 px-2.5 py-1 text-[11px] font-medium text-[#BDF5DC]">{c}</span>
@@ -434,11 +434,11 @@ function Bento() {
 
         {/* metric strip */}
         <V i={1} className="lg:col-span-3">
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-subtle bg-surface-1 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/8 bg-white/[0.04] sm:grid-cols-4">
             {[['Bullets rewritten', '2.4M'], ['Verified roles', '40K'], ['Avg. ATS lift', '+34%'], ['Offers landed', '12K']].map(([k, v]) => (
-              <div key={k} className="bg-base/80 p-5">
+              <div key={k} className="bg-ink-900/80 p-5">
                 <div className="font-display text-2xl font-extrabold text-aurora">{v}</div>
-                <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-fg-muted">{k}</div>
+                <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-slate-500">{k}</div>
               </div>
             ))}
           </div>
@@ -466,11 +466,11 @@ function Sequence() {
               <Tilt className="h-full" max={6}>
                 <div className="panel spotlight relative h-full p-6">
                   <div className="flex items-center justify-between">
-                    <span className="grid h-12 w-12 place-items-center rounded-2xl border border-subtle bg-gradient-to-b from-ink-800 to-ink-900 text-aurora-violet shadow-glow"><s.icon size={20} /></span>
-                    <span className="font-display text-3xl font-extrabold text-fg/[0.08]">0{i + 1}</span>
+                    <span className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-gradient-to-b from-ink-800 to-ink-900 text-aurora-violet shadow-glow"><s.icon size={20} /></span>
+                    <span className="font-display text-3xl font-extrabold text-white/[0.08]">0{i + 1}</span>
                   </div>
-                  <h3 className="mt-4 font-display text-[18px] font-extrabold text-fg">{s.t}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-fg-secondary">{s.d}</p>
+                  <h3 className="mt-4 font-display text-[18px] font-extrabold text-white">{s.t}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{s.d}</p>
                 </div>
               </Tilt>
             </V>
@@ -484,7 +484,7 @@ function Sequence() {
 function Bar({ label, pct, color }) {
   return (
     <div>
-      <div className="flex items-center justify-between text-xs"><span className="text-fg-secondary">{label}</span><span className="text-fg-muted">{pct}%</span></div>
+      <div className="flex items-center justify-between text-xs"><span className="text-slate-300">{label}</span><span className="text-slate-500">{pct}%</span></div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/8">
         <motion.div className={cx('h-full rounded-full', color)} initial={{ width: 0 }} whileInView={{ width: `${pct}%` }} viewport={{ once: true }} transition={{ duration: 1.2, ease: [0.2, 0.7, 0.2, 1] }} />
       </div>
@@ -501,11 +501,11 @@ function Deck() {
         <Tilt max={4}>
           <div className="mx-auto mt-14 max-w-5xl">
             <div className="gradient-border spotlight ticks relative overflow-hidden p-2 shadow-lift">
-              <div className="rounded-[14px] border border-subtle bg-base/85 p-5 sm:p-7">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-subtle pb-5">
+              <div className="rounded-[14px] border border-white/8 bg-ink-900/85 p-5 sm:p-7">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-5">
                   <div>
                     <Tele>Workspace · Live</Tele>
-                    <div className="mt-1 font-display text-xl font-extrabold text-fg">Good evening, Kamal</div>
+                    <div className="mt-1 font-display text-xl font-extrabold text-white">Good evening, Kamal</div>
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-mint/30 bg-aurora-mint/12 px-2.5 py-1 text-[11px] font-medium text-[#BDF5DC]">
                     <span className="h-1.5 w-1.5 rounded-full bg-aurora-mint" style={{ animation: 'blink 1.6s ease-in-out infinite' }} /> All systems go
@@ -513,17 +513,17 @@ function Deck() {
                 </div>
                 <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
                   {metrics.map(([k, v, c]) => (
-                    <div key={k} className="rounded-2xl border border-subtle bg-surface-1 p-4">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted">{k}</div>
+                    <div key={k} className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">{k}</div>
                       <div className={cx('mt-1 font-display text-2xl font-extrabold', c)}>{v}</div>
                     </div>
                   ))}
                 </div>
                 <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                  <div className="rounded-2xl border border-subtle bg-surface-1 p-4 lg:col-span-2">
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4 lg:col-span-2">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-fg"><KanbanSquare size={15} className="text-aurora-violet" /> Pipeline</div>
-                      <Activity size={14} className="text-fg-muted" />
+                      <div className="flex items-center gap-2 text-sm font-semibold text-white"><KanbanSquare size={15} className="text-aurora-violet" /> Pipeline</div>
+                      <Activity size={14} className="text-slate-600" />
                     </div>
                     <div className="mt-3 space-y-2.5">
                       <Bar label="Cloud Engineer · Acme" pct={96} color="bg-aurora-cta" />
@@ -538,8 +538,8 @@ function Deck() {
                     </svg>
                   </div>
                   <div className="rounded-2xl border border-aurora-violet/20 bg-aurora-violet/[0.06] p-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-fg"><Sparkles size={15} className="text-aurora-violet" /> Next best move</div>
-                    <p className="mt-2 text-sm text-fg-secondary">Tailor your résumé for the Acme role — 4 keywords missing.</p>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white"><Sparkles size={15} className="text-aurora-violet" /> Next best move</div>
+                    <p className="mt-2 text-sm text-slate-300">Tailor your résumé for the Acme role — 4 keywords missing.</p>
                     <button className="btn-primary mt-4 w-full rounded-lg py-2 text-xs font-bold">Tailor now</button>
                   </div>
                 </div>
@@ -567,8 +567,8 @@ function Personas() {
             <Tilt className="h-full" max={7}>
               <div className="panel spotlight h-full p-6 text-center">
                 <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 text-aurora-violet"><x.icon size={24} /></span>
-                <h3 className="mt-4 font-display text-[20px] font-extrabold text-fg">{x.t}</h3>
-                <p className="mt-2 text-sm text-fg-secondary">{x.d}</p>
+                <h3 className="mt-4 font-display text-[20px] font-extrabold text-white">{x.t}</h3>
+                <p className="mt-2 text-sm text-slate-400">{x.d}</p>
               </div>
             </Tilt>
           </V>
@@ -582,7 +582,7 @@ function Numbers() {
   return (
     <section id="numbers" className="px-4 py-24 sm:px-6">
       <V>
-        <div className="relative mx-auto grid max-w-5xl grid-cols-2 gap-8 overflow-hidden rounded-3xl border border-subtle bg-base/50 p-10 sm:grid-cols-4">
+        <div className="relative mx-auto grid max-w-5xl grid-cols-2 gap-8 overflow-hidden rounded-3xl border border-white/8 bg-ink-900/50 p-10 sm:grid-cols-4">
           <div className="pointer-events-none absolute inset-0 dotgrid opacity-30" />
           <div className="relative"><Stat value={40000} label="Verified roles tracked" /></div>
           <div className="relative"><Stat value={96} suffix="%" label="Match precision" /></div>
@@ -600,12 +600,12 @@ function Quote() {
       <V>
         <div className="mx-auto max-w-3xl text-center">
           <span className="block font-display text-7xl leading-[0.4] text-aurora-violet/45">“</span>
-          <p className="font-display text-[clamp(22px,2.7vw,36px)] font-bold leading-snug text-fg">
+          <p className="font-display text-[clamp(22px,2.7vw,36px)] font-bold leading-snug text-white">
             I went from scattered tabs to a single deck that told me exactly what to do next. Offer in <span className="text-aurora">eighteen days</span>.
           </p>
           <div className="mt-7 flex items-center justify-center gap-3">
             <span className="grid h-12 w-12 place-items-center rounded-full btn-primary font-bold"><span className="relative z-[2]">AK</span></span>
-            <div className="text-left"><b className="font-semibold text-fg">Ananya K.</b><small className="block text-muted">Final-year CS student → Cloud Engineer</small></div>
+            <div className="text-left"><b className="font-semibold text-white">Ananya K.</b><small className="block text-muted">Final-year CS student → Cloud Engineer</small></div>
           </div>
         </div>
       </V>
@@ -624,15 +624,15 @@ function FinalCTA({ onSignIn }) {
             <span className="outline-text font-display text-[clamp(60px,14vw,180px)] font-extrabold leading-none">LIFTOFF</span>
           </div>
           <Tele>Cleared for departure</Tele>
-          <h2 className="mt-4 font-display text-[clamp(30px,4.8vw,56px)] font-extrabold leading-[1.02] text-fg">Your career, on autopilot.</h2>
-          <p className="mx-auto mt-4 max-w-xl text-[16px] text-fg-secondary">Free to start. No card. Land your next role with a full flight deck behind you.</p>
+          <h2 className="mt-4 font-display text-[clamp(30px,4.8vw,56px)] font-extrabold leading-[1.02] text-white">Your career, on autopilot.</h2>
+          <p className="mx-auto mt-4 max-w-xl text-[16px] text-slate-300">Free to start. No card. Land your next role with a full flight deck behind you.</p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <Magnetic>
               <Button size="lg" onClick={onSignIn} className="glow-ring">Get started free <ArrowRight size={16} /></Button>
             </Magnetic>
             <Button size="lg" variant="outline" onClick={onSignIn}>Talk to sales</Button>
           </div>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-fg-muted">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-500">
             {['No credit card', 'Cancel anytime', 'Verified jobs only'].map((t) => (
               <span key={t} className="inline-flex items-center gap-1.5"><Check size={13} className="text-aurora-mint" /> {t}</span>
             ))}
@@ -650,27 +650,27 @@ function Footer() {
     ['Legal', [['Privacy', '#/legal/privacy'], ['Terms', '#/legal/terms'], ['Refunds & Cancellation', '#/legal/refunds'], ['Grievance', '#/legal/contact']]],
   ];
   return (
-    <footer className="border-t border-subtle px-4 py-14 sm:px-6">
+    <footer className="border-t border-white/8 px-4 py-14 sm:px-6">
       <div className="mx-auto grid max-w-7xl gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div>
           <Logo />
-          <p className="mt-4 max-w-xs text-sm text-fg-muted">The AI flight deck for your career — from résumé to offer letter.</p>
+          <p className="mt-4 max-w-xs text-sm text-slate-500">The AI flight deck for your career — from résumé to offer letter.</p>
           <div className="mt-5 flex gap-3">
             {[Github, Linkedin, Twitter].map((I, i) => (
-              <a key={i} href="#" className="grid h-9 w-9 place-items-center rounded-xl border border-subtle text-fg-secondary transition hover:border-aurora-violet/40 hover:text-fg"><I size={16} /></a>
+              <a key={i} href="#" className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 text-slate-400 transition hover:border-aurora-violet/40 hover:text-white"><I size={16} /></a>
             ))}
           </div>
         </div>
         {cols.map(([h, items]) => (
           <div key={h}>
-            <h4 className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-secondary">{h}</h4>
+            <h4 className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">{h}</h4>
             <ul className="space-y-2.5">
-              {items.map(([label, href]) => <li key={label}><a href={href} className="text-sm text-fg-muted transition hover:text-fg">{label}</a></li>)}
+              {items.map(([label, href]) => <li key={label}><a href={href} className="text-sm text-slate-500 transition hover:text-white">{label}</a></li>)}
             </ul>
           </div>
         ))}
       </div>
-      <div className="mx-auto mt-12 max-w-7xl border-t border-subtle pt-6 text-center text-xs text-fg-muted">
+      <div className="mx-auto mt-12 max-w-7xl border-t border-white/8 pt-6 text-center text-xs text-slate-600">
         © {new Date().getFullYear()} Career Autopilot. Cleared for takeoff.
       </div>
     </footer>
@@ -689,17 +689,17 @@ function CollegesSection({ onSignIn }) {
     <section id="colleges" className="relative px-4 py-20 sm:px-6">
       <div className="mx-auto max-w-7xl">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-aurora-cyan">For placement cells</p>
-        <h2 className="mt-3 max-w-2xl font-display text-3xl font-semibold text-fg sm:text-4xl">
+        <h2 className="mt-3 max-w-2xl font-display text-3xl font-semibold text-white sm:text-4xl">
           Find out who isn't ready in week 4 — not in placement week.
         </h2>
-        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-fg-secondary">
+        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-slate-400">
           Career Autopilot gives Training &amp; Placement teams a live, consent-gated view of every student's verified readiness, with nudges and task assignments that actually reach them.
         </p>
         <div className="mt-9 grid gap-4 md:grid-cols-3">
           {props.map(([h, p]) => (
-            <div key={h} className="rounded-2xl border border-subtle bg-surface-1 p-5 transition hover:border-aurora-violet/30">
-              <h3 className="font-display text-[15px] font-semibold text-fg">{h}</h3>
-              <p className="mt-2 text-[13px] leading-relaxed text-fg-secondary">{p}</p>
+            <div key={h} className="rounded-2xl border border-white/8 bg-white/[0.02] p-5 transition hover:border-aurora-violet/30">
+              <h3 className="font-display text-[15px] font-semibold text-white">{h}</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{p}</p>
             </div>
           ))}
         </div>
@@ -707,10 +707,10 @@ function CollegesSection({ onSignIn }) {
           <button onClick={onSignIn} className="rounded-xl btn-primary px-5 py-2.5 text-sm font-semibold text-ink-950">
             Register your college — free pilot
           </button>
-          <a href="#/legal/contact" className="rounded-xl border border-white/12 px-5 py-2.5 text-sm text-fg-secondary transition hover:border-strong hover:text-fg">
+          <a href="#/legal/contact" className="rounded-xl border border-white/12 px-5 py-2.5 text-sm text-slate-300 transition hover:border-white/25 hover:text-white">
             Talk to us first
           </a>
-          <span className="text-[12px] text-fg-muted">8-week pilot · one branch · written success criteria · no payment details.</span>
+          <span className="text-[12px] text-slate-500">8-week pilot · one branch · written success criteria · no payment details.</span>
         </div>
       </div>
     </section>

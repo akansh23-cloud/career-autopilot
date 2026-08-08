@@ -16,15 +16,6 @@ const URI = process.env.MONGODB_URI || '';
    so it cannot mix with or overwrite real records. See
    server/utils/demoCollegeData.js. */
 import demoCollege from './server/utils/demoCollegeData.js';
-/* The recruiter-side demo world. It is a projection of the SAME cohort as
-   demoCollege — same students, same ids, same proof — so the placement-cell
-   view and the recruiter view can never disagree. */
-import demoTalent from './server/utils/demoTalentData.js';
-/* Persistable projection of that recruiter world (synthetic student ids
-   rewritten to real ObjectIds), plus the DB-agnostic maths both the in-memory
-   and the seeded path run through. */
-import recruiterWorld, { DEMO_ORG_KEY, RECRUITER_KINDS } from './server/utils/recruiterWorld.js';
-import { computeMatches, computeSkillGap, computeSummary } from './server/utils/recruiterAnalytics.js';
 const demoOn = () => !URI && demoCollege.demoModeEnabled();
 export const dbEnabled = () => !!URI;
 
@@ -1339,16 +1330,7 @@ async function collegeScopeMembers(scope, { readinessData = true } = {}) {
      callers pass readinessData:false to manage accounts that haven't
      consented yet. */
   const consentFilter = readinessData ? { 'consent.collegeVisibility': true } : {};
-  /* Staff are not students. A TPO is bound to their own college and accepts the
-     same consent as everyone else, so without this they appeared in their own
-     student directory as a blank row — no branch, no skills, readiness 0 —
-     dragging the cohort average down and occupying a seat in auto-formed
-     project teams. Membership administration passes readinessData:false and
-     still sees every account, staff included. */
-  const staffFilter = readinessData
-    ? { accountType: { $nin: ['college_admin', 'admin', 'recruiter'] } }
-    : {};
-  const bound = await User.find({ collegeId: scope, isActive: { $ne: false }, ...consentFilter, ...staffFilter })
+  const bound = await User.find({ collegeId: scope, isActive: { $ne: false }, ...consentFilter })
     .select('name email collegeId collegeMembership targetRole createdAt lastLoginAt updatedAt consent')
     .limit(ADMIN_DIRECTORY_FETCH_CAP).lean();
 
@@ -2126,12 +2108,6 @@ const networkProfileSchema = new mongoose.Schema(
     openToJobs: { type: Boolean, default: false },
     showEmail: { type: Boolean, default: false },
     metrics: { type: mongoose.Schema.Types.Mixed, default: {} },        // derived snapshot (XP/proof/badges/readiness/streak/projects)
-    /* Campus context (branch/batch/CGPA/backlogs/readiness). Recruiter
-       eligibility gates read this, so it has to survive the write — a strict
-       schema silently dropped it before, and every campus filter matched
-       nobody. */
-    campus: { type: mongoose.Schema.Types.Mixed, default: {} },
-    demo: { type: Boolean, default: false, index: true },   // seeded, not earned
     engagement: { type: mongoose.Schema.Types.Mixed, default: { shortlistCount: 0, contactCount: 0, referralSuccess: 0, spamReports: 0, fakeReports: 0 } },
     trustScore: { type: Number, default: 0 },                  // recomputed server-side only
     trustLevel: { type: String, default: 'New' },
@@ -2910,17 +2886,7 @@ export async function getNetworkProfile({ viewerUserId, targetUserId, targetEmai
 }
 
 export async function listNetworkProfiles({ forRecruiter = false } = {}) {
-  if (!URI) {
-    if (!demoOn()) return [];
-    /* Consent is enforced here, not in the UI. The demo pool already contains
-       only students with recruiter-openable proof; this second gate mirrors the
-       Mongo query above — a recruiter additionally sees opted-in profiles,
-       while everyone else sees only the public ones. */
-    const all = demoTalent.demoTalentProfiles();
-    return forRecruiter
-      ? all.filter((p) => p.visibility === 'public' || p.visibility === 'published_only' || p.openToRecruiters)
-      : all.filter((p) => p.visibility === 'public');
-  }
+  if (!URI) return [];
   try {
     await connectDB();
     const or = [{ visibility: 'public' }, { visibility: 'published_only' }];
@@ -5413,7 +5379,7 @@ function submissionsFor(row, detail, userId, lastActiveMs) {
   });
 }
 
-export async function seedDemoCollege({ reset = false, count = 0, talent = true } = {}) {
+export async function seedDemoCollege({ reset = false, count = 0 } = {}) {
   if (!URI) return { ok: false, reason: 'db_disabled', message: 'Demo seeding needs MongoDB (set MONGODB_URI).' };
   try {
     await connectDB();
@@ -5434,10 +5400,6 @@ export async function seedDemoCollege({ reset = false, count = 0, talent = true 
        never try to write a six-figure cohort into a shared cluster. */
     const perBranch = Math.max(1, Math.min(125, Number(count) || demoCollege.DEMO_PER_BRANCH));
     if (perBranch !== demoCollege.DEMO_PER_BRANCH) demoCollege._regenerate(perBranch);
-    /* The recruiter world memoises a projection of the cohort. Resizing the
-       cohort without clearing it would seed a pipeline built against students
-       who are no longer in the database. */
-    demoTalent._reset();
 
     const meta = demoCollege.demoCollege();
     const { rows } = demoCollege.demoStudentsDeep();
@@ -5655,27 +5617,8 @@ export async function seedDemoCollege({ reset = false, count = 0, talent = true 
     });
     if (taskDocs.length) await CollegeTask.insertMany(taskDocs, NO_TS);
 
-    /* ---------------- recruiter side of the same world ----------------
-       Written here rather than in a second pass because `idFor` is already
-       built: the recruiter pipeline has to point at the very ObjectIds the
-       cohort was just written under, or a recruiter clicks a candidate and
-       gets nothing. */
-    let recruiter = { skipped: true };
-    if (talent !== false) {
-      try {
-        recruiter = await writeRecruiterWorld({
-          idFor, collegeKey: DEMO_COLLEGE_KEY, cohortSize: userDocs.length,
-        });
-      } catch (err) {
-        /* A recruiter-side failure must not invalidate a good cohort seed —
-           report it and let `seedDemoTalent()` retry on its own. */
-        console.error('[db] recruiter world seed failed:', err.message);
-        recruiter = { failed: true, error: err.message };
-      }
-    }
-
     return {
-      ok: true, seeded: true, collegeKey: DEMO_COLLEGE_KEY, recruiter,
+      ok: true, seeded: true, collegeKey: DEMO_COLLEGE_KEY,
       students: userDocs.length,
       perBranch, branches: meta.branches, batches: meta.batches,
       drives: drives.length, outcomes: outcomeDocs.length,
@@ -5712,391 +5655,5 @@ export async function wipeDemoCollege() {
      every reset. */
   const GenericDoc = genericDocModel();
   await GenericDoc.deleteMany({ collegeId: DEMO_COLLEGE_KEY }).catch(() => {});
-  /* The recruiter world is a projection of this cohort — leaving it behind
-     would strand a pipeline pointing at deleted students. */
-  const talent = await wipeDemoTalent().catch(() => ({ docs: 0, profiles: 0 }));
-  return { ok: true, wiped: ids.length, recruiterDocs: talent.docs || 0, talentProfiles: talent.profiles || 0 };
+  return { ok: true, wiped: ids.length };
 }
-
-/* ============================================================
-   RECRUITER ↔ CAMPUS BRIDGE — PERSISTED
-   ------------------------------------------------------------
-   The college seed writes a cohort. This writes the recruiter side
-   of the same world so the bridge works on a real deployment, not
-   only on a laptop with DEMO_MODE=1.
-
-   WHY IT IS PERSISTED AT ALL
-     /api/recruiter/* used to serve the in-memory world and return
-     empty collections whenever a database was attached — which is
-     every deployment. The console rendered its empty state and the
-     bridge could not be demonstrated anywhere but localhost.
-
-   WHAT IS WRITTEN
-     NetworkProfile   the consent-gated talent pool, one per seeded
-                      student, so a recruiter clicking a candidate
-                      lands on a profile that actually resolves
-     GenericDoc       recruiter_org / _requisition / _pipeline /
-                      _interview / _campus_partner, scoped by
-                      DEMO_ORG_KEY
-
-   WHAT IS NOT
-     Matches, skill gap and KPIs are never stored. They are computed
-     per request from the rows above through recruiterAnalytics.js —
-     the same functions the in-memory path uses. Storing them would
-     let a seeded dashboard drift away from the records it claims to
-     summarise.
-
-   SCOPE / SAFETY
-     Every record carries demo: true, the org domain is a reserved
-     .test address, and the whole world lives under one scope key so
-     wipeDemoTalent() can remove all of it. A real recruiter's
-     records share none of these and are never touched.
-   ============================================================ */
-
-export const DEMO_RECRUITER_ORG_KEY = DEMO_ORG_KEY;
-
-const RECRUITER_VISIBILITY_OR = [
-  { visibility: 'public' },
-  { visibility: 'published_only' },
-  { openToRecruiters: true },
-];
-
-/* Write the recruiter world for an already-seeded cohort.
-   `idFor` maps synthetic student id -> ObjectId; the college seed has it in
-   hand, so it calls this directly rather than re-deriving it. */
-async function writeRecruiterWorld({ idFor, collegeKey, cohortSize = 0 }) {
-  const world = recruiterWorld.buildRecruiterWorld({ idFor, collegeKey, cohortSize });
-  const GenericDoc = genericDocModel();
-  const now = new Date();
-
-  /* ---- talent pool ---- */
-  const ops = world.profiles.map((p) => ({
-    updateOne: {
-      filter: { userId: new mongoose.Types.ObjectId(p.userId) },
-      update: {
-        $set: {
-          userId: new mongoose.Types.ObjectId(p.userId),
-          name: p.name, picture: p.picture || null, role: p.role || 'student',
-          targetRole: p.targetRole || '', track: p.track || '',
-          yearSem: p.campus?.year || '', location: p.location || '',
-          college: p.college || '', company: p.company || '',
-          links: p.links || {},
-          visibility: p.visibility || 'published_only',
-          openToRecruiters: !!p.openToRecruiters,
-          openToReferrals: !!p.openToReferrals,
-          openToCollaboration: !!p.openToCollaboration,
-          openToInternships: !!p.openToInternships,
-          openToJobs: !!p.openToJobs,
-          metrics: p.metrics || {},
-          campus: p.campus || {},
-          trustScore: p.trustScore || 0,
-          trustLevel: p.trustLevel || 'New',
-          completeness: p.completeness || 0,
-          demo: true,
-        },
-      },
-      upsert: true,
-    },
-  }));
-  if (ops.length) await NetworkProfile.bulkWrite(ops, { ordered: false });
-
-  /* ---- org, requisitions, pipeline, interviews, partners ---- */
-  const docs = [
-    { kind: 'recruiter_org', data: world.org },
-    ...world.requisitions.map((d) => ({ kind: 'recruiter_requisition', data: d, at: d.createdAt })),
-    ...world.pipeline.map((d) => ({ kind: 'recruiter_pipeline', data: d, at: d.enteredAt })),
-    ...world.interviews.map((d) => ({ kind: 'recruiter_interview', data: d, at: d.scheduledAt })),
-    ...world.partners.map((d) => ({ kind: 'recruiter_campus_partner', data: d, at: d.connectedAt || d.invitedAt })),
-  ].map((d) => ({
-    kind: d.kind, collegeId: DEMO_ORG_KEY, data: d.data,
-    createdAt: asDate(d.at, now), updatedAt: asDate(d.at, now),
-  }));
-
-  await GenericDoc.insertMany(docs, NO_TS);
-
-  return {
-    orgKey: DEMO_ORG_KEY,
-    talentProfiles: world.profiles.length,
-    requisitions: world.requisitions.length,
-    pipelineRows: world.pipeline.length,
-    interviews: world.interviews.length,
-    campusPartners: world.partners.length,
-    recruiterEmail: recruiterWorld.DEMO_RECRUITER_EMAIL,
-  };
-}
-
-/* Seed the recruiter world on its own — for a database whose cohort is already
-   there and only the recruiter side is missing. Rebuilds the id map by reading
-   the seeded students back and joining on email, which is stable across
-   re-seeds because the generator derives addresses from the roll number. */
-export async function seedDemoTalent({ reset = false } = {}) {
-  if (!URI) return { ok: false, reason: 'db_disabled', message: 'Recruiter seeding needs MongoDB (set MONGODB_URI).' };
-  try {
-    await connectDB();
-    if (reset) await wipeDemoTalent();
-
-    const GenericDoc = genericDocModel();
-    const already = await GenericDoc.countDocuments({ kind: 'recruiter_org', collegeId: DEMO_ORG_KEY });
-    if (already && !reset) {
-      return {
-        ok: true, alreadySeeded: true, orgKey: DEMO_ORG_KEY,
-        message: 'Recruiter world already seeded — pass { "reset": true } to rebuild.',
-      };
-    }
-
-    const users = await User.find({ collegeId: DEMO_COLLEGE_KEY, accountType: 'student' })
-      .select('_id email').lean();
-    if (!users.length) {
-      return {
-        ok: false, reason: 'cohort_missing',
-        message: 'Seed the demo college first — the recruiter world is a projection of that cohort.',
-      };
-    }
-
-    /* Match the live cohort size so the synthetic world lines up with what is
-       actually in the database rather than the generator's default. */
-    const perBranch = Math.max(1, Math.round(users.length / (demoCollege.BRANCH_LIST?.length || 4)));
-    if (perBranch !== demoCollege.DEMO_PER_BRANCH) demoCollege._regenerate(perBranch);
-    demoTalent._reset();
-
-    const byEmail = new Map(users.map((u) => [String(u.email).toLowerCase(), u._id]));
-    const idFor = new Map();
-    for (const row of demoCollege.demoStudentsDeep().rows) {
-      const hit = byEmail.get(String(row.email).toLowerCase());
-      if (hit) idFor.set(row.id, hit);
-    }
-    if (!idFor.size) {
-      return { ok: false, reason: 'cohort_mismatch', message: 'No seeded student matched the generated cohort.' };
-    }
-
-    const written = await writeRecruiterWorld({
-      idFor, collegeKey: DEMO_COLLEGE_KEY, cohortSize: users.length,
-    });
-    return { ok: true, seeded: true, ...written };
-  } catch (err) {
-    console.error('[db] seedDemoTalent failed:', err.message);
-    return { ok: false, reason: 'db_error', error: err.message };
-  }
-}
-
-export async function wipeDemoTalent() {
-  if (!URI) return { ok: false, reason: 'db_disabled' };
-  await connectDB();
-  const GenericDoc = genericDocModel();
-  const r = await GenericDoc.deleteMany({ kind: { $in: RECRUITER_KINDS }, collegeId: DEMO_ORG_KEY }).catch(() => ({ deletedCount: 0 }));
-  /* Only profiles this seed created. A real student who published their work
-     has demo: false and is never in scope. */
-  const p = await NetworkProfile.deleteMany({ demo: true }).catch(() => ({ deletedCount: 0 }));
-  return { ok: true, docs: r.deletedCount || 0, profiles: p.deletedCount || 0 };
-}
-
-/* Bind a real address to the demo recruiting org as a verified recruiter —
-   the recruiter-side counterpart of --tpo. Without this, signing in with a
-   personal account resolves to no organisation and the console is empty, the
-   same way a personal account sees an empty college. */
-export async function grantRecruiterAccess(email) {
-  if (!URI) return { ok: false, reason: 'db_disabled' };
-  const addr = String(email || '').trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) return { ok: false, reason: 'invalid_email' };
-  await connectDB();
-  const fields = {
-    accountType: 'recruiter',
-    roleVerified: true,
-    verificationStatus: 'approved',
-    organizationId: DEMO_ORG_KEY,
-  };
-  const existing = await User.findOne({ email: addr });
-  if (existing) {
-    await User.updateOne({ _id: existing._id }, { $set: fields });
-    return { ok: true, outcome: 'updated', email: addr };
-  }
-  await User.create({ email: addr, name: 'Talent Team', provider: 'google', isActive: true, ...fields });
-  return { ok: true, outcome: 'created', email: addr };
-}
-
-/* ---------------- read path ---------------- */
-
-async function recruiterDocs(kind, orgKey) {
-  const GenericDoc = genericDocModel();
-  const docs = await GenericDoc.find({ kind, collegeId: orgKey }).sort({ createdAt: 1 }).limit(5000).lean();
-  return docs.map((d) => d.data || {});
-}
-
-export async function getRecruiterOrg(orgKey) {
-  if (!URI || !orgKey) return null;
-  try {
-    await connectDB();
-    const [org] = await recruiterDocs('recruiter_org', orgKey);
-    return org || null;
-  } catch (err) {
-    console.error('[db] getRecruiterOrg failed:', err.message);
-    return null;
-  }
-}
-
-/* Which org's console is this caller looking at?
-     · a bound recruiter  → their own organizationId
-     · an admin           → the demo org, so the platform owner can inspect it
-     · RECRUITER_DEMO_OPEN=1 → every verified recruiter, for an open demo build
-   Anyone else resolves to null and sees the same empty state as before. */
-export async function resolveRecruiterOrg({ organizationId = '', isAdmin = false } = {}) {
-  if (!URI) return null;
-  const flag = String(process.env.RECRUITER_DEMO_OPEN || '').toLowerCase();
-  const openToAll = flag === '1' || flag === 'true' || flag === 'yes';
-  const key = organizationId || ((isAdmin || openToAll) ? DEMO_ORG_KEY : '');
-  if (!key) return null;
-  const org = await getRecruiterOrg(key);
-  return org ? key : null;
-}
-
-export async function listRecruiterRequisitions(orgKey, { status = '' } = {}) {
-  if (!URI || !orgKey) return [];
-  try {
-    await connectDB();
-    const list = await recruiterDocs('recruiter_requisition', orgKey);
-    return status ? list.filter((r) => r.status === status) : list;
-  } catch (err) {
-    console.error('[db] listRecruiterRequisitions failed:', err.message);
-    return [];
-  }
-}
-
-export async function listRecruiterPipeline(orgKey, { requisitionId = '', stage = '' } = {}) {
-  if (!URI || !orgKey) return [];
-  try {
-    await connectDB();
-    const list = await recruiterDocs('recruiter_pipeline', orgKey);
-    return list.filter((r) => {
-      if (requisitionId && r.requisitionId !== requisitionId) return false;
-      if (stage && r.stage !== stage) return false;
-      return true;
-    });
-  } catch (err) {
-    console.error('[db] listRecruiterPipeline failed:', err.message);
-    return [];
-  }
-}
-
-export async function listRecruiterInterviews(orgKey) {
-  if (!URI || !orgKey) return [];
-  try {
-    await connectDB();
-    const list = await recruiterDocs('recruiter_interview', orgKey);
-    return list.sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
-  } catch (err) {
-    console.error('[db] listRecruiterInterviews failed:', err.message);
-    return [];
-  }
-}
-
-export async function listRecruiterCampusPartners(orgKey) {
-  if (!URI || !orgKey) return [];
-  try {
-    await connectDB();
-    return await recruiterDocs('recruiter_campus_partner', orgKey);
-  } catch (err) {
-    console.error('[db] listRecruiterCampusPartners failed:', err.message);
-    return [];
-  }
-}
-
-/* The talent pool a recruiter may see: profiles from campuses this org is
-   actually connected to, filtered by the same consent rule as
-   /api/network/candidates. Consent is enforced here, not in the UI. */
-export async function listRecruiterTalent(orgKey) {
-  if (!URI || !orgKey) return [];
-  try {
-    await connectDB();
-    const partners = await listRecruiterCampusPartners(orgKey);
-    const campuses = partners.filter((p) => p.status === 'connected').map((p) => p.id).filter(Boolean);
-    if (!campuses.length) return [];
-    const docs = await NetworkProfile.find({
-      'campus.collegeId': { $in: campuses },
-      $or: RECRUITER_VISIBILITY_OR,
-    }).limit(2000).lean();
-    return docs.map((d) => ({
-      userId: String(d.userId),
-      name: d.name || 'Member',
-      picture: d.picture || null,
-      role: d.role || 'student',
-      targetRole: d.targetRole || '',
-      track: d.track || '',
-      visibility: d.visibility || 'published_only',
-      openToRecruiters: !!d.openToRecruiters,
-      openToReferrals: !!d.openToReferrals,
-      openToCollaboration: !!d.openToCollaboration,
-      openToInternships: !!d.openToInternships,
-      openToJobs: !!d.openToJobs,
-      location: d.location || '',
-      college: d.college || '',
-      collegeId: d.campus?.collegeId || '',
-      company: d.company || '',
-      campus: d.campus || {},
-      links: d.links || {},
-      metrics: d.metrics || {},
-      trustScore: d.trustScore || 0,
-      trustLevel: d.trustLevel || 'New',
-      completeness: d.completeness || 0,
-      updatedAt: d.updatedAt,
-      demo: !!d.demo,
-    })).sort((a, b) => b.trustScore - a.trustScore);
-  } catch (err) {
-    console.error('[db] listRecruiterTalent failed:', err.message);
-    return [];
-  }
-}
-
-export async function getRecruiterMatches(orgKey, requisitionId, { limit = 25 } = {}) {
-  if (!URI || !orgKey) return { requisition: null, matches: [] };
-  const [reqs, profiles] = await Promise.all([
-    listRecruiterRequisitions(orgKey),
-    listRecruiterTalent(orgKey),
-  ]);
-  const requisition = reqs.find((r) => r.id === requisitionId) || null;
-  return computeMatches({ requisition, profiles, limit });
-}
-
-export async function getRecruiterSkillGap(orgKey) {
-  if (!URI || !orgKey) return [];
-  const [requisitions, profiles] = await Promise.all([
-    listRecruiterRequisitions(orgKey),
-    listRecruiterTalent(orgKey),
-  ]);
-  return computeSkillGap({ requisitions, profiles });
-}
-
-export async function getRecruiterSummary(orgKey) {
-  if (!URI || !orgKey) return null;
-  const [org, profiles, requisitions, pipeline, partners] = await Promise.all([
-    getRecruiterOrg(orgKey),
-    listRecruiterTalent(orgKey),
-    listRecruiterRequisitions(orgKey),
-    listRecruiterPipeline(orgKey),
-    listRecruiterCampusPartners(orgKey),
-  ]);
-  if (!org) return null;
-  return computeSummary({
-    org: { id: org.id, name: org.name, domain: org.domain },
-    profiles, requisitions, pipeline, partners,
-  });
-}
-
-/* Counts for `npm run seed:demo:status`. */
-export async function demoTalentStatus() {
-  if (!URI) return { seeded: false };
-  await connectDB();
-  const GenericDoc = genericDocModel();
-  const [org, requisitions, pipelineRows, interviews, partners, talentProfiles] = await Promise.all([
-    GenericDoc.countDocuments({ kind: 'recruiter_org', collegeId: DEMO_ORG_KEY }),
-    GenericDoc.countDocuments({ kind: 'recruiter_requisition', collegeId: DEMO_ORG_KEY }),
-    GenericDoc.countDocuments({ kind: 'recruiter_pipeline', collegeId: DEMO_ORG_KEY }),
-    GenericDoc.countDocuments({ kind: 'recruiter_interview', collegeId: DEMO_ORG_KEY }),
-    GenericDoc.countDocuments({ kind: 'recruiter_campus_partner', collegeId: DEMO_ORG_KEY }),
-    NetworkProfile.countDocuments({ demo: true }),
-  ]);
-  return {
-    seeded: org > 0, orgKey: DEMO_ORG_KEY,
-    requisitions, pipelineRows, interviews, partners, talentProfiles,
-  };
-}
-

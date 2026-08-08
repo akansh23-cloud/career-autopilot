@@ -47,11 +47,11 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
 
       <form onSubmit={find} className="gradient-border mb-6 grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]">
         <div className="relative">
-          <Building2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+          <Building2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
           <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company e.g. GitLab" className="pl-10" />
         </div>
         <div className="relative">
-          <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+          <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
           <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="Domain e.g. gitlab.com (optional)" className="pl-10" />
         </div>
         <Button type="submit" disabled={state.status === 'loading'}><Search size={16} /> Find contacts</Button>
@@ -70,8 +70,8 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
               <div className="flex items-center gap-3">
                 <span className="grid h-11 w-11 place-items-center rounded-full bg-aurora-cta text-sm font-semibold text-ink-950">{(c.name || 'R')[0]}</span>
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-fg">{c.name || 'Contact'}</p>
-                  <p className="truncate text-xs text-fg-muted">{c.title || c.position || title}</p>
+                  <p className="truncate font-medium text-white">{c.name || 'Contact'}</p>
+                  <p className="truncate text-xs text-slate-500">{c.title || c.position || title}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -113,7 +113,7 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
         ) : (
           <>
             <textarea value={draft.text} onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
-              className="h-48 w-full resize-none rounded-xl border border-subtle bg-surface-1 p-3.5 text-sm leading-relaxed text-fg outline-none focus:border-aurora-violet/50" />
+              className="h-48 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3.5 text-sm leading-relaxed text-slate-200 outline-none focus:border-aurora-violet/50" />
             <div className="mt-3 flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setDraft((d) => ({ ...d, open: false }))}>Close</Button>
               <Button onClick={copyDraft}>{draft.copied ? <Check size={15} /> : <Copy size={15} />} {draft.copied ? 'Copied' : 'Copy message'}</Button>

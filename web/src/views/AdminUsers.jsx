@@ -98,14 +98,14 @@ function UserCard({ u, onOpen, i }) {
         <Avatar src={u.avatar} name={u.name} size={42} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="truncate font-medium text-fg">{u.name}</p>
+            <p className="truncate font-medium text-white">{u.name}</p>
             {u.featuredTalent && <Star size={13} className="shrink-0 fill-amber-glow text-amber-glow" />}
           </div>
-          <p className="truncate text-xs text-fg-muted">{u.email || '—'}</p>
+          <p className="truncate text-xs text-slate-500">{u.email || '—'}</p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="font-display text-lg font-semibold text-fg">{u.xp.toLocaleString()}</p>
-          <p className="text-[10px] uppercase tracking-wide text-fg-muted">XP</p>
+          <p className="font-display text-lg font-semibold text-white">{u.xp.toLocaleString()}</p>
+          <p className="text-[10px] uppercase tracking-wide text-slate-500">XP</p>
         </div>
       </div>
 
@@ -116,7 +116,7 @@ function UserCard({ u, onOpen, i }) {
       </div>
 
       {(u.targetRole || u.speciality) && (
-        <p className="mt-2.5 flex items-center gap-1.5 truncate text-xs text-fg-secondary">
+        <p className="mt-2.5 flex items-center gap-1.5 truncate text-xs text-slate-400">
           <Target size={12} className="shrink-0 text-aurora-cyan" />
           {u.targetRole || '—'}{u.speciality ? ` · ${u.speciality}` : ''}
         </p>
@@ -125,13 +125,13 @@ function UserCard({ u, onOpen, i }) {
       {u.skills.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1">
           {u.skills.slice(0, 5).map((s) => (
-            <span key={s} className="rounded-md border border-subtle bg-surface-1 px-1.5 py-0.5 text-[10px] text-fg-secondary">{s}</span>
+            <span key={s} className="rounded-md border border-white/8 bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-slate-300">{s}</span>
           ))}
-          {u.skills.length > 5 && <span className="px-1 text-[10px] text-fg-muted">+{u.skills.length - 5}</span>}
+          {u.skills.length > 5 && <span className="px-1 text-[10px] text-slate-500">+{u.skills.length - 5}</span>}
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-white/6 pt-2.5 text-[11px] text-fg-muted">
+      <div className="mt-3 flex items-center justify-between border-t border-white/6 pt-2.5 text-[11px] text-slate-500">
         <span className="flex items-center gap-1"><Rocket size={11} /> {u.completedProjectsCount} done</span>
         <span className="flex items-center gap-1"><BadgeCheck size={11} /> {u.profileCompletion}%</span>
         <span className="flex items-center gap-1"><ActivityIcon size={11} /> {relDate(u.lastActiveAt)}</span>
@@ -144,7 +144,7 @@ function SkillGroup({ title, items, tone }) {
   if (!items || !items.length) return null;
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">{title}</p>
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
       <div className="flex flex-wrap gap-1.5">
         {items.map((s) => (
           <Badge key={s.name} tone={tone}>{s.name}{s.xp ? ` · ${s.xp}xp` : ''}</Badge>
@@ -228,11 +228,11 @@ function DetailDrawer({ id, onClose, onMutated }) {
       />
       <motion.aside
         initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }}
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-subtle bg-base shadow-lift"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-white/10 bg-ink-900 shadow-lift"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-subtle px-5 py-4">
-          <p className="font-display text-[15px] font-semibold text-fg">User detail</p>
-          <button onClick={onClose} className="rounded-lg p-2 text-fg-secondary hover:bg-white/6"><X size={18} /></button>
+        <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-5 py-4">
+          <p className="font-display text-[15px] font-semibold text-white">User detail</p>
+          <button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-white/6"><X size={18} /></button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-width:thin]">
@@ -252,10 +252,10 @@ function DetailDrawer({ id, onClose, onMutated }) {
                 <Avatar src={u.avatar} name={u.name} size={52} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <p className="truncate font-display text-lg font-semibold text-fg">{u.name}</p>
+                    <p className="truncate font-display text-lg font-semibold text-white">{u.name}</p>
                     {u.featuredTalent && <Star size={15} className="shrink-0 fill-amber-glow text-amber-glow" />}
                   </div>
-                  <p className="truncate text-sm text-fg-secondary">{u.email || '—'}</p>
+                  <p className="truncate text-sm text-slate-400">{u.email || '—'}</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <TypeBadge type={u.userType} />
                     <VisibilityBadge status={u.visibilityStatus} />
@@ -266,29 +266,29 @@ function DetailDrawer({ id, onClose, onMutated }) {
 
               {/* Privileged-role verification — server-controlled. Grants recruiter /
                   college_admin BACKEND access (the only path that does). */}
-              <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <ShieldCheck size={15} className="text-aurora-cyan" />
-                  <p className="text-sm font-semibold text-fg">Role &amp; verification</p>
+                  <p className="text-sm font-semibold text-white">Role &amp; verification</p>
                   {u.roleVerified
                     ? <Badge tone="mint">verified {u.accountType || ''}</Badge>
                     : <Badge tone="default">{u.verificationStatus && u.verificationStatus !== 'none' ? u.verificationStatus : 'unverified'}</Badge>}
                 </div>
-                <p className="mb-3 text-[12px] leading-relaxed text-fg-secondary">Self-selected onboarding role never grants backend access. Approve to set a verified recruiter/college role.</p>
+                <p className="mb-3 text-[12px] leading-relaxed text-slate-400">Self-selected onboarding role never grants backend access. Approve to set a verified recruiter/college role.</p>
                 <div className="grid gap-2.5 sm:grid-cols-2">
-                  <label className="text-xs text-fg-secondary">Account type
+                  <label className="text-xs text-slate-400">Account type
                     <select value={vForm.accountType} onChange={(e) => setVForm((f) => ({ ...f, accountType: e.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-subtle bg-base px-2.5 py-2 text-sm text-fg">
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-ink-900 px-2.5 py-2 text-sm text-slate-200">
                       {['', 'student', 'professional', 'recruiter', 'college_admin', 'admin'].map((t) => <option key={t} value={t}>{t || '—'}</option>)}
                     </select>
                   </label>
-                  <label className="text-xs text-fg-secondary">Organization id (recruiter)
+                  <label className="text-xs text-slate-400">Organization id (recruiter)
                     <input value={vForm.organizationId} onChange={(e) => setVForm((f) => ({ ...f, organizationId: e.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-subtle bg-base px-2.5 py-2 text-sm text-fg" placeholder="org-…" />
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-ink-900 px-2.5 py-2 text-sm text-slate-200" placeholder="org-…" />
                   </label>
-                  <label className="text-xs text-fg-secondary sm:col-span-2">College id (placement cell)
+                  <label className="text-xs text-slate-400 sm:col-span-2">College id (placement cell)
                     <input value={vForm.collegeId} onChange={(e) => setVForm((f) => ({ ...f, collegeId: e.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-subtle bg-base px-2.5 py-2 text-sm text-fg" placeholder="college-…" />
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-ink-900 px-2.5 py-2 text-sm text-slate-200" placeholder="college-…" />
                   </label>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -296,7 +296,7 @@ function DetailDrawer({ id, onClose, onMutated }) {
                   <Button size="sm" disabled={busy} onClick={() => submitVerification('approve')}>Approve &amp; verify</Button>
                   <Button size="sm" variant="soft" disabled={busy} onClick={() => submitVerification('reject')}>Reject</Button>
                 </div>
-                {vMsg && <p className="mt-2 text-[12px] text-fg-secondary">{vMsg}</p>}
+                {vMsg && <p className="mt-2 text-[12px] text-slate-400">{vMsg}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -308,7 +308,7 @@ function DetailDrawer({ id, onClose, onMutated }) {
                 <Stat label="Applied jobs" value={u.appliedJobsCount} />
               </div>
 
-              <div className="space-y-1.5 rounded-xl border border-subtle bg-surface-1 p-3.5 text-sm">
+              <div className="space-y-1.5 rounded-xl border border-white/8 bg-white/[0.02] p-3.5 text-sm">
                 <Row label="Current role" value={u.currentRole || '—'} icon={Briefcase} />
                 <Row label="Target role" value={u.targetRole || '—'} icon={Target} />
                 <Row label="Speciality" value={u.speciality || '—'} icon={Sparkles} />
@@ -329,12 +329,12 @@ function DetailDrawer({ id, onClose, onMutated }) {
 
               {data.projects?.length > 0 && (
                 <div>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">Projects ({data.projects.length})</p>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Projects ({data.projects.length})</p>
                   <div className="space-y-1.5">
                     {data.projects.map((p) => (
-                      <div key={p.id || p.title} className="flex items-center justify-between rounded-lg border border-white/6 bg-surface-1 px-3 py-2 text-sm">
-                        <span className="truncate text-fg">{p.title}</span>
-                        <span className="ml-2 flex shrink-0 items-center gap-1.5 text-[11px] text-fg-muted">
+                      <div key={p.id || p.title} className="flex items-center justify-between rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2 text-sm">
+                        <span className="truncate text-slate-200">{p.title}</span>
+                        <span className="ml-2 flex shrink-0 items-center gap-1.5 text-[11px] text-slate-500">
                           {p.published && <Badge tone="mint">Published</Badge>}
                           {p.github && <span title="GitHub linked">GH</span>}
                           {p.live && <span title="Live demo">Live</span>}
@@ -347,13 +347,13 @@ function DetailDrawer({ id, onClose, onMutated }) {
 
               {data.activity?.length > 0 && (
                 <div>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">Recent activity</p>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recent activity</p>
                   <ul className="space-y-1.5">
                     {data.activity.map((a, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-xs text-fg-secondary">
+                      <li key={idx} className="flex items-start gap-2 text-xs text-slate-400">
                         <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-aurora-cyan" />
                         <span className="flex-1">{a.text}</span>
-                        <span className="shrink-0 text-fg-muted">{relDate(a.at)}</span>
+                        <span className="shrink-0 text-slate-600">{relDate(a.at)}</span>
                       </li>
                     ))}
                   </ul>
@@ -368,7 +368,7 @@ function DetailDrawer({ id, onClose, onMutated }) {
                     rows={3}
                     maxLength={4000}
                     placeholder="Add a private note about this user…"
-                    className="w-full rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-sm text-fg placeholder:text-fg-muted outline-none transition focus:border-aurora-violet/50 focus:ring-2 focus:ring-aurora-violet/20"
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-aurora-violet/50 focus:ring-2 focus:ring-aurora-violet/20"
                   />
                 </Field>
                 <div className="mt-2 flex justify-end">
@@ -378,26 +378,26 @@ function DetailDrawer({ id, onClose, onMutated }) {
                 </div>
               </div>
 
-              <div className="space-y-2 border-t border-subtle pt-4">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">Safe actions</p>
+              <div className="space-y-2 border-t border-white/8 pt-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Safe actions</p>
                 <button
                   onClick={toggleFeatured} disabled={busy}
-                  className="flex w-full items-center justify-between rounded-xl border border-subtle bg-surface-1 px-3.5 py-2.5 text-sm text-fg transition hover:border-amber-glow/40 hover:bg-amber-glow/5 disabled:opacity-50"
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm text-slate-200 transition hover:border-amber-glow/40 hover:bg-amber-glow/5 disabled:opacity-50"
                 >
-                  <span className="flex items-center gap-2"><Star size={15} className={u.featuredTalent ? 'fill-amber-glow text-amber-glow' : 'text-fg-secondary'} /> Featured talent</span>
+                  <span className="flex items-center gap-2"><Star size={15} className={u.featuredTalent ? 'fill-amber-glow text-amber-glow' : 'text-slate-400'} /> Featured talent</span>
                   <Badge tone={u.featuredTalent ? 'amber' : 'default'}>{u.featuredTalent ? 'On' : 'Off'}</Badge>
                 </button>
                 <button
                   onClick={toggleVisibility} disabled={busy}
-                  className="flex w-full items-center justify-between rounded-xl border border-subtle bg-surface-1 px-3.5 py-2.5 text-sm text-fg transition hover:border-aurora-mint/40 hover:bg-aurora-mint/5 disabled:opacity-50"
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm text-slate-200 transition hover:border-aurora-mint/40 hover:bg-aurora-mint/5 disabled:opacity-50"
                 >
                   <span className="flex items-center gap-2">
-                    {u.recruiterVisible ? <Eye size={15} className="text-aurora-mint" /> : <LockIcon size={15} className="text-fg-secondary" />}
+                    {u.recruiterVisible ? <Eye size={15} className="text-aurora-mint" /> : <LockIcon size={15} className="text-slate-400" />}
                     Recruiter visibility
                   </span>
                   <Badge tone={u.recruiterVisible ? 'mint' : 'default'}>{u.recruiterVisible ? 'Visible' : 'Private'}</Badge>
                 </button>
-                <p className="flex items-start gap-1.5 text-[11px] leading-snug text-fg-muted">
+                <p className="flex items-start gap-1.5 text-[11px] leading-snug text-slate-500">
                   <ShieldCheck size={12} className="mt-0.5 shrink-0 text-aurora-mint" />
                   Recruiter visibility controls the opt-in flag recruiters rely on. Default for every user is private.
                 </p>
@@ -412,18 +412,18 @@ function DetailDrawer({ id, onClose, onMutated }) {
 
 function Stat({ label, value, hint }) {
   return (
-    <div className="rounded-xl border border-subtle bg-surface-1 p-3">
-      <p className="text-[11px] text-fg-muted">{label}</p>
-      <p className="mt-0.5 font-display text-xl font-semibold text-fg">{value}</p>
-      {hint && <p className="text-[10px] text-fg-muted">{hint}</p>}
+    <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+      <p className="text-[11px] text-slate-500">{label}</p>
+      <p className="mt-0.5 font-display text-xl font-semibold text-white">{value}</p>
+      {hint && <p className="text-[10px] text-slate-500">{hint}</p>}
     </div>
   );
 }
 function Row({ label, value, icon: Icon }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-fg-muted">{Icon && <Icon size={13} />}{label}</span>
-      <span className="truncate text-right text-fg">{value}</span>
+      <span className="flex items-center gap-1.5 text-slate-500">{Icon && <Icon size={13} />}{label}</span>
+      <span className="truncate text-right text-slate-200">{value}</span>
     </div>
   );
 }
@@ -453,8 +453,8 @@ function PendingVerificationPanel({ requests, loading, error, busyKey, onApprove
     <SectionCard className="mb-6">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="font-display text-lg font-semibold text-fg">Pending verification requests</p>
-          <p className="mt-1 text-sm text-fg-secondary">Approve recruiter or placement-cell access from here. Self-selected roles do not unlock backend access.</p>
+          <p className="font-display text-lg font-semibold text-white">Pending verification requests</p>
+          <p className="mt-1 text-sm text-slate-400">Approve recruiter or placement-cell access from here. Self-selected roles do not unlock backend access.</p>
         </div>
         <Button variant="soft" size="sm" onClick={onRefresh} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'animate-spin-slow' : ''} /> Refresh
@@ -469,7 +469,7 @@ function PendingVerificationPanel({ requests, loading, error, busyKey, onApprove
           <Skeleton className="h-28 w-full rounded-2xl" />
         </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-2xl border border-subtle bg-surface-1 px-4 py-4 text-sm text-fg-secondary">
+        <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-4 text-sm text-slate-400">
           No pending recruiter or placement-cell requests. New requests will appear here, even if the user directory list is empty.
         </div>
       ) : (
@@ -484,18 +484,18 @@ function PendingVerificationPanel({ requests, loading, error, busyKey, onApprove
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate font-semibold text-fg">{r.name || r.email || 'Unknown user'}</p>
+                      <p className="truncate font-semibold text-white">{r.name || r.email || 'Unknown user'}</p>
                       <Badge tone={type === 'college_admin' ? 'cyan' : 'amber'}>{requestLabel(r)}</Badge>
                       <Badge tone="default">{r.status || 'pending'}</Badge>
                     </div>
-                    <p className="mt-1 truncate text-xs text-fg-muted">{r.email || 'No email'}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{r.email || 'No email'}</p>
                   </div>
                   {onOpen && r.id && <Button size="sm" variant="ghost" onClick={() => onOpen(r.id)}>Open</Button>}
                 </div>
 
-                <div className="mt-3 grid gap-2 text-xs text-fg-secondary sm:grid-cols-2">
-                  <div className="rounded-lg border border-subtle bg-surface-1 px-2.5 py-2">Org: <span className="text-fg">{r.organizationId || '—'}</span></div>
-                  <div className="rounded-lg border border-subtle bg-surface-1 px-2.5 py-2">College: <span className="text-fg">{r.collegeId || '—'}</span></div>
+                <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/8 bg-white/[0.02] px-2.5 py-2">Org: <span className="text-slate-200">{r.organizationId || '—'}</span></div>
+                  <div className="rounded-lg border border-white/8 bg-white/[0.02] px-2.5 py-2">College: <span className="text-slate-200">{r.collegeId || '—'}</span></div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -648,7 +648,7 @@ export default function AdminUsers() {
       {/* Search + controls */}
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <div className="relative min-w-[220px] flex-1">
-          <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+          <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
           <Input
             value={filters.q}
             onChange={(e) => setFilter('q', e.target.value)}
@@ -658,19 +658,19 @@ export default function AdminUsers() {
         </div>
         <select
           value={sort} onChange={(e) => { setPage(1); setSort(e.target.value); }}
-          className="h-11 rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50"
+          className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50"
         >
-          {SORTS.map((s) => <option key={s.id} value={s.id} className="bg-base">{s.label}</option>)}
+          {SORTS.map((s) => <option key={s.id} value={s.id} className="bg-ink-900">{s.label}</option>)}
         </select>
         <button
           onClick={() => setShowFilters((s) => !s)}
           className={`inline-flex h-11 items-center gap-2 rounded-xl border px-3.5 text-sm transition ${
-            showFilters || activeFilterCount ? 'border-aurora-violet/40 bg-aurora-violet/10 text-[#E4DCFF]' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
+            showFilters || activeFilterCount ? 'border-aurora-violet/40 bg-aurora-violet/10 text-[#E4DCFF]' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/25'
           }`}
         >
           <SlidersHorizontal size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ''}
         </button>
-        <button onClick={() => refreshAll()} className="grid h-11 w-11 place-items-center rounded-xl border border-subtle bg-surface-1 text-fg-secondary transition hover:border-strong" aria-label="Refresh">
+        <button onClick={() => refreshAll()} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/25" aria-label="Refresh">
           <RefreshCw size={15} className={loading ? 'animate-spin-slow' : ''} />
         </button>
       </div>
@@ -686,24 +686,24 @@ export default function AdminUsers() {
                 <Field label="Target role"><Input value={filters.targetRole} onChange={(e) => setFilter('targetRole', e.target.value)} placeholder="e.g. Cloud Engineer" /></Field>
                 <Field label="Location"><Input value={filters.location} onChange={(e) => setFilter('location', e.target.value)} placeholder="e.g. Pune" /></Field>
                 <Field label="Experience level">
-                  <select value={filters.experienceLevel} onChange={(e) => setFilter('experienceLevel', e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50">
-                    <option value="" className="bg-base">Any level</option>
-                    {EXPERIENCE_LEVELS.map((l) => <option key={l} value={l} className="bg-base">{l}</option>)}
+                  <select value={filters.experienceLevel} onChange={(e) => setFilter('experienceLevel', e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50">
+                    <option value="" className="bg-ink-900">Any level</option>
+                    {EXPERIENCE_LEVELS.map((l) => <option key={l} value={l} className="bg-ink-900">{l}</option>)}
                   </select>
                 </Field>
                 <Field label="User type">
-                  <select value={filters.userType} onChange={(e) => setFilter('userType', e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50">
-                    {USER_TYPES.map((t) => <option key={t.id} value={t.id} className="bg-base">{t.label}</option>)}
+                  <select value={filters.userType} onChange={(e) => setFilter('userType', e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50">
+                    {USER_TYPES.map((t) => <option key={t.id} value={t.id} className="bg-ink-900">{t.label}</option>)}
                   </select>
                 </Field>
                 <Field label="Project completion">
-                  <select value={filters.projectStatus} onChange={(e) => setFilter('projectStatus', e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50">
-                    {PROJECT_STATUS.map((t) => <option key={t.id} value={t.id} className="bg-base">{t.label}</option>)}
+                  <select value={filters.projectStatus} onChange={(e) => setFilter('projectStatus', e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50">
+                    {PROJECT_STATUS.map((t) => <option key={t.id} value={t.id} className="bg-ink-900">{t.label}</option>)}
                   </select>
                 </Field>
                 <Field label="Activity">
-                  <select value={filters.activity} onChange={(e) => setFilter('activity', e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50">
-                    {ACTIVITY.map((t) => <option key={t.id} value={t.id} className="bg-base">{t.label}</option>)}
+                  <select value={filters.activity} onChange={(e) => setFilter('activity', e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 outline-none focus:border-aurora-violet/50">
+                    {ACTIVITY.map((t) => <option key={t.id} value={t.id} className="bg-ink-900">{t.label}</option>)}
                   </select>
                 </Field>
                 <Field label={`Min. profile completion · ${filters.minCompletion}%`}>
@@ -711,7 +711,7 @@ export default function AdminUsers() {
                 </Field>
               </div>
               <div className="mt-4 flex items-center justify-between">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-fg-secondary">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
                   <input type="checkbox" checked={filters.recruiterVisible} onChange={(e) => setFilter('recruiterVisible', e.target.checked)} className="h-4 w-4 accent-aurora-mint" />
                   Recruiter-visible only
                 </label>
@@ -751,14 +751,14 @@ export default function AdminUsers() {
           <div className="mt-6 flex items-center justify-center gap-3">
             <button
               disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-subtle bg-surface-1 px-3.5 text-sm text-fg-secondary transition hover:border-strong disabled:opacity-40"
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-300 transition hover:border-white/25 disabled:opacity-40"
             >
               <ChevronLeft size={15} /> Prev
             </button>
-            <span className="text-sm text-fg-secondary">Page {data?.page || page} of {totalPages} · {data?.total ?? 0} users</span>
+            <span className="text-sm text-slate-400">Page {data?.page || page} of {totalPages} · {data?.total ?? 0} users</span>
             <button
               disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-subtle bg-surface-1 px-3.5 text-sm text-fg-secondary transition hover:border-strong disabled:opacity-40"
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-300 transition hover:border-white/25 disabled:opacity-40"
             >
               Next <ChevronRight size={15} />
             </button>

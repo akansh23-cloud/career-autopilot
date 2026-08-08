@@ -43,7 +43,7 @@ export default function ProblemClusterDetail({ cluster, dbOn, onBack, onGenerate
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-fg-secondary hover:text-fg"><ArrowLeft size={15} /> Back to clusters</button>
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-slate-400 hover:text-white"><ArrowLeft size={15} /> Back to clusters</button>
 
       <PageIntro
         eyebrow="Problem cluster"
@@ -69,7 +69,7 @@ export default function ProblemClusterDetail({ cluster, dbOn, onBack, onGenerate
           </div>
           {cluster.keywords?.length > 0 && (
             <div className="mt-4">
-              <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">Signal keywords</h4>
+              <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Signal keywords</h4>
               <div className="flex flex-wrap gap-1.5">{cluster.keywords.slice(0, 12).map((k) => <Badge key={k} tone="default">{k}</Badge>)}</div>
             </div>
           )}

@@ -5,7 +5,7 @@ import { SectionCard } from '../common.jsx';
 import { DOMAINS, TARGET_USERS, TECHNOLOGIES, GOALS } from '../patent/shared.jsx';
 import { PURPOSES, SOURCES, DIFFICULTIES, COMMUNITY_SOURCE_LIST, COMMUNITY_WARNING, TIME_RANGES } from './shared.jsx';
 
-const selCls = 'h-11 w-full cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 px-3.5 text-sm text-fg outline-none focus:border-aurora-violet/50';
+const selCls = 'h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 text-sm text-slate-100 outline-none focus:border-aurora-violet/50';
 
 function Select({ label, value, onChange, options, placeholder }) {
   return (
@@ -80,7 +80,7 @@ export default function ProblemDiscovery({ onDiscover, busy, config = {} }) {
 
       {/* Core sources */}
       <div className="mt-4">
-        <span className="mb-1.5 block text-[13px] font-medium text-fg-secondary">Core sources</span>
+        <span className="mb-1.5 block text-[13px] font-medium text-slate-300">Core sources</span>
         <div className="flex flex-wrap gap-2">
           {SOURCES.map((s) => (
             <button key={s.id} onClick={() => toggleSource(s.id)}>
@@ -92,7 +92,7 @@ export default function ProblemDiscovery({ onDiscover, busy, config = {} }) {
 
       {/* Community sources */}
       <div className="mt-4">
-        <span className="mb-1.5 block text-[13px] font-medium text-fg-secondary">Community sources</span>
+        <span className="mb-1.5 block text-[13px] font-medium text-slate-300">Community sources</span>
         <div className="flex flex-wrap gap-2">
           {COMMUNITY_SOURCE_LIST.map((s) => (
             <button key={s.id} onClick={() => toggleSource(s.id)} title={s.note}>
@@ -110,7 +110,7 @@ export default function ProblemDiscovery({ onDiscover, busy, config = {} }) {
           <p className="mt-1.5 text-[12px] text-rose-300">{cs.reddit.note || 'Reddit source is disabled. Add official Reddit API credentials and enable REDDIT_DISCOVERY_ENABLED=1.'}</p>
         )}
         {sources.includes('specialized_forum') && (
-          <p className="mt-1.5 text-[12px] text-fg-secondary">Specialized forums must be allowlisted via SPECIALIZED_FORUM_ALLOWED_SOURCES.</p>
+          <p className="mt-1.5 text-[12px] text-slate-400">Specialized forums must be allowlisted via SPECIALIZED_FORUM_ALLOWED_SOURCES.</p>
         )}
       </div>
 

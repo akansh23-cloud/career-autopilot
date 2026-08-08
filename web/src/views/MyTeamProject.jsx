@@ -24,7 +24,6 @@ import {
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Spinner, EmptyState, Input, Field } from '../components/ui/kit.jsx';
 import { My } from '../lib/api.js';
-import MyModuleChecklist from '../components/college/MyModuleChecklist.jsx';
 
 const STATUS_TONE = {
   assigned: 'cyan', in_progress: 'cyan', submitted: 'amber',
@@ -83,11 +82,11 @@ function ProjectCard({ project, onRefresh }) {
     <SectionCard title={p.title} eyebrow={p.teamName || 'Team project'}>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Badge tone={STATUS_TONE[p.summary?.status] || 'default'}>{STATUS_LABEL[p.summary?.status] || p.summary?.status}</Badge>
-        {p.dueAt && <span className="flex items-center gap-1 text-xs text-fg-muted"><CalendarClock size={12} /> Due {fmtDate(p.dueAt)}</span>}
+        {p.dueAt && <span className="flex items-center gap-1 text-xs text-slate-500"><CalendarClock size={12} /> Due {fmtDate(p.dueAt)}</span>}
         {p.summary?.daysLeft != null && p.summary.daysLeft >= 0 && (
-          <span className="text-xs text-fg-muted">{p.summary.daysLeft} day{p.summary.daysLeft === 1 ? '' : 's'} left</span>
+          <span className="text-xs text-slate-500">{p.summary.daysLeft} day{p.summary.daysLeft === 1 ? '' : 's'} left</span>
         )}
-        <span className="flex items-center gap-1 text-xs text-fg-muted"><Users2 size={12} /> {p.members?.length || 0} in the team</span>
+        <span className="flex items-center gap-1 text-xs text-slate-500"><Users2 size={12} /> {p.members?.length || 0} in the team</span>
       </div>
 
       {/* ---- What YOU own — first, deliberately ---- */}
@@ -96,14 +95,14 @@ function ProjectCard({ project, onRefresh }) {
           <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-violet-200">
             <Target size={13} /> Your part
           </p>
-          <p className="text-base font-medium text-fg">{mine.role}</p>
+          <p className="text-base font-medium text-white">{mine.role}</p>
           <ul className="mt-2 space-y-1">
             {(mine.modules || []).map((m, i) => (
-              <li key={i} className="flex gap-2 text-sm text-fg-secondary"><span className="text-fg-muted">•</span>{m}</li>
+              <li key={i} className="flex gap-2 text-sm text-slate-300"><span className="text-slate-600">•</span>{m}</li>
             ))}
           </ul>
           {mine.matchedSkills?.length > 0 && (
-            <p className="mt-2 text-[11px] text-fg-secondary">You were given this because you listed: {mine.matchedSkills.join(', ')}.</p>
+            <p className="mt-2 text-[11px] text-slate-400">You were given this because you listed: {mine.matchedSkills.join(', ')}.</p>
           )}
           {mine.stretch && (
             <p className="mt-2 text-[11px] text-amber-200">
@@ -114,11 +113,11 @@ function ProjectCard({ project, onRefresh }) {
       )}
 
       {/* ---- Submission ---- */}
-      <div className="mb-5 rounded-xl border border-subtle bg-surface-1 p-4">
-        <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+      <div className="mb-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           <Globe size={13} /> Submit your live hosted link
         </p>
-        <p className="mb-3 text-xs text-fg-secondary">
+        <p className="mb-3 text-xs text-slate-400">
           Your placement cell verifies this by actually fetching it, so the URL has to be publicly reachable —
           no login wall, no localhost. Free tiers (Vercel, Render, Railway, Netlify) are fine.
           Any team member can submit or update this on behalf of the team.
@@ -148,26 +147,26 @@ function ProjectCard({ project, onRefresh }) {
         {error && <p className="mt-2 text-sm text-amber-300">{error}</p>}
 
         {p.verification && (
-          <div className="mt-4 border-t border-subtle pt-3">
+          <div className="mt-4 border-t border-white/8 pt-3">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge tone={p.verification.passed ? 'mint' : p.verification.pending ? 'cyan' : 'amber'}>
                 {p.verification.passed ? 'Verified' : p.verification.pending ? 'Could not complete' : 'Not verified yet'}
               </Badge>
-              <span className="text-xs text-fg-muted">checked {fmtDate(p.verification.checkedAt)}</span>
+              <span className="text-xs text-slate-500">checked {fmtDate(p.verification.checkedAt)}</span>
             </div>
-            <p className="mb-2 text-xs text-fg-secondary">{p.verification.summary}</p>
+            <p className="mb-2 text-xs text-slate-400">{p.verification.summary}</p>
             <div className="space-y-1">
               {(p.verification.checks || []).map((c) => {
                 const Icon = CHECK_ICON[c.state] || HelpCircle;
                 return (
-                  <div key={c.key} className="flex items-start gap-2 rounded-lg border border-subtle bg-surface-1 p-2">
-                    <Icon size={13} className="mt-0.5 shrink-0 text-fg-muted" />
+                  <div key={c.key} className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2">
+                    <Icon size={13} className="mt-0.5 shrink-0 text-slate-500" />
                     <div>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-fg">{c.label}</span>
+                        <span className="text-xs text-slate-200">{c.label}</span>
                         <Badge tone={CHECK_TONE[c.state] || 'default'}>{c.state.replace(/_/g, ' ')}</Badge>
                       </div>
-                      {c.note && <p className="mt-0.5 text-[11px] text-fg-muted">{c.note}</p>}
+                      {c.note && <p className="mt-0.5 text-[11px] text-slate-500">{c.note}</p>}
                     </div>
                   </div>
                 );
@@ -177,63 +176,53 @@ function ProjectCard({ project, onRefresh }) {
         )}
       </div>
 
-      {/* ---- Your own modules ----
-           The brief has always told a student which modules they own; this is
-           where they mark them off and attach evidence. Modules with an evidence
-           link count for more than a bare tick, and the coordinator sees the
-           difference — so the incentive points at doing the work, not at
-           clearing the checkbox. */}
-      <div className="mb-6 border-t border-subtle pt-5">
-        <MyModuleChecklist projectId={p.id} />
-      </div>
-
       {/* ---- The brief ---- */}
       <div className="space-y-5">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">What you're building</p>
-          <p className="text-sm text-fg-secondary">{brief.problem}</p>
-          <p className="mt-1 text-xs text-fg-muted">For: {brief.targetUsers}</p>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">What you're building</p>
+          <p className="text-sm text-slate-300">{brief.problem}</p>
+          <p className="mt-1 text-xs text-slate-500">For: {brief.targetUsers}</p>
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">Must build</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Must build</p>
           <ul className="space-y-1.5">
             {(brief.mustBuild || []).map((x, i) => (
-              <li key={i} className="flex gap-2 text-sm text-fg-secondary"><span className="text-fg-muted">{i + 1}.</span>{x}</li>
+              <li key={i} className="flex gap-2 text-sm text-slate-300"><span className="text-slate-600">{i + 1}.</span>{x}</li>
             ))}
           </ul>
         </div>
 
         <div>
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
             <Users2 size={13} /> Your teammates
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {(brief.assignments || []).map((a) => (
-              <div key={a.studentId} className="rounded-xl border border-subtle bg-surface-1 p-3">
+              <div key={a.studentId} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
                 <div className="flex items-center gap-2">
-                  <UserCircle2 size={14} className="text-fg-muted" />
-                  <span className="text-sm text-fg">{a.name}</span>
+                  <UserCircle2 size={14} className="text-slate-500" />
+                  <span className="text-sm text-white">{a.name}</span>
                   {mine && a.studentId === mine.studentId && <Badge tone="violet">You</Badge>}
                 </div>
-                <p className="mt-1 text-[11px] text-fg-muted">{a.role} · {a.modules.join(' · ')}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{a.role} · {a.modules.join(' · ')}</p>
               </div>
             ))}
           </div>
         </div>
 
         <div>
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
             <ListChecks size={13} /> Milestones
           </p>
           <div className="space-y-1.5">
             {(brief.milestones || []).map((m) => (
-              <div key={m.key} className="flex gap-3 rounded-xl border border-subtle bg-surface-1 p-2.5">
-                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-surface-1 text-[10px] text-fg-secondary">{m.index}</span>
+              <div key={m.key} className="flex gap-3 rounded-xl border border-white/8 bg-white/[0.02] p-2.5">
+                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[10px] text-slate-400">{m.index}</span>
                 <div>
-                  <p className="text-sm text-fg">{m.title}</p>
-                  <p className="text-xs text-fg-muted">{m.detail}</p>
-                  <p className="mt-0.5 text-[10px] text-fg-muted">{fmtDate(m.dueAt)}</p>
+                  <p className="text-sm text-slate-200">{m.title}</p>
+                  <p className="text-xs text-slate-500">{m.detail}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-600">{fmtDate(m.dueAt)}</p>
                 </div>
               </div>
             ))}
@@ -241,38 +230,38 @@ function ProjectCard({ project, onRefresh }) {
         </div>
 
         <div>
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
             <Layers size={13} /> Suggested stack
           </p>
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(brief.stack || {}).map(([area, list]) => (
-              <span key={area} className="rounded-lg border border-subtle bg-surface-1 px-2 py-1 text-[11px] text-fg-secondary">
-                <span className="text-fg-muted">{area}:</span> {list.join(', ')}
+              <span key={area} className="rounded-lg border border-white/8 bg-white/[0.02] px-2 py-1 text-[11px] text-slate-400">
+                <span className="text-slate-500">{area}:</span> {list.join(', ')}
               </span>
             ))}
           </div>
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">Accepted when</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Accepted when</p>
           <ul className="space-y-1">
-            {(brief.acceptanceCriteria || []).map((c, i) => <li key={i} className="text-xs text-fg-secondary">{c}</li>)}
+            {(brief.acceptanceCriteria || []).map((c, i) => <li key={i} className="text-xs text-slate-400">{c}</li>)}
           </ul>
         </div>
 
         {brief.outOfScope?.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">Deliberately out of scope</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Deliberately out of scope</p>
             <ul className="space-y-1">
-              {brief.outOfScope.map((c, i) => <li key={i} className="text-xs text-fg-muted">{c}</li>)}
+              {brief.outOfScope.map((c, i) => <li key={i} className="text-xs text-slate-500">{c}</li>)}
             </ul>
           </div>
         )}
 
         {brief.notes && (
-          <div className="rounded-xl border border-subtle bg-surface-1 p-3">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">Note from your placement cell</p>
-            <p className="text-sm text-fg-secondary">{brief.notes}</p>
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Note from your placement cell</p>
+            <p className="text-sm text-slate-300">{brief.notes}</p>
           </div>
         )}
       </div>

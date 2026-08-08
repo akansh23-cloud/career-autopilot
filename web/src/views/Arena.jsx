@@ -41,7 +41,7 @@ export default function Arena() {
       <form onSubmit={(e) => { e.preventDefault(); load(kw); }} className="gradient-border mb-6 p-4">
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <Input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search e.g. AI, DevOps, data science" className="pl-10" />
           </div>
           <Button type="submit" disabled={state.status === 'loading'}><Search size={16} /> Search</Button>
@@ -49,7 +49,7 @@ export default function Arena() {
         <div className="mt-3 flex flex-wrap gap-2">
           {FILTERS.map((f) => (
             <button key={f} type="button" onClick={() => setFilter(f)}
-              className={`rounded-lg px-3 py-1 text-xs transition ${filter === f ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30' : 'text-fg-secondary hover:bg-surface-1'}`}>{f}</button>
+              className={`rounded-lg px-3 py-1 text-xs transition ${filter === f ? 'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/30' : 'text-slate-400 hover:bg-white/5'}`}>{f}</button>
           ))}
         </div>
       </form>
@@ -62,11 +62,11 @@ export default function Arena() {
           {items.map((o, i) => (
             <Card key={i} hover className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-[15px] font-semibold leading-snug text-fg">{o.title}</h3>
+                <h3 className="text-[15px] font-semibold leading-snug text-white">{o.title}</h3>
                 {o.hiringOpportunity && <Badge tone="mint"><Zap size={11} /> Hiring</Badge>}
               </div>
-              <p className="flex items-center gap-1.5 text-xs text-fg-muted">{o.organizer || o.platform || o.source}</p>
-              {o.description && <p className="line-clamp-3 text-[13px] leading-relaxed text-fg-secondary">{o.description}</p>}
+              <p className="flex items-center gap-1.5 text-xs text-slate-500">{o.organizer || o.platform || o.source}</p>
+              {o.description && <p className="line-clamp-3 text-[13px] leading-relaxed text-slate-400">{o.description}</p>}
               <div className="flex flex-wrap gap-2">
                 {o.mode && <Badge tone="violet">{o.mode}</Badge>}
                 {o.location && <Badge><MapPin size={11} /> {o.location}</Badge>}
@@ -74,7 +74,7 @@ export default function Arena() {
                 {o.deadline && <Badge tone="cyan"><Calendar size={11} /> {o.deadline}</Badge>}
               </div>
               {o.skills?.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">{o.skills.slice(0, 4).map((s) => <span key={s} className="rounded-md bg-surface-1 px-2 py-0.5 text-[11px] text-fg-secondary">{s}</span>)}</div>
+                <div className="flex flex-wrap gap-1.5">{o.skills.slice(0, 4).map((s) => <span key={s} className="rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">{s}</span>)}</div>
               )}
               <a href={opportunityUrl(o)} target="_blank" rel="noreferrer" className="mt-auto">
                 <Button size="sm" variant="soft" className="w-full">Open registration <ExternalLink size={14} /></Button>

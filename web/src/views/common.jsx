@@ -31,8 +31,8 @@ function MiniRing({ value = 0, label }) {
         </defs>
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="font-display text-2xl font-extrabold text-fg">{v}</span>
-        {label && <span className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">{label}</span>}
+        <span className="font-display text-2xl font-extrabold text-white">{v}</span>
+        {label && <span className="font-mono text-[9px] uppercase tracking-widest text-slate-500">{label}</span>}
       </div>
     </div>
   );
@@ -52,8 +52,8 @@ export function NextBestAction({ eyebrow = 'Next best action', title, descriptio
           <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-[#E4DCFF]">
             <Sparkles size={12} /> {eyebrow}
           </span>
-          <h2 className="mt-4 font-display text-[26px] font-extrabold leading-[1.05] text-fg sm:text-[32px]">{title}</h2>
-          {description && <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-fg-secondary">{description}</p>}
+          <h2 className="mt-4 font-display text-[26px] font-extrabold leading-[1.05] text-white sm:text-[32px]">{title}</h2>
+          {description && <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-slate-400">{description}</p>}
           {primary && (
             <div className="mt-6 flex flex-wrap items-center gap-2.5">
               <button
@@ -68,7 +68,7 @@ export function NextBestAction({ eyebrow = 'Next best action', title, descriptio
                 <button
                   key={s.label}
                   onClick={s.onClick}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-surface-1 px-4 py-3 text-[13px] text-fg-secondary transition hover:border-aurora-violet/40 hover:text-fg"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.03] px-4 py-3 text-[13px] text-slate-300 transition hover:border-aurora-violet/40 hover:text-white"
                 >
                   {s.icon && <s.icon size={14} />}{s.label}
                 </button>
@@ -96,8 +96,8 @@ export function PageIntro({ title, sub, action, eyebrow }) {
       <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
           {eyebrow && <span className="block font-mono text-[11px] uppercase tracking-[0.3em] text-aurora-violet/75">{eyebrow}</span>}
-          <h1 className="mt-2 font-display text-[clamp(28px,4vw,44px)] font-extrabold leading-[1.03] tracking-tight text-fg">{title}</h1>
-          {sub && <p className="mt-3 text-[15px] leading-relaxed text-fg-secondary sm:text-[16px]">{sub}</p>}
+          <h1 className="mt-2 font-display text-[clamp(28px,4vw,44px)] font-extrabold leading-[1.03] tracking-tight text-white">{title}</h1>
+          {sub && <p className="mt-3 text-[15px] leading-relaxed text-slate-400 sm:text-[16px]">{sub}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
@@ -122,10 +122,10 @@ export function StatCard({ icon: Icon, label, value, delta, hint, onClick, tone 
         {Icon && <span className={`grid h-10 w-10 place-items-center rounded-xl ring-1 ${ring} ${c}`}><Icon size={18} /></span>}
       </div>
       <div className="mt-4 flex items-end gap-2">
-        <span className="font-display text-[34px] font-extrabold leading-none text-fg">{value}</span>
+        <span className="font-display text-[34px] font-extrabold leading-none text-white">{value}</span>
         {delta && <span className="mb-1 text-xs font-semibold text-aurora-mint">{delta}</span>}
       </div>
-      {hint && <p className="mt-2 text-[11px] leading-snug text-fg-muted">{hint}</p>}
+      {hint && <p className="mt-2 text-[11px] leading-snug text-slate-500">{hint}</p>}
     </motion.div>
   );
 }
@@ -138,7 +138,7 @@ export function SectionCard({ title, action, className, children, eyebrow }) {
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="min-w-0">
             {eyebrow && <span className="block font-mono text-[10px] uppercase tracking-[0.24em] text-aurora-violet/70">{eyebrow}</span>}
-            {title && <h3 className="font-display text-[18px] font-bold text-fg">{title}</h3>}
+            {title && <h3 className="font-display text-[18px] font-bold text-white">{title}</h3>}
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </div>
@@ -164,7 +164,7 @@ export function BarChart({ data, labels }) {
       </div>
       {labels && (
         <div className="mt-2.5 flex gap-2.5">
-          {labels.map((l) => <span key={l} className="flex-1 text-center text-[11px] text-fg-muted">{l}</span>)}
+          {labels.map((l) => <span key={l} className="flex-1 text-center text-[11px] text-slate-500">{l}</span>)}
         </div>
       )}
     </div>

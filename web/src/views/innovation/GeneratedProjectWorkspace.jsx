@@ -38,8 +38,8 @@ function FramingRow({ label, value }) {
   if (!value) return null;
   return (
     <div className="border-t border-white/6 py-2.5 first:border-t-0 first:pt-0">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
-      <p className="mt-1 text-[13px] leading-relaxed text-fg-secondary">{value}</p>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
+      <p className="mt-1 text-[13px] leading-relaxed text-slate-300">{value}</p>
     </div>
   );
 }
@@ -69,7 +69,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-fg-secondary hover:text-fg"><ArrowLeft size={15} /> Back</button>
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-slate-400 hover:text-white"><ArrowLeft size={15} /> Back</button>
 
       <PageIntro eyebrow="Generated project" title={project.title} sub={project.simplified?.oneLineSummary || project.proposedSolution} />
 
@@ -85,7 +85,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
       </div>
 
       {(communityOnly || distinctTypes >= 2 || cites.length > 0) && (
-        <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <SourceMix citations={cites} />
             {communityOnly
@@ -113,8 +113,8 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
         </div>
         {project.mvpScope?.length > 0 && (
           <div className="mt-4">
-            <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">MVP scope</h4>
-            <ul className="space-y-1 text-[13px] text-fg-secondary">{project.mvpScope.map((m, i) => <li key={i} className="flex gap-2"><span className="text-fg-muted">•</span>{m}</li>)}</ul>
+            <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">MVP scope</h4>
+            <ul className="space-y-1 text-[13px] text-slate-300">{project.mvpScope.map((m, i) => <li key={i} className="flex gap-2"><span className="text-slate-600">•</span>{m}</li>)}</ul>
           </div>
         )}
       </SectionCard>
@@ -126,7 +126,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
         {TABS.map((t) => {
           const Icon = t.Icon;
           return (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-medium transition ${tab === t.id ? 'border-aurora-violet/45 bg-aurora-violet/12 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
+            <button key={t.id} onClick={() => setTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-medium transition ${tab === t.id ? 'border-aurora-violet/45 bg-aurora-violet/12 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}>
               <Icon size={13} /> {t.label}
             </button>
           );
@@ -157,14 +157,14 @@ function ProblemEvidence({ cites = [], project }) {
   return (
     <SectionCard title="Problem evidence" eyebrow={`${cites.length} source citation(s)`}>
       {cites.length === 0
-        ? <p className="text-[13px] text-fg-muted">No source citations captured (fallback draft or DB off).</p>
+        ? <p className="text-[13px] text-slate-500">No source citations captured (fallback draft or DB off).</p>
         : (
           <ul className="space-y-2">
             {cites.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-lg border border-subtle bg-surface-1 p-2.5">
+              <li key={i} className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
                 <Badge tone={COMMUNITY.includes(s.source) ? 'amber' : 'cyan'}>{s.source}</Badge>
-                <span className="flex-1 text-[13px] text-fg-secondary">{s.title}</span>
-                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-fg">↗</a>}
+                <span className="flex-1 text-[13px] text-slate-300">{s.title}</span>
+                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white">↗</a>}
               </li>
             ))}
           </ul>
@@ -180,14 +180,14 @@ function CommunitySignals({ cites = [] }) {
         Community discussions are early pain signals, never verified market proof. Usernames are never stored or shown. Strong recommendations require corroboration from technical sources.
       </div>
       {cites.length === 0
-        ? <p className="text-[13px] text-fg-muted">No community signals contributed to this project.</p>
+        ? <p className="text-[13px] text-slate-500">No community signals contributed to this project.</p>
         : (
           <ul className="space-y-2">
             {cites.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 rounded-lg border border-subtle bg-surface-1 p-2.5">
+              <li key={i} className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
                 <Badge tone="amber">{s.source}</Badge>
-                <span className="flex-1 text-[13px] text-fg-secondary">{s.title}</span>
-                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-fg">↗</a>}
+                <span className="flex-1 text-[13px] text-slate-300">{s.title}</span>
+                {s.url && <a href={s.url} target="_blank" rel="noreferrer noopener" className="text-aurora-cyan hover:text-white">↗</a>}
               </li>
             ))}
           </ul>

@@ -22,7 +22,7 @@ const COLUMN_SCROLL = 'max-h-[min(60vh,520px)]';
 
 /* Column accent so the eye can find a column without reading the label. */
 const COLUMN_ACCENT = {
-  backlog: 'text-fg-secondary',
+  backlog: 'text-slate-400',
   ready: 'text-aurora-cyan',
   in_progress: 'text-amber-glow',
   blocked: 'text-rose-300',
@@ -37,15 +37,15 @@ function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockD
       className={`rounded-xl border px-3.5 py-3 transition ${
         selected
           ? 'border-aurora-violet/45 bg-aurora-violet/10 shadow-[0_0_0_1px_rgba(167,139,250,0.15)]'
-          : 'border-subtle bg-surface-1 hover:border-white/16'
+          : 'border-white/8 bg-white/[0.035] hover:border-white/16'
       }`}
     >
       <button onClick={() => onSelect({ type: 'task', id: task.id })} className="w-full text-left">
-        <div className="text-[13.5px] font-semibold leading-snug text-fg">{task.title}</div>
+        <div className="text-[13.5px] font-semibold leading-snug text-white">{task.title}</div>
         {/* Detail lives in the inspector, not on every card — a description on
             each one is what made the columns scroll for pages. */}
         {selected && task.description && (
-          <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-fg-secondary">{task.description}</p>
+          <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-slate-400">{task.description}</p>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Badge>{task.phase}</Badge>
@@ -66,7 +66,7 @@ function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockD
             value={blockDraft.reason}
             onChange={(e) => setBlockDraft({ id: task.id, reason: e.target.value })}
             placeholder="Why is it blocked?"
-            className="h-9 w-full rounded-lg border border-subtle bg-sunken px-3 text-[12.5px] text-fg outline-none focus:border-aurora-violet/40"
+            className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-[12.5px] text-white outline-none focus:border-aurora-violet/40"
           />
           <div className="flex gap-2">
             <button
@@ -79,7 +79,7 @@ function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockD
               Block
             </button>
             <button
-              className="rounded-lg bg-white/8 px-3 py-1.5 text-[12px] text-fg-secondary hover:bg-white/12"
+              className="rounded-lg bg-white/8 px-3 py-1.5 text-[12px] text-slate-300 hover:bg-white/12"
               onClick={() => setBlockDraft({ id: null, reason: '' })}
             >
               Cancel
@@ -93,19 +93,19 @@ function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockD
               value={task.status}
               onChange={(e) => move(task, e.target.value)}
               disabled={task.status === 'verified'}
-              className="h-9 w-full cursor-pointer appearance-none rounded-lg border border-subtle bg-sunken px-2.5 pr-7 text-[12px] text-fg outline-none focus:border-aurora-violet/40 disabled:cursor-not-allowed disabled:text-fg-muted"
+              className="h-9 w-full cursor-pointer appearance-none rounded-lg border border-white/10 bg-black/30 px-2.5 pr-7 text-[12px] text-slate-200 outline-none focus:border-aurora-violet/40 disabled:cursor-not-allowed disabled:text-slate-500"
             >
               {USER_STATUSES.map((s) => (
                 <option key={s} value={s}>{TASK_COLUMNS.find((c) => c.id === s)?.label || s}</option>
               ))}
               {task.status === 'verified' && <option value="verified">Verified</option>}
             </select>
-            <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
           </div>
           {onPreviewCode && task.starterCodeAvailable && (
             <button
               onClick={() => onPreviewCode({ taskId: task.id })}
-              className="h-9 shrink-0 rounded-lg border border-subtle px-2.5 text-[12px] text-fg-secondary transition hover:border-strong hover:bg-surface-1"
+              className="h-9 shrink-0 rounded-lg border border-white/10 px-2.5 text-[12px] text-slate-300 transition hover:border-white/25 hover:bg-white/5"
             >
               Code
             </button>
@@ -138,14 +138,14 @@ export default function WorkspaceTaskBoard({ plan, selected, onSelect, onTaskPat
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-2xl text-[12.5px] leading-relaxed text-fg-muted">
-          Use the status menu on each card to move it. <span className="text-fg-secondary">Verified</span> is set by system
+        <p className="max-w-2xl text-[12.5px] leading-relaxed text-slate-500">
+          Use the status menu on each card to move it. <span className="text-slate-300">Verified</span> is set by system
           verification only — marking a task Done does not verify it.
         </p>
         {emptyCount > 0 && (
           <button
             onClick={() => setShowEmpty((v) => !v)}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-subtle px-3 py-2 text-[12px] text-fg-secondary transition hover:border-strong hover:text-fg"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-[12px] text-slate-400 transition hover:border-white/25 hover:text-slate-200"
           >
             {showEmpty ? <EyeOff size={13} /> : <Eye size={13} />}
             {showEmpty ? 'Hide empty columns' : `Show ${emptyCount} empty column${emptyCount === 1 ? '' : 's'}`}
@@ -160,14 +160,14 @@ export default function WorkspaceTaskBoard({ plan, selected, onSelect, onTaskPat
           {shown.map((col) => (
             <section
               key={col.id}
-              className="flex w-[300px] shrink-0 flex-col rounded-2xl border border-subtle bg-surface-1 p-3"
+              className="flex w-[300px] shrink-0 flex-col rounded-2xl border border-white/8 bg-white/[0.02] p-3"
             >
               {/* Header stays put while the column's own list scrolls. */}
               <header className="mb-2.5 flex shrink-0 items-center justify-between px-1">
-                <span className={`font-mono text-[10.5px] uppercase tracking-[0.18em] ${COLUMN_ACCENT[col.id] || 'text-fg-secondary'}`}>
+                <span className={`font-mono text-[10.5px] uppercase tracking-[0.18em] ${COLUMN_ACCENT[col.id] || 'text-slate-400'}`}>
                   {col.label}
                 </span>
-                <span className="rounded-full bg-white/8 px-2 py-0.5 font-mono text-[10.5px] text-fg-secondary">
+                <span className="rounded-full bg-white/8 px-2 py-0.5 font-mono text-[10.5px] text-slate-400">
                   {cols[col.id].length}
                 </span>
               </header>
@@ -191,7 +191,7 @@ export default function WorkspaceTaskBoard({ plan, selected, onSelect, onTaskPat
                   />
                 ))}
                 {!cols[col.id].length && (
-                  <div className="rounded-xl border border-dashed border-subtle px-3 py-6 text-center text-[12px] text-fg-muted">
+                  <div className="rounded-xl border border-dashed border-white/8 px-3 py-6 text-center text-[12px] text-slate-600">
                     Nothing here yet
                   </div>
                 )}

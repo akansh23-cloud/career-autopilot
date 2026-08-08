@@ -87,16 +87,16 @@ function MarketplaceIdeas({ go, flash }) {
   };
   return (
     <SectionCard title="Startup-grade project ideas" action={<Badge tone="amber">Marketplace ideas</Badge>} className="mb-4">
-      <p className="mb-3 text-[13px] leading-relaxed text-fg-secondary">Use this marketplace not only to show finished projects, but also to discover serious project/problem statements that can become portfolio proof, hackathon entries, or startup experiments.</p>
+      <p className="mb-3 text-[13px] leading-relaxed text-slate-400">Use this marketplace not only to show finished projects, but also to discover serious project/problem statements that can become portfolio proof, hackathon entries, or startup experiments.</p>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {MARKET_IDEAS.map((idea) => (
-          <div key={idea.id} className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-aurora-violet/35">
+          <div key={idea.id} className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-aurora-violet/35">
             <div className="flex items-start justify-between gap-2">
-              <h4 className="font-medium leading-tight text-fg">{idea.title}</h4>
+              <h4 className="font-medium leading-tight text-white">{idea.title}</h4>
               <Badge tone={idea.difficulty === 'Advanced' ? 'amber' : 'cyan'}>{idea.difficulty}</Badge>
             </div>
-            <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-fg-secondary">{idea.problem}</p>
-            <div className="mt-2 rounded-xl border border-subtle bg-base/55 p-2 text-[11px] leading-relaxed text-fg-muted"><span className="text-fg-secondary">Business angle:</span> {idea.businessAngle}</div>
+            <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-400">{idea.problem}</p>
+            <div className="mt-2 rounded-xl border border-white/8 bg-ink-950/55 p-2 text-[11px] leading-relaxed text-slate-500"><span className="text-slate-300">Business angle:</span> {idea.businessAngle}</div>
             <div className="mt-2 flex flex-wrap gap-1.5">{idea.tags.slice(0, 5).map((t) => <Badge key={t} tone="violet">{t}</Badge>)}</div>
             <Button size="sm" className="mt-auto pt-3" onClick={() => startIdea(idea)}><Rocket size={13} /> Build this idea</Button>
           </div>
@@ -140,25 +140,25 @@ function ProjectModal({ p, open, onClose, userName, access, onContact, onShortli
             <VerifiedIcons p={p} />
             <Badge>{userName}</Badge>
           </div>
-          <p className="text-sm leading-relaxed text-fg-secondary">{p.useCase}</p>
+          <p className="text-sm leading-relaxed text-slate-300">{p.useCase}</p>
           {badges.length > 0 && (
             <div>
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Skills proven</div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Skills proven</div>
               <div className="flex flex-wrap gap-1.5">{badges.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={setBadgeOpen} />)}</div>
             </div>
           )}
-          <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Tech stack</div><div className="flex flex-wrap gap-1.5">{(p.techStack || []).map((s, i) => <Badge key={i} tone="violet">{s}</Badge>)}</div></div>
+          <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Tech stack</div><div className="flex flex-wrap gap-1.5">{(p.techStack || []).map((s, i) => <Badge key={i} tone="violet">{s}</Badge>)}</div></div>
           {(p.architectureDiagram || p.architecture) && (
             <div>
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Architecture</div>
-              {p.architectureDiagram ? <ArchitectureDiagram mermaid={p.architectureDiagram} height={240} /> : <div className="rounded-xl border border-subtle bg-base/55 p-3"><p className="text-[13px] text-fg-secondary">{p.architecture}</p></div>}
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Architecture</div>
+              {p.architectureDiagram ? <ArchitectureDiagram mermaid={p.architectureDiagram} height={240} /> : <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3"><p className="text-[13px] text-slate-300">{p.architecture}</p></div>}
             </div>
           )}
           {(p.screenshots || []).length > 0 && (
-            <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Screenshots</div><div className="flex flex-wrap gap-2">{p.screenshots.map((s, i) => <span key={i} className="rounded-lg border border-dashed border-strong bg-surface-1 px-3 py-2 text-[11px] text-fg-secondary">{s.label || `Screenshot ${i + 1}`}</span>)}</div></div>
+            <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Screenshots</div><div className="flex flex-wrap gap-2">{p.screenshots.map((s, i) => <span key={i} className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] px-3 py-2 text-[11px] text-slate-400">{s.label || `Screenshot ${i + 1}`}</span>)}</div></div>
           )}
-          <div className="rounded-xl border border-subtle bg-base/55 p-3"><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Recruiter summary</div><p className="text-[13px] text-fg-secondary">{recruiterSummary(p, userName)}</p></div>
-          <div className="flex flex-wrap gap-2 border-t border-subtle pt-4">
+          <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3"><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Recruiter summary</div><p className="text-[13px] text-slate-300">{recruiterSummary(p, userName)}</p></div>
+          <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
             {p.githubUrl && <a href={p.githubUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Github size={14} /> Code</Button></a>}
             {p.liveDemoUrl && <a href={p.liveDemoUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Globe size={14} /> Live demo</Button></a>}
             <Button size="sm" variant="soft" onClick={() => onClone(p)}><Copy size={14} /> Clone roadmap</Button>
@@ -238,22 +238,22 @@ export default function Sandbox({ go }) {
     <>
       <PageIntro title="Proof-of-Work Sandbox" sub="Published projects ranked by real proof — the way a recruiter would see them." />
 
-      {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-fg">{toast}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-aurora-mint/30 bg-aurora-mint/10 px-4 py-2.5 text-sm text-slate-100">{toast}</div>}
 
       <SectionCard title="Filters" action={<Filter size={16} className="text-aurora-cyan" />} className="mb-4">
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
           <div className="relative">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, skills, stack…" className="pl-9" />
           </div>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
+          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
             <option value="">All roles</option>
             {rolesPresent.map((r) => <option key={r}>{r}</option>)}
           </select>
-          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
-            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min proof</span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
+            <span className="whitespace-nowrap text-[11px] text-slate-400">Min proof</span>
             <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-violet-500" />
-            <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minScore}</span>
+            <span className="w-8 text-right font-mono text-xs text-slate-300">{minScore}</span>
           </div>
         </div>
       </SectionCard>
@@ -271,16 +271,16 @@ export default function Sandbox({ go }) {
               const score = proofScoreBreakdown(p).score;
               const badges = deriveBadges([p], access).slice(0, 3);
               return (
-                <div key={p.id} className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
+                <div key={p.id} className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h4 className="truncate font-medium text-fg">{p.title}</h4>
-                      <p className="mt-0.5 truncate text-xs text-fg-secondary">{userName} · {p.targetRole}</p>
+                      <h4 className="truncate font-medium text-white">{p.title}</h4>
+                      <p className="mt-0.5 truncate text-xs text-slate-400">{userName} · {p.targetRole}</p>
                     </div>
                     <ScoreRing score={score} />
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5"><StatusBadge status={calculateProjectStatus(p).status} /><VerifiedIcons p={p} /></div>
-                  <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-fg-secondary">{p.useCase}</p>
+                  <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-slate-400">{p.useCase}</p>
                   <div className="mt-2.5 flex flex-wrap gap-1.5">{(p.skillsCovered || []).slice(0, 5).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div>
                   {badges.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{badges.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={() => setOpen(p)} />)}</div>}
                   <div className="mt-auto flex flex-wrap gap-2 pt-3">

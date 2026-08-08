@@ -19,7 +19,7 @@ const FLAGS = [
 function Select({ value, onChange, options }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-xl border border-subtle bg-sunken px-3 py-2.5 text-[13px] text-fg outline-none focus:border-aurora-violet/40">
+      className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-[13px] text-white outline-none focus:border-aurora-violet/40">
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   );
@@ -28,7 +28,7 @@ function Select({ value, onChange, options }) {
 function TextArea({ value, onChange, placeholder, rows = 3 }) {
   return (
     <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows}
-      className="w-full resize-y rounded-xl border border-subtle bg-sunken px-3 py-2.5 text-[13px] text-fg placeholder-slate-600 outline-none focus:border-aurora-violet/40" />
+      className="w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-[13px] text-white placeholder-slate-600 outline-none focus:border-aurora-violet/40" />
   );
 }
 
@@ -101,7 +101,7 @@ export default function CustomProjectForm({ onSubmit, busy }) {
             <div className="flex flex-wrap gap-2">
               {FLAGS.map(([k, label]) => (
                 <button key={k} onClick={() => setFlag(k, !form.flags[k])}
-                  className={`rounded-full border px-3 py-1.5 text-[12px] transition ${form.flags[k] ? 'border-aurora-violet/40 bg-aurora-violet/14 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
+                  className={`rounded-full border px-3 py-1.5 text-[12px] transition ${form.flags[k] ? 'border-aurora-violet/40 bg-aurora-violet/14 text-white' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}>
                   {label}
                 </button>
               ))}

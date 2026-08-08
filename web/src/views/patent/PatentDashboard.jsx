@@ -12,9 +12,9 @@ const ACTION_ICON = { generate: Sparkles, strengthen: TrendingUp, prior_art: Sea
 
 function Stat({ label, value, icon: Icon }) {
   return (
-    <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
-      <div className="flex items-center gap-1.5 text-[12px] text-fg-secondary">{Icon && <Icon size={13} />} {label}</div>
-      <div className="mt-1 font-display text-2xl text-fg">{value ?? 0}</div>
+    <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+      <div className="flex items-center gap-1.5 text-[12px] text-slate-400">{Icon && <Icon size={13} />} {label}</div>
+      <div className="mt-1 font-display text-2xl text-white">{value ?? 0}</div>
     </div>
   );
 }
@@ -39,7 +39,7 @@ export default function PatentDashboard({ go }) {
       <div className="mb-4 rounded-xl border border-amber-glow/25 bg-amber-glow/5 px-3 py-2"><Disclaimer /></div>
 
       {loading ? (
-        <SectionCard><div className="flex items-center gap-2 py-8 text-fg-secondary"><Loader2 size={16} className="animate-spin" /> Loading Patent OS…</div></SectionCard>
+        <SectionCard><div className="flex items-center gap-2 py-8 text-slate-400"><Loader2 size={16} className="animate-spin" /> Loading Patent OS…</div></SectionCard>
       ) : !hasIdeas ? (
         <EmptyState icon={Lightbulb} title="No inventions yet" hint="Start in the Innovation OS: discover real, source-backed problems and build patent-aware projects." action={<Button onClick={() => go?.('innovation')}><Sparkles size={14} /> Discover Innovation Projects</Button>} />
       ) : (
@@ -56,23 +56,23 @@ export default function PatentDashboard({ go }) {
             {data?.topIdea && (
               <SectionCard title="Highest-scoring idea">
                 <button onClick={() => go?.('patentworkspace', { ideaId: data.topIdea.id })} className="group flex w-full items-center justify-between gap-3 text-left">
-                  <div className="min-w-0"><div className="truncate text-sm font-medium text-fg">{data.topIdea.title}</div><div className="text-[11px] text-fg-muted">{data.topIdea.grade}</div></div>
-                  <div className="flex items-center gap-2"><Badge tone="mint">{data.topIdea.score}/100</Badge><ArrowRight size={15} className="text-fg-muted transition group-hover:translate-x-0.5 group-hover:text-fg" /></div>
+                  <div className="min-w-0"><div className="truncate text-sm font-medium text-white">{data.topIdea.title}</div><div className="text-[11px] text-slate-500">{data.topIdea.grade}</div></div>
+                  <div className="flex items-center gap-2"><Badge tone="mint">{data.topIdea.score}/100</Badge><ArrowRight size={15} className="text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-white" /></div>
                 </button>
-                {data?.topDomain && <div className="mt-3 border-t border-subtle pt-3 text-[12px] text-fg-secondary">Top domain: <span className="text-fg">{data.topDomain}</span></div>}
+                {data?.topDomain && <div className="mt-3 border-t border-white/8 pt-3 text-[12px] text-slate-400">Top domain: <span className="text-slate-200">{data.topDomain}</span></div>}
               </SectionCard>
             )}
 
             <SectionCard title="Recommended next actions">
               {(data?.nextActions || []).length === 0 ? (
-                <p className="text-[13px] text-fg-muted">You're all caught up.</p>
+                <p className="text-[13px] text-slate-500">You're all caught up.</p>
               ) : (
                 <div className="space-y-2">
                   {data.nextActions.map((a, i) => {
                     const Icon = ACTION_ICON[a.action] || Sparkles;
                     return (
                       <button key={i} onClick={() => go?.(a.action === 'generate' ? 'innovation' : a.action === 'prior_art' ? 'priorart' : a.action === 'disclosure' ? 'patentdisclosures' : 'patentportfolio')}
-                        className="flex w-full items-center gap-2.5 rounded-lg border border-subtle bg-surface-1 px-3 py-2 text-left text-[13px] text-fg-secondary transition hover:border-strong">
+                        className="flex w-full items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-left text-[13px] text-slate-300 transition hover:border-white/20">
                         <Icon size={14} className="text-aurora-cyan" /> {a.label}
                       </button>
                     );
@@ -85,9 +85,9 @@ export default function PatentDashboard({ go }) {
           <SectionCard title="Pipeline overview" action={<Button size="sm" variant="soft" onClick={() => go?.('patentportfolio')}><Layers size={14} /> Open pipeline</Button>}>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
               {STATUS_ORDER.map((s) => (
-                <div key={s} className="rounded-xl border border-subtle bg-surface-1 p-3 text-center">
-                  <div className="font-display text-xl text-fg">{pipeline[s] || 0}</div>
-                  <div className="text-[10px] text-fg-muted">{STATUS_LABELS[s]}</div>
+                <div key={s} className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-center">
+                  <div className="font-display text-xl text-white">{pipeline[s] || 0}</div>
+                  <div className="text-[10px] text-slate-500">{STATUS_LABELS[s]}</div>
                 </div>
               ))}
             </div>
@@ -97,9 +97,9 @@ export default function PatentDashboard({ go }) {
             <SectionCard title="Recent activity">
               <div className="space-y-1.5">
                 {data.activity.slice(0, 10).map((a) => (
-                  <div key={a.id} className="flex items-center gap-2 text-[13px] text-fg-secondary">
+                  <div key={a.id} className="flex items-center gap-2 text-[13px] text-slate-400">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-aurora-violet/60" /> {a.message}
-                    <span className="ml-auto shrink-0 text-[10px] text-fg-muted">{new Date(a.createdAt).toLocaleDateString()}</span>
+                    <span className="ml-auto shrink-0 text-[10px] text-slate-600">{new Date(a.createdAt).toLocaleDateString()}</span>
                   </div>
                 ))}
               </div>
@@ -112,7 +112,7 @@ export default function PatentDashboard({ go }) {
                 {data.memory.strongDomains?.map((d) => <Badge key={d} tone="mint">Strong: {d}</Badge>)}
                 {data.memory.commonWeaknesses?.map((w) => <Badge key={w} tone="amber">Avoids: {w}</Badge>)}
               </div>
-              <p className="mt-2 text-[11px] text-fg-muted">Future idea generation uses this history to avoid rejected directions and lean into your strengths.</p>
+              <p className="mt-2 text-[11px] text-slate-500">Future idea generation uses this history to avoid rejected directions and lean into your strengths.</p>
             </SectionCard>
           )}
         </div>

@@ -90,7 +90,6 @@ const CSRF_EXEMPT_PATHS = new Set([
   '/api/integrations/github/webhook', // verified by GitHub HMAC signature, not cookies
   '/auth/dev-login', // pre-auth bootstrap (no session yet)
   '/auth/logout', // clearing state; safe and must always succeed
-  '/api/ops/client-error', // crash telemetry; writes nothing, and a crashed UI cannot be relied on to attach a token
 ]);
 
 function readCookie(req, name) {

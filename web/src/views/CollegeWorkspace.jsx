@@ -122,13 +122,13 @@ export default function CollegeWorkspace({ params = {}, go }) {
       <div className="mb-5 space-y-2">
         {GROUPS.map((g) => (
           <div key={g.label} className="flex flex-wrap items-center gap-2">
-            <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">{g.label}</span>
+            <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-600">{g.label}</span>
             {g.tabs.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${
-                  tab === t.id ? 'border-strong bg-surface-1 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
+                  tab === t.id ? 'border-white/25 bg-white/[0.06] text-white' : 'border-white/8 bg-white/[0.02] text-slate-300 hover:border-white/20'
                 }`}
               >
                 <t.icon size={15} /> {t.label}
@@ -199,7 +199,7 @@ function SortHeader({ label, field, sort, order, onSort, align = 'left' }) {
     <th className={`px-2 py-2 ${align === 'right' ? 'text-right' : ''}`}>
       <button
         onClick={() => onSort(field)}
-        className={`inline-flex items-center gap-1 transition hover:text-fg-secondary ${active ? 'text-fg' : ''}`}
+        className={`inline-flex items-center gap-1 transition hover:text-slate-300 ${active ? 'text-slate-200' : ''}`}
       >
         {label}{active && <Icon size={11} />}
       </button>
@@ -265,7 +265,7 @@ function DirectoryTab() {
         <Field label="Skill"><Input value={filters.skill} onChange={(e) => set('skill', e.target.value)} placeholder="e.g. React" /></Field>
         <Field label="Min readiness"><Input type="number" value={filters.minReadiness} onChange={(e) => set('minReadiness', e.target.value)} placeholder="0\u2013100" /></Field>
         <Field label="Min resume score"><Input type="number" value={filters.minResume} onChange={(e) => set('minResume', e.target.value)} placeholder="0\u2013100" /></Field>
-        <label className="flex items-center gap-2 self-end text-sm text-fg-secondary">
+        <label className="flex items-center gap-2 self-end text-sm text-slate-300">
           <input type="checkbox" checked={filters.verifiedOnly} onChange={(e) => set('verifiedOnly', e.target.checked)} /> Verified projects only
         </label>
         <Button size="sm" className="self-end" onClick={() => { setApplied(filters); setOffset(0); }}>
@@ -279,7 +279,7 @@ function DirectoryTab() {
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
+              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <SortHeader label="Name" field="name" sort={sort} order={order} onSort={onSort} />
                   <SortHeader label="Branch" field="branch" sort={sort} order={order} onSort={onSort} />
@@ -295,23 +295,23 @@ function DirectoryTab() {
               </thead>
               <tbody>
                 {students.map((s) => (
-                  <tr key={s.id} className="border-t border-white/6 hover:bg-surface-1">
-                    <td className="px-2 py-2 text-fg">{s.name || s.email}</td>
-                    <td className="px-2 py-2 text-fg-secondary">{s.branch || '\u2014'}</td>
-                    <td className="px-2 py-2 text-fg-secondary">{s.batch || '\u2014'}</td>
+                  <tr key={s.id} className="border-t border-white/6 hover:bg-white/[0.02]">
+                    <td className="px-2 py-2 text-slate-200">{s.name || s.email}</td>
+                    <td className="px-2 py-2 text-slate-400">{s.branch || '\u2014'}</td>
+                    <td className="px-2 py-2 text-slate-400">{s.batch || '\u2014'}</td>
                     <td className="px-2 py-2 text-right">{s.readinessScore ?? '\u2014'}</td>
                     <td className="px-2 py-2 text-right">{s.resumeScore ?? '\u2014'}</td>
                     <td className="px-2 py-2 text-right">{s.verifiedProjects > 0 ? <Badge tone="mint">{s.verifiedProjects}</Badge> : '\u2014'}</td>
-                    <td className="px-2 py-2 text-xs text-fg-secondary">{String(s.funnelStage || '').replace(/_/g, ' ') || '\u2014'}</td>
+                    <td className="px-2 py-2 text-xs text-slate-400">{String(s.funnelStage || '').replace(/_/g, ' ') || '\u2014'}</td>
                     <td className="px-2 py-2">
                       {s.engagement
                         ? <Badge tone={ENGAGEMENT_TONE[s.engagement] || 'default'}>{ENGAGEMENT_LABEL[s.engagement] || s.engagement}</Badge>
-                        : <span className="text-fg-muted">\u2014</span>}
+                        : <span className="text-slate-600">\u2014</span>}
                     </td>
                     <td className="px-2 py-2">
                       {s.riskBand && s.riskBand !== 'none'
                         ? <Badge tone={RISK_TONE[s.riskBand] || 'default'}>{s.riskBand}</Badge>
-                        : <span className="text-fg-muted">\u2014</span>}
+                        : <span className="text-slate-600">\u2014</span>}
                     </td>
                     <td className="px-2 py-2"><Button size="sm" variant="soft" onClick={() => setDrill(s.id)}><Eye size={12} /> View</Button></td>
                   </tr>
@@ -322,7 +322,7 @@ function DirectoryTab() {
 
           {total > PAGE_SIZE && (
             <div className="mt-4 flex items-center justify-between border-t border-white/6 pt-3">
-              <span className="text-xs text-fg-muted">Showing {from}\u2013{to} of {total}</span>
+              <span className="text-xs text-slate-500">Showing {from}\u2013{to} of {total}</span>
               <div className="flex gap-2">
                 <Button size="sm" variant="soft" disabled={offset === 0}
                   onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}><ChevronLeft size={13} /> Previous</Button>
@@ -364,9 +364,9 @@ function HeatmapTab() {
     <SectionCard title="Skill heatmap" eyebrow="Most common verified/declared skills in your college">
       <div className="flex flex-wrap gap-2">
         {heat.map((h) => (
-          <span key={h.skill} className="rounded-lg border border-subtle px-2.5 py-1 text-sm"
+          <span key={h.skill} className="rounded-lg border border-white/10 px-2.5 py-1 text-sm"
             style={{ background: `rgba(124,92,255,${0.08 + 0.5 * (h.count / max)})` }}>
-            {h.skill} <span className="text-fg-secondary">· {h.count}</span>
+            {h.skill} <span className="text-slate-400">· {h.count}</span>
           </span>
         ))}
       </div>
@@ -403,8 +403,8 @@ function ProjectsTab({ go }) {
       ) : (
         <ul className="space-y-2">
           {students.map((s) => (
-            <li key={s.id} className="flex items-center justify-between rounded-xl border border-subtle bg-surface-1 px-3 py-2 text-sm">
-              <span className="text-fg">{s.name || s.email}</span>
+            <li key={s.id} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-sm">
+              <span className="text-slate-200">{s.name || s.email}</span>
               <Badge tone="mint">{s.verifiedProjects} verified</Badge>
             </li>
           ))}
@@ -501,7 +501,7 @@ function ReportsTab({ go }) {
             {busy === 'full' ? <Spinner /> : <Download size={15} />} Full observability CSV
           </Button>
         </div>
-        {status && <p className="mt-3 text-sm text-fg-secondary">{status}</p>}
+        {status && <p className="mt-3 text-sm text-slate-400">{status}</p>}
       </SectionCard>
 
       {/* These two used to be dead grey "placeholder" chips sitting on top of

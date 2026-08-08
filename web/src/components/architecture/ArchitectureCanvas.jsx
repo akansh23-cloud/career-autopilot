@@ -105,7 +105,7 @@ export default function ArchitectureCanvas({ view, height = 420 }) {
   }, [view]);
 
   if (!view || !layout || !Array.isArray(view.nodes) || view.nodes.length === 0) {
-    return <p className="text-[12px] text-fg-muted">This view has no diagram content.</p>;
+    return <p className="text-[12px] text-slate-500">This view has no diagram content.</p>;
   }
 
   const { placed, groupRects, width, height: H, orientation } = layout;
@@ -115,14 +115,14 @@ export default function ArchitectureCanvas({ view, height = 420 }) {
   const markerId = `arch-arrow-${view.id || view.type || 'v'}`;
 
   return (
-    <div className="rounded-xl border border-subtle bg-base/60">
-      <div className="flex items-center justify-between border-b border-subtle px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-fg-muted">{view.title || view.type}</span>
+    <div className="rounded-xl border border-white/10 bg-ink-950/60">
+      <div className="flex items-center justify-between border-b border-white/8 px-3 py-1.5">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-slate-500">{view.title || view.type}</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} className="rounded p-1 text-fg-secondary hover:bg-surface-1 hover:text-fg" title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
-          <span className="w-9 text-center font-mono text-[10px] text-fg-muted">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))} className="rounded p-1 text-fg-secondary hover:bg-surface-1 hover:text-fg" title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
-          <button onClick={() => setZoom(1)} className="rounded p-1 text-fg-secondary hover:bg-surface-1 hover:text-fg" title="Fit" aria-label="Reset zoom"><Maximize2 size={13} /></button>
+          <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} className="rounded p-1 text-slate-400 hover:bg-white/5 hover:text-white" title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
+          <span className="w-9 text-center font-mono text-[10px] text-slate-500">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))} className="rounded p-1 text-slate-400 hover:bg-white/5 hover:text-white" title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
+          <button onClick={() => setZoom(1)} className="rounded p-1 text-slate-400 hover:bg-white/5 hover:text-white" title="Fit" aria-label="Reset zoom"><Maximize2 size={13} /></button>
         </div>
       </div>
 
@@ -184,26 +184,26 @@ export default function ArchitectureCanvas({ view, height = 420 }) {
       </div>
 
       {/* legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-subtle px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/8 px-3 py-2">
         {legendTypes.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1.5 text-[10px] text-fg-secondary">
+          <span key={t} className="inline-flex items-center gap-1.5 text-[10px] text-slate-400">
             <span className="inline-block h-2 w-2 rounded-sm" style={{ background: NODE_TYPE_COLORS[t] || NODE_TYPE_COLORS.service }} />
             {NODE_TYPE_LABELS[t] || t}
           </span>
         ))}
         {(view.edges || []).some((e) => e.async) && (
-          <span className="inline-flex items-center gap-1.5 text-[10px] text-fg-secondary">
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-slate-400">
             <span className="inline-block h-0 w-5 border-t border-dashed border-slate-400" /> async
           </span>
         )}
-        {nodes.some(isStacked) && <span className="text-[10px] text-fg-secondary">▣ stacked = concurrent / ×N instances</span>}
+        {nodes.some(isStacked) && <span className="text-[10px] text-slate-400">▣ stacked = concurrent / ×N instances</span>}
       </div>
 
       {/* annotations */}
       {view.annotations?.length > 0 && (
-        <div className="border-t border-subtle px-3 py-2">
+        <div className="border-t border-white/8 px-3 py-2">
           {view.annotations.map((a, i) => (
-            <p key={i} className="text-[11px] text-fg-muted">• {a}</p>
+            <p key={i} className="text-[11px] text-slate-500">• {a}</p>
           ))}
         </div>
       )}

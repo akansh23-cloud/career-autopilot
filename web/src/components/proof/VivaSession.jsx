@@ -84,11 +84,11 @@ export function VivaSession({ open, onClose, repoFullName, skills = [], onResult
     <Modal open={open} onClose={onClose} title="Live comprehension viva" width="max-w-2xl">
       {phase === 'intro' && (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 text-sm text-fg-secondary">
+          <div className="flex items-center gap-2 text-sm text-slate-300">
             <Brain size={16} className="text-aurora-cyan" /> Prove you understand the code you committed.
           </div>
-          <p className="text-xs text-fg-secondary leading-relaxed">
-            You'll answer a short set of questions drawn from <span className="text-fg">{repoFullName}</span>,
+          <p className="text-xs text-slate-400 leading-relaxed">
+            You'll answer a short set of questions drawn from <span className="text-slate-200">{repoFullName}</span>,
             one at a time and on the clock. Answers are scored deterministically on the server — there's no AI judge.
             Passing earns a <span className="text-[#BDF5DC]">HIGH-confidence</span> credential, the tier recruiters
             trust most. Answering implausibly fast (looking things up / pasting) is flagged and can block a pass.
@@ -106,16 +106,16 @@ export function VivaSession({ open, onClose, repoFullName, skills = [], onResult
             <Badge tone="cyan">{PROBE_TYPE_LABEL[p.type] || p.type}</Badge>
             <Badge tone={remaining < 60000 ? 'rose' : 'default'}><Clock size={11} /> {mm}:{String(ss).padStart(2, '0')}</Badge>
           </div>
-          <div className="text-xs text-fg-muted">Question {idx + 1} of {probes.length}</div>
-          <p className="text-fg font-medium leading-relaxed">{p.prompt}</p>
-          <p className="text-[11px] text-fg-muted">{probeHint(p.type)}</p>
+          <div className="text-xs text-slate-500">Question {idx + 1} of {probes.length}</div>
+          <p className="text-white font-medium leading-relaxed">{p.prompt}</p>
+          <p className="text-[11px] text-slate-500">{probeHint(p.type)}</p>
           {p.type === 'factual' ? (
             <Input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Your answer" />
           ) : (
             <textarea
               autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
               rows={p.type === 'modify' ? 8 : 3}
-              className="w-full rounded-lg border border-subtle bg-surface-1 px-3 py-2 text-sm text-fg font-mono focus:border-aurora-cyan/40 focus:outline-none"
+              className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white font-mono focus:border-aurora-cyan/40 focus:outline-none"
               placeholder={p.type === 'modify' ? 'Paste the full updated function' : 'Your explanation'}
             />
           )}
@@ -134,12 +134,12 @@ export function VivaSession({ open, onClose, repoFullName, skills = [], onResult
             ? <ShieldCheck size={40} className="mx-auto text-[#BDF5DC]" />
             : <ShieldAlert size={40} className="mx-auto text-[#F3E3B2]" />}
           <div>
-            <p className="font-display text-2xl font-semibold text-fg">{result.comprehensionScore}/100</p>
-            <p className="text-sm text-fg-secondary">{result.passed ? 'Passed' : 'Not passed'} · threshold {result.threshold}</p>
+            <p className="font-display text-2xl font-semibold text-white">{result.comprehensionScore}/100</p>
+            <p className="text-sm text-slate-400">{result.passed ? 'Passed' : 'Not passed'} · threshold {result.threshold}</p>
           </div>
           {result.passed
             ? <p className="text-xs text-[#BDF5DC]">Minted {result.credentials?.length || 0} HIGH-confidence credential(s).</p>
-            : <p className="text-xs text-fg-secondary">{(result.sessionFlags || []).includes('many_fast_answers') ? 'Too many answers came in implausibly fast.' : 'Review the code and try again later.'}</p>}
+            : <p className="text-xs text-slate-400">{(result.sessionFlags || []).includes('many_fast_answers') ? 'Too many answers came in implausibly fast.' : 'Review the code and try again later.'}</p>}
           <Button variant="soft" onClick={onClose}>Close</Button>
         </div>
       )}

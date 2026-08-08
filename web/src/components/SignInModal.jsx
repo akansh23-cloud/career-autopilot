@@ -34,7 +34,7 @@ export default function SignInModal({ open, onClose }) {
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full btn-primary ring-1 ring-white/25">
           <Sparkles size={26} className="relative z-[2] text-ink-950" />
         </div>
-        <h3 className="font-display text-2xl font-semibold text-fg">Welcome to Career Autopilot</h3>
+        <h3 className="font-display text-2xl font-semibold text-white">Welcome to Career Autopilot</h3>
         <p className="mt-1.5 text-sm text-muted">Sign in to launch your AI career workspace.</p>
       </div>
 
@@ -59,8 +59,8 @@ export default function SignInModal({ open, onClose }) {
 
         {providers?.dev?.enabled && (
           <>
-            <div className="flex items-center gap-3 py-1 text-xs text-fg-muted">
-              <span className="h-px flex-1 bg-surface-2" /> or <span className="h-px flex-1 bg-surface-2" />
+            <div className="flex items-center gap-3 py-1 text-xs text-slate-500">
+              <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
             </div>
             {!showDemo ? (
               <Button variant="soft" className="w-full" onClick={() => setShowDemo(true)}>
@@ -77,7 +77,7 @@ export default function SignInModal({ open, onClose }) {
         )}
       </div>
 
-      <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-fg-muted">
+      <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
         <ShieldCheck size={13} /> Secured by Google OAuth · session cookies · no passwords stored
       </p>
     </Modal>

@@ -31,34 +31,34 @@ function CodeBlock({ lines, language = 'bash' }) {
   if (!list.length) return null;
   const text = list.join('\n');
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-subtle bg-base/70">
-      <div className="flex items-center justify-between border-b border-subtle px-3 py-1.5">
-        <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-fg-muted"><Terminal size={11} /> {language}</span>
+    <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-ink-950/70">
+      <div className="flex items-center justify-between border-b border-white/8 px-3 py-1.5">
+        <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-500"><Terminal size={11} /> {language}</span>
         <CopyBtn text={text} />
       </div>
-      <pre className="overflow-x-auto px-3 py-2.5 text-[12px] leading-relaxed text-fg"><code>{text}</code></pre>
+      <pre className="overflow-x-auto px-3 py-2.5 text-[12px] leading-relaxed text-slate-200"><code>{text}</code></pre>
     </div>
   );
 }
 
 function List({ items, tone = 'slate' }) {
   const list = safeArr(items).map((x) => String(x)).filter(Boolean);
-  if (!list.length) return <p className="text-xs text-fg-muted">—</p>;
-  const dot = tone === 'rose' ? 'text-rose-400' : tone === 'mint' ? 'text-aurora-mint' : 'text-fg-muted';
+  if (!list.length) return <p className="text-xs text-slate-500">—</p>;
+  const dot = tone === 'rose' ? 'text-rose-400' : tone === 'mint' ? 'text-aurora-mint' : 'text-slate-500';
   return (
     <ul className="space-y-1.5">
-      {list.map((x, i) => <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-fg-secondary"><span className={`mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-current ${dot}`} />{x}</li>)}
+      {list.map((x, i) => <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-slate-300"><span className={`mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-current ${dot}`} />{x}</li>)}
     </ul>
   );
 }
 
 function NumberedSteps({ items }) {
   const list = safeArr(items).map((x) => String(x)).filter(Boolean);
-  if (!list.length) return <p className="text-xs text-fg-muted">—</p>;
+  if (!list.length) return <p className="text-xs text-slate-500">—</p>;
   return (
     <ol className="space-y-1.5">
       {list.map((x, i) => (
-        <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed text-fg-secondary">
+        <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed text-slate-300">
           <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-aurora-violet/15 text-[11px] font-semibold text-aurora-violet">{i + 1}</span>
           <span>{x}</span>
         </li>
@@ -69,10 +69,10 @@ function NumberedSteps({ items }) {
 
 function Panel({ title, icon: Icon, action, children }) {
   return (
-    <div className="rounded-xl border border-subtle bg-surface-1 p-3.5">
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
       {(title || action) && (
         <div className="mb-2 flex items-center justify-between">
-          <h4 className="inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-fg-secondary">{Icon && <Icon size={13} />} {title}</h4>
+          <h4 className="inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">{Icon && <Icon size={13} />} {title}</h4>
           {action}
         </div>
       )}
@@ -85,19 +85,19 @@ function Collapsible({ title, icon: Icon, defaultOpen = false, tone = 'violet', 
   const [open, setOpen] = useState(defaultOpen);
   const ring = tone === 'cyan' ? 'text-aurora-cyan' : tone === 'mint' ? 'text-aurora-mint' : tone === 'amber' ? 'text-amber-glow' : 'text-aurora-violet';
   return (
-    <div className="rounded-xl border border-subtle bg-surface-1">
+    <div className="rounded-xl border border-white/10 bg-white/[0.02]">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between px-3.5 py-2.5 text-left">
         <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide ${ring}`}>{Icon && <Icon size={13} />} {title}</span>
-        <ChevronRight size={15} className={`text-fg-muted transition-transform ${open ? 'rotate-90' : ''}`} />
+        <ChevronRight size={15} className={`text-slate-500 transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
-      {open && <div className="border-t border-subtle px-3.5 py-3">{children}</div>}
+      {open && <div className="border-t border-white/8 px-3.5 py-3">{children}</div>}
     </div>
   );
 }
 
 function KeyVal({ label, value }) {
   if (!value) return null;
-  return <div className="text-[12.5px] leading-relaxed text-fg-secondary"><span className="text-fg-muted">{label}: </span>{value}</div>;
+  return <div className="text-[12.5px] leading-relaxed text-slate-300"><span className="text-slate-500">{label}: </span>{value}</div>;
 }
 
 function downloadText(filename, text, type = 'text/plain') {
@@ -116,19 +116,19 @@ function OverviewSection({ guide }) {
   return (
     <div className="space-y-3">
       <Panel title="What you're building" icon={Rocket}>
-        <p className="text-[13px] leading-relaxed text-fg-secondary">{guide.summary || '—'}</p>
+        <p className="text-[13px] leading-relaxed text-slate-300">{guide.summary || '—'}</p>
       </Panel>
       <div className="grid gap-3 sm:grid-cols-2">
         <Panel title="Why this proves your skills" icon={Target}>
-          <p className="text-[13px] leading-relaxed text-fg-secondary">Finishing this build produces a public repo, a deployed URL, and a README — the recruiter-visible proof that you can ship a real {guide.type} project, not just list the skills.</p>
+          <p className="text-[13px] leading-relaxed text-slate-300">Finishing this build produces a public repo, a deployed URL, and a README — the recruiter-visible proof that you can ship a real {guide.type} project, not just list the skills.</p>
         </Panel>
         <Panel title="How Builder Mode works" icon={ListChecks}>
-          <p className="text-[13px] leading-relaxed text-fg-secondary">Work top-to-bottom through the stages. Each task tells you exactly which files to create, the commands to run, what to expect, how to validate, and the commit to make. Tick tasks off to track build progress.</p>
+          <p className="text-[13px] leading-relaxed text-slate-300">Work top-to-bottom through the stages. Each task tells you exactly which files to create, the commands to run, what to expect, how to validate, and the commit to make. Tick tasks off to track build progress.</p>
         </Panel>
       </div>
-      <div className="rounded-xl border border-aurora-cyan/25 bg-aurora-cyan/5 p-3.5 text-[12.5px] leading-relaxed text-fg-secondary">
+      <div className="rounded-xl border border-aurora-cyan/25 bg-aurora-cyan/5 p-3.5 text-[12.5px] leading-relaxed text-slate-300">
         <ShieldCheck size={14} className="mr-1.5 inline text-aurora-cyan" />
-        Build progress measures <span className="text-fg">execution</span>. It is tracked separately from <span className="text-fg">proof verification</span> — checking off tasks here never marks your project “verified”. To unlock verified resume bullets you still attach real GitHub/live evidence in the Project Workspace.
+        Build progress measures <span className="text-white">execution</span>. It is tracked separately from <span className="text-white">proof verification</span> — checking off tasks here never marks your project “verified”. To unlock verified resume bullets you still attach real GitHub/live evidence in the Project Workspace.
       </div>
       <ArchitectureInputs guide={guide} />
     </div>
@@ -153,7 +153,7 @@ function ArchitectureInputs({ guide }) {
           <div className="space-y-2">
             {rows.map(([label, vals, tone]) => (
               <div key={label}>
-                <div className="mb-1 text-[11px] uppercase tracking-wide text-fg-muted">{label}</div>
+                <div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
                 <div className="flex flex-wrap gap-1.5">{vals.map((v, i) => <Badge key={i} tone={tone}>{v}</Badge>)}</div>
               </div>
             ))}
@@ -162,7 +162,7 @@ function ArchitectureInputs({ guide }) {
       )}
       {missing.length > 0 && (
         <Panel title="Missing details" icon={AlertTriangle}>
-          <p className="mb-1.5 text-[12px] text-fg-secondary">A guide was still generated. Add these in the Project Workspace for a sharper, architecture-backed build:</p>
+          <p className="mb-1.5 text-[12px] text-slate-400">A guide was still generated. Add these in the Project Workspace for a sharper, architecture-backed build:</p>
           <ul className="space-y-1">
             {missing.map((m, i) => <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-amber-100"><span className="mt-1 text-amber-glow">•</span> {m}</li>)}
           </ul>
@@ -179,19 +179,19 @@ function PrerequisitesSection({ guide, onToggle }) {
   return (
     <div className="space-y-2.5">
       {items.map((q, i) => (
-        <div key={i} className="rounded-xl border border-subtle bg-surface-1 p-3.5">
+        <div key={i} className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
           <div className="flex items-start gap-3">
-            <button onClick={() => onToggle(q.name, !q.completed)} className="mt-0.5 shrink-0 text-fg-secondary hover:text-aurora-mint" aria-label="toggle prerequisite">
+            <button onClick={() => onToggle(q.name, !q.completed)} className="mt-0.5 shrink-0 text-slate-400 hover:text-aurora-mint" aria-label="toggle prerequisite">
               {q.completed ? <CheckCircle2 size={18} className="text-aurora-mint" /> : <Circle size={18} />}
             </button>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-sm font-medium ${q.completed ? 'text-fg-secondary line-through' : 'text-fg'}`}>{q.name}</span>
+                <span className={`text-sm font-medium ${q.completed ? 'text-slate-400 line-through' : 'text-white'}`}>{q.name}</span>
                 <Badge tone={q.required ? 'amber' : 'cyan'}>{q.required ? 'Required' : 'Optional'}</Badge>
               </div>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-fg-secondary">{q.description}</p>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{q.description}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {q.checkCommand && <code className="rounded-md bg-base/70 px-2 py-1 text-[11px] text-fg-secondary">{q.checkCommand}</code>}
+                {q.checkCommand && <code className="rounded-md bg-ink-950/70 px-2 py-1 text-[11px] text-slate-300">{q.checkCommand}</code>}
                 {q.checkCommand && <CopyBtn text={q.checkCommand} label="Copy check" />}
                 {q.installLink && <a href={q.installLink} target="_blank" rel="noreferrer" className="text-[11px] text-aurora-cyan underline">Install</a>}
               </div>
@@ -208,7 +208,7 @@ function SetupSection({ guide }) {
   const s = guide.setup || {};
   return (
     <div className="space-y-3">
-      {s.overview && <Panel title="Overview" icon={BookOpen}><p className="text-[13px] leading-relaxed text-fg-secondary">{s.overview}</p></Panel>}
+      {s.overview && <Panel title="Overview" icon={BookOpen}><p className="text-[13px] leading-relaxed text-slate-300">{s.overview}</p></Panel>}
       {safeArr(s.commands).length > 0 && <Panel title="Setup commands" icon={Terminal}><CodeBlock lines={s.commands} /></Panel>}
       {safeArr(s.folderStructure).length > 0 && <Panel title="Folder structure" icon={FolderTree}><CodeBlock lines={s.folderStructure} language="text" /></Panel>}
       {safeArr(s.environmentVariables).length > 0 && <Panel title="Environment variables" icon={Boxes}><CodeBlock lines={s.environmentVariables} language="env" /></Panel>}
@@ -227,16 +227,16 @@ function RoadmapSection({ guide, onJump }) {
         const tasks = safeArr(s.tasks);
         const done = tasks.filter((t) => t.status === 'done').length;
         return (
-          <button key={s.id} onClick={() => onJump(s.id)} className="block w-full rounded-xl border border-subtle bg-surface-1 p-3.5 text-left transition hover:border-aurora-violet/35">
+          <button key={s.id} onClick={() => onJump(s.id)} className="block w-full rounded-xl border border-white/10 bg-white/[0.02] p-3.5 text-left transition hover:border-aurora-violet/35">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-aurora-violet/15 text-[12px] font-semibold text-aurora-violet">{i + 1}</span>
                 <div>
-                  <div className="flex items-center gap-2 text-sm font-medium text-fg">{s.title} {s.status === 'done' && <CheckCircle2 size={14} className="text-aurora-mint" />}</div>
-                  <p className="text-[12px] text-fg-secondary">{s.goal}</p>
+                  <div className="flex items-center gap-2 text-sm font-medium text-white">{s.title} {s.status === 'done' && <CheckCircle2 size={14} className="text-aurora-mint" />}</div>
+                  <p className="text-[12px] text-slate-400">{s.goal}</p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2 text-[11px] text-fg-muted">
+              <div className="flex shrink-0 items-center gap-2 text-[11px] text-slate-500">
                 <Clock size={12} /> {s.estimatedTime || '—'} · {done}/{tasks.length} <ChevronRight size={14} />
               </div>
             </div>
@@ -260,7 +260,7 @@ function CodeLevelSections({ guide }) {
   return (
     <div className="space-y-2.5">
       {g.overview && (
-        <div className="rounded-xl border border-aurora-violet/25 bg-aurora-violet/5 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-fg-secondary">
+        <div className="rounded-xl border border-aurora-violet/25 bg-aurora-violet/5 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-slate-300">
           <BookOpen size={13} className="mr-1.5 inline text-aurora-violet" />{g.overview}
         </div>
       )}
@@ -268,12 +268,12 @@ function CodeLevelSections({ guide }) {
         <Collapsible title="File plan" icon={FolderTree} tone="violet">
           <div className="space-y-2.5">
             {g.filePlans.map((fp, i) => (
-              <div key={i} className="rounded-lg border border-subtle bg-surface-1 p-2.5">
+              <div key={i} className="rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <code className="text-[12px] text-aurora-cyan">{fp.path}</code>
                   <CopyBtn text={fp.path} label="Copy" />
                 </div>
-                {fp.purpose && <p className="mt-1 text-[12.5px] text-fg-secondary">{fp.purpose}</p>}
+                {fp.purpose && <p className="mt-1 text-[12.5px] text-slate-300">{fp.purpose}</p>}
                 {safeArr(fp.responsibilities).length > 0 && <List items={fp.responsibilities} />}
                 {(safeArr(fp.exports).length > 0 || safeArr(fp.imports).length > 0) && (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -281,7 +281,7 @@ function CodeLevelSections({ guide }) {
                     {safeArr(fp.imports).map((e, j) => <Badge key={`i${j}`} tone="cyan">import: {e}</Badge>)}
                   </div>
                 )}
-                {fp.notes && <p className="mt-1.5 text-[11.5px] text-fg-muted">{fp.notes}</p>}
+                {fp.notes && <p className="mt-1.5 text-[11.5px] text-slate-500">{fp.notes}</p>}
               </div>
             ))}
           </div>
@@ -385,9 +385,9 @@ function TaskDetail({ task, onToggle }) {
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[15px] font-semibold text-fg">{task.title}</h3>
+          <h3 className="text-[15px] font-semibold text-white">{task.title}</h3>
           {task.taskType && <Badge tone={TYPE_TONE[task.taskType] || 'default'}>{String(task.taskType).replace(/_/g, ' ')}</Badge>}
-          {task.objective && <p className="mt-1 text-[13px] leading-relaxed text-fg-secondary">{task.objective}</p>}
+          {task.objective && <p className="mt-1 text-[13px] leading-relaxed text-slate-400">{task.objective}</p>}
         </div>
         <Button size="sm" variant={task.status === 'done' ? 'soft' : 'primary'} onClick={() => onToggle(task.id, task.status !== 'done')} className="shrink-0">
           {task.status === 'done' ? <><CheckCircle2 size={14} /> Done</> : <><Circle size={14} /> Mark done</>}
@@ -424,16 +424,16 @@ function TasksSection({ guide, activeStageId, onPickStage, activeTaskId, onPickT
     <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1.4fr)]">
       {/* left: stages */}
       <div className="space-y-1.5">
-        <div className="px-1 text-[10px] font-semibold uppercase tracking-wide text-fg-muted">Stages</div>
+        <div className="px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Stages</div>
         {stages.map((s, i) => {
           const t = safeArr(s.tasks);
           const d = t.filter((x) => x.status === 'done').length;
           const isActive = s.id === stage.id;
           return (
-            <button key={s.id} onClick={() => onPickStage(s.id)} className={`block w-full rounded-lg px-2.5 py-2 text-left text-[12px] transition ${isActive ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-1'}`}>
+            <button key={s.id} onClick={() => onPickStage(s.id)} className={`block w-full rounded-lg px-2.5 py-2 text-left text-[12px] transition ${isActive ? 'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/40' : 'text-slate-400 hover:bg-white/5'}`}>
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 truncate">{s.status === 'done' ? <CheckCircle2 size={12} className="shrink-0 text-aurora-mint" /> : <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-surface-2 text-[9px]">{i + 1}</span>}<span className="truncate">{s.title}</span></span>
-                <span className="shrink-0 text-[10px] text-fg-muted">{d}/{t.length}</span>
+                <span className="flex items-center gap-1.5 truncate">{s.status === 'done' ? <CheckCircle2 size={12} className="shrink-0 text-aurora-mint" /> : <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-white/10 text-[9px]">{i + 1}</span>}<span className="truncate">{s.title}</span></span>
+                <span className="shrink-0 text-[10px] text-slate-500">{d}/{t.length}</span>
               </div>
             </button>
           );
@@ -444,8 +444,8 @@ function TasksSection({ guide, activeStageId, onPickStage, activeTaskId, onPickT
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-fg">{stage.title}</div>
-            <div className="truncate text-[11px] text-fg-muted">{stage.goal}</div>
+            <div className="truncate text-sm font-semibold text-white">{stage.title}</div>
+            <div className="truncate text-[11px] text-slate-500">{stage.goal}</div>
           </div>
           <Button size="sm" variant="soft" onClick={() => onToggleStage(stage, !stageTasksDone)} className="shrink-0">
             {stageTasksDone ? <><CheckCircle2 size={13} className="text-aurora-mint" /> Stage done</> : 'Complete stage'}
@@ -454,13 +454,13 @@ function TasksSection({ guide, activeStageId, onPickStage, activeTaskId, onPickT
         {tasks.length ? tasks.map((t) => {
           const isActive = task && t.id === task.id;
           return (
-            <div key={t.id} className={`flex items-start gap-2.5 rounded-xl border p-3 transition ${isActive ? 'border-aurora-violet/40 bg-aurora-violet/[0.06]' : 'border-subtle bg-surface-1 hover:border-strong'}`}>
-              <button onClick={() => onToggleTask(t.id, t.status !== 'done')} className="mt-0.5 shrink-0 text-fg-secondary hover:text-aurora-mint" aria-label="toggle task">
+            <div key={t.id} className={`flex items-start gap-2.5 rounded-xl border p-3 transition ${isActive ? 'border-aurora-violet/40 bg-aurora-violet/[0.06]' : 'border-white/10 bg-white/[0.02] hover:border-white/20'}`}>
+              <button onClick={() => onToggleTask(t.id, t.status !== 'done')} className="mt-0.5 shrink-0 text-slate-400 hover:text-aurora-mint" aria-label="toggle task">
                 {t.status === 'done' ? <CheckCircle2 size={17} className="text-aurora-mint" /> : <Circle size={17} />}
               </button>
               <button onClick={() => onPickTask(t.id)} className="min-w-0 flex-1 text-left">
-                <div className={`text-[13px] font-medium ${t.status === 'done' ? 'text-fg-secondary line-through' : 'text-fg'}`}>{t.title}</div>
-                {t.objective && <div className="truncate text-[11px] text-fg-muted">{t.objective}</div>}
+                <div className={`text-[13px] font-medium ${t.status === 'done' ? 'text-slate-400 line-through' : 'text-white'}`}>{t.title}</div>
+                {t.objective && <div className="truncate text-[11px] text-slate-500">{t.objective}</div>}
               </button>
             </div>
           );
@@ -469,7 +469,7 @@ function TasksSection({ guide, activeStageId, onPickStage, activeTaskId, onPickT
       </div>
 
       {/* right: task detail */}
-      <div className="rounded-2xl border border-subtle bg-surface-1 p-3.5">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.015] p-3.5">
         <TaskDetail task={task} onToggle={onToggleTask} />
       </div>
     </div>
@@ -498,7 +498,7 @@ function DeploymentSection({ guide }) {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Panel title="Target" icon={UploadCloud}><p className="text-[13px] text-fg-secondary">{d.target || '—'}</p></Panel>
+        <Panel title="Target" icon={UploadCloud}><p className="text-[13px] text-slate-300">{d.target || '—'}</p></Panel>
         <Panel title="Services" icon={Boxes}><List items={d.services} /></Panel>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -506,7 +506,7 @@ function DeploymentSection({ guide }) {
         <Panel title="Start command" icon={Terminal}><CodeBlock lines={d.startCommand ? [d.startCommand] : []} /></Panel>
       </div>
       {safeArr(d.environmentVariables).length > 0 && <Panel title="Environment variables" icon={Boxes}><div className="flex flex-wrap gap-1.5">{d.environmentVariables.map((e, i) => <Badge key={i} tone="cyan">{e}</Badge>)}</div></Panel>}
-      {d.healthCheckUrl && <Panel title="Health check" icon={ShieldCheck}><code className="rounded-md bg-base/70 px-2 py-1 text-[12px] text-fg-secondary">{d.healthCheckUrl}</code></Panel>}
+      {d.healthCheckUrl && <Panel title="Health check" icon={ShieldCheck}><code className="rounded-md bg-ink-950/70 px-2 py-1 text-[12px] text-slate-300">{d.healthCheckUrl}</code></Panel>}
       <Panel title="Deployment steps" icon={ListChecks}><NumberedSteps items={d.deploymentSteps} /></Panel>
       {safeArr(d.commonDeploymentErrors).length > 0 && <Panel title="Common deployment errors" icon={AlertTriangle}><List items={d.commonDeploymentErrors} tone="rose" /></Panel>}
     </div>
@@ -521,27 +521,27 @@ function GithubSection({ guide }) {
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <Panel title="Repository name" icon={GitBranch}>
-          <div className="flex items-center gap-2"><code className="rounded-md bg-base/70 px-2 py-1 text-[12px] text-fg-secondary">{g.repoName || '—'}</code>{g.repoName && <CopyBtn text={g.repoName} />}</div>
+          <div className="flex items-center gap-2"><code className="rounded-md bg-ink-950/70 px-2 py-1 text-[12px] text-slate-300">{g.repoName || '—'}</code>{g.repoName && <CopyBtn text={g.repoName} />}</div>
         </Panel>
-        <Panel title="Branch strategy" icon={GitBranch}><p className="text-[12.5px] leading-relaxed text-fg-secondary">{g.branchStrategy || '—'}</p></Panel>
+        <Panel title="Branch strategy" icon={GitBranch}><p className="text-[12.5px] leading-relaxed text-slate-300">{g.branchStrategy || '—'}</p></Panel>
       </div>
       <Panel title="Commit plan" icon={GitBranch}>
         {commits.length ? (
           <div className="space-y-2">
             {commits.map((c, i) => (
-              <div key={i} className="rounded-lg border border-subtle bg-surface-1 p-2.5">
+              <div key={i} className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <code className="truncate text-[12px] text-aurora-cyan">git commit -m &quot;{c.message}&quot;</code>
                   <CopyBtn text={`git commit -m "${c.message}"`} />
                 </div>
-                <div className="mt-1 text-[11px] text-fg-muted">{c.stage}{safeArr(c.filesIncluded).length ? ` · ${c.filesIncluded.join(', ')}` : ''}</div>
+                <div className="mt-1 text-[11px] text-slate-500">{c.stage}{safeArr(c.filesIncluded).length ? ` · ${c.filesIncluded.join(', ')}` : ''}</div>
               </div>
             ))}
           </div>
-        ) : <p className="text-xs text-fg-muted">—</p>}
+        ) : <p className="text-xs text-slate-500">—</p>}
       </Panel>
       {safeArr(g.suggestedIssues).length > 0 && (
-        <Panel title="Suggested GitHub issues" icon={ListChecks} action={<span className="text-[10px] text-fg-muted">optional — no GitHub integration required</span>}>
+        <Panel title="Suggested GitHub issues" icon={ListChecks} action={<span className="text-[10px] text-slate-500">optional — no GitHub integration required</span>}>
           <List items={g.suggestedIssues} />
         </Panel>
       )}
@@ -575,7 +575,7 @@ function ExportSection({ guide }) {
   return (
     <div className="space-y-3">
       <Panel title="Export your build guide" icon={Download}>
-        <p className="mb-3 text-[12.5px] leading-relaxed text-fg-secondary">Take the full guide anywhere — paste it into your repo, a doc, or your notes. JSON is handy for tooling.</p>
+        <p className="mb-3 text-[12.5px] leading-relaxed text-slate-400">Take the full guide anywhere — paste it into your repo, a doc, or your notes. JSON is handy for tooling.</p>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => downloadText(`${slug}-build-guide.md`, md, 'text/markdown')}><FileText size={14} /> Download Markdown</Button>
           <Button size="sm" variant="soft" onClick={copyMd}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy Markdown'}</Button>
@@ -583,7 +583,7 @@ function ExportSection({ guide }) {
         </div>
       </Panel>
       <Panel title="Markdown preview" icon={FileText}>
-        <pre className="max-h-80 overflow-auto rounded-lg border border-subtle bg-base/70 p-3 text-[11px] leading-relaxed text-fg-secondary whitespace-pre-wrap">{md.slice(0, 4000)}{md.length > 4000 ? '\n…' : ''}</pre>
+        <pre className="max-h-80 overflow-auto rounded-lg border border-white/10 bg-ink-950/70 p-3 text-[11px] leading-relaxed text-slate-400 whitespace-pre-wrap">{md.slice(0, 4000)}{md.length > 4000 ? '\n…' : ''}</pre>
       </Panel>
     </div>
   );
@@ -678,8 +678,8 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
       {/* back + title */}
       <div className="flex items-center gap-2">
         <Button size="sm" variant="ghost" onClick={openWorkspace}><ArrowLeft size={15} /> Workspace</Button>
-        <span className="text-fg-muted">/</span>
-        <span className="text-sm text-fg-secondary">Builder Mode</span>
+        <span className="text-slate-600">/</span>
+        <span className="text-sm text-slate-400">Builder Mode</span>
       </div>
 
       {/* header card */}
@@ -687,8 +687,8 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-aurora-violet"><Rocket size={13} /> Build Overview</div>
-            <h1 className="mt-1 truncate text-xl font-semibold text-fg">{p.title}</h1>
-            <p className="mt-1 line-clamp-2 max-w-2xl text-[13px] leading-relaxed text-fg-secondary">{p.summary}</p>
+            <h1 className="mt-1 truncate text-xl font-semibold text-white">{p.title}</h1>
+            <p className="mt-1 line-clamp-2 max-w-2xl text-[13px] leading-relaxed text-slate-400">{p.summary}</p>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               <Badge tone="violet"><Target size={11} /> {p.targetRole}</Badge>
               <Badge tone="amber"><Gauge size={11} /> {p.difficulty}</Badge>
@@ -703,21 +703,21 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
               {p.confidence && <Badge tone={p.confidence === 'High' ? 'mint' : p.confidence === 'Medium' ? 'cyan' : 'amber'}>Confidence: {p.confidence}</Badge>}
             </div>
             {safeArr(p.generatedFrom).length > 0 && (
-              <p className="mt-1.5 text-[11px] text-fg-muted">Generated from: {p.generatedFrom.join(' + ')} · Code-level guide confidence: {p.codeLevelConfidence || p.confidence || 'Medium'}</p>
+              <p className="mt-1.5 text-[11px] text-slate-500">Generated from: {p.generatedFrom.join(' + ')} · Code-level guide confidence: {p.codeLevelConfidence || p.confidence || 'Medium'}</p>
             )}
           </div>
           <div className="shrink-0 lg:w-72">
-            <div className="rounded-2xl border border-subtle bg-surface-1 p-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
               <div className="flex items-end justify-between">
-                <span className="text-[11px] uppercase tracking-wide text-fg-muted">Build progress</span>
-                <span className="text-2xl font-semibold text-fg">{p.progressPercent}%</span>
+                <span className="text-[11px] uppercase tracking-wide text-slate-500">Build progress</span>
+                <span className="text-2xl font-semibold text-white">{p.progressPercent}%</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${p.progressPercent}%` }} /></div>
-              <div className="mt-2 flex items-center justify-between text-[11px] text-fg-muted">
+              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
                 <span>Stage: {p.currentStage}</span>
                 <span>{p.progress?.completedTasks || 0}/{p.progress?.totalTasks || 0} tasks</span>
               </div>
-              <div className="mt-3 rounded-lg border border-aurora-cta/30 bg-aurora-cta/5 px-2.5 py-2 text-[12px] leading-snug text-fg">{p.nextAction}</div>
+              <div className="mt-3 rounded-lg border border-aurora-cta/30 bg-aurora-cta/5 px-2.5 py-2 text-[12px] leading-snug text-slate-200">{p.nextAction}</div>
               <Button size="sm" className="mt-3 w-full" onClick={nextTask}><ChevronRight size={14} /> Go to next task</Button>
             </div>
           </div>
@@ -730,7 +730,7 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
           <button
             key={id}
             onClick={() => setSection(id)}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-medium transition ${section === id ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/40' : 'bg-surface-1 text-fg-secondary hover:bg-surface-1'}`}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-medium transition ${section === id ? 'bg-aurora-violet/15 text-white ring-1 ring-aurora-violet/40' : 'bg-white/[0.03] text-slate-400 hover:bg-white/[0.07]'}`}
           >
             <Icon size={14} /> {label}
           </button>

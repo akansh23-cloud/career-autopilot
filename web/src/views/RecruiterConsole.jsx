@@ -1,9 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp, ShieldCheck,
-  BadgeCheck, ExternalLink, LockKeyhole, LayoutDashboard, Building2, Briefcase, Layers,
-  GraduationCap,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, Filter, Github, Globe, Mail, Target, Award, Eye, Star, TrendingUp, ShieldCheck, BadgeCheck, ExternalLink, LockKeyhole } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input } from '../components/ui/kit.jsx';
 import { ScoreRing, BadgePill, BadgeModal, StatusBadge } from '../components/proof/ProofViews.jsx';
@@ -16,28 +12,15 @@ import { getAccessForUser } from '../lib/access.js';
 import { toggleShortlist, markContacted, engagementFor } from '../lib/engagement.js';
 import { ALL_ROLES } from '../lib/roles.js';
 import { fetchCandidates, roleFitForProfile, toggleShortlistCandidate, isShortlisted, sendReferralRequest } from '../lib/network.js';
-import { fetchBridgeBundle, fetchRequisitionMatches } from '../lib/recruiterBridge.js';
-import {
-  BridgeOverview, CampusPartners, Requisitions, MatchesModal, PipelineBoard, SkillGap,
-} from './RecruiterBridge.jsx';
-
-const CONSOLE_TABS = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'talent', label: 'Talent search', icon: Search },
-  { id: 'campus', label: 'Campus', icon: Building2 },
-  { id: 'requisitions', label: 'Requisitions', icon: Briefcase },
-  { id: 'pipeline', label: 'Pipeline', icon: Layers },
-  { id: 'gap', label: 'Skill gap', icon: TrendingUp },
-];
 
 function FitBars({ parts }) {
   return (
     <div className="space-y-1">
       {Object.entries(parts).map(([k, v]) => (
         <div key={k} className="flex items-center gap-2 text-[11px]">
-          <span className="w-28 shrink-0 text-fg-secondary">{k}</span>
+          <span className="w-28 shrink-0 text-slate-400">{k}</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.min(100, v * 3)}%` }} /></div>
-          <span className="w-6 text-right font-mono text-fg-secondary">{v}</span>
+          <span className="w-6 text-right font-mono text-slate-300">{v}</span>
         </div>
       ))}
     </div>
@@ -60,42 +43,9 @@ export default function RecruiterConsole() {
   const [reqLive, setReqLive] = useState(false);
   const [reqAvail, setReqAvail] = useState(false);
   const [minTrust, setMinTrust] = useState(0);
-  // Campus filters — meaningful because the pool is campus-sourced.
-  const [fCollege, setFCollege] = useState('');
-  const [fBranch, setFBranch] = useState('');
-  const [fBatch, setFBatch] = useState('');
-  const [minCgpa, setMinCgpa] = useState(0);
   const [open, setOpen] = useState(null);
   const [badgeOpen, setBadgeOpen] = useState(null);
   const [verifyTarget, setVerifyTarget] = useState(null);
-
-  /* Campus-bridge state. Loaded once alongside the candidate list; a failure
-     here degrades to empty panels rather than taking down talent search. */
-  const [tab, setTab] = useState('overview');
-  const [bridge, setBridge] = useState(null);
-  const [bridgeLoading, setBridgeLoading] = useState(true);
-  const [matchReq, setMatchReq] = useState(null);
-  const [matchData, setMatchData] = useState({ matches: [], loading: false });
-
-  useEffect(() => {
-    let alive = true;
-    fetchBridgeBundle()
-      .then((b) => { if (alive) { setBridge(b); setBridgeLoading(false); } })
-      .catch((e) => {
-        if (!alive) return;
-        setBridgeLoading(false);
-        // A gate on the bridge is the same gate as on candidates — surface it.
-        if (e?.status === 401 || e?.status === 403) setCandidateError(e.status);
-      });
-    return () => { alive = false; };
-  }, []);
-
-  const openMatches = useCallback(async (req) => {
-    setMatchReq(req);
-    setMatchData({ matches: [], loading: true });
-    const r = await fetchRequisitionMatches(req.id).catch(() => ({ matches: [] }));
-    setMatchData({ matches: r.matches || [], loading: false });
-  }, []);
 
   useEffect(() => {
     const sync = () => setPublished(getPublishedProjects());
@@ -141,38 +91,11 @@ export default function RecruiterConsole() {
       if (reqAvail && !(p.openToRecruiters || p.visibility === 'public')) return false;
       if (minTrust && (p.trustScore || 0) < minTrust) return false;
       if (role && p.targetRole && !(`${p.targetRole}`.toLowerCase().includes(role.toLowerCase()) || role.toLowerCase().includes(`${p.targetRole}`.toLowerCase()))) return false;
-      /* Campus filters. These only ever narrow the list — a candidate with no
-         campus context (an off-campus profile) is excluded when a campus filter
-         is set, and untouched otherwise. */
-      const c = p.campus || {};
-      if (fCollege && c.collegeId !== fCollege) return false;
-      if (fBranch && c.branch !== fBranch) return false;
-      if (fBatch && String(c.batch) !== String(fBatch)) return false;
-      if (minCgpa && Number(c.cgpa || 0) < minCgpa) return false;
-      if (term && ![p.name, p.targetRole, c.branch, c.collegeName, (m.skillNames || []).join(' ')].join(' ').toLowerCase().includes(term)) return false;
+      if (term && ![p.name, p.targetRole, (m.skillNames || []).join(' ')].join(' ').toLowerCase().includes(term)) return false;
       return true;
     });
     return list.sort((a, b) => b.fit - a.fit || (b.p.trustScore || 0) - (a.p.trustScore || 0));
-  }, [netCandidates, q, role, skills, minScore, minXP, reqGithub, reqLive, reqAvail, minTrust, fCollege, fBranch, fBatch, minCgpa, shortlistTick]);
-
-  /* Campus facets are derived from the candidates actually present, so the
-     dropdowns never offer a filter that would return nothing. */
-  const campusFacets = useMemo(() => {
-    const colleges = new Map();
-    const branches = new Set();
-    const batches = new Set();
-    (netCandidates || []).forEach((p) => {
-      const c = p.campus || {};
-      if (c.collegeId && c.collegeName) colleges.set(c.collegeId, c.collegeName);
-      if (c.branch) branches.add(c.branch);
-      if (c.batch) batches.add(String(c.batch));
-    });
-    return {
-      colleges: [...colleges.entries()],
-      branches: [...branches].sort(),
-      batches: [...batches].sort(),
-    };
-  }, [netCandidates]);
+  }, [netCandidates, q, role, skills, minScore, minXP, reqGithub, reqLive, reqAvail, minTrust, shortlistTick]);
 
   const viewProfile = (userId) => { if (userId) window.location.hash = `#/profile/${encodeURIComponent(userId)}`; };
   const onShortlistProfile = async (userId) => { await toggleShortlistCandidate(userId); setShortlistTick((t) => t + 1); };
@@ -202,7 +125,7 @@ export default function RecruiterConsole() {
   const persistSaved = (list) => { setSavedSearches(list); try { localStorage.setItem(SS_KEY, JSON.stringify(list)); } catch { /* ignore */ } };
   const saveCurrentSearch = () => {
     const name = String(q || role || skills || 'Search').slice(0, 40);
-    const entry = { id: 'ss_' + Date.now(), name, query: { q, role, skills, minScore, minXP, minTrust, reqGithub, reqLive, reqAvail, fCollege, fBranch, fBatch, minCgpa } };
+    const entry = { id: 'ss_' + Date.now(), name, query: { q, role, skills, minScore, minXP, minTrust, reqGithub, reqLive, reqAvail } };
     persistSaved([entry, ...savedSearches].slice(0, 12));
   };
   const applySaved = (s) => {
@@ -210,10 +133,6 @@ export default function RecruiterConsole() {
     setQ(x.q || ''); setRole(x.role || ''); setSkills(x.skills || '');
     setMinScore(x.minScore || 0); setMinXP(x.minXP || 0); setMinTrust(x.minTrust || 0);
     setReqGithub(!!x.reqGithub); setReqLive(!!x.reqLive); setReqAvail(!!x.reqAvail);
-    // Campus criteria are part of the search, so a restored search that omits
-    // them must clear them rather than silently inheriting the current ones.
-    setFCollege(x.fCollege || ''); setFBranch(x.fBranch || ''); setFBatch(x.fBatch || '');
-    setMinCgpa(x.minCgpa || 0);
   };
   const removeSaved = (id) => persistSaved(savedSearches.filter((s) => s.id !== id));
 
@@ -232,101 +151,37 @@ export default function RecruiterConsole() {
     );
   }
 
-  const bridgeData = bridge || { summary: null, requisitions: [], pipeline: [], stages: [], partners: [], gaps: [], interviews: [], demo: false };
-
   return (
     <>
-      <PageIntro
-        title="Recruiter Talent Console"
-        sub="Hire from verified proof-of-work, connected directly to the campuses that produced it."
-        action={bridgeData.demo ? <Badge tone="amber">Demo data</Badge> : null}
-      />
+      <PageIntro title="Recruiter Talent Console" sub="Search proven candidates ranked by Role Fit Score — built from real proof-of-work, not self-reported skills." />
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {CONSOLE_TABS.map((t) => {
-          const Icon = t.icon;
-          const on = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
-                on ? 'border-aurora-violet/40 bg-aurora-violet/15 text-fg'
-                  : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-white/8'
-              }`}
-            >
-              <Icon size={14} className={on ? 'text-aurora-cyan' : ''} /> {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {bridgeData.demo && tab !== 'talent' && (
-        <div className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/[0.07] p-3.5 text-[12px] leading-relaxed text-amber-100/85">
-          This workspace is showing the demo campus — one connected college, its real cohort of 200 students,
-          and requisitions run against them. It is the same cohort the placement-cell console sees, so both
-          sides always agree. Connect a live database to replace it with your own hiring data.
-        </div>
-      )}
-
-      {tab === 'overview' && (
-        bridgeLoading
-          ? <SectionCard title="Hiring overview"><p className="py-6 text-center text-sm text-fg-secondary">Loading your hiring workspace…</p></SectionCard>
-          : <BridgeOverview summary={bridgeData.summary} partners={bridgeData.partners} interviews={bridgeData.interviews} onGoto={setTab} />
-      )}
-
-      {tab === 'campus' && (
-        bridgeLoading
-          ? <SectionCard title="Campus partners"><p className="py-6 text-center text-sm text-fg-secondary">Loading campus connections…</p></SectionCard>
-          : <CampusPartners partners={bridgeData.partners} onGoto={setTab} />
-      )}
-
-      {tab === 'requisitions' && (
-        bridgeLoading
-          ? <SectionCard title="Requisitions"><p className="py-6 text-center text-sm text-fg-secondary">Loading requisitions…</p></SectionCard>
-          : <Requisitions requisitions={bridgeData.requisitions} pipeline={bridgeData.pipeline} onOpenMatches={openMatches} />
-      )}
-
-      {tab === 'pipeline' && (
-        bridgeLoading
-          ? <SectionCard title="Pipeline"><p className="py-6 text-center text-sm text-fg-secondary">Loading pipeline…</p></SectionCard>
-          : <PipelineBoard pipeline={bridgeData.pipeline} stages={bridgeData.stages} requisitions={bridgeData.requisitions} />
-      )}
-
-      {tab === 'gap' && (
-        bridgeLoading
-          ? <SectionCard title="Skill supply vs demand"><p className="py-6 text-center text-sm text-fg-secondary">Comparing demand against the cohort…</p></SectionCard>
-          : <SkillGap gaps={bridgeData.gaps} partners={bridgeData.partners} />
-      )}
-
-      <div className={tab === 'talent' ? '' : 'hidden'}>
       <SectionCard title="Search candidates" action={<Filter size={16} className="text-aurora-cyan" />}>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="relative">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, role, skills…" className="pl-9" />
           </div>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
+          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
             <option value="">Any role</option>
             {(rolesPresent.length ? rolesPresent : ALL_ROLES).map((r) => <option key={r}>{r}</option>)}
           </select>
           <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Required skills (comma separated)" />
-          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
-            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min fit</span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
+            <span className="whitespace-nowrap text-[11px] text-slate-400">Min fit</span>
             <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-violet-500" />
-            <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minScore}</span>
+            <span className="w-8 text-right font-mono text-xs text-slate-300">{minScore}</span>
           </div>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
-            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min Skill XP</span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
+            <span className="whitespace-nowrap text-[11px] text-slate-400">Min Skill XP</span>
             <input type="range" min="0" max="3000" step="100" value={minXP} onChange={(e) => setMinXP(Number(e.target.value))} className="flex-1 accent-cyan-500" />
-            <span className="w-10 text-right font-mono text-xs text-fg-secondary">{minXP}</span>
+            <span className="w-10 text-right font-mono text-xs text-slate-300">{minXP}</span>
           </div>
-          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
-            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min trust</span>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
+            <span className="whitespace-nowrap text-[11px] text-slate-400">Min trust</span>
             <input type="range" min="0" max="100" step="5" value={minTrust} onChange={(e) => setMinTrust(Number(e.target.value))} className="flex-1 accent-emerald-500" />
-            <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minTrust}</span>
+            <span className="w-8 text-right font-mono text-xs text-slate-300">{minTrust}</span>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -335,44 +190,17 @@ export default function RecruiterConsole() {
             ['Live demo verified', reqLive, () => setReqLive((v) => !v)],
             ['Open to recruiters', reqAvail, () => setReqAvail((v) => !v)],
           ].map(([label, on, toggle]) => (
-            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#B9EFFA]' : 'border-white/12 bg-surface-1 text-fg-secondary hover:bg-white/8'}`}>{label}</button>
+            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#B9EFFA]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>{label}</button>
           ))}
         </div>
-
-        {(campusFacets.colleges.length > 0 || campusFacets.branches.length > 0) && (
-          <div className="mt-3 border-t border-subtle pt-3">
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">
-              <GraduationCap size={12} className="text-aurora-mint" /> Campus filters
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              <select value={fCollege} onChange={(e) => setFCollege(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
-                <option value="">Any college</option>
-                {campusFacets.colleges.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-              <select value={fBranch} onChange={(e) => setFBranch(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
-                <option value="">Any specialisation</option>
-                {campusFacets.branches.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <select value={fBatch} onChange={(e) => setFBatch(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
-                <option value="">Any batch</option>
-                {campusFacets.batches.map((b) => <option key={b} value={b}>Batch {b}</option>)}
-              </select>
-              <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
-                <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min CGPA</span>
-                <input type="range" min="0" max="10" step="0.5" value={minCgpa} onChange={(e) => setMinCgpa(Number(e.target.value))} className="flex-1 accent-emerald-500" />
-                <span className="w-7 text-right font-mono text-xs text-fg-secondary">{minCgpa || '—'}</span>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
           <Button size="sm" variant="soft" onClick={saveCurrentSearch}>Save search</Button>
           {savedSearches.length === 0
-            ? <span className="text-xs text-fg-muted">No saved searches yet</span>
+            ? <span className="text-xs text-slate-500">No saved searches yet</span>
             : savedSearches.map((s) => (
-              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-surface-1 px-2.5 py-1 text-xs text-fg-secondary">
-                <button onClick={() => applySaved(s)} className="hover:text-fg">{s.name}</button>
-                <button onClick={() => removeSaved(s.id)} className="text-fg-muted hover:text-rose-300" aria-label="Remove saved search">×</button>
+              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.03] px-2.5 py-1 text-xs text-slate-300">
+                <button onClick={() => applySaved(s)} className="hover:text-white">{s.name}</button>
+                <button onClick={() => removeSaved(s.id)} className="text-slate-500 hover:text-rose-300" aria-label="Remove saved search">×</button>
               </span>
             ))}
         </div>
@@ -380,7 +208,7 @@ export default function RecruiterConsole() {
 
       <div className="mt-4">
         <SectionCard title="Career Proof Profiles" action={<Badge tone="cyan">{rankedProfiles.length}</Badge>}>
-          <p className="mb-3 text-xs text-fg-secondary">Opted-in candidates with verified proof-of-work. Private profiles and hidden contact details are never shown.</p>
+          <p className="mb-3 text-xs text-slate-400">Opted-in candidates with verified proof-of-work. Private profiles and hidden contact details are never shown.</p>
           {netCandidates.length === 0 ? (
             <EmptyState icon={BadgeCheck} title="No proof profiles yet" hint="Candidates appear here once they make their Career Proof Profile visible to recruiters and publish verified projects. No placeholder profiles are shown." />
           ) : rankedProfiles.length === 0 ? (
@@ -391,23 +219,13 @@ export default function RecruiterConsole() {
                 const m = p.metrics || {};
                 const sl = isShortlisted(p.userId);
                 return (
-                  <div key={p.userId} className="rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
+                  <div key={p.userId} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-cyan/15 font-display text-sm font-bold text-aurora-cyan">#{idx + 1}</span>
                         <div>
-                          <p className="font-medium text-fg">{p.name}</p>
-                          <p className="text-xs text-fg-secondary">{p.targetRole || 'Open role'} · {m.level || 'Builder'} · {m.careerXP || 0} XP</p>
-                          {/* Campus provenance. A recruiter's first question about a
-                              verified profile is "where did this come from" — showing
-                              the college inline saves opening the profile to find out. */}
-                          {p.campus?.collegeName && (
-                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-aurora-mint/75">
-                              <GraduationCap size={11} />
-                              {p.campus.collegeName} · {p.campus.branchShort || p.campus.branch} · Batch {p.campus.batch}
-                              {p.campus.cgpa ? ` · CGPA ${p.campus.cgpa}` : ''}
-                            </p>
-                          )}
+                          <p className="font-medium text-white">{p.name}</p>
+                          <p className="text-xs text-slate-400">{p.targetRole || 'Open role'} · {m.level || 'Builder'} · {m.careerXP || 0} XP</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -417,20 +235,17 @@ export default function RecruiterConsole() {
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Top skills</div>
-                        {/* The metrics snapshot written by the client uses `name`; older
-                            profiles and the server DTO use `skillName`. Reading only one
-                            rendered nameless badges for half the population. */}
-                        <div className="flex flex-wrap gap-1.5">{(m.topSkills || []).slice(0, 5).map((s, si) => <Badge key={s.skillName || s.name || si} tone="cyan">{s.skillName || s.name} · {s.xp}xp</Badge>)}</div>
-                        {!(m.topSkills || []).length && <p className="text-xs text-fg-muted">No skill XP yet.</p>}
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Top skills</div>
+                        <div className="flex flex-wrap gap-1.5">{(m.topSkills || []).slice(0, 5).map((s) => <Badge key={s.skillName} tone="cyan">{s.skillName} · {s.xp}xp</Badge>)}</div>
+                        {!(m.topSkills || []).length && <p className="text-xs text-slate-500">No skill XP yet.</p>}
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="rounded-xl border border-subtle bg-surface-1 p-2"><p className="font-display text-lg font-semibold text-fg">{m.avgProofScore || 0}</p><p className="text-[10px] text-fg-muted">Proof</p></div>
-                        <div className="rounded-xl border border-subtle bg-surface-1 p-2"><p className="font-display text-lg font-semibold text-fg">{m.verifiedBadges || 0}</p><p className="text-[10px] text-fg-muted">Badges</p></div>
-                        <div className="rounded-xl border border-subtle bg-surface-1 p-2"><p className="font-display text-lg font-semibold text-fg">{m.publishedCount || 0}</p><p className="text-[10px] text-fg-muted">Projects</p></div>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.avgProofScore || 0}</p><p className="text-[10px] text-slate-500">Proof</p></div>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.verifiedBadges || 0}</p><p className="text-[10px] text-slate-500">Badges</p></div>
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.publishedCount || 0}</p><p className="text-[10px] text-slate-500">Projects</p></div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
                       {m.hasGithub && <Badge tone="violet"><Github size={11} /> Code</Badge>}
                       {m.hasLive && <Badge tone="mint"><Globe size={11} /> Live</Badge>}
                       {p.openToRecruiters && <Badge tone="cyan">Open to recruiters</Badge>}
@@ -460,13 +275,13 @@ export default function RecruiterConsole() {
           ) : (
             <div className="space-y-3">
               {ranked.map(({ candidate, fit }, idx) => (
-                <div key={candidate.id} className="rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
+                <div key={candidate.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <span className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-violet/15 font-display text-sm font-bold text-aurora-cyan">#{idx + 1}</span>
                       <div>
-                        <p className="font-medium text-fg">{candidate.name}</p>
-                        <p className="text-xs text-fg-secondary">{candidate.targetRole} · {candidate.career.level} · {candidate.career.total} XP</p>
+                        <p className="font-medium text-white">{candidate.name}</p>
+                        <p className="text-xs text-slate-400">{candidate.targetRole} · {candidate.career.level} · {candidate.career.total} XP</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2"><StatusBadge status={candidate.bestStatus} /><ScoreRing score={fit.score} label="Role fit" /></div>
@@ -474,14 +289,14 @@ export default function RecruiterConsole() {
 
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
-                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Top skills</div>
+                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Top skills</div>
                       <div className="flex flex-wrap gap-1.5">{candidate.skillXP.slice(0, 5).map((s) => <Badge key={s.skillName} tone="cyan">{s.skillName} · {s.xp}xp</Badge>)}</div>
                       {candidate.badges.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{candidate.badges.slice(0, 4).map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={setBadgeOpen} />)}</div>}
                     </div>
-                    <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Fit breakdown</div><FitBars parts={fit.parts} /></div>
+                    <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Fit breakdown</div><FitBars parts={fit.parts} /></div>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
                     <Button size="sm" variant="soft" onClick={() => setOpen(candidate)}><Eye size={13} /> Best projects</Button>
                     {candidate.hasGithub && <Badge tone="violet"><Github size={11} /> Code</Badge>}
                     {candidate.hasDemo && <Badge tone="mint"><Globe size={11} /> Live</Badge>}
@@ -496,15 +311,6 @@ export default function RecruiterConsole() {
           )}
         </SectionCard>
       </div>
-      </div>
-
-      <MatchesModal
-        open={!!matchReq}
-        onClose={() => setMatchReq(null)}
-        requisition={matchReq}
-        matches={matchData.matches}
-        loading={matchData.loading}
-      />
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open ? `${open.name} — best projects` : ''} width="max-w-2xl">
         {open && (
@@ -513,11 +319,11 @@ export default function RecruiterConsole() {
               const score = proofScoreBreakdown(p).score;
               const eng = engagementFor(p.id);
               return (
-                <div key={p.id} className="rounded-xl border border-subtle bg-surface-1 p-3">
+                <div key={p.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-fg">{p.title}</p>
-                      <p className="truncate text-xs text-fg-secondary">{p.targetRole} · {p.type}</p>
+                      <p className="truncate text-sm font-medium text-white">{p.title}</p>
+                      <p className="truncate text-xs text-slate-400">{p.targetRole} · {p.type}</p>
                     </div>
                     <Badge tone={score >= 70 ? 'mint' : score >= 40 ? 'cyan' : 'amber'}><Award size={11} /> {score}</Badge>
                   </div>

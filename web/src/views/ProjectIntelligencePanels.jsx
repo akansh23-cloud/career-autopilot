@@ -25,9 +25,9 @@ import {
 /* ---------------- small shared UI ---------------- */
 function Panel({ title, children, action }) {
   return (
-    <div className="rounded-xl border border-subtle bg-base/55 p-3">
+    <div className="rounded-xl border border-white/10 bg-ink-950/55 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-fg-muted">{title}</div>
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{title}</div>
         {action}
       </div>
       {children}
@@ -36,7 +36,7 @@ function Panel({ title, children, action }) {
 }
 
 function Chips({ items, tone = 'cyan', empty = '—' }) {
-  if (!items?.length) return <span className="text-xs text-fg-muted">{empty}</span>;
+  if (!items?.length) return <span className="text-xs text-slate-500">{empty}</span>;
   return <div className="flex flex-wrap gap-1.5">{items.map((s, i) => <Badge key={i} tone={tone}>{s}</Badge>)}</div>;
 }
 
@@ -59,7 +59,7 @@ function ModeNote({ mode }) {
   if (!mode) return null;
   const ai = mode.includes('ai');
   return (
-    <p className="text-[10px] text-fg-muted">
+    <p className="text-[10px] text-slate-600">
       {ai ? 'Deterministic engine with optional AI enrichment available.' : 'Deterministic engine (no AI key required). Output is rule-based, not fabricated.'}
     </p>
   );
@@ -140,24 +140,24 @@ export function WhyBuildPanel({ project }) {
         {rec.isInnovationGrade && <Badge tone="amber"><Star size={11} /> Innovation-grade</Badge>}
       </div>
       <Panel title="Why build this">
-        <p className="text-[13px] leading-relaxed text-fg-secondary">{w.whyThisProject || rec.whyRecommended || 'This project strengthens your portfolio for the target role.'}</p>
+        <p className="text-[13px] leading-relaxed text-slate-300">{w.whyThisProject || rec.whyRecommended || 'This project strengthens your portfolio for the target role.'}</p>
       </Panel>
       <div className="grid gap-3 md:grid-cols-2">
         <Panel title="Skill gaps fixed"><Chips items={w.skillGapsFixed} tone="mint" empty="No specific gaps detected" /></Panel>
         <Panel title="Proof gaps fixed"><Chips items={w.proofGapsFixed} tone="cyan" empty="Adds general portfolio proof" /></Panel>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <Panel title="Resume value"><p className="text-[12px] leading-relaxed text-fg-secondary">{w.resumeValue || '—'}</p></Panel>
-        <Panel title="Recruiter value"><p className="text-[12px] leading-relaxed text-fg-secondary">{w.recruiterValue || '—'}</p></Panel>
+        <Panel title="Resume value"><p className="text-[12px] leading-relaxed text-slate-300">{w.resumeValue || '—'}</p></Panel>
+        <Panel title="Recruiter value"><p className="text-[12px] leading-relaxed text-slate-300">{w.recruiterValue || '—'}</p></Panel>
       </div>
-      <Panel title="Job readiness impact"><p className="text-[12px] leading-relaxed text-fg-secondary">{w.jobReadinessImpact || '—'}</p></Panel>
+      <Panel title="Job readiness impact"><p className="text-[12px] leading-relaxed text-slate-300">{w.jobReadinessImpact || '—'}</p></Panel>
       <div className="grid gap-3 md:grid-cols-2">
         <Panel title="Expected proof artifacts"><Chips items={w.expectedProofArtifacts} tone="violet" /></Panel>
         <Panel title="XP impact">
-          <div className="flex items-center gap-2 text-[13px] text-fg"><TrendingUp size={14} className="text-aurora-mint" /> {w.expectedXPImpact || '—'}</div>
+          <div className="flex items-center gap-2 text-[13px] text-slate-200"><TrendingUp size={14} className="text-aurora-mint" /> {w.expectedXPImpact || '—'}</div>
         </Panel>
       </div>
-      {w.innovationPotential && <Panel title="Innovation potential"><p className="text-[12px] leading-relaxed text-fg-secondary">{w.innovationPotential}</p></Panel>}
+      {w.innovationPotential && <Panel title="Innovation potential"><p className="text-[12px] leading-relaxed text-slate-300">{w.innovationPotential}</p></Panel>}
       <ModeNote mode={data && data.mode} />
     </div>
   );
@@ -171,35 +171,35 @@ export function ExplainPanel({ project }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2"><ConfBadge value={e.confidence} /></div>
-      <Panel title="In one line"><p className="text-[14px] font-medium leading-relaxed text-fg">{e.oneLineSummary || rec.title}</p></Panel>
+      <Panel title="In one line"><p className="text-[14px] font-medium leading-relaxed text-white">{e.oneLineSummary || rec.title}</p></Panel>
       <div className="grid gap-3 md:grid-cols-2">
-        <Panel title="Problem solved"><p className="text-[12px] leading-relaxed text-fg-secondary">{e.problemSolved || '—'}</p></Panel>
-        <Panel title="Who will use it"><p className="text-[12px] leading-relaxed text-fg-secondary">{e.whoWillUseIt || '—'}</p></Panel>
+        <Panel title="Problem solved"><p className="text-[12px] leading-relaxed text-slate-300">{e.problemSolved || '—'}</p></Panel>
+        <Panel title="Who will use it"><p className="text-[12px] leading-relaxed text-slate-300">{e.whoWillUseIt || '—'}</p></Panel>
       </div>
-      <Panel title="What to build"><p className="text-[12px] leading-relaxed text-fg-secondary">{e.whatToBuild || '—'}</p></Panel>
+      <Panel title="What to build"><p className="text-[12px] leading-relaxed text-slate-300">{e.whatToBuild || '—'}</p></Panel>
       {!!(e.mvpModules || []).length && (
         <Panel title="MVP modules">
-          <ol className="list-decimal space-y-1 pl-4 text-[12px] text-fg-secondary marker:text-aurora-violet">{e.mvpModules.map((m, i) => <li key={i}>{m}</li>)}</ol>
+          <ol className="list-decimal space-y-1 pl-4 text-[12px] text-slate-300 marker:text-aurora-violet">{e.mvpModules.map((m, i) => <li key={i}>{m}</li>)}</ol>
         </Panel>
       )}
-      <Panel title="How it works"><p className="text-[12px] leading-relaxed text-fg-secondary">{e.howItWorks || '—'}</p></Panel>
+      <Panel title="How it works"><p className="text-[12px] leading-relaxed text-slate-300">{e.howItWorks || '—'}</p></Panel>
       <div className="grid gap-3 md:grid-cols-2">
         <Panel title="Don't build yet">
           {(e.whatNotToBuildYet || []).length
             ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-amber-100/90">{e.whatNotToBuildYet.map((x, i) => <li key={i}>{x}</li>)}</ul>
-            : <span className="text-xs text-fg-muted">—</span>}
+            : <span className="text-xs text-slate-500">—</span>}
         </Panel>
         <Panel title="First-week tasks">
           {(e.firstWeekTasks || []).length
-            ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-fg-secondary">{e.firstWeekTasks.map((x, i) => <li key={i}>{x}</li>)}</ul>
-            : <span className="text-xs text-fg-muted">—</span>}
+            ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-slate-300">{e.firstWeekTasks.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            : <span className="text-xs text-slate-500">—</span>}
         </Panel>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <Panel title="Skills needed"><Chips items={e.skillsNeeded} tone="cyan" /></Panel>
-        <Panel title="Demo moment"><p className="text-[12px] leading-relaxed text-fg-secondary">{e.demoMoment || '—'}</p></Panel>
+        <Panel title="Demo moment"><p className="text-[12px] leading-relaxed text-slate-300">{e.demoMoment || '—'}</p></Panel>
       </div>
-      <Panel title="Final outcome"><p className="text-[12px] leading-relaxed text-fg-secondary">{e.finalOutcome || '—'}</p></Panel>
+      <Panel title="Final outcome"><p className="text-[12px] leading-relaxed text-slate-300">{e.finalOutcome || '—'}</p></Panel>
       <ModeNote mode={data && data.mode} />
     </div>
   );
@@ -213,13 +213,13 @@ export function BlueprintPanel({ project }) {
   }, project?.id);
   if (loading) return <Loading lines={5} />;
   const b = (data && data.blueprint) || null;
-  if (!b) return <p className="text-[12px] text-fg-muted">Blueprint unavailable right now. Try again in a moment.</p>;
+  if (!b) return <p className="text-[12px] text-slate-500">Blueprint unavailable right now. Try again in a moment.</p>;
 
   const Section = ({ title, value }) => (
     <Panel title={title}>
       {Array.isArray(value)
-        ? (value.length ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-fg-secondary">{value.map((x, i) => <li key={i}>{typeof x === 'string' ? x : JSON.stringify(x)}</li>)}</ul> : <span className="text-xs text-fg-muted">—</span>)
-        : <p className="text-[12px] leading-relaxed text-fg-secondary">{value || '—'}</p>}
+        ? (value.length ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-slate-300">{value.map((x, i) => <li key={i}>{typeof x === 'string' ? x : JSON.stringify(x)}</li>)}</ul> : <span className="text-xs text-slate-500">—</span>)
+        : <p className="text-[12px] leading-relaxed text-slate-300">{value || '—'}</p>}
     </Panel>
   );
 
@@ -241,7 +241,7 @@ export function BlueprintPanel({ project }) {
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <Section title="Environment variables" value={b.environmentVariables} />
-        <Panel title="Folder structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-fg-secondary">{Array.isArray(b.folderStructure) ? b.folderStructure.join('\n') : (b.folderStructure || '—')}</pre></Panel>
+        <Panel title="Folder structure"><pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-slate-400">{Array.isArray(b.folderStructure) ? b.folderStructure.join('\n') : (b.folderStructure || '—')}</pre></Panel>
       </div>
       <Section title="Core algorithm" value={b.coreAlgorithm} />
       <div className="grid gap-3 md:grid-cols-2">
@@ -267,23 +267,23 @@ export function DiagramsPanel({ project }) {
   const [active, setActive] = useState(0);
   if (loading) return <Loading lines={6} />;
   const list = (data && data.diagrams) || [];
-  if (!list.length) return <p className="text-[12px] text-fg-muted">Diagrams unavailable right now. Try again in a moment.</p>;
+  if (!list.length) return <p className="text-[12px] text-slate-500">Diagrams unavailable right now. Try again in a moment.</p>;
   const d = list[Math.min(active, list.length - 1)];
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
         {list.map((x, i) => (
           <button key={x.id || i} onClick={() => setActive(i)}
-            className={`rounded-lg px-3 py-1.5 text-[11px] transition ${active === i ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'bg-surface-1 text-fg-secondary hover:bg-surface-2'}`}>
+            className={`rounded-lg px-3 py-1.5 text-[11px] transition ${active === i ? 'bg-aurora-violet/20 text-white ring-1 ring-aurora-violet/40' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
             {x.title}
           </button>
         ))}
       </div>
       <Panel title={`${d.title} · project-specific`}>
         <ArchitectureDiagram mermaid={d.mermaid} />
-        <details className="mt-2"><summary className="cursor-pointer text-[11px] text-fg-muted">View Mermaid source</summary><pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] text-fg-secondary">{d.mermaid}</pre></details>
+        <details className="mt-2"><summary className="cursor-pointer text-[11px] text-slate-500">View Mermaid source</summary><pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] text-slate-400">{d.mermaid}</pre></details>
       </Panel>
-      <p className="text-[10px] text-fg-muted">Diagrams are derived from this project's modules, stack, APIs and proof artifacts — not a generic template.</p>
+      <p className="text-[10px] text-slate-600">Diagrams are derived from this project's modules, stack, APIs and proof artifacts — not a generic template.</p>
       <ModeNote mode={data && data.mode} />
     </div>
   );
@@ -294,7 +294,7 @@ export function FeasibilityPanel({ project }) {
   const { loading, data } = useAsync(() => feasibility(rec, project), project?.id);
   if (loading) return <Loading lines={4} />;
   const f = (data && data.feasibility) || null;
-  if (!f) return <p className="text-[12px] text-fg-muted">Estimate unavailable right now. Try again in a moment.</p>;
+  if (!f) return <p className="text-[12px] text-slate-500">Estimate unavailable right now. Try again in a moment.</p>;
   const cost = f.costEstimateIndia || {};
   return (
     <div className="space-y-3">
@@ -310,9 +310,9 @@ export function FeasibilityPanel({ project }) {
       <Panel title="Good-to-have skills"><Chips items={f.goodToHaveSkills} tone="cyan" /></Panel>
       <Panel title="Cost estimate (India, INR)">
         <div className="grid gap-2 sm:grid-cols-3 text-[12px]">
-          <div className="rounded-lg bg-surface-1 p-2"><div className="text-fg-muted">Student prototype</div><div className="font-medium text-aurora-mint">{cost.studentPrototype}</div></div>
-          <div className="rounded-lg bg-surface-1 p-2"><div className="text-fg-muted">Polished demo</div><div className="font-medium text-aurora-cyan">{cost.polishedDemo}</div></div>
-          <div className="rounded-lg bg-surface-1 p-2"><div className="text-fg-muted">Startup-grade</div><div className="font-medium text-aurora-violet">{cost.startupGrade}</div></div>
+          <div className="rounded-lg bg-white/[0.03] p-2"><div className="text-slate-500">Student prototype</div><div className="font-medium text-aurora-mint">{cost.studentPrototype}</div></div>
+          <div className="rounded-lg bg-white/[0.03] p-2"><div className="text-slate-500">Polished demo</div><div className="font-medium text-aurora-cyan">{cost.polishedDemo}</div></div>
+          <div className="rounded-lg bg-white/[0.03] p-2"><div className="text-slate-500">Startup-grade</div><div className="font-medium text-aurora-violet">{cost.startupGrade}</div></div>
         </div>
       </Panel>
       <Panel title="Resources required"><Chips items={f.resourcesRequired} tone="cyan" /></Panel>
@@ -322,8 +322,8 @@ export function FeasibilityPanel({ project }) {
         </Panel>
       )}
       <div className="grid gap-3 md:grid-cols-2">
-        <Panel title="Solo builder advice"><p className="text-[12px] leading-relaxed text-fg-secondary">{f.soloBuilderAdvice || '—'}</p></Panel>
-        <Panel title="Verdict"><p className="text-[12px] leading-relaxed text-fg">{f.shouldBuildVerdict || '—'}</p></Panel>
+        <Panel title="Solo builder advice"><p className="text-[12px] leading-relaxed text-slate-300">{f.soloBuilderAdvice || '—'}</p></Panel>
+        <Panel title="Verdict"><p className="text-[12px] leading-relaxed text-slate-200">{f.shouldBuildVerdict || '—'}</p></Panel>
       </div>
       <ModeNote mode={data && data.mode} />
     </div>
@@ -339,32 +339,32 @@ export function TaskBoardPanel({ project }) {
   }, project?.id);
   if (loading) return <Loading lines={5} />;
   const tb = (data && data.taskBoard) || null;
-  if (!tb || !(tb.tasks || []).length) return <p className="text-[12px] text-fg-muted">Task board unavailable right now. Try again in a moment.</p>;
+  if (!tb || !(tb.tasks || []).length) return <p className="text-[12px] text-slate-500">Task board unavailable right now. Try again in a moment.</p>;
   const allText = tb.tasks.map((t) => `### ${t.title}\n${t.description}\nAcceptance:\n${(t.acceptanceCriteria || []).map((a) => '- ' + a).join('\n')}`).join('\n\n');
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[12px] text-fg-secondary">{tb.summary || `${tb.tasks.length} GitHub-ready issues, dependency-ordered.`}</p>
+        <p className="text-[12px] text-slate-400">{tb.summary || `${tb.tasks.length} GitHub-ready issues, dependency-ordered.`}</p>
         <CopyBtn text={allText} label="Copy all as issues" />
       </div>
       <div className="space-y-2">
         {tb.tasks.map((t, i) => (
-          <details key={t.id || i} className="rounded-xl border border-subtle bg-base/55 p-3 text-[12px]">
-            <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-fg">
-              <span className="font-medium text-fg">{i + 1}. {t.title}</span>
+          <details key={t.id || i} className="rounded-xl border border-white/10 bg-ink-950/55 p-3 text-[12px]">
+            <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-slate-200">
+              <span className="font-medium text-white">{i + 1}. {t.title}</span>
               {t.priority && <Badge tone={PRIORITY_TONE[String(t.priority).toLowerCase()] || 'cyan'}>{t.priority}</Badge>}
               {t.estimatedTime && <Badge tone="cyan"><Clock size={10} /> {t.estimatedTime}</Badge>}
               {(t.labels || []).map((l, j) => <Badge key={j} tone="violet">{l}</Badge>)}
             </summary>
-            <div className="mt-2 space-y-2 text-fg-secondary">
+            <div className="mt-2 space-y-2 text-slate-300">
               <p>{t.description}</p>
               {!!(t.acceptanceCriteria || []).length && (
-                <div><div className="text-fg-muted">Acceptance criteria</div><ul className="mt-0.5 list-disc space-y-0.5 pl-4">{t.acceptanceCriteria.map((a, j) => <li key={j}>{a}</li>)}</ul></div>
+                <div><div className="text-slate-500">Acceptance criteria</div><ul className="mt-0.5 list-disc space-y-0.5 pl-4">{t.acceptanceCriteria.map((a, j) => <li key={j}>{a}</li>)}</ul></div>
               )}
               {!!(t.filesToCreateOrModify || []).length && (
-                <div><div className="text-fg-muted">Files</div><div className="mt-0.5 flex flex-wrap gap-1">{t.filesToCreateOrModify.map((fl, j) => <code key={j} className="rounded bg-surface-1 px-1.5 py-0.5 font-mono text-[10px] text-aurora-cyan">{fl}</code>)}</div></div>
+                <div><div className="text-slate-500">Files</div><div className="mt-0.5 flex flex-wrap gap-1">{t.filesToCreateOrModify.map((fl, j) => <code key={j} className="rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-aurora-cyan">{fl}</code>)}</div></div>
               )}
-              {!!(t.dependencies || []).length && <p className="text-[11px] text-fg-muted">Depends on: {t.dependencies.join(', ')}</p>}
+              {!!(t.dependencies || []).length && <p className="text-[11px] text-slate-500">Depends on: {t.dependencies.join(', ')}</p>}
             </div>
           </details>
         ))}
@@ -380,8 +380,8 @@ function ChecklistGroup({ title, items, tone }) {
       <ul className="space-y-1.5">
         {(items || []).map((it, i) => (
           <li key={i} className="flex items-start gap-2 text-[12px]">
-            {it.satisfied ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-aurora-mint" /> : <Circle size={14} className="mt-0.5 shrink-0 text-fg-muted" />}
-            <span className={it.satisfied ? 'text-fg' : 'text-fg-secondary'}>{it.label}{it.tracked && !it.satisfied ? <Badge tone={tone}>tracked</Badge> : null}</span>
+            {it.satisfied ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-aurora-mint" /> : <Circle size={14} className="mt-0.5 shrink-0 text-slate-600" />}
+            <span className={it.satisfied ? 'text-slate-200' : 'text-slate-400'}>{it.label}{it.tracked && !it.satisfied ? <Badge tone={tone}>tracked</Badge> : null}</span>
           </li>
         ))}
       </ul>
@@ -398,7 +398,7 @@ export function ProofChecklistPanel({ project }) {
   }, project?.id);
   if (loading) return <Loading lines={4} />;
   const c = (data && data.proofChecklist) || null;
-  if (!c) return <p className="text-[12px] text-fg-muted">Proof checklist unavailable right now. Try again in a moment.</p>;
+  if (!c) return <p className="text-[12px] text-slate-500">Proof checklist unavailable right now. Try again in a moment.</p>;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -409,7 +409,7 @@ export function ProofChecklistPanel({ project }) {
       <ChecklistGroup title="Minimum proof" items={c.minimum} tone="mint" />
       <ChecklistGroup title="Strong proof" items={c.strong} tone="cyan" />
       <ChecklistGroup title="Recruiter-ready proof" items={c.recruiterReady} tone="violet" />
-      {c.note && <p className="text-[11px] text-fg-muted">{c.note}</p>}
+      {c.note && <p className="text-[11px] text-slate-500">{c.note}</p>}
       <ModeNote mode={data && data.mode} />
     </div>
   );
@@ -432,18 +432,18 @@ export function ResumeOutputPanel({ project }) {
       )}
       <Panel title="Verified bullets (evidence-backed)" action={verified.length ? <CopyBtn text={verified.map((b) => '• ' + b).join('\n')} /> : null}>
         {verified.length
-          ? <ul className="list-disc space-y-1 pl-4 text-[13px] text-fg marker:text-aurora-mint">{verified.map((b, i) => <li key={i}>{b}</li>)}</ul>
-          : <p className="text-[12px] text-fg-muted">No verified bullets yet — add real proof (GitHub analysis, live demo, or tests) to unlock these. Unverified claims are never shown as verified.</p>}
+          ? <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-200 marker:text-aurora-mint">{verified.map((b, i) => <li key={i}>{b}</li>)}</ul>
+          : <p className="text-[12px] text-slate-500">No verified bullets yet — add real proof (GitHub analysis, live demo, or tests) to unlock these. Unverified claims are never shown as verified.</p>}
       </Panel>
       <Panel title="Draft bullets (use after proof exists)" action={draft.length ? <CopyBtn text={draft.map((b) => '• ' + b).join('\n')} /> : null}>
-        <ul className="list-disc space-y-1 pl-4 text-[13px] text-fg-secondary marker:text-aurora-violet">{draft.map((b, i) => <li key={i}>{b}</li>)}</ul>
+        <ul className="list-disc space-y-1 pl-4 text-[13px] text-slate-300 marker:text-aurora-violet">{draft.map((b, i) => <li key={i}>{b}</li>)}</ul>
       </Panel>
       {!!(r.verificationRequired || []).length && (
         <Panel title="To verify these bullets">
-          <ul className="list-disc space-y-1 pl-4 text-[12px] text-fg-secondary">{r.verificationRequired.map((v, i) => <li key={i}>{v}</li>)}</ul>
+          <ul className="list-disc space-y-1 pl-4 text-[12px] text-slate-300">{r.verificationRequired.map((v, i) => <li key={i}>{v}</li>)}</ul>
         </Panel>
       )}
-      <p className="text-[10px] text-fg-muted">Hard rule: unverified project claims are never returned as verified achievements.</p>
+      <p className="text-[10px] text-slate-600">Hard rule: unverified project claims are never returned as verified achievements.</p>
       <ModeNote mode={data && data.mode} />
     </div>
   );
@@ -468,14 +468,14 @@ export function SimilarPanel({ project }) {
           A similar project already exists{typeof s.similarity === 'number' ? ` (${Math.round(s.similarity * 100)}% match)` : ''}. {s.suggestion}
         </div>
       ) : (
-        <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 px-3 py-2 text-[12px] text-fg">
+        <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 px-3 py-2 text-[12px] text-slate-200">
           <CheckCircle2 size={13} className="mr-1.5 inline text-aurora-mint" />
           No close duplicate found among your projects — this covers distinct ground.
         </div>
       )}
       {!!(s.matches || []).length && (
         <Panel title="Closest matches">
-          <ul className="space-y-1 text-[12px] text-fg-secondary">
+          <ul className="space-y-1 text-[12px] text-slate-300">
             {s.matches.map((m, i) => (
               <li key={i} className="flex items-center justify-between gap-2">
                 <span>{m.title}</span>
@@ -521,13 +521,13 @@ export function VerificationPanel({ project }) {
       </Panel>
       <Panel title="Path to verified proof">
         {verifySteps.length || pending.length ? (
-          <ol className="list-decimal space-y-1 pl-4 text-[12px] text-fg-secondary marker:text-aurora-cyan">
+          <ol className="list-decimal space-y-1 pl-4 text-[12px] text-slate-300 marker:text-aurora-cyan">
             {verifySteps.map((v, i) => <li key={`v${i}`}>{v}</li>)}
             {pending.slice(0, 6).map((p, i) => <li key={`p${i}`}>{p}</li>)}
           </ol>
         ) : <p className="text-[12px] text-aurora-mint">All proof tiers satisfied — this project is recruiter-ready.</p>}
       </Panel>
-      <p className="text-[10px] text-fg-muted">Verification reflects real evidence on this project (GitHub analysis, live demo, tests). Nothing is auto-marked verified.</p>
+      <p className="text-[10px] text-slate-600">Verification reflects real evidence on this project (GitHub analysis, live demo, tests). Nothing is auto-marked verified.</p>
       <ModeNote mode={data && data.mode} />
     </div>
   );
@@ -539,9 +539,9 @@ export function VerificationPanel({ project }) {
    ============================================================ */
 function ReadinessCard({ rec, onBuild }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
+    <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
       <div className="flex items-start justify-between gap-2">
-        <h4 className="font-medium leading-tight text-fg">{rec.title}</h4>
+        <h4 className="font-medium leading-tight text-white">{rec.title}</h4>
         {rec.isInnovationGrade && <Badge tone="amber"><Star size={10} /> Innovation</Badge>}
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -550,15 +550,15 @@ function ReadinessCard({ rec, onBuild }) {
         {rec.estimatedTime && <Badge tone="cyan"><Clock size={10} /> {rec.estimatedTime}</Badge>}
         <ConfBadge value={rec.recommendationConfidence} />
       </div>
-      {rec.whyRecommended && <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-fg-secondary">{rec.whyRecommended}</p>}
+      {rec.whyRecommended && <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-slate-400">{rec.whyRecommended}</p>}
       {!!(rec.skillGapsFixed || []).length && (
-        <div className="mt-2"><div className="text-[10px] uppercase tracking-widest text-fg-muted">Skills proven</div><div className="mt-1"><Chips items={(rec.skillGapsFixed || []).slice(0, 5)} tone="mint" /></div></div>
+        <div className="mt-2"><div className="text-[10px] uppercase tracking-widest text-slate-600">Skills proven</div><div className="mt-1"><Chips items={(rec.skillGapsFixed || []).slice(0, 5)} tone="mint" /></div></div>
       )}
       {!!(rec.proofGapsFixed || []).length && (
-        <div className="mt-2"><div className="text-[10px] uppercase tracking-widest text-fg-muted">Proof gaps fixed</div><div className="mt-1"><Chips items={(rec.proofGapsFixed || []).slice(0, 4)} tone="cyan" /></div></div>
+        <div className="mt-2"><div className="text-[10px] uppercase tracking-widest text-slate-600">Proof gaps fixed</div><div className="mt-1"><Chips items={(rec.proofGapsFixed || []).slice(0, 4)} tone="cyan" /></div></div>
       )}
       {rec.careerReadinessImpact && (
-        <p className="mt-2 flex items-start gap-1.5 text-[11px] text-fg-secondary"><TrendingUp size={12} className="mt-0.5 shrink-0 text-aurora-mint" /> {rec.careerReadinessImpact}</p>
+        <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-400"><TrendingUp size={12} className="mt-0.5 shrink-0 text-aurora-mint" /> {rec.careerReadinessImpact}</p>
       )}
       <Button size="sm" className="mt-3" onClick={() => onBuild(rec)}><Wand2 size={14} /> Build this</Button>
     </div>
@@ -573,7 +573,7 @@ export function RecommendedProjects({ onBuild, title = 'Recommended next project
     <div>
       <div className="mb-2 flex items-center gap-2">
         <Sparkles size={15} className="text-aurora-violet" />
-        <h3 className="text-sm font-medium text-fg">{title}</h3>
+        <h3 className="text-sm font-medium text-white">{title}</h3>
         {gap.targetRole && <Badge tone="violet">{gap.targetRole}</Badge>}
       </div>
       {loading ? (
@@ -582,9 +582,9 @@ export function RecommendedProjects({ onBuild, title = 'Recommended next project
         <>
           {(gap.roleSkillGaps?.length || gap.proofGaps?.length || gap.unverifiedClaims?.length) ? (
             <div className="mb-3 grid gap-2 sm:grid-cols-3 text-[12px]">
-              {!!(gap.roleSkillGaps || []).length && <div className="rounded-lg border border-subtle bg-base/55 p-2"><div className="text-fg-muted">Role skill gaps</div><div className="mt-1"><Chips items={gap.roleSkillGaps.slice(0, 6)} tone="rose" /></div></div>}
-              {!!(gap.unverifiedClaims || []).length && <div className="rounded-lg border border-subtle bg-base/55 p-2"><div className="text-fg-muted">Unverified claims</div><div className="mt-1"><Chips items={gap.unverifiedClaims.slice(0, 6)} tone="amber" /></div></div>}
-              {!!(gap.proofGaps || []).length && <div className="rounded-lg border border-subtle bg-base/55 p-2"><div className="text-fg-muted">Proof gaps</div><div className="mt-1"><Chips items={gap.proofGaps.slice(0, 6)} tone="cyan" /></div></div>}
+              {!!(gap.roleSkillGaps || []).length && <div className="rounded-lg border border-white/10 bg-ink-950/55 p-2"><div className="text-slate-500">Role skill gaps</div><div className="mt-1"><Chips items={gap.roleSkillGaps.slice(0, 6)} tone="rose" /></div></div>}
+              {!!(gap.unverifiedClaims || []).length && <div className="rounded-lg border border-white/10 bg-ink-950/55 p-2"><div className="text-slate-500">Unverified claims</div><div className="mt-1"><Chips items={gap.unverifiedClaims.slice(0, 6)} tone="amber" /></div></div>}
+              {!!(gap.proofGaps || []).length && <div className="rounded-lg border border-white/10 bg-ink-950/55 p-2"><div className="text-slate-500">Proof gaps</div><div className="mt-1"><Chips items={gap.proofGaps.slice(0, 6)} tone="cyan" /></div></div>}
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -592,9 +592,9 @@ export function RecommendedProjects({ onBuild, title = 'Recommended next project
           </div>
         </>
       ) : (
-        <div className="rounded-2xl border border-subtle bg-surface-1 p-5 text-center">
-          <Rocket size={20} className="mx-auto text-fg-muted" />
-          <p className="mt-2 text-[12px] text-fg-secondary">Add your target role, resume and a saved job to get gap-driven project recommendations. They explain which gap each project fixes and what proof it creates.</p>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-center">
+          <Rocket size={20} className="mx-auto text-slate-500" />
+          <p className="mt-2 text-[12px] text-slate-400">Add your target role, resume and a saved job to get gap-driven project recommendations. They explain which gap each project fixes and what proof it creates.</p>
         </div>
       )}
     </div>

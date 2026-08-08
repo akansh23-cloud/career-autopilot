@@ -29,8 +29,8 @@ export default function ArchitectureTabs({ views = [], activeId, onSelect }) {
             onClick={() => onSelect?.(v)}
             className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition ${
               active
-                ? 'border-aurora-violet/60 bg-aurora-violet/10 text-fg'
-                : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
+                ? 'border-aurora-violet/60 bg-aurora-violet/10 text-white'
+                : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/25'
             }`}
           >
             <Icon size={13} /> {VIEW_LABELS[v.type] || v.title || v.type}

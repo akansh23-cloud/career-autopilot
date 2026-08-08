@@ -94,19 +94,19 @@ export function VerificationReport({ open, onClose, credentials = [], subjectNam
         />
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-fg-secondary">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
             <Badge tone="mint"><ShieldCheck size={11} /> {sum.countable} verifiable</Badge>
             {sum.human > 0
               ? <Badge tone="mint"><UserCheck size={11} /> {sum.human} human-verified</Badge>
               : <Badge tone="amber">0 human-verified</Badge>}
-            <span className="text-fg-muted">of {sum.total} total</span>
+            <span className="text-slate-500">of {sum.total} total</span>
           </div>
 
-          <p className="text-xs text-fg-secondary leading-relaxed">
-            Each credential is Ed25519-signed. <span className="text-fg">Re-verify all</span> recomputes
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Each credential is Ed25519-signed. <span className="text-slate-200">Re-verify all</span> recomputes
             every signature now — anything altered, expired, or revoked is flagged. The same check runs offline
             against the published public key, so you don't have to take our word for it. Only medium-or-higher
-            credentials count; <span className="text-fg">Verified (HIGH)</span> means a live viva/assessment
+            credentials count; <span className="text-slate-200">Verified (HIGH)</span> means a live viva/assessment
             or human review, not just an uploaded repo.
           </p>
 
@@ -125,16 +125,16 @@ export function VerificationReport({ open, onClose, credentials = [], subjectNam
               const human = isHumanGrade(c.methodKind) || c.confidence === 'high';
               const r = byId[id];
               return (
-                <li key={id} className="rounded-lg border border-subtle bg-surface-1 px-3 py-2.5">
+                <li key={id} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-fg truncate">{c.claim}</span>
+                        <span className="font-medium text-white truncate">{c.claim}</span>
                         <Badge tone={meta.tone}>{human ? <UserCheck size={10} /> : <BadgeCheck size={10} />}{meta.label}</Badge>
                         {!isCountable(c.confidence) && <Badge tone="default">does not count</Badge>}
                         {c.expiresAt && <Badge tone="default"><Clock size={10} /> expires {new Date(c.expiresAt).toLocaleDateString()}</Badge>}
                       </div>
-                      <div className="mt-0.5 text-[11px] text-fg-secondary">
+                      <div className="mt-0.5 text-[11px] text-slate-400">
                         {methodLabel(c.method)}{c.issuedAt ? ` · ${new Date(c.issuedAt).toLocaleDateString()}` : ''}
                       </div>
                     </div>
@@ -145,7 +145,7 @@ export function VerificationReport({ open, onClose, credentials = [], subjectNam
                       </div>
                     )}
                   </div>
-                  {r && !r.valid && <p className="mt-1.5 text-[11px] text-fg-secondary">{reasonText(r.reason)}</p>}
+                  {r && !r.valid && <p className="mt-1.5 text-[11px] text-slate-400">{reasonText(r.reason)}</p>}
                 </li>
               );
             })}
