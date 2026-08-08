@@ -25,10 +25,10 @@ export function WorkspaceCtaPanel({ project, go, generating = false, generateErr
     <Card className="border-aurora-mint/25 bg-aurora-mint/[0.05] p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="font-display text-[15px] font-bold text-white">
+          <p className="font-display text-[15px] font-bold text-fg">
             {project?.title ? `“${project.title}” is saved.` : 'Project saved.'}
           </p>
-          <p className="mt-1 text-[12.5px] text-slate-400">
+          <p className="mt-1 text-[12.5px] text-fg-secondary">
             {generating ? 'Generating its guided workspace…'
               : ready ? 'Its guided workspace is ready — plan, tasks, starter pack and proof tracking.'
                 : 'Generate its guided workspace to get a full build plan with tasks and a starter pack.'}

@@ -34,8 +34,8 @@ function Ring({ value }) {
           strokeDasharray={c} strokeDashoffset={off} style={{ transition: 'stroke-dashoffset 1s ease' }} />
       </svg>
       <div className="absolute text-center">
-        <div className="font-display text-3xl font-semibold text-white">{value}</div>
-        <div className="text-[11px] text-slate-500">/ 100</div>
+        <div className="font-display text-3xl font-semibold text-fg">{value}</div>
+        <div className="text-[11px] text-fg-muted">/ 100</div>
       </div>
     </div>
   );
@@ -47,7 +47,7 @@ function BreakdownBar({ label, value, max }) {
     if (!value) return null;
     return (
       <div className="flex items-center justify-between text-[12px]">
-        <span className="text-slate-300">{label}</span>
+        <span className="text-fg-secondary">{label}</span>
         <span className="tabular-nums text-rose-300">{value}</span>
       </div>
     );
@@ -57,10 +57,10 @@ function BreakdownBar({ label, value, max }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-[12px]">
-        <span className="text-slate-300">{label}</span>
-        <span className="tabular-nums text-slate-400">{value}/{max}</span>
+        <span className="text-fg-secondary">{label}</span>
+        <span className="tabular-nums text-fg-secondary">{value}/{max}</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-1">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .8s ease' }} />
       </div>
     </div>
@@ -178,7 +178,7 @@ export default function Resume({ go }) {
 
       {profileIncomplete && (
         <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-aurora-violet/25 bg-aurora-violet/[0.07] p-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-center gap-2 text-sm text-slate-200">
+          <p className="flex items-center gap-2 text-sm text-fg">
             <Target size={15} className="text-aurora-violet" /> Complete your profile for better recommendations.
           </p>
           {go && <Button size="sm" variant="soft" onClick={() => go('careerprofile')}>Update profile</Button>}
@@ -193,7 +193,7 @@ export default function Resume({ go }) {
               <select
                 value={role}
                 onChange={(e) => updateRole(e.target.value)}
-                className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 pr-10 text-sm text-slate-100 outline-none focus:border-aurora-violet/50"
+                className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-subtle bg-surface-1 px-3.5 pr-10 text-sm text-fg outline-none focus:border-aurora-violet/50"
               >
                 <option value="">General (no specific role)</option>
                 {Object.entries(ROLE_GROUPS).map(([grp, roles]) => (
@@ -202,7 +202,7 @@ export default function Resume({ go }) {
                   </optgroup>
                 ))}
               </select>
-              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-fg-muted" />
             </div>
           </Field>
 
@@ -214,21 +214,21 @@ export default function Resume({ go }) {
             onDragLeave={() => setDrag(false)}
             onDrop={onDrop}
             className={`mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition ${
-              drag ? 'border-aurora-violet/60 bg-aurora-violet/10' : 'border-white/12 bg-white/[0.02] hover:border-white/25'
+              drag ? 'border-aurora-violet/60 bg-aurora-violet/10' : 'border-white/12 bg-surface-1 hover:border-strong'
             }`}
           >
             {parsing ? (
               <><Loader2 size={20} className="animate-spin text-aurora-cyan" /><span className="text-sm text-muted">Reading file…</span></>
             ) : fileName ? (
-              <div className="flex items-center gap-2 text-sm text-slate-200">
+              <div className="flex items-center gap-2 text-sm text-fg">
                 <FileText size={16} className="text-aurora-mint" /> {fileName}
-                <button onClick={(e) => { e.stopPropagation(); clearFile(); }} className="rounded-md p-1 text-slate-500 hover:text-white"><X size={14} /></button>
+                <button onClick={(e) => { e.stopPropagation(); clearFile(); }} className="rounded-md p-1 text-fg-muted hover:text-fg"><X size={14} /></button>
               </div>
             ) : (
               <>
-                <Upload size={20} className="text-slate-400" />
-                <span className="text-sm font-medium text-slate-200">Drop resume or click to upload</span>
-                <span className="text-[11px] text-slate-500">PDF, DOCX, TXT — parsed in your browser</span>
+                <Upload size={20} className="text-fg-secondary" />
+                <span className="text-sm font-medium text-fg">Drop resume or click to upload</span>
+                <span className="text-[11px] text-fg-muted">PDF, DOCX, TXT — parsed in your browser</span>
               </>
             )}
           </div>
@@ -236,11 +236,11 @@ export default function Resume({ go }) {
           <textarea
             value={resume} onChange={(e) => updateResumeText(e.target.value, '')}
             placeholder="…or paste your resume text here"
-            className="mt-3 h-56 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-relaxed text-slate-200 outline-none placeholder:text-slate-600 focus:border-aurora-violet/50"
+            className="mt-3 h-56 w-full resize-none rounded-xl border border-subtle bg-surface-1 p-4 text-sm leading-relaxed text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50"
           />
           {err && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-xs text-slate-500">{resume.length} chars{fileName ? ` • saved: ${fileName}` : resume ? ' • saved locally' : ''}</span>
+            <span className="text-xs text-fg-muted">{resume.length} chars{fileName ? ` • saved: ${fileName}` : resume ? ' • saved locally' : ''}</span>
             <div className="flex flex-wrap gap-2">
               {result && (
                 <Button variant="soft" onClick={findMatchingJobs} disabled={parsing || resume.trim().length < 40}>
@@ -285,11 +285,11 @@ export default function Resume({ go }) {
 
                   <Button className="mt-1" variant="soft" onClick={findMatchingJobs}><Briefcase size={16} /> Find matching jobs</Button>
 
-                  <div className="grid w-full grid-cols-3 gap-2 border-t border-white/8 pt-3">
+                  <div className="grid w-full grid-cols-3 gap-2 border-t border-subtle pt-3">
                     {[['ATS', result.ats], ['Impact', result.impact], ['Clarity', result.clarity]].map(([l, v]) => (
                       <div key={l} className="text-center">
-                        <div className="font-display text-lg text-white">{v ?? '—'}</div>
-                        <div className="text-[11px] text-slate-500">{l}</div>
+                        <div className="font-display text-lg text-fg">{v ?? '—'}</div>
+                        <div className="text-[11px] text-fg-muted">{l}</div>
                       </div>
                     ))}
                   </div>
@@ -310,14 +310,14 @@ export default function Resume({ go }) {
               {result.strengths?.length > 0 && (
                 <SectionCard title="Strengths">
                   <ul className="space-y-2">
-                    {result.strengths.map((s, i) => <li key={i} className="flex gap-2 text-sm text-slate-300"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-aurora-mint" /> {s}</li>)}
+                    {result.strengths.map((s, i) => <li key={i} className="flex gap-2 text-sm text-fg-secondary"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-aurora-mint" /> {s}</li>)}
                   </ul>
                 </SectionCard>
               )}
               {result.improvements?.length > 0 && (
                 <SectionCard title="Fix these">
                   <ul className="space-y-2">
-                    {result.improvements.map((s, i) => <li key={i} className="flex gap-2 text-sm text-slate-300"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-glow" /> {s}</li>)}
+                    {result.improvements.map((s, i) => <li key={i} className="flex gap-2 text-sm text-fg-secondary"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-glow" /> {s}</li>)}
                   </ul>
                 </SectionCard>
               )}

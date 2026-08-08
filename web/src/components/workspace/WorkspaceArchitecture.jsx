@@ -19,8 +19,8 @@ export default function WorkspaceArchitecture({ plan, project, onProjectPatch })
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionTitle hint="Embedded Architecture OS — refine and export from here.">Architecture</SectionTitle>
         {score != null && (
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[13px] text-slate-300">
-            Architecture design score: <span className="font-semibold text-white">{score}</span>
+          <div className="rounded-xl border border-subtle bg-surface-1 px-3.5 py-2 text-[13px] text-fg-secondary">
+            Architecture design score: <span className="font-semibold text-fg">{score}</span>
           </div>
         )}
       </div>
@@ -28,7 +28,7 @@ export default function WorkspaceArchitecture({ plan, project, onProjectPatch })
       {archProject.architectureSpec ? (
         <ArchitectureStudioPanel project={archProject} onPatch={onProjectPatch} height={480} />
       ) : (
-        <Card className="p-6 text-center text-[13px] text-slate-500">
+        <Card className="p-6 text-center text-[13px] text-fg-muted">
           No architecture spec yet. Use “Regenerate” in the header to generate one with the workspace plan.
         </Card>
       )}

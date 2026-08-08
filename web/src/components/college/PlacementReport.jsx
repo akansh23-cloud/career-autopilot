@@ -26,7 +26,7 @@ const lpa = (n) => (Number(n) > 0 ? `₹${Number(n).toFixed(2)}L` : '—');
 /** Signed delta chip. Zero renders as a dash, never as a fake "+0". */
 function Delta({ value, suffix = '' }) {
   const v = Number(value);
-  if (!Number.isFinite(v) || v === 0) return <span className="text-slate-600">—</span>;
+  if (!Number.isFinite(v) || v === 0) return <span className="text-fg-muted">—</span>;
   const up = v > 0;
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
@@ -39,10 +39,10 @@ function Delta({ value, suffix = '' }) {
 function RateBar({ value }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-1">
         <div className="h-full rounded-full bg-gradient-to-r from-aurora-indigo/60 to-aurora-mint" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
       </div>
-      <span className="w-9 text-right text-sm text-slate-300">{value}%</span>
+      <span className="w-9 text-right text-sm text-fg-secondary">{value}%</span>
     </div>
   );
 }
@@ -103,8 +103,8 @@ export default function PlacementReport({ go }) {
       )}
 
       {s.placedLowReadiness > 0 && (
-        <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-sm text-slate-300">
-          <b className="text-white">{s.placedLowReadiness}</b> placed student(s) scored under 50 on readiness. Worth a look —
+        <div className="rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-sm text-fg-secondary">
+          <b className="text-fg">{s.placedLowReadiness}</b> placed student(s) scored under 50 on readiness. Worth a look —
           either the readiness model needs recalibrating for your cohort, or those students have proof of work they
           haven’t recorded in the platform.
         </div>
@@ -117,7 +117,7 @@ export default function PlacementReport({ go }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
                   <tr>
                     <th className="px-2 py-2">Branch</th>
                     <th className="px-2 py-2 text-right">Students</th>
@@ -129,11 +129,11 @@ export default function PlacementReport({ go }) {
                 <tbody>
                   {data.byBranch.map((r) => (
                     <tr key={r.key} className="border-t border-white/6">
-                      <td className="px-2 py-2 text-slate-200">{r.key}</td>
-                      <td className="px-2 py-2 text-right text-slate-400">{r.total}</td>
-                      <td className="px-2 py-2 text-right text-slate-300">{r.placed}</td>
+                      <td className="px-2 py-2 text-fg">{r.key}</td>
+                      <td className="px-2 py-2 text-right text-fg-secondary">{r.total}</td>
+                      <td className="px-2 py-2 text-right text-fg-secondary">{r.placed}</td>
                       <td className="px-2 py-2"><RateBar value={r.placementRate} /></td>
-                      <td className="px-2 py-2 text-right text-slate-300">{lpa(r.medianCtc)}</td>
+                      <td className="px-2 py-2 text-right text-fg-secondary">{lpa(r.medianCtc)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -148,7 +148,7 @@ export default function PlacementReport({ go }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
                   <tr>
                     <th className="px-2 py-2">Company</th>
                     <th className="px-2 py-2 text-right">Hires</th>
@@ -159,10 +159,10 @@ export default function PlacementReport({ go }) {
                 <tbody>
                   {data.topRecruiters.map((r) => (
                     <tr key={r.company} className="border-t border-white/6">
-                      <td className="px-2 py-2 text-slate-200">{r.company}</td>
+                      <td className="px-2 py-2 text-fg">{r.company}</td>
                       <td className="px-2 py-2 text-right"><Badge tone="mint">{r.hires}</Badge></td>
-                      <td className="px-2 py-2 text-right text-slate-300">{lpa(r.medianCtc)}</td>
-                      <td className="px-2 py-2 text-right text-slate-300">{lpa(r.highestCtc)}</td>
+                      <td className="px-2 py-2 text-right text-fg-secondary">{lpa(r.medianCtc)}</td>
+                      <td className="px-2 py-2 text-right text-fg-secondary">{lpa(r.highestCtc)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -179,7 +179,7 @@ export default function PlacementReport({ go }) {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
                 <tr>
                   <th className="px-2 py-2">Batch</th>
                   <th className="px-2 py-2 text-right">Students</th>
@@ -193,20 +193,20 @@ export default function PlacementReport({ go }) {
               <tbody>
                 {data.batchComparison.map((r) => (
                   <tr key={r.batch} className="border-t border-white/6">
-                    <td className="px-2 py-2 text-slate-200">{r.batch}</td>
-                    <td className="px-2 py-2 text-right text-slate-400">{r.students}</td>
-                    <td className="px-2 py-2 text-right text-slate-300">{r.avgReadiness}</td>
-                    <td className="px-2 py-2 text-right text-slate-400">{r.verifiedCoverage}%</td>
-                    <td className="px-2 py-2 text-right text-slate-400">{r.placementReadyRate}%</td>
-                    <td className="px-2 py-2 text-right text-slate-300">{r.placementRate}%</td>
+                    <td className="px-2 py-2 text-fg">{r.batch}</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{r.students}</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{r.avgReadiness}</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{r.verifiedCoverage}%</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{r.placementReadyRate}%</td>
+                    <td className="px-2 py-2 text-right text-fg-secondary">{r.placementRate}%</td>
                     <td className="px-2 py-2">
                       {r.vsPrevious ? (
-                        <span className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
                           <span>vs {r.vsPrevious.batch}:</span>
                           <span>readiness <Delta value={r.vsPrevious.avgReadiness} /></span>
                           <span>placed <Delta value={r.vsPrevious.placementRate} suffix="%" /></span>
                         </span>
-                      ) : <span className="inline-flex items-center gap-1 text-xs text-slate-600"><Minus size={11} /> oldest batch</span>}
+                      ) : <span className="inline-flex items-center gap-1 text-xs text-fg-muted"><Minus size={11} /> oldest batch</span>}
                     </td>
                   </tr>
                 ))}
@@ -228,13 +228,13 @@ export default function PlacementReport({ go }) {
         ) : (
           <>
             <p className="mb-3 text-sm text-muted">
-              <b className="text-white">{data.readyUnplaced.length}</b> student(s). Students showing
+              <b className="text-fg">{data.readyUnplaced.length}</b> student(s). Students showing
               <span className="text-amber-glow"> 0 applications</span> are the ones to contact first — the platform says
               they’re ready and they aren’t in any drive.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
                   <tr>
                     <th className="px-2 py-2">Student</th>
                     <th className="px-2 py-2">Branch</th>
@@ -245,14 +245,14 @@ export default function PlacementReport({ go }) {
                 </thead>
                 <tbody>
                   {data.readyUnplaced.slice(0, 60).map((r) => (
-                    <tr key={r.id} className="border-t border-white/6 hover:bg-white/[0.02]">
-                      <td className="px-2 py-2 text-slate-200">{r.name || r.email}</td>
-                      <td className="px-2 py-2 text-slate-400">{r.branch || '—'}</td>
-                      <td className="px-2 py-2 text-slate-400">{r.batch || '—'}</td>
+                    <tr key={r.id} className="border-t border-white/6 hover:bg-surface-1">
+                      <td className="px-2 py-2 text-fg">{r.name || r.email}</td>
+                      <td className="px-2 py-2 text-fg-secondary">{r.branch || '—'}</td>
+                      <td className="px-2 py-2 text-fg-secondary">{r.batch || '—'}</td>
                       <td className="px-2 py-2 text-right"><Badge tone="mint">{r.readinessScore}</Badge></td>
                       <td className="px-2 py-2 text-right">
                         {r.applications > 0
-                          ? <span className="text-slate-300">{r.applications}</span>
+                          ? <span className="text-fg-secondary">{r.applications}</span>
                           : <span className="text-amber-glow">0</span>}
                       </td>
                     </tr>
@@ -261,7 +261,7 @@ export default function PlacementReport({ go }) {
               </table>
             </div>
             {data.readyUnplaced.length > 60 && (
-              <p className="mt-3 text-xs text-slate-500">Showing 60 of {data.readyUnplaced.length}. The full list is in the observability CSV export.</p>
+              <p className="mt-3 text-xs text-fg-muted">Showing 60 of {data.readyUnplaced.length}. The full list is in the observability CSV export.</p>
             )}
           </>
         )}

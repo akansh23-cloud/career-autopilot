@@ -82,26 +82,26 @@ function PostCard({ post, onView, onRequest, onReport, onSave, onDelete, saved, 
   const skills = splitSkills(f.skills || f.skillsRequired || f.skillsHave);
   const company = f.company || f.currentCompany || f.targetCompany || '';
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/20">
+    <div className="rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <Badge tone={typeTone(post.type)}><Icon size={11} /> {POST_TYPE_LABEL[post.type]}</Badge>
           {company && <Badge tone="default"><Building2 size={11} /> {company}</Badge>}
           {(f.targetRole) && <Badge tone="cyan">{f.targetRole}</Badge>}
         </div>
-        <span className="text-[11px] text-slate-500">{fmtDate(post.createdAt)}</span>
+        <span className="text-[11px] text-fg-muted">{fmtDate(post.createdAt)}</span>
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <span className="text-sm font-medium text-white">{post.authorName}</span>
+        <span className="text-sm font-medium text-fg">{post.authorName}</span>
         <Badge tone={trustTone(post.authorTrustLevel)}><ShieldCheck size={10} /> Trust {post.authorTrust ?? 0}</Badge>
       </div>
-      {(f.projectTitle || f.idea) && <p className="mt-1.5 text-sm font-medium text-slate-100">{f.projectTitle || f.idea}</p>}
+      {(f.projectTitle || f.idea) && <p className="mt-1.5 text-sm font-medium text-fg">{f.projectTitle || f.idea}</p>}
       {(f.message || f.whyFit || f.instructions || f.minRequirements) && (
-        <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-slate-300">{f.message || f.whyFit || f.instructions || f.minRequirements}</p>
+        <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-fg-secondary">{f.message || f.whyFit || f.instructions || f.minRequirements}</p>
       )}
-      {(f.lookingFor || f.rolesCanRefer) && <p className="mt-1.5 text-[12px] text-slate-400">Looking for / can refer: {f.lookingFor || f.rolesCanRefer}</p>}
+      {(f.lookingFor || f.rolesCanRefer) && <p className="mt-1.5 text-[12px] text-fg-secondary">Looking for / can refer: {f.lookingFor || f.rolesCanRefer}</p>}
       {skills.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{skills.slice(0, 6).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}</div>}
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
         <Button size="sm" variant="soft" onClick={() => onView(post.authorUserId)}><Eye size={13} /> View profile</Button>
         {post.type === 'collab'
           ? <Button size="sm" variant="soft" onClick={() => onRequest(post, 'request')}><UserPlus size={13} /> Request collaboration</Button>
@@ -170,9 +170,9 @@ export default function ReferralExchange({ go }) {
         action={<Button onClick={() => setCreateType('need_referral')}><Plus size={16} /> New post</Button>}
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-[13px]">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-subtle bg-surface-1 px-4 py-3 text-[13px]">
         <ShieldCheck size={16} className="text-aurora-mint" />
-        <span className="text-slate-300">Referral requests this week: <span className="font-semibold text-white">{used}{access.isAdmin ? '' : ` / ${limit}`}</span></span>
+        <span className="text-fg-secondary">Referral requests this week: <span className="font-semibold text-fg">{used}{access.isAdmin ? '' : ` / ${limit}`}</span></span>
         {!access.isAdmin && access.effectivePlan === 'free' && <button onClick={() => go?.('settings')} className="text-aurora-cyan hover:underline">Upgrade for more</button>}
       </div>
 
@@ -183,7 +183,7 @@ export default function ReferralExchange({ go }) {
           const Icon = t.icon;
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3.5 py-2 text-[13px] transition ${tab === t.id ? 'border-aurora-violet/50 bg-aurora-violet/15 text-white' : 'border-white/10 bg-white/[0.02] text-slate-400 hover:border-white/20'}`}>
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3.5 py-2 text-[13px] transition ${tab === t.id ? 'border-aurora-violet/50 bg-aurora-violet/15 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
               <Icon size={14} /> {t.label}
             </button>
           );
@@ -199,9 +199,9 @@ export default function ReferralExchange({ go }) {
                   <Badge tone={mm.mutual ? 'mint' : 'cyan'}><Handshake size={11} /> {mm.mutual ? 'Mutual Referral Match' : 'Possible match'}</Badge>
                   <Badge tone="violet">{mm.score}% fit</Badge>
                 </div>
-                <p className="mt-2 text-[13px] text-slate-300">
-                  {mm.other.authorName} can refer at <span className="text-white">{mm.other.fields.currentCompany || mm.other.fields.company || '—'}</span>
-                  {mm.mutual && <> · you can refer at <span className="text-white">{mm.mine.fields.currentCompany || '—'}</span></>}
+                <p className="mt-2 text-[13px] text-fg-secondary">
+                  {mm.other.authorName} can refer at <span className="text-fg">{mm.other.fields.currentCompany || mm.other.fields.company || '—'}</span>
+                  {mm.mutual && <> · you can refer at <span className="text-fg">{mm.mine.fields.currentCompany || '—'}</span></>}
                 </p>
                 <div className="mt-2 flex gap-2">
                   <Button size="sm" variant="soft" onClick={() => view(mm.other.authorUserId)}><Eye size={13} /> View profile</Button>
@@ -247,13 +247,13 @@ export default function ReferralExchange({ go }) {
       <Modal open={!!requestPost} onClose={() => setRequestPost(null)} title={requestPost ? `Message ${requestPost.authorName}` : ''} width="max-w-md">
         {requestPost && (
           <div className="space-y-4">
-            <p className="text-[13px] text-slate-400">A short, specific message gets better responses. Referrals are voluntary.</p>
+            <p className="text-[13px] text-fg-secondary">A short, specific message gets better responses. Referrals are voluntary.</p>
             <Field label="Your message">
               <textarea value={reqMsg} onChange={(e) => setReqMsg(e.target.value)} rows={5}
-                className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-aurora-violet/50"
+                className="w-full rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-sm text-fg placeholder:text-fg-muted outline-none focus:border-aurora-violet/50"
                 placeholder="Hi! I'm targeting … Here's my proof profile and why I'd be a strong fit…" />
             </Field>
-            <div className="flex justify-end gap-2 border-t border-white/10 pt-4">
+            <div className="flex justify-end gap-2 border-t border-subtle pt-4">
               <Button variant="soft" onClick={() => setRequestPost(null)}>Cancel</Button>
               <Button onClick={submitRequest}><Send size={15} /> Send</Button>
             </div>
@@ -276,7 +276,7 @@ function CreatePostModal({ open, type, onClose, onCreated }) {
     <Modal open={open} onClose={onClose} title="New post" width="max-w-xl">
       <div className="space-y-4">
         <Field label="Post type">
-          <select value={t} onChange={(e) => { setT(e.target.value); setVals({}); }} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+          <select value={t} onChange={(e) => { setT(e.target.value); setVals({}); }} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
             {POST_TYPES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </Field>
@@ -284,13 +284,13 @@ function CreatePostModal({ open, type, onClose, onCreated }) {
           {schema.map(([k, label, kind]) => (
             <div key={k} className={kind === 'area' ? 'sm:col-span-2' : ''}>
               {kind === 'bool' ? (
-                <button onClick={() => set(k, !vals[k])} className={`flex h-11 w-full items-center justify-between rounded-xl border px-3 text-sm transition ${vals[k] ? 'border-aurora-mint/40 bg-aurora-mint/10 text-white' : 'border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20'}`}>
+                <button onClick={() => set(k, !vals[k])} className={`flex h-11 w-full items-center justify-between rounded-xl border px-3 text-sm transition ${vals[k] ? 'border-aurora-mint/40 bg-aurora-mint/10 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'}`}>
                   <span>{label}</span>{vals[k] && <Check size={15} className="text-aurora-mint" />}
                 </button>
               ) : kind === 'area' ? (
                 <Field label={label}>
                   <textarea value={vals[k] || ''} onChange={(e) => set(k, e.target.value)} rows={3}
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-aurora-violet/50" />
+                    className="w-full rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-sm text-fg placeholder:text-fg-muted outline-none focus:border-aurora-violet/50" />
                 </Field>
               ) : (
                 <Field label={label}><Input value={vals[k] || ''} onChange={(e) => set(k, e.target.value)} /></Field>
@@ -298,10 +298,10 @@ function CreatePostModal({ open, type, onClose, onCreated }) {
             </div>
           ))}
         </div>
-        <p className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-slate-500">
+        <p className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 text-[11px] text-fg-muted">
           Do not share confidential company information. Referrals are voluntary and not guaranteed.
         </p>
-        <div className="flex justify-end gap-2 border-t border-white/10 pt-4">
+        <div className="flex justify-end gap-2 border-t border-subtle pt-4">
           <Button variant="soft" onClick={onClose}>Cancel</Button>
           <Button onClick={submit}><Plus size={15} /> Publish post</Button>
         </div>

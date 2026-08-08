@@ -82,7 +82,7 @@ export default function Dashboard({ go }) {
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-glow/12 text-amber-glow ring-1 ring-amber-glow/25">
               <AlertTriangle size={22} />
             </span>
-            <p className="text-sm text-slate-300">We couldn’t load your dashboard.</p>
+            <p className="text-sm text-fg-secondary">We couldn’t load your dashboard.</p>
             <Button variant="outline" size="sm" onClick={load}><RefreshCw size={15} /> Retry</Button>
           </div>
         </SectionCard>
@@ -175,16 +175,16 @@ export default function Dashboard({ go }) {
             <EmptyState icon={Trophy} title="No project workspace yet" hint="Create a guided project to start earning verified skill XP and badges." action={<Button size="sm" onClick={() => go('projectstudio')}>Create project</Button>} />
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Career XP</p><p className="mt-1 font-display text-2xl text-white">{career.total}</p><p className="text-[11px] text-slate-500">{career.level}</p></div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Verified badges</p><p className="mt-1 font-display text-2xl text-white">{verifiedBadges.length}</p><p className="text-[11px] text-slate-500">Proof-based skills</p></div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4"><p className="text-xs text-slate-500">Top skill</p><p className="mt-1 truncate font-display text-2xl text-white">{skills[0]?.skillName || '—'}</p><p className="text-[11px] text-slate-500">{skills[0] ? `${skills[0].xp} XP · ${skills[0].level}` : 'Add project evidence'}</p></div>
+              <div className="rounded-xl border border-subtle bg-surface-1 p-4"><p className="text-xs text-fg-muted">Career XP</p><p className="mt-1 font-display text-2xl text-fg">{career.total}</p><p className="text-[11px] text-fg-muted">{career.level}</p></div>
+              <div className="rounded-xl border border-subtle bg-surface-1 p-4"><p className="text-xs text-fg-muted">Verified badges</p><p className="mt-1 font-display text-2xl text-fg">{verifiedBadges.length}</p><p className="text-[11px] text-fg-muted">Proof-based skills</p></div>
+              <div className="rounded-xl border border-subtle bg-surface-1 p-4"><p className="text-xs text-fg-muted">Top skill</p><p className="mt-1 truncate font-display text-2xl text-fg">{skills[0]?.skillName || '—'}</p><p className="text-[11px] text-fg-muted">{skills[0] ? `${skills[0].xp} XP · ${skills[0].level}` : 'Add project evidence'}</p></div>
             </div>
           )}
           {projects.length > 0 && (
             <div className="mt-3 space-y-1.5">
               {projects.slice(0, 3).map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-2">
-                  <span className="truncate text-[13px] text-slate-200">{p.title}</span>
+                <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-subtle bg-surface-1 px-3.5 py-2">
+                  <span className="truncate text-[13px] text-fg">{p.title}</span>
                   <WorkspaceOpenButton project={p} go={go} />
                 </div>
               ))}
@@ -204,11 +204,11 @@ export default function Dashboard({ go }) {
           ) : (
             <>
               <BarChart data={weekly.values} labels={weekly.labels} />
-              <div className="mt-4 grid grid-cols-5 gap-3 border-t border-white/8 pt-4">
+              <div className="mt-4 grid grid-cols-5 gap-3 border-t border-subtle pt-4">
                 {[['Saved', funnel.saved], ['Applied', funnel.applied], ['Interview', funnel.interview], ['Offer', funnel.offer], ['Rejected', funnel.rejected || 0]].map(([l, v]) => (
                   <div key={l}>
-                    <div className="font-display text-xl text-white">{v}</div>
-                    <div className="text-[11px] text-slate-500">{l}</div>
+                    <div className="font-display text-xl text-fg">{v}</div>
+                    <div className="text-[11px] text-fg-muted">{l}</div>
                   </div>
                 ))}
               </div>
@@ -227,8 +227,8 @@ export default function Dashboard({ go }) {
                 <li key={i} className="flex gap-3">
                   <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${TONE_BG[a.tone] || 'bg-aurora-cyan'}`} />
                   <div>
-                    <p className="text-[13px] leading-snug text-slate-200">{a.text}</p>
-                    <p className="text-[11px] text-slate-500">{a.when}</p>
+                    <p className="text-[13px] leading-snug text-fg">{a.text}</p>
+                    <p className="text-[11px] text-fg-muted">{a.when}</p>
                   </div>
                 </li>
               ))}
@@ -248,12 +248,12 @@ export default function Dashboard({ go }) {
             <div className="space-y-2.5">
               {matches.map((j, i) => (
                 <a key={i} href={j.url || '#'} target="_blank" rel="noreferrer"
-                  className="lift flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 hover:border-white/20">
+                  className="lift flex items-center justify-between rounded-xl border border-subtle bg-surface-1 px-4 py-3 hover:border-strong">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-white">{j.title || 'Role'}</p>
-                    <p className="truncate text-xs text-slate-500">{j.company || '—'} · {j.location || j.source || ''}</p>
+                    <p className="truncate text-sm font-medium text-fg">{j.title || 'Role'}</p>
+                    <p className="truncate text-xs text-fg-muted">{j.company || '—'} · {j.location || j.source || ''}</p>
                   </div>
-                  <ArrowUpRight size={16} className="shrink-0 text-slate-500" />
+                  <ArrowUpRight size={16} className="shrink-0 text-fg-muted" />
                 </a>
               ))}
             </div>
@@ -265,10 +265,10 @@ export default function Dashboard({ go }) {
           <div className="grid gap-2.5">
             {[[Briefcase, 'Find verified jobs', 'jobs'], [KanbanSquare, 'Open tracker', 'tracker'], [Send, 'Draft outreach', 'contacts'], [Trophy, 'Browse arena', 'opportunities']].map(([Icon, label, id]) => (
               <button key={id} onClick={() => go(id)}
-                className="lift flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-slate-200 hover:border-white/20">
+                className="lift flex items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-4 py-3 text-sm text-fg hover:border-strong">
                 <span className="grid h-8 w-8 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={16} /></span>
                 {label}
-                <Plus size={15} className="ml-auto text-slate-600" />
+                <Plus size={15} className="ml-auto text-fg-muted" />
               </button>
             ))}
           </div>

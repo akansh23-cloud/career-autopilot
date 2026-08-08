@@ -7,6 +7,7 @@ import { getEffectiveRole, canSeeScreen, defaultScreenForUser } from './lib/role
 import { clearAccessContext, getAccessContext, refreshAccessContext, useAccountAccessContext } from './lib/accessContext.js';
 import { clearAppCache, purgeLegacyUnscopedKeys } from './lib/userCache.js';
 import Atmosphere from './components/Atmosphere.jsx';
+import AppErrorBoundary from './components/AppErrorBoundary.jsx';
 import Landing from './components/landing/Landing.jsx';
 import SignInModal from './components/SignInModal.jsx';
 import Shell, { NAV } from './components/app/Shell.jsx';
@@ -105,7 +106,7 @@ function Splash() {
       <Atmosphere variant="app" />
       <div className="flex flex-col items-center gap-4">
         <div className="grid h-14 w-14 place-items-center rounded-2xl bg-aurora-cta shadow-glow">
-          <span className="font-display text-2xl font-bold text-white">C</span>
+          <span className="font-display text-2xl font-bold text-fg">C</span>
         </div>
         <Spinner />
         <p className="text-sm text-muted">Loading your workspace…</p>
@@ -122,10 +123,10 @@ function AccessFallback({ onHome }) {
     <div className="relative flex min-h-screen items-center justify-center px-6">
       <Atmosphere variant="app" />
       <div className="relative flex max-w-md flex-col items-center gap-4 text-center">
-        <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-slate-300">
+        <div className="grid h-12 w-12 place-items-center rounded-2xl border border-subtle bg-surface-1 text-fg-secondary">
           <span className="font-display text-xl font-bold">403</span>
         </div>
-        <h1 className="font-display text-xl font-semibold text-white">This workspace isn’t available for your account</h1>
+        <h1 className="font-display text-xl font-semibold text-fg">This workspace isn’t available for your account</h1>
         <p className="text-sm text-muted">You don’t have access to that screen. Let’s take you back to your dashboard.</p>
         <button onClick={onHome} className="mt-1 rounded-xl btn-primary px-4 py-2 text-sm font-semibold text-ink-950">
           Go to my dashboard
@@ -330,7 +331,13 @@ export default function App() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          <ViewCmp go={navigate} {...(renderActive === active ? viewParams : {})} />
+          {/* One boundary per view. Before this, a throw in ANY view unmounted the
+              whole React tree and the student got a blank page with no navigation
+              — which is what the "crashed while going through flow" report was.
+              resetKey clears the error on navigation, so nobody is ever stuck. */}
+          <AppErrorBoundary resetKey={renderActive} onGoHome={() => navigate(defaultActive)}>
+            <ViewCmp go={navigate} {...(renderActive === active ? viewParams : {})} />
+          </AppErrorBoundary>
         </motion.div>
       </AnimatePresence>
       <PricingModal />

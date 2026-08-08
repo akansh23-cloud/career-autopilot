@@ -9,8 +9,8 @@ function Block({ label, items }) {
   if (!items?.length) return null;
   return (
     <div>
-      <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-slate-500">{label}</div>
-      <ul className="space-y-1">{items.map((x, i) => <li key={i} className="text-[12.5px] leading-relaxed text-slate-300">• {typeof x === 'string' ? x : x.title || x.name || x.path || JSON.stringify(x)}</li>)}</ul>
+      <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-fg-muted">{label}</div>
+      <ul className="space-y-1">{items.map((x, i) => <li key={i} className="text-[12.5px] leading-relaxed text-fg-secondary">• {typeof x === 'string' ? x : x.title || x.name || x.path || JSON.stringify(x)}</li>)}</ul>
     </div>
   );
 }
@@ -19,21 +19,21 @@ export default function WorkspaceInspector({ plan, selected, onClose, onPreviewC
   const resolved = itemForInspector(plan, selected);
   if (!resolved?.item) {
     return (
-      <aside className="hidden w-72 shrink-0 rounded-2xl border border-white/8 bg-white/[0.02] p-5 xl:block">
-        <p className="text-[12.5px] leading-relaxed text-slate-500">Select a task, file, API, model, screen, test or proof item to inspect it here.</p>
+      <aside className="hidden w-72 shrink-0 rounded-2xl border border-subtle bg-surface-1 p-5 xl:block">
+        <p className="text-[12.5px] leading-relaxed text-fg-muted">Select a task, file, API, model, screen, test or proof item to inspect it here.</p>
       </aside>
     );
   }
   const { type, item } = resolved;
 
   return (
-    <aside className="w-full shrink-0 rounded-2xl border border-white/8 bg-white/[0.02] p-5 xl:w-80">
+    <aside className="w-full shrink-0 rounded-2xl border border-subtle bg-surface-1 p-5 xl:w-80">
       <div className="mb-4 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-slate-500">{type}</div>
-          <h3 className="mt-1 break-words font-display text-[15px] font-bold leading-snug text-white">{item.title || item.name || item.path}</h3>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-fg-muted">{type}</div>
+          <h3 className="mt-1 break-words font-display text-[15px] font-bold leading-snug text-fg">{item.title || item.name || item.path}</h3>
         </div>
-        <button onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:bg-white/5 hover:text-white"><X size={15} /></button>
+        <button onClick={onClose} className="rounded-lg p-1 text-fg-muted hover:bg-surface-1 hover:text-fg"><X size={15} /></button>
       </div>
       <div className="mb-4"><StatusBadge status={item.status || item.verificationStatus || 'planned'} /></div>
 
@@ -88,8 +88,8 @@ export default function WorkspaceInspector({ plan, selected, onClose, onPreviewC
             <KeyVal label="Endpoint"><span className="font-mono text-[12px]">{item.method} {item.path}</span></KeyVal>
             <KeyVal label="Purpose">{item.purpose}</KeyVal>
             <KeyVal label="Auth">{item.authRequired ? `Required (${(item.roles || []).join(', ') || 'any role'})` : 'Public'}</KeyVal>
-            <KeyVal label="Request body"><pre className="overflow-x-auto rounded-lg bg-black/30 p-2 font-mono text-[11px] text-slate-300">{JSON.stringify(item.requestBody || {}, null, 2)}</pre></KeyVal>
-            <KeyVal label="Response body"><pre className="overflow-x-auto rounded-lg bg-black/30 p-2 font-mono text-[11px] text-slate-300">{JSON.stringify(item.responseBody || {}, null, 2)}</pre></KeyVal>
+            <KeyVal label="Request body"><pre className="overflow-x-auto rounded-lg bg-sunken p-2 font-mono text-[11px] text-fg-secondary">{JSON.stringify(item.requestBody || {}, null, 2)}</pre></KeyVal>
+            <KeyVal label="Response body"><pre className="overflow-x-auto rounded-lg bg-sunken p-2 font-mono text-[11px] text-fg-secondary">{JSON.stringify(item.responseBody || {}, null, 2)}</pre></KeyVal>
             <KeyVal label="Linked screen">{item.linkedScreen}</KeyVal>
             <KeyVal label="Linked model">{item.linkedModel}</KeyVal>
             <KeyVal label="Suggested test">{item.suggestedTest || `Add an API test asserting ${item.method} ${item.path} returns the planned shape.`}</KeyVal>
@@ -124,19 +124,19 @@ export default function WorkspaceInspector({ plan, selected, onClose, onPreviewC
             <KeyVal label="Required">{item.required ? 'Yes' : 'Optional'}</KeyVal>
             {item.verificationNote && <KeyVal label="Last check">{item.verificationNote}</KeyVal>}
             {item.verificationMethod === 'github' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">Read from your public repository via the GitHub API. Attach the repo URL in the Proof tab and run verification.</p>
+              <p className="text-[12px] leading-relaxed text-fg-muted">Read from your public repository via the GitHub API. Attach the repo URL in the Proof tab and run verification.</p>
             )}
             {item.verificationMethod === 'github_screenshots' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">Commit at least 2 images to docs/screenshots/ in your repo and embed one in the README. We check they exist. Screenshots in the repo outlast a suspended deployment.</p>
+              <p className="text-[12px] leading-relaxed text-fg-muted">Commit at least 2 images to docs/screenshots/ in your repo and embed one in the README. We check they exist. Screenshots in the repo outlast a suspended deployment.</p>
             )}
             {item.verificationMethod === 'deployment' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">Requested server-side: must return a success status, a real page, and no hosting failure signature. Confirms the deployment is reachable — it cannot execute your app's JavaScript.</p>
+              <p className="text-[12px] leading-relaxed text-fg-muted">Requested server-side: must return a success status, a real page, and no hosting failure signature. Confirms the deployment is reachable — it cannot execute your app's JavaScript.</p>
             )}
             {item.verificationMethod === 'api_health' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">We call /api/health on your deployed URL and expect a JSON body. This is the strongest deployment signal, because JSON cannot be faked by an empty page shell.</p>
+              <p className="text-[12px] leading-relaxed text-fg-muted">We call /api/health on your deployed URL and expect a JSON body. This is the strongest deployment signal, because JSON cannot be faked by an empty page shell.</p>
             )}
             {item.verificationMethod === 'tests' && (
-              <p className="text-[12px] leading-relaxed text-slate-500">Paste your test output in the Proof tab — we look for a real runner summary and reject runs with failures. It stays self-reported until a green CI run in your repo verifies it independently.</p>
+              <p className="text-[12px] leading-relaxed text-fg-muted">Paste your test output in the Proof tab — we look for a real runner summary and reject runs with failures. It stays self-reported until a green CI run in your repo verifies it independently.</p>
             )}
           </>
         )}

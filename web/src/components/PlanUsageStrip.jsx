@@ -36,9 +36,9 @@ function Meter({ meter, planId }) {
   const daily = dailyBucketLimit(meter, planId);
 
   return (
-    <div className="min-w-0 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+    <div className="min-w-0 rounded-2xl border border-subtle bg-surface-1 p-4">
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[12.5px] capitalize leading-snug text-slate-300">{METER_LABELS[meter] || meter}</span>
+        <span className="text-[12.5px] capitalize leading-snug text-fg-secondary">{METER_LABELS[meter] || meter}</span>
         <Badge tone={tone}>
           {unlimited ? <><InfinityIcon size={11} /> Unlimited</> : `${left} left`}
         </Badge>
@@ -51,14 +51,14 @@ function Meter({ meter, planId }) {
               style={{ width: `${pct}%` }}
             />
           </div>
-          <div className="mt-2 text-[11px] text-slate-500">
+          <div className="mt-2 text-[11px] text-fg-muted">
             {used} of {limit} this month
             {!isUnlimited(daily) && <> · {daily}/day account cap</>}
           </div>
         </>
       )}
       {unlimited && !isUnlimited(daily) && (
-        <div className="mt-3 text-[11px] text-slate-500">{daily} per day account cap</div>
+        <div className="mt-3 text-[11px] text-fg-muted">{daily} per day account cap</div>
       )}
     </div>
   );
@@ -90,11 +90,11 @@ export default function PlanUsageStrip() {
     .map(([bucket, v]) => ({ bucket, ...v }));
 
   return (
-    <section className="mb-6 rounded-3xl border border-white/8 bg-white/[0.02] p-5">
+    <section className="mb-6 rounded-3xl border border-subtle bg-surface-1 p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <Gauge size={16} className="text-aurora-cyan" />
-          <span className="text-[13.5px] font-semibold text-white">Your plan</span>
+          <span className="text-[13.5px] font-semibold text-fg">Your plan</span>
           <Badge tone={isAdmin ? 'violet' : planId === 'free' ? 'default' : 'mint'}>
             {PLAN_LABELS_FULL[eff] || 'Free'}
           </Badge>
@@ -107,7 +107,7 @@ export default function PlanUsageStrip() {
       </div>
 
       {isAdmin ? (
-        <p className="text-[13px] text-slate-400">Full access — no monthly or daily limits apply to this account.</p>
+        <p className="text-[13px] text-fg-secondary">Full access — no monthly or daily limits apply to this account.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {SHOWN.map((m) => <Meter key={m} meter={m} planId={planId} />)}

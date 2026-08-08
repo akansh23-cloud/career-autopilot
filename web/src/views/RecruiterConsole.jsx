@@ -35,9 +35,9 @@ function FitBars({ parts }) {
     <div className="space-y-1">
       {Object.entries(parts).map(([k, v]) => (
         <div key={k} className="flex items-center gap-2 text-[11px]">
-          <span className="w-28 shrink-0 text-slate-400">{k}</span>
+          <span className="w-28 shrink-0 text-fg-secondary">{k}</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.min(100, v * 3)}%` }} /></div>
-          <span className="w-6 text-right font-mono text-slate-300">{v}</span>
+          <span className="w-6 text-right font-mono text-fg-secondary">{v}</span>
         </div>
       ))}
     </div>
@@ -251,8 +251,8 @@ export default function RecruiterConsole() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
-                on ? 'border-aurora-violet/40 bg-aurora-violet/15 text-white'
-                  : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/8'
+                on ? 'border-aurora-violet/40 bg-aurora-violet/15 text-fg'
+                  : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-white/8'
               }`}
             >
               <Icon size={14} className={on ? 'text-aurora-cyan' : ''} /> {t.label}
@@ -271,31 +271,31 @@ export default function RecruiterConsole() {
 
       {tab === 'overview' && (
         bridgeLoading
-          ? <SectionCard title="Hiring overview"><p className="py-6 text-center text-sm text-slate-400">Loading your hiring workspace…</p></SectionCard>
+          ? <SectionCard title="Hiring overview"><p className="py-6 text-center text-sm text-fg-secondary">Loading your hiring workspace…</p></SectionCard>
           : <BridgeOverview summary={bridgeData.summary} partners={bridgeData.partners} interviews={bridgeData.interviews} onGoto={setTab} />
       )}
 
       {tab === 'campus' && (
         bridgeLoading
-          ? <SectionCard title="Campus partners"><p className="py-6 text-center text-sm text-slate-400">Loading campus connections…</p></SectionCard>
+          ? <SectionCard title="Campus partners"><p className="py-6 text-center text-sm text-fg-secondary">Loading campus connections…</p></SectionCard>
           : <CampusPartners partners={bridgeData.partners} onGoto={setTab} />
       )}
 
       {tab === 'requisitions' && (
         bridgeLoading
-          ? <SectionCard title="Requisitions"><p className="py-6 text-center text-sm text-slate-400">Loading requisitions…</p></SectionCard>
+          ? <SectionCard title="Requisitions"><p className="py-6 text-center text-sm text-fg-secondary">Loading requisitions…</p></SectionCard>
           : <Requisitions requisitions={bridgeData.requisitions} pipeline={bridgeData.pipeline} onOpenMatches={openMatches} />
       )}
 
       {tab === 'pipeline' && (
         bridgeLoading
-          ? <SectionCard title="Pipeline"><p className="py-6 text-center text-sm text-slate-400">Loading pipeline…</p></SectionCard>
+          ? <SectionCard title="Pipeline"><p className="py-6 text-center text-sm text-fg-secondary">Loading pipeline…</p></SectionCard>
           : <PipelineBoard pipeline={bridgeData.pipeline} stages={bridgeData.stages} requisitions={bridgeData.requisitions} />
       )}
 
       {tab === 'gap' && (
         bridgeLoading
-          ? <SectionCard title="Skill supply vs demand"><p className="py-6 text-center text-sm text-slate-400">Comparing demand against the cohort…</p></SectionCard>
+          ? <SectionCard title="Skill supply vs demand"><p className="py-6 text-center text-sm text-fg-secondary">Comparing demand against the cohort…</p></SectionCard>
           : <SkillGap gaps={bridgeData.gaps} partners={bridgeData.partners} />
       )}
 
@@ -303,30 +303,30 @@ export default function RecruiterConsole() {
       <SectionCard title="Search candidates" action={<Filter size={16} className="text-aurora-cyan" />}>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="relative">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, role, skills…" className="pl-9" />
           </div>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
             <option value="">Any role</option>
             {(rolesPresent.length ? rolesPresent : ALL_ROLES).map((r) => <option key={r}>{r}</option>)}
           </select>
           <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Required skills (comma separated)" />
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
-            <span className="whitespace-nowrap text-[11px] text-slate-400">Min fit</span>
+          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
+            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min fit</span>
             <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-violet-500" />
-            <span className="w-8 text-right font-mono text-xs text-slate-300">{minScore}</span>
+            <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minScore}</span>
           </div>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
-            <span className="whitespace-nowrap text-[11px] text-slate-400">Min Skill XP</span>
+          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
+            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min Skill XP</span>
             <input type="range" min="0" max="3000" step="100" value={minXP} onChange={(e) => setMinXP(Number(e.target.value))} className="flex-1 accent-cyan-500" />
-            <span className="w-10 text-right font-mono text-xs text-slate-300">{minXP}</span>
+            <span className="w-10 text-right font-mono text-xs text-fg-secondary">{minXP}</span>
           </div>
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
-            <span className="whitespace-nowrap text-[11px] text-slate-400">Min trust</span>
+          <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
+            <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min trust</span>
             <input type="range" min="0" max="100" step="5" value={minTrust} onChange={(e) => setMinTrust(Number(e.target.value))} className="flex-1 accent-emerald-500" />
-            <span className="w-8 text-right font-mono text-xs text-slate-300">{minTrust}</span>
+            <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minTrust}</span>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -335,44 +335,44 @@ export default function RecruiterConsole() {
             ['Live demo verified', reqLive, () => setReqLive((v) => !v)],
             ['Open to recruiters', reqAvail, () => setReqAvail((v) => !v)],
           ].map(([label, on, toggle]) => (
-            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#B9EFFA]' : 'border-white/12 bg-white/[0.03] text-slate-300 hover:bg-white/8'}`}>{label}</button>
+            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-[#B9EFFA]' : 'border-white/12 bg-surface-1 text-fg-secondary hover:bg-white/8'}`}>{label}</button>
           ))}
         </div>
 
         {(campusFacets.colleges.length > 0 || campusFacets.branches.length > 0) && (
-          <div className="mt-3 border-t border-white/8 pt-3">
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          <div className="mt-3 border-t border-subtle pt-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">
               <GraduationCap size={12} className="text-aurora-mint" /> Campus filters
             </div>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              <select value={fCollege} onChange={(e) => setFCollege(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+              <select value={fCollege} onChange={(e) => setFCollege(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
                 <option value="">Any college</option>
                 {campusFacets.colleges.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
-              <select value={fBranch} onChange={(e) => setFBranch(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+              <select value={fBranch} onChange={(e) => setFBranch(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
                 <option value="">Any specialisation</option>
                 {campusFacets.branches.map((b) => <option key={b} value={b}>{b}</option>)}
               </select>
-              <select value={fBatch} onChange={(e) => setFBatch(e.target.value)} className="h-11 w-full rounded-xl border border-white/10 bg-ink-950 px-3 text-sm text-slate-100">
+              <select value={fBatch} onChange={(e) => setFBatch(e.target.value)} className="h-11 w-full rounded-xl border border-subtle bg-base px-3 text-sm text-fg">
                 <option value="">Any batch</option>
                 {campusFacets.batches.map((b) => <option key={b} value={b}>Batch {b}</option>)}
               </select>
-              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3">
-                <span className="whitespace-nowrap text-[11px] text-slate-400">Min CGPA</span>
+              <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
+                <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min CGPA</span>
                 <input type="range" min="0" max="10" step="0.5" value={minCgpa} onChange={(e) => setMinCgpa(Number(e.target.value))} className="flex-1 accent-emerald-500" />
-                <span className="w-7 text-right font-mono text-xs text-slate-300">{minCgpa || '—'}</span>
+                <span className="w-7 text-right font-mono text-xs text-fg-secondary">{minCgpa || '—'}</span>
               </div>
             </div>
           </div>
         )}
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
           <Button size="sm" variant="soft" onClick={saveCurrentSearch}>Save search</Button>
           {savedSearches.length === 0
-            ? <span className="text-xs text-slate-500">No saved searches yet</span>
+            ? <span className="text-xs text-fg-muted">No saved searches yet</span>
             : savedSearches.map((s) => (
-              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.03] px-2.5 py-1 text-xs text-slate-300">
-                <button onClick={() => applySaved(s)} className="hover:text-white">{s.name}</button>
-                <button onClick={() => removeSaved(s.id)} className="text-slate-500 hover:text-rose-300" aria-label="Remove saved search">×</button>
+              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-surface-1 px-2.5 py-1 text-xs text-fg-secondary">
+                <button onClick={() => applySaved(s)} className="hover:text-fg">{s.name}</button>
+                <button onClick={() => removeSaved(s.id)} className="text-fg-muted hover:text-rose-300" aria-label="Remove saved search">×</button>
               </span>
             ))}
         </div>
@@ -380,7 +380,7 @@ export default function RecruiterConsole() {
 
       <div className="mt-4">
         <SectionCard title="Career Proof Profiles" action={<Badge tone="cyan">{rankedProfiles.length}</Badge>}>
-          <p className="mb-3 text-xs text-slate-400">Opted-in candidates with verified proof-of-work. Private profiles and hidden contact details are never shown.</p>
+          <p className="mb-3 text-xs text-fg-secondary">Opted-in candidates with verified proof-of-work. Private profiles and hidden contact details are never shown.</p>
           {netCandidates.length === 0 ? (
             <EmptyState icon={BadgeCheck} title="No proof profiles yet" hint="Candidates appear here once they make their Career Proof Profile visible to recruiters and publish verified projects. No placeholder profiles are shown." />
           ) : rankedProfiles.length === 0 ? (
@@ -391,13 +391,13 @@ export default function RecruiterConsole() {
                 const m = p.metrics || {};
                 const sl = isShortlisted(p.userId);
                 return (
-                  <div key={p.userId} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
+                  <div key={p.userId} className="rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-cyan/15 font-display text-sm font-bold text-aurora-cyan">#{idx + 1}</span>
                         <div>
-                          <p className="font-medium text-white">{p.name}</p>
-                          <p className="text-xs text-slate-400">{p.targetRole || 'Open role'} · {m.level || 'Builder'} · {m.careerXP || 0} XP</p>
+                          <p className="font-medium text-fg">{p.name}</p>
+                          <p className="text-xs text-fg-secondary">{p.targetRole || 'Open role'} · {m.level || 'Builder'} · {m.careerXP || 0} XP</p>
                           {/* Campus provenance. A recruiter's first question about a
                               verified profile is "where did this come from" — showing
                               the college inline saves opening the profile to find out. */}
@@ -417,20 +417,20 @@ export default function RecruiterConsole() {
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Top skills</div>
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Top skills</div>
                         {/* The metrics snapshot written by the client uses `name`; older
                             profiles and the server DTO use `skillName`. Reading only one
                             rendered nameless badges for half the population. */}
                         <div className="flex flex-wrap gap-1.5">{(m.topSkills || []).slice(0, 5).map((s, si) => <Badge key={s.skillName || s.name || si} tone="cyan">{s.skillName || s.name} · {s.xp}xp</Badge>)}</div>
-                        {!(m.topSkills || []).length && <p className="text-xs text-slate-500">No skill XP yet.</p>}
+                        {!(m.topSkills || []).length && <p className="text-xs text-fg-muted">No skill XP yet.</p>}
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.avgProofScore || 0}</p><p className="text-[10px] text-slate-500">Proof</p></div>
-                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.verifiedBadges || 0}</p><p className="text-[10px] text-slate-500">Badges</p></div>
-                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2"><p className="font-display text-lg font-semibold text-white">{m.publishedCount || 0}</p><p className="text-[10px] text-slate-500">Projects</p></div>
+                        <div className="rounded-xl border border-subtle bg-surface-1 p-2"><p className="font-display text-lg font-semibold text-fg">{m.avgProofScore || 0}</p><p className="text-[10px] text-fg-muted">Proof</p></div>
+                        <div className="rounded-xl border border-subtle bg-surface-1 p-2"><p className="font-display text-lg font-semibold text-fg">{m.verifiedBadges || 0}</p><p className="text-[10px] text-fg-muted">Badges</p></div>
+                        <div className="rounded-xl border border-subtle bg-surface-1 p-2"><p className="font-display text-lg font-semibold text-fg">{m.publishedCount || 0}</p><p className="text-[10px] text-fg-muted">Projects</p></div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
                       {m.hasGithub && <Badge tone="violet"><Github size={11} /> Code</Badge>}
                       {m.hasLive && <Badge tone="mint"><Globe size={11} /> Live</Badge>}
                       {p.openToRecruiters && <Badge tone="cyan">Open to recruiters</Badge>}
@@ -460,13 +460,13 @@ export default function RecruiterConsole() {
           ) : (
             <div className="space-y-3">
               {ranked.map(({ candidate, fit }, idx) => (
-                <div key={candidate.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
+                <div key={candidate.id} className="rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <span className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-violet/15 font-display text-sm font-bold text-aurora-cyan">#{idx + 1}</span>
                       <div>
-                        <p className="font-medium text-white">{candidate.name}</p>
-                        <p className="text-xs text-slate-400">{candidate.targetRole} · {candidate.career.level} · {candidate.career.total} XP</p>
+                        <p className="font-medium text-fg">{candidate.name}</p>
+                        <p className="text-xs text-fg-secondary">{candidate.targetRole} · {candidate.career.level} · {candidate.career.total} XP</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2"><StatusBadge status={candidate.bestStatus} /><ScoreRing score={fit.score} label="Role fit" /></div>
@@ -474,14 +474,14 @@ export default function RecruiterConsole() {
 
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
-                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Top skills</div>
+                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Top skills</div>
                       <div className="flex flex-wrap gap-1.5">{candidate.skillXP.slice(0, 5).map((s) => <Badge key={s.skillName} tone="cyan">{s.skillName} · {s.xp}xp</Badge>)}</div>
                       {candidate.badges.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{candidate.badges.slice(0, 4).map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={setBadgeOpen} />)}</div>}
                     </div>
-                    <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Fit breakdown</div><FitBars parts={fit.parts} /></div>
+                    <div><div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Fit breakdown</div><FitBars parts={fit.parts} /></div>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
                     <Button size="sm" variant="soft" onClick={() => setOpen(candidate)}><Eye size={13} /> Best projects</Button>
                     {candidate.hasGithub && <Badge tone="violet"><Github size={11} /> Code</Badge>}
                     {candidate.hasDemo && <Badge tone="mint"><Globe size={11} /> Live</Badge>}
@@ -513,11 +513,11 @@ export default function RecruiterConsole() {
               const score = proofScoreBreakdown(p).score;
               const eng = engagementFor(p.id);
               return (
-                <div key={p.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <div key={p.id} className="rounded-xl border border-subtle bg-surface-1 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-white">{p.title}</p>
-                      <p className="truncate text-xs text-slate-400">{p.targetRole} · {p.type}</p>
+                      <p className="truncate text-sm font-medium text-fg">{p.title}</p>
+                      <p className="truncate text-xs text-fg-secondary">{p.targetRole} · {p.type}</p>
                     </div>
                     <Badge tone={score >= 70 ? 'mint' : score >= 40 ? 'cyan' : 'amber'}><Award size={11} /> {score}</Badge>
                   </div>

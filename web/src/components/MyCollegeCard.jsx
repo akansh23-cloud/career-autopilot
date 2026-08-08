@@ -73,13 +73,13 @@ export default function MyCollegeCard() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Building2 size={16} className="text-aurora-cyan" />
-            <span className="text-[14px] font-medium text-white">{college.name}</span>
+            <span className="text-[14px] font-medium text-fg">{college.name}</span>
             {membership?.status === 'pending'
               ? <Badge tone="amber"><Clock size={11} /> Awaiting placement-cell approval</Badge>
               : <Badge tone="mint"><CheckCircle2 size={11} /> Linked{membership?.via ? ` · via ${membership.via}` : ''}</Badge>}
             {college.demo && <Badge tone="violet">Demo</Badge>}
           </div>
-          <p className="text-[12px] leading-relaxed text-slate-500">
+          <p className="text-[12px] leading-relaxed text-fg-muted">
             {membership?.status === 'pending'
               ? 'Your placement cell will approve your membership; you\'ll get a notification here the moment it happens.'
               : 'Your readiness score, resume score and verified projects are visible to your college\'s placement cell (you control this in the consent settings). Leaving removes their access immediately.'}
@@ -92,7 +92,7 @@ export default function MyCollegeCard() {
         <div className="space-y-4">
           {suggestion && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-aurora-cyan/30 bg-aurora-cyan/5 p-3">
-              <p className="text-[13px] text-slate-200">Your email domain matches <b>{suggestion.name}</b>.</p>
+              <p className="text-[13px] text-fg">Your email domain matches <b>{suggestion.name}</b>.</p>
               <Button size="sm" onClick={() => join('')} disabled>Auto-links on next sign-in</Button>
             </div>
           )}
@@ -113,7 +113,7 @@ export default function MyCollegeCard() {
           </button>
 
           {showRegister && (
-            <div className="space-y-3 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="space-y-3 rounded-xl border border-subtle bg-surface-1 p-3">
               <Field label="College name"><Input value={reg.name} onChange={(e) => setReg({ ...reg, name: e.target.value })} placeholder="e.g. Pune Institute of Computer Technology" /></Field>
               <Field label="City"><Input value={reg.city} onChange={(e) => setReg({ ...reg, city: e.target.value })} placeholder="Pune" /></Field>
               <Field label="Official email domains" hint="Comma-separated, e.g. pict.edu, students.pict.edu — public providers like gmail.com are rejected.">
@@ -122,7 +122,7 @@ export default function MyCollegeCard() {
               <Button size="sm" onClick={register} disabled={busy === 'register' || reg.name.trim().length < 3}>
                 {busy === 'register' ? <Loader2 size={13} className="animate-spin" /> : 'Submit for activation'}
               </Button>
-              <p className="text-[11px] leading-relaxed text-slate-500">
+              <p className="text-[11px] leading-relaxed text-fg-muted">
                 Registration creates a pending workspace and requests placement-cell (TPO) access for your account. A platform admin verifies and activates both together — you'll be notified here.
               </p>
             </div>

@@ -28,6 +28,24 @@ export function registerOpsRoutes(app, deps = {}) {
     });
   });
 
+  /* ============ POST /api/ops/client-error — frontend crash telemetry ============
+     AppErrorBoundary posts here when a React view throws. Deliberately open to
+     any caller (a crash can happen on a signed-out screen) and deliberately
+     cheap: log it, never persist, never fail. Without this a white-screen crash
+     during a college pilot is only visible if a student happens to report it. */
+  app.post('/api/ops/client-error', (req, res) => {
+    const b = req.body || {};
+    (logger?.warn || console.warn)('client crash', {
+      requestId: req.requestId || null,
+      screen: String(b.screen || '').slice(0, 80),
+      message: String(b.message || '').slice(0, 300),
+      url: String(b.url || '').slice(0, 200),
+      componentStack: String(b.componentStack || '').split('\n').slice(0, 5).join(' | ').slice(0, 600),
+      at: b.at || new Date().toISOString(),
+    });
+    res.status(204).end();
+  });
+
   /* ============ GET /api/ready — readiness (real DB ping) ============ */
   app.get('/api/ready', async (req, res) => {
     if (!db?.dbEnabled?.()) {

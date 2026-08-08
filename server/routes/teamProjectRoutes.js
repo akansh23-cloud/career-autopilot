@@ -33,6 +33,7 @@
    ============================================================ */
 import { z } from 'zod';
 import engine from '../utils/teamProjectEngine.js';
+import progressEngine from '../utils/teamProgressEngine.js';
 import { verifyDeployment, verifyGithubRepo, verifyReadme, verifyCiRun } from '../utils/workspace/proofVerification.js';
 import { emailEnabled, sendMail, nudgeEmail } from '../utils/mailer.js';
 import { DEMO_COLLEGE_ID, demoModeEnabled } from '../utils/demoCollegeData.js';
@@ -293,6 +294,11 @@ export function registerTeamProjectRoutes(app, deps = {}) {
         requireLiveUrl: req.body.requireLiveUrl !== false,
         members,
         brief,
+        /* Seed a progress row per member at assign time. An ABSENT row and a
+           ZERO row mean different things to a coordinator, so every member has
+           one from day one. Projects assigned before this shipped self-heal:
+           reconcileProgress() rebuilds missing rows from the brief on read. */
+        memberProgress: progressEngine.initMemberProgress(brief),
         analysis: engine.analyzeTeamSkills(found),
         assignedByEmail: me(req).email,
         collegeName: college?.name || '',

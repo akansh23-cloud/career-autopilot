@@ -59,7 +59,7 @@ export default function Growth({ go }) {
                 ['Interview → Offer', data.interviews ? Math.round((data.offers / Math.max(1, data.interviews)) * 100) : 0, 'mint'],
               ].map(([l, v, t]) => (
                 <div key={l}>
-                  <div className="mb-1.5 flex justify-between text-xs"><span className="text-slate-400">{l}</span><span className="text-white">{v}%</span></div>
+                  <div className="mb-1.5 flex justify-between text-xs"><span className="text-fg-secondary">{l}</span><span className="text-fg">{v}%</span></div>
                   <div className="h-2 overflow-hidden rounded-full bg-white/6"><div className={`h-full rounded-full bg-aurora-${t}`} style={{ width: `${v}%` }} /></div>
                 </div>
               ))}
@@ -79,9 +79,9 @@ export default function Growth({ go }) {
                 data.applied > 0 && data.interviews === 0 && 'Generate outreach and follow up for applied roles',
                 data.skills.length > 0 && `Strengthen top skill: ${data.skills[0]?.[0]}`,
               ].filter(Boolean).map((t, i) => (
-                <li key={i} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                <li key={i} className="flex items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-3 py-2.5">
                   <span className="grid h-7 w-7 place-items-center rounded-lg bg-aurora-cyan/12 text-aurora-cyan"><TrendingUp size={14} /></span>
-                  <span className="text-sm text-slate-200">{t}</span>
+                  <span className="text-sm text-fg">{t}</span>
                 </li>
               ))}
             </ul>

@@ -50,10 +50,10 @@ function Meter({ value, max, tone = 'violet' }) {
 function Row({ label, value, hint }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <span className="text-[12px] text-slate-400">{label}</span>
+      <span className="text-[12px] text-fg-secondary">{label}</span>
       <span className="text-right">
-        <span className="font-display text-[15px] font-semibold text-white">{value}</span>
-        {hint && <span className="ml-1.5 text-[11px] text-slate-500">{hint}</span>}
+        <span className="font-display text-[15px] font-semibold text-fg">{value}</span>
+        {hint && <span className="ml-1.5 text-[11px] text-fg-muted">{hint}</span>}
       </span>
     </div>
   );
@@ -118,9 +118,9 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
                 {conv.map((s, i) => (
                   <div key={s.id}>
                     <div className="mb-1 flex items-center justify-between text-[12px]">
-                      <span className="font-medium text-slate-200">{s.label}</span>
+                      <span className="font-medium text-fg">{s.label}</span>
                       <span className="flex items-center gap-2">
-                        <span className="font-mono text-slate-400">{s.reached}</span>
+                        <span className="font-mono text-fg-secondary">{s.reached}</span>
                         {i > 0 && (
                           <Badge tone={s.conversion >= 60 ? 'mint' : s.conversion >= 35 ? 'amber' : 'rose'}>
                             {s.conversion}%
@@ -131,7 +131,7 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
                     <Meter value={s.reached} max={conv[0].reached} tone={i >= 3 ? 'mint' : i >= 2 ? 'amber' : 'violet'} />
                   </div>
                 ))}
-                <p className="pt-1 text-[11px] leading-relaxed text-slate-500">
+                <p className="pt-1 text-[11px] leading-relaxed text-fg-muted">
                   Each bar is candidates who reached that stage or beyond, so the percentages read as
                   stage-to-stage conversion. Rejections are excluded — they are an outcome, not a step.
                 </p>
@@ -157,7 +157,7 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
                     className="w-full rounded-xl border border-amber-300/20 bg-amber-400/[0.06] p-3 text-left transition hover:border-amber-300/40"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-[13px] font-medium text-white">{r.title}</span>
+                      <span className="text-[13px] font-medium text-fg">{r.title}</span>
                       <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-glow" />
                     </div>
                     <p className="mt-1 text-[11px] text-amber-100/70">{r.reasons.join(' · ')}</p>
@@ -176,7 +176,7 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
           <Row label="Sourced → offer" value={`${k.medianDaysToOffer} days`} />
           <Row label="Offer acceptance" value={`${k.offerAcceptRate}%`} />
           <Row label="Average match score" value={k.avgMatchScore} hint="/ 100" />
-          <p className="mt-3 border-t border-white/8 pt-3 text-[11px] leading-relaxed text-slate-500">
+          <p className="mt-3 border-t border-subtle pt-3 text-[11px] leading-relaxed text-fg-muted">
             Medians, not averages — one stalled candidate should not move the number that tells you
             how fast you actually hire.
           </p>
@@ -192,14 +192,14 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
           ) : (
             <div className="space-y-2">
               {upcoming.map((iv) => (
-                <div key={iv.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <div key={iv.id} className="flex items-center justify-between gap-3 rounded-xl border border-subtle bg-surface-1 p-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium text-white">{iv.candidateName}</p>
-                    <p className="truncate text-[11px] text-slate-500">{iv.round} · {iv.panel} · {iv.mode}</p>
+                    <p className="truncate text-[13px] font-medium text-fg">{iv.candidateName}</p>
+                    <p className="truncate text-[11px] text-fg-muted">{iv.round} · {iv.panel} · {iv.mode}</p>
                   </div>
                   <div className="shrink-0 text-right">
                     <Badge tone="cyan"><Clock size={10} /> {relativeDay(iv.scheduledAt)}</Badge>
-                    <p className="mt-1 text-[10px] text-slate-500">{iv.durationMins} min</p>
+                    <p className="mt-1 text-[10px] text-fg-muted">{iv.durationMins} min</p>
                   </div>
                 </div>
               ))}
@@ -211,17 +211,17 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
       {connected.length > 0 && (
         <SectionCard title="Campus contribution" eyebrow="Where your hires come from">
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-              <p className="font-display text-[26px] font-extrabold text-white">{k.campusHireShare}%</p>
-              <p className="mt-1 text-[11px] text-slate-500">of hires came through a connected campus</p>
+            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+              <p className="font-display text-[26px] font-extrabold text-fg">{k.campusHireShare}%</p>
+              <p className="mt-1 text-[11px] text-fg-muted">of hires came through a connected campus</p>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-              <p className="font-display text-[26px] font-extrabold text-white">{connected.reduce((s, c) => s + c.recruiterReadyCount, 0)}</p>
-              <p className="mt-1 text-[11px] text-slate-500">students with verified, openable proof</p>
+            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+              <p className="font-display text-[26px] font-extrabold text-fg">{connected.reduce((s, c) => s + c.recruiterReadyCount, 0)}</p>
+              <p className="mt-1 text-[11px] text-fg-muted">students with verified, openable proof</p>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-              <p className="font-display text-[26px] font-extrabold text-white">{connected.reduce((s, c) => s + c.inPipeline, 0)}</p>
-              <p className="mt-1 text-[11px] text-slate-500">campus candidates in your pipeline</p>
+            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+              <p className="font-display text-[26px] font-extrabold text-fg">{connected.reduce((s, c) => s + c.inPipeline, 0)}</p>
+              <p className="mt-1 text-[11px] text-fg-muted">campus candidates in your pipeline</p>
             </div>
           </div>
         </SectionCard>
@@ -256,7 +256,7 @@ export function CampusPartners({ partners = [], onGoto }) {
         eyebrow="Your campus programme"
         action={<Badge tone="mint">{partners.filter((p) => p.status === 'connected').length} connected</Badge>}
       >
-        <p className="mb-4 text-[12px] leading-relaxed text-slate-400">
+        <p className="mb-4 text-[12px] leading-relaxed text-fg-secondary">
           A connected campus shares live cohort signal — verified skills, readiness and project proof —
           with your requisitions. Nothing is shared about a student who has not made their proof visible
           to recruiters.
@@ -267,12 +267,12 @@ export function CampusPartners({ partners = [], onGoto }) {
             return (
               <div
                 key={c.id}
-                className={`rounded-2xl border p-4 transition ${live ? 'border-aurora-mint/25 bg-aurora-mint/[0.04] hover:border-aurora-mint/45' : 'border-white/10 bg-white/[0.02] hover:border-white/25'}`}
+                className={`rounded-2xl border p-4 transition ${live ? 'border-aurora-mint/25 bg-aurora-mint/[0.04] hover:border-aurora-mint/45' : 'border-subtle bg-surface-1 hover:border-strong'}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-display text-[15px] font-bold text-white">{c.name}</p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <p className="truncate font-display text-[15px] font-bold text-fg">{c.name}</p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-fg-muted">
                       <MapPin size={10} /> {c.city} · {c.tier}
                     </p>
                   </div>
@@ -282,21 +282,21 @@ export function CampusPartners({ partners = [], onGoto }) {
                 {live ? (
                   <>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-xl border border-white/10 bg-ink-950/40 p-2">
-                        <p className="font-display text-[18px] font-bold text-white">{c.recruiterReadyCount}</p>
-                        <p className="text-[10px] text-slate-500">proof-ready</p>
+                      <div className="rounded-xl border border-subtle bg-base/40 p-2">
+                        <p className="font-display text-[18px] font-bold text-fg">{c.recruiterReadyCount}</p>
+                        <p className="text-[10px] text-fg-muted">proof-ready</p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-ink-950/40 p-2">
-                        <p className="font-display text-[18px] font-bold text-white">{c.avgReadiness}</p>
-                        <p className="text-[10px] text-slate-500">avg readiness</p>
+                      <div className="rounded-xl border border-subtle bg-base/40 p-2">
+                        <p className="font-display text-[18px] font-bold text-fg">{c.avgReadiness}</p>
+                        <p className="text-[10px] text-fg-muted">avg readiness</p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-ink-950/40 p-2">
-                        <p className="font-display text-[18px] font-bold text-white">{c.offersAccepted}</p>
-                        <p className="text-[10px] text-slate-500">hires</p>
+                      <div className="rounded-xl border border-subtle bg-base/40 p-2">
+                        <p className="font-display text-[18px] font-bold text-fg">{c.offersAccepted}</p>
+                        <p className="text-[10px] text-fg-muted">hires</p>
                       </div>
                     </div>
                     <div className="mt-3">
-                      <div className="mb-1 flex justify-between text-[11px] text-slate-500">
+                      <div className="mb-1 flex justify-between text-[11px] text-fg-muted">
                         <span>Proof-ready share of cohort</span>
                         <span className="font-mono">{c.recruiterReadyCount}/{c.cohortSize}</span>
                       </div>
@@ -307,8 +307,8 @@ export function CampusPartners({ partners = [], onGoto }) {
                         <Badge key={s.skill} tone="cyan">{s.skill} · {s.count}</Badge>
                       ))}
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
-                      <span className="text-[11px] text-slate-500">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
+                      <span className="text-[11px] text-fg-muted">
                         Next drive {c.nextDriveAt ? relativeDay(c.nextDriveAt) : '—'}
                       </span>
                       <div className="ml-auto flex gap-2">
@@ -323,9 +323,9 @@ export function CampusPartners({ partners = [], onGoto }) {
                   </>
                 ) : (
                   <>
-                    <p className="mt-3 text-[12px] leading-relaxed text-slate-400">{c.note}</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
-                      <span className="text-[11px] text-slate-500">
+                    <p className="mt-3 text-[12px] leading-relaxed text-fg-secondary">{c.note}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
+                      <span className="text-[11px] text-fg-muted">
                         {c.invitedAt ? `Invited ${relativeDay(c.invitedAt)}` : 'Not yet contacted'}
                       </span>
                       <div className="ml-auto">
@@ -346,16 +346,16 @@ export function CampusPartners({ partners = [], onGoto }) {
         {detail && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Cohort</p>
+              <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Cohort</p>
                 <Row label="Total students" value={detail.cohortSize} />
                 <Row label="Graduating batch" value={detail.graduatingCount} />
                 <Row label="Proof-ready" value={detail.recruiterReadyCount} />
                 <Row label="Proof-ready, graduating" value={detail.graduatingReadyCount} />
                 <Row label="With a verified project" value={detail.verifiedProjectStudents} />
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Quality</p>
+              <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Quality</p>
                 <Row label="Avg readiness" value={detail.avgReadiness} hint="/ 100" />
                 <Row label="Avg resume score" value={detail.avgResume} hint="/ 100" />
                 <Row label="Avg CGPA" value={detail.avgCgpa} hint="/ 10" />
@@ -364,33 +364,33 @@ export function CampusPartners({ partners = [], onGoto }) {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Specialisations</p>
+            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Specialisations</p>
               <div className="flex flex-wrap gap-1.5">
                 {(detail.branches || []).map((b) => <Badge key={b} tone="violet">{b}</Badge>)}
               </div>
-              <p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              <p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">
                 Most-proven skills in the pool
               </p>
               <div className="space-y-1.5">
                 {(detail.topSkills || []).map((s) => (
                   <div key={s.skill} className="flex items-center gap-2 text-[12px]">
-                    <span className="w-32 shrink-0 truncate text-slate-300">{s.skill}</span>
+                    <span className="w-32 shrink-0 truncate text-fg-secondary">{s.skill}</span>
                     <div className="flex-1"><Meter value={s.count} max={detail.topSkills[0]?.count || 1} tone="cyan" /></div>
-                    <span className="w-8 text-right font-mono text-[11px] text-slate-400">{s.count}</span>
+                    <span className="w-8 text-right font-mono text-[11px] text-fg-secondary">{s.count}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Placement cell</p>
+            <div className="rounded-xl border border-subtle bg-surface-1 p-4">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Placement cell</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Mail size={13} className="text-aurora-cyan" />
-                <span className="text-[13px] text-slate-200">{detail.placementCellName}</span>
-                <span className="font-mono text-[12px] text-slate-500">{detail.placementCellEmail}</span>
+                <span className="text-[13px] text-fg">{detail.placementCellName}</span>
+                <span className="font-mono text-[12px] text-fg-muted">{detail.placementCellEmail}</span>
               </div>
-              <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+              <p className="mt-3 text-[11px] leading-relaxed text-fg-muted">
                 Counts here are computed from the cohort the placement cell maintains. Only students who
                 made their proof visible to recruiters are included in the proof-ready figures.
               </p>
@@ -433,16 +433,16 @@ export function Requisitions({ requisitions = [], pipeline = [], onOpenMatches }
           const hired = hiredFor(r.id);
           const left = daysUntil(r.targetCloseAt);
           return (
-            <div key={r.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-white/25">
+            <div key={r.id} className="rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-display text-[15px] font-bold text-white">{r.title}</p>
+                    <p className="font-display text-[15px] font-bold text-fg">{r.title}</p>
                     <Badge tone={statusTone[r.status] || 'default'}>{r.status.replace('_', ' ')}</Badge>
                     <Badge tone={priorityTone[r.priority] || 'default'}>{r.priority}</Badge>
                     <Badge tone="violet">{REQ_TYPE_LABEL[r.type] || r.type}</Badge>
                   </div>
-                  <p className="mt-1 text-[12px] text-slate-400">
+                  <p className="mt-1 text-[12px] text-fg-secondary">
                     {r.department} · {r.location} · {r.workMode} · {r.ctcLpa} LPA · {r.openings} opening{r.openings === 1 ? '' : 's'}
                   </p>
                   {r.collegeName && (
@@ -452,20 +452,20 @@ export function Requisitions({ requisitions = [], pipeline = [], onOpenMatches }
                   )}
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="font-display text-[22px] font-extrabold text-white">{hired}<span className="text-slate-600">/{r.openings}</span></p>
-                  <p className="text-[10px] text-slate-500">seats filled</p>
+                  <p className="font-display text-[22px] font-extrabold text-fg">{hired}<span className="text-fg-muted">/{r.openings}</span></p>
+                  <p className="text-[10px] text-fg-muted">seats filled</p>
                 </div>
               </div>
 
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Must have</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Must have</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(r.mustHaveSkills || []).map((s) => <Badge key={s} tone="cyan">{s}</Badge>)}
                   </div>
                   {(r.niceToHaveSkills || []).length > 0 && (
                     <>
-                      <p className="mb-1.5 mt-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Nice to have</p>
+                      <p className="mb-1.5 mt-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Nice to have</p>
                       <div className="flex flex-wrap gap-1.5">
                         {r.niceToHaveSkills.map((s) => <Badge key={s}>{s}</Badge>)}
                       </div>
@@ -473,7 +473,7 @@ export function Requisitions({ requisitions = [], pipeline = [], onOpenMatches }
                   )}
                 </div>
                 <div>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Eligibility gate</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Eligibility gate</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(r.eligibility?.branches || []).map((b) => <Badge key={b} tone="violet">{b}</Badge>)}
                     {(r.eligibility?.batches || []).map((b) => <Badge key={b} tone="violet">Batch {b}</Badge>)}
@@ -487,12 +487,12 @@ export function Requisitions({ requisitions = [], pipeline = [], onOpenMatches }
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
                 <Badge tone="cyan"><Users size={11} /> {inPipe} in pipeline</Badge>
                 <Badge tone={left != null && left < 7 ? 'amber' : 'default'}>
                   <CalendarClock size={11} /> target close {relativeDay(r.targetCloseAt)}
                 </Badge>
-                <span className="text-[11px] text-slate-500">HM: {r.hiringManager}</span>
+                <span className="text-[11px] text-fg-muted">HM: {r.hiringManager}</span>
                 <div className="ml-auto">
                   <Button size="sm" onClick={() => onOpenMatches?.(r)}>
                     <Target size={13} /> See campus matches
@@ -512,7 +512,7 @@ export function MatchesModal({ open, onClose, requisition, matches = [], loading
   return (
     <Modal open={open} onClose={onClose} title={requisition ? `Campus matches — ${requisition.title}` : ''} width="max-w-3xl">
       {loading ? (
-        <p className="py-6 text-center text-sm text-slate-400">Matching against the campus cohort…</p>
+        <p className="py-6 text-center text-sm text-fg-secondary">Matching against the campus cohort…</p>
       ) : !matches.length ? (
         <EmptyState
           icon={AlertTriangle}
@@ -525,18 +525,18 @@ export function MatchesModal({ open, onClose, requisition, matches = [], loading
         />
       ) : (
         <div className="space-y-3">
-          <p className="text-[12px] leading-relaxed text-slate-400">
+          <p className="text-[12px] leading-relaxed text-fg-secondary">
             Every candidate below clears the hard eligibility gate. The score is the soft ranking on top of
             it, and each part is shown so you can see exactly why someone ranked where they did.
           </p>
           {matches.map(({ profile, match }, i) => (
-            <div key={profile.userId} className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
+            <div key={profile.userId} className="rounded-xl border border-subtle bg-surface-1 p-3.5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span className="grid h-8 w-8 place-items-center rounded-lg bg-aurora-violet/15 font-display text-[12px] font-bold text-aurora-cyan">#{i + 1}</span>
                   <div>
-                    <p className="text-[13px] font-medium text-white">{profile.name}</p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[13px] font-medium text-fg">{profile.name}</p>
+                    <p className="text-[11px] text-fg-muted">
                       {profile.campus?.branchShort} · Batch {profile.campus?.batch} · CGPA {profile.campus?.cgpa} · {profile.targetRole}
                     </p>
                   </div>
@@ -553,18 +553,18 @@ export function MatchesModal({ open, onClose, requisition, matches = [], loading
                 <div className="space-y-1">
                   {Object.entries(match.parts).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-28 shrink-0 text-slate-400">{k}</span>
+                      <span className="w-28 shrink-0 text-fg-secondary">{k}</span>
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
                         <div className="h-full rounded-full bg-aurora-cta" style={{ width: `${Math.min(100, v * 2.5)}%` }} />
                       </div>
-                      <span className="w-5 text-right font-mono text-slate-300">{v}</span>
+                      <span className="w-5 text-right font-mono text-fg-secondary">{v}</span>
                     </div>
                   ))}
                 </div>
                 <div>
                   {match.mustHaveMatched.length > 0 && (
                     <>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Proven against must-haves</p>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Proven against must-haves</p>
                       <div className="flex flex-wrap gap-1.5">
                         {match.mustHaveMatched.map((s) => <Badge key={s} tone="mint"><CheckCircle2 size={10} /> {s}</Badge>)}
                       </div>
@@ -572,7 +572,7 @@ export function MatchesModal({ open, onClose, requisition, matches = [], loading
                   )}
                   {match.mustHaveMissing.length > 0 && (
                     <>
-                      <p className="mb-1 mt-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Not yet proven</p>
+                      <p className="mb-1 mt-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Not yet proven</p>
                       <div className="flex flex-wrap gap-1.5">
                         {match.mustHaveMissing.map((s) => <Badge key={s} tone="rose">{s}</Badge>)}
                       </div>
@@ -617,7 +617,7 @@ export function PipelineBoard({ pipeline = [], stages = [], requisitions = [] })
         <select
           value={reqFilter}
           onChange={(e) => setReqFilter(e.target.value)}
-          className="h-9 rounded-xl border border-white/10 bg-ink-950 px-2.5 text-[12px] text-slate-100"
+          className="h-9 rounded-xl border border-subtle bg-base px-2.5 text-[12px] text-fg"
         >
           <option value="">All requisitions</option>
           {requisitions.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
@@ -630,23 +630,23 @@ export function PipelineBoard({ pipeline = [], stages = [], requisitions = [] })
           return (
             <div key={s.id} className="w-[228px] shrink-0">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[12px] font-semibold text-slate-200">{s.label}</span>
+                <span className="text-[12px] font-semibold text-fg">{s.label}</span>
                 <Badge tone={STAGE_TONE[s.id] || 'default'}>{list.length}</Badge>
               </div>
               <div className="space-y-2">
                 {!list.length && (
-                  <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-[11px] text-slate-600">
+                  <div className="rounded-xl border border-dashed border-subtle p-4 text-center text-[11px] text-fg-muted">
                     Empty
                   </div>
                 )}
                 {list.map((p) => (
-                  <div key={p.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                  <div key={p.id} className="rounded-xl border border-subtle bg-surface-1 p-2.5">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 truncate text-[12px] font-medium text-white">{p.candidateName}</p>
+                      <p className="min-w-0 truncate text-[12px] font-medium text-fg">{p.candidateName}</p>
                       <span className="shrink-0 font-mono text-[11px] text-aurora-cyan">{p.matchScore}</span>
                     </div>
-                    <p className="mt-0.5 truncate text-[10px] text-slate-500">{p.branch || p.source} · {p.batch}</p>
-                    <p className="mt-1 truncate text-[10px] text-slate-600">{p.requisitionTitle}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-fg-muted">{p.branch || p.source} · {p.batch}</p>
+                    <p className="mt-1 truncate text-[10px] text-fg-muted">{p.requisitionTitle}</p>
                     {p.ctcLpa && <div className="mt-1.5"><Badge tone="mint">{p.ctcLpa} LPA</Badge></div>}
                     {p.stage === 'sourced' && p.mustHaveMissing?.length > 0 && (
                       <p className="mt-1.5 truncate text-[10px] text-rose-300/70">missing: {p.mustHaveMissing.join(', ')}</p>
@@ -682,34 +682,34 @@ export function SkillGap({ gaps = [], partners = [] }) {
   const maxScale = Math.max(...gaps.map((g) => Math.max(g.demand, g.claimedSupply)), 1);
 
   const GapRow = ({ g }) => (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+    <div className="rounded-xl border border-subtle bg-surface-1 p-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[13px] font-medium text-white">{g.skill}</span>
+        <span className="text-[13px] font-medium text-fg">{g.skill}</span>
         <Badge tone={g.coverage >= 100 ? 'mint' : g.coverage >= 50 ? 'amber' : 'rose'}>
           {g.coverage >= 100 ? <TrendingUp size={10} /> : <TrendingDown size={10} />} {g.coverage}% covered
         </Badge>
       </div>
       <div className="mt-2 space-y-1.5">
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="w-16 shrink-0 text-slate-500">Demand</span>
+          <span className="w-16 shrink-0 text-fg-muted">Demand</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
             <div className="h-full rounded-full bg-amber-glow" style={{ width: `${(g.demand / maxScale) * 100}%` }} />
           </div>
-          <span className="w-7 text-right font-mono text-slate-300">{g.demand}</span>
+          <span className="w-7 text-right font-mono text-fg-secondary">{g.demand}</span>
         </div>
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="w-16 shrink-0 text-slate-500">Proven</span>
+          <span className="w-16 shrink-0 text-fg-muted">Proven</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
             <div className="h-full rounded-full bg-aurora-mint" style={{ width: `${(g.provenSupply / maxScale) * 100}%` }} />
           </div>
-          <span className="w-7 text-right font-mono text-slate-300">{g.provenSupply}</span>
+          <span className="w-7 text-right font-mono text-fg-secondary">{g.provenSupply}</span>
         </div>
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="w-16 shrink-0 text-slate-500">Claimed</span>
+          <span className="w-16 shrink-0 text-fg-muted">Claimed</span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
             <div className="h-full rounded-full bg-aurora-cyan/60" style={{ width: `${(g.claimedSupply / maxScale) * 100}%` }} />
           </div>
-          <span className="w-7 text-right font-mono text-slate-300">{g.claimedSupply}</span>
+          <span className="w-7 text-right font-mono text-fg-secondary">{g.claimedSupply}</span>
         </div>
       </div>
     </div>
@@ -722,10 +722,10 @@ export function SkillGap({ gaps = [], partners = [] }) {
         eyebrow={connected ? `Your open roles against ${connected.name}` : 'Your open roles against the connected cohort'}
         action={<Badge tone={shortfalls.length ? 'amber' : 'mint'}>{shortfalls.length} shortfall{shortfalls.length === 1 ? '' : 's'}</Badge>}
       >
-        <p className="mb-4 text-[12px] leading-relaxed text-slate-400">
-          <span className="text-slate-300">Demand</span> is seats across your open requisitions weighted by
-          whether a skill is required or preferred. <span className="text-slate-300">Proven</span> counts students
-          whose work was actually verified for that skill; <span className="text-slate-300">claimed</span> counts
+        <p className="mb-4 text-[12px] leading-relaxed text-fg-secondary">
+          <span className="text-fg-secondary">Demand</span> is seats across your open requisitions weighted by
+          whether a skill is required or preferred. <span className="text-fg-secondary">Proven</span> counts students
+          whose work was actually verified for that skill; <span className="text-fg-secondary">claimed</span> counts
           everyone who lists it. The distance between those two lines is the one number worth sending to a
           placement cell.
         </p>
@@ -757,8 +757,8 @@ export function SkillGap({ gaps = [], partners = [] }) {
         <SectionCard title="What to send the placement cell" eyebrow="Actionable on both sides">
           <div className="space-y-2">
             {shortfalls.slice(0, 4).map((g) => (
-              <div key={g.skill} className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-[12px] leading-relaxed text-slate-300">
-                <span className="font-medium text-white">{g.skill}</span> — {g.demand} seat{g.demand === 1 ? '' : 's'} need it,
+              <div key={g.skill} className="rounded-xl border border-subtle bg-surface-1 p-3 text-[12px] leading-relaxed text-fg-secondary">
+                <span className="font-medium text-fg">{g.skill}</span> — {g.demand} seat{g.demand === 1 ? '' : 's'} need it,
                 {' '}{g.provenSupply} student{g.provenSupply === 1 ? '' : 's'} can prove it
                 {g.claimedSupply > g.provenSupply && (
                   <>, and {g.claimedSupply - g.provenSupply} more list it without verified work behind it</>

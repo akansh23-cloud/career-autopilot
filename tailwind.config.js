@@ -11,6 +11,28 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
+        /* THEME TOKENS. These read the CSS custom properties in index.css, so
+           `text-fg` / `bg-elevated` / `border-subtle` resolve differently in
+           light and dark without any conditional class logic in components.
+           The codemod (scripts/theme-codemod.mjs) rewrites the old hardcoded
+           `text-white` / `bg-white/5` / `border-white/10` usages to these. */
+        fg: {
+          DEFAULT: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+          inverse: 'var(--text-inverse)',
+        },
+        base: 'var(--bg-base)',
+        elevated: 'var(--bg-elevated)',
+        sunken: 'var(--bg-sunken)',
+        surface: {
+          1: 'var(--surface-1)',
+          2: 'var(--surface-2)',
+          hover: 'var(--surface-hover)',
+        },
+        subtle: 'var(--border-subtle)',
+        strong: 'var(--border-strong)',
+
         // Archival green-cast inks (token names kept for drop-in compatibility).
         ink: {
           950: '#070908',

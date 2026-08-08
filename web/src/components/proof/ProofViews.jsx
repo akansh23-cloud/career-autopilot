@@ -18,13 +18,13 @@ export function StatusBadge({ status, size = 'sm' }) {
 export function ArchitectureDiagram({ mermaid, height = 320 }) {
   const source = normalizeMermaidInput(mermaid);
   if (!source.trim()) {
-    return <p className="text-[12px] text-slate-500">No architecture diagram yet — generate one on the Architecture tab.</p>;
+    return <p className="text-[12px] text-fg-muted">No architecture diagram yet — generate one on the Architecture tab.</p>;
   }
 
   try {
     const graph = layoutGraph(source);
     const { nodes, edges, layers, maxDepth } = graph;
-    if (!nodes.length) return <p className="text-[12px] text-slate-500">Diagram is empty.</p>;
+    if (!nodes.length) return <p className="text-[12px] text-fg-muted">Diagram is empty.</p>;
 
     const W = 640;
     const numericHeight = Number(height) || 320;
@@ -43,7 +43,7 @@ export function ArchitectureDiagram({ mermaid, height = 320 }) {
     const shapeColor = (shape) => shape === 'cyl' ? 'var(--mint, #34d399)' : shape === 'circle' ? 'var(--amber, #f59e0b)' : 'var(--cyan, #38bdf8)';
 
     return (
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-ink-950/60 p-2">
+      <div className="overflow-x-auto rounded-xl border border-subtle bg-base/60 p-2">
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 420 }} role="img" aria-label="Architecture diagram">
           <defs>
             <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -78,7 +78,7 @@ export function ArchitectureDiagram({ mermaid, height = 320 }) {
     return (
       <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/10 p-3">
         <p className="text-[12px] text-amber-100">Unable to render this architecture diagram. The Mermaid text is still available below.</p>
-        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-slate-300">{source}</pre>
+        <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fg-secondary">{source}</pre>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export function ScoreRing({ score = 0, label = 'Proof', size = 48 }) {
       <div className={`grid place-items-center rounded-full border-2 ${ring}`} style={{ height: size, width: size }}>
         <span className={`font-display text-base font-bold ${tone}`}>{score}</span>
       </div>
-      <span className="mt-1 font-mono text-[8px] uppercase tracking-widest text-slate-500">{label}</span>
+      <span className="mt-1 font-mono text-[8px] uppercase tracking-widest text-fg-muted">{label}</span>
     </div>
   );
 }
@@ -101,9 +101,9 @@ export function ScoreRing({ score = 0, label = 'Proof', size = 48 }) {
 export function XpBar({ skill }) {
   const info = skill.level ? skill : { ...skill, ...levelFor(skill.xp) };
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+    <div className="rounded-xl border border-subtle bg-surface-1 p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-white">{skill.skillName}</span>
+        <span className="truncate text-sm font-medium text-fg">{skill.skillName}</span>
         <div className="flex shrink-0 items-center gap-1.5">
           {skill.state && <Badge tone={SKILL_STATE_TONES[skill.state] || 'default'}>{SKILL_STATE_LABELS[skill.state] || skill.state}</Badge>}
           <Badge tone="violet">{info.level}</Badge>
@@ -112,7 +112,7 @@ export function XpBar({ skill }) {
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8">
         <div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${info.pct}%` }} />
       </div>
-      <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+      <div className="mt-1.5 flex items-center justify-between text-[11px] text-fg-muted">
         <span>{skill.xp} XP · {skill.evidenceCount} project{skill.evidenceCount === 1 ? '' : 's'}</span>
         {info.next && <span>→ {info.next}</span>}
       </div>
@@ -124,12 +124,12 @@ export function BadgePill({ badge, onClick }) {
   return (
     <button
       onClick={() => onClick?.(badge)}
-      className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] text-slate-200 transition hover:border-white/25"
+      className="inline-flex items-center gap-1.5 rounded-full border border-subtle bg-surface-1 px-2.5 py-1 text-[11px] text-fg transition hover:border-strong"
       title={`${badge.confidence}% confidence`}
     >
-      {badge.gated ? <Lock size={11} className="text-slate-500" /> : <Award size={11} className="text-aurora-mint" />}
+      {badge.gated ? <Lock size={11} className="text-fg-muted" /> : <Award size={11} className="text-aurora-mint" />}
       <span className="font-medium">{badge.skillName}</span>
-      <span className="text-slate-400">· {badge.level}</span>
+      <span className="text-fg-secondary">· {badge.level}</span>
       <span className="font-mono text-[10px] text-aurora-cyan">{badge.confidence}%</span>
     </button>
   );
@@ -162,28 +162,28 @@ export function VerifiedBadgePanel({ badges = [], onOpen, onViewAll, limit = 16 
       {shown.length ? (
         <div className="flex flex-wrap gap-2">{shown.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={onOpen} />)}</div>
       ) : (
-        <p className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-[13px] text-slate-400">
+        <p className="rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-[13px] text-fg-secondary">
           No verified badges yet — your developing skills are below. Add GitHub/live-demo proof to a project to verify them.
         </p>
       )}
 
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
         {onViewAll && (
-          <button onClick={onViewAll} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] text-aurora-cyan transition hover:border-white/25">
+          <button onClick={onViewAll} className="inline-flex items-center gap-1 rounded-lg border border-subtle bg-surface-1 px-2.5 py-1.5 text-[12px] text-aurora-cyan transition hover:border-strong">
             View all skills{verified.length ? ` (${verified.length})` : ''}
           </button>
         )}
         {developing.length > 0 && (
-          <button onClick={() => setShowDeveloping((v) => !v)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] text-slate-300 transition hover:border-white/25">
+          <button onClick={() => setShowDeveloping((v) => !v)} className="inline-flex items-center gap-1 rounded-lg border border-subtle bg-surface-1 px-2.5 py-1.5 text-[12px] text-fg-secondary transition hover:border-strong">
             {showDeveloping ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            <Sprout size={12} className="text-slate-400" /> Developing skills ({developing.length})
+            <Sprout size={12} className="text-fg-secondary" /> Developing skills ({developing.length})
           </button>
         )}
       </div>
 
       {showDeveloping && developing.length > 0 && (
-        <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-slate-500">Developing skills · lower-confidence, not yet verified</p>
+        <div className="rounded-xl border border-subtle bg-surface-1 p-3">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-fg-muted">Developing skills · lower-confidence, not yet verified</p>
           <div className="flex flex-wrap gap-2">{developing.map((b) => <BadgePill key={b.skillName + b.level} badge={b} onClick={onOpen} />)}</div>
         </div>
       )}
@@ -202,35 +202,35 @@ export function BadgeModal({ badge, open, onClose }) {
           {badge.gated && <Badge tone="amber"><Lock size={11} /> Upgrade to unlock full level</Badge>}
         </div>
         <div>
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Earned by</div>
-          <p className="text-sm text-slate-200">{badge.projectTitle}</p>
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Earned by</div>
+          <p className="text-sm text-fg">{badge.projectTitle}</p>
         </div>
         <div>
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Evidence</div>
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Evidence</div>
           <ul className="space-y-1">
             {(badge.evidence || []).map((e, i) => (
-              <li key={i} className="flex items-center gap-2 text-[13px] text-slate-300"><CheckCircle2 size={14} className="text-aurora-mint" /> {e}</li>
+              <li key={i} className="flex items-center gap-2 text-[13px] text-fg-secondary"><CheckCircle2 size={14} className="text-aurora-mint" /> {e}</li>
             ))}
           </ul>
         </div>
         {(badge.checklist || []).length > 0 && (
           <div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Project checklist</div>
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Project checklist</div>
             <ul className="space-y-1">
               {badge.checklist.map((c, i) => (
-                <li key={i} className="flex items-center gap-2 text-[13px] text-slate-400">
-                  {c.done ? <CheckCircle2 size={14} className="text-aurora-mint" /> : <Circle size={14} className="text-slate-600" />}
-                  <span className={c.done ? '' : 'text-slate-500'}>{c.label}</span>
+                <li key={i} className="flex items-center gap-2 text-[13px] text-fg-secondary">
+                  {c.done ? <CheckCircle2 size={14} className="text-aurora-mint" /> : <Circle size={14} className="text-fg-muted" />}
+                  <span className={c.done ? '' : 'text-fg-muted'}>{c.label}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
-        <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
+        <div className="flex flex-wrap gap-2 border-t border-subtle pt-4">
           {badge.githubUrl && <a href={badge.githubUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Github size={14} /> Code</Button></a>}
           {badge.liveDemoUrl && <a href={badge.liveDemoUrl} target="_blank" rel="noreferrer"><Button size="sm" variant="soft"><Globe size={14} /> Live demo</Button></a>}
         </div>
-        <p className="text-[11px] text-slate-500">Confidence reflects how much real evidence backs this badge. Badges are awarded from project proof, never from a self-selected skill.</p>
+        <p className="text-[11px] text-fg-muted">Confidence reflects how much real evidence backs this badge. Badges are awarded from project proof, never from a self-selected skill.</p>
       </div>
     </Modal>
   );
