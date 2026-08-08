@@ -1,9 +1,15 @@
 /* Guided Project Workspace — API planner (deterministic). */
 import { did, slug, camel } from './planUtils.js';
 
-export function planApis(project = {}, stack = {}, entity = 'Item') {
+export function planApis(project = {}, stack = {}, entity = 'Item', domain = null) {
   const f = stack.features || {};
-  const e = slug(entity);
+  /* Use the domain model's plural. Naive `slug(entity) + 's'` produced
+     /api/campuss and /api/companys — endpoints that did not match the routes
+     the codegen actually generated, so docs/api-plan.md documented URLs that
+     returned 404. */
+  const primary = domain && domain.primary ? domain.primary : null;
+  const e = primary && primary.slugPlural ? primary.slugPlural.replace(/s$/, '') : slug(entity);
+  const ePlural = primary && primary.slugPlural ? primary.slugPlural : `${slug(entity)}s`;
   const apis = [];
   const add = (method, path, purpose, opts = {}) => apis.push({
     id: did('api', method, path),
@@ -24,13 +30,13 @@ export function planApis(project = {}, stack = {}, entity = 'Item') {
     add('POST', '/api/auth/logout', 'Destroy the session.', { res: '{ ok }' });
     add('GET', '/api/auth/me', 'Return the signed-in user.', { res: '{ user }', model: 'User' });
   }
-  add('GET', `/api/${e}s`, `List the signed-in user's ${entity.toLowerCase()}s.`, { res: `{ items: ${entity}[] }`, model: entity });
-  add('POST', `/api/${e}s`, `Create a ${entity.toLowerCase()}.`, { req: `{ ${camel(entity)} fields }`, res: `{ item: ${entity} }`, model: entity });
-  add('GET', `/api/${e}s/:id`, `Fetch one ${entity.toLowerCase()}.`, { res: `{ item: ${entity} }`, model: entity });
-  add('PATCH', `/api/${e}s/:id`, `Update a ${entity.toLowerCase()}.`, { req: '{ partial fields }', res: '{ item }', model: entity });
-  add('DELETE', `/api/${e}s/:id`, `Delete a ${entity.toLowerCase()}.`, { res: '{ ok }', model: entity });
-  if (f.upload) add('POST', `/api/${e}s/upload`, `Upload a ${entity.toLowerCase()} file (multipart). TODO: pick storage (disk/S3).`, { req: 'multipart/form-data file', res: '{ item, fileMeta }', model: entity });
-  if (f.ai) add('POST', `/api/${e}s/:id/score`, 'Run scoring. v1 is a deterministic placeholder — backend owns the numbers; AI adds prose only.', { res: '{ score, breakdown }', model: entity });
+  add('GET', `/api/${ePlural}`, `List the signed-in user's ${entity.toLowerCase()}s.`, { res: `{ items: ${entity}[] }`, model: entity });
+  add('POST', `/api/${ePlural}`, `Create a ${entity.toLowerCase()}.`, { req: `{ ${camel(entity)} fields }`, res: `{ item: ${entity} }`, model: entity });
+  add('GET', `/api/${ePlural}/:id`, `Fetch one ${entity.toLowerCase()}.`, { res: `{ item: ${entity} }`, model: entity });
+  add('PATCH', `/api/${ePlural}/:id`, `Update a ${entity.toLowerCase()}.`, { req: '{ partial fields }', res: '{ item }', model: entity });
+  add('DELETE', `/api/${ePlural}/:id`, `Delete a ${entity.toLowerCase()}.`, { res: '{ ok }', model: entity });
+  if (f.upload) add('POST', `/api/${ePlural}/upload`, `Upload a ${entity.toLowerCase()} file (multipart). TODO: pick storage (disk/S3).`, { req: 'multipart/form-data file', res: '{ item, fileMeta }', model: entity });
+  if (f.ai) add('POST', `/api/${ePlural}/:id/score`, 'Run scoring. v1 is a deterministic placeholder — backend owns the numbers; AI adds prose only.', { res: '{ score, breakdown }', model: entity });
   if (f.payments) add('POST', '/api/payments/order', 'Create a payment order (SANDBOX only; secrets via env, never committed).', { req: '{ amount }', res: '{ orderId }' });
   if (f.admin) add('GET', '/api/admin/users', 'Admin-only user list.', { roles: ['admin'], res: '{ users }', model: 'User' });
   if (f.recruiter) add('GET', '/api/recruiter/candidates', 'Recruiter-role candidate list.', { roles: ['recruiter'], res: '{ candidates }' });

@@ -8,6 +8,8 @@
 import { arr, str, obj, nowIso } from './planUtils.js';
 import { detectStack } from '../codegen/stackDetector.js';
 import { derivePrimaryEntity, deriveFeatures } from './customProjectBuilder.js';
+import { modelDomain } from '../domain/domainModeler.js';
+import { compileFeatures } from './featureCompiler.js';
 import { buildMvpScope } from './mvpScopeBuilder.js';
 import { planScreens } from './screenPlanner.js';
 import { planApis } from './apiPlanner.js';
@@ -54,15 +56,20 @@ export function buildWorkspacePlan({ project = {}, architecture = null, existing
     ? (architecture.architectureSpec || architecture)
     : (p.architectureSpec || null);
   const stack = detectStack(p, architectureSpec);
-  const entity = derivePrimaryEntity(p);
+  /* v2: the domain model is the source of truth for entity naming and
+     fields. derivePrimaryEntity now delegates to it, so the whole plan
+     speaks the student's vocabulary instead of "Record". */
+  const domain = modelDomain(p, { auth: !!stack.features?.auth });
+  const entity = domain.primary.name;
   const features = deriveFeatures(p);
+  const featureSpecs = compileFeatures(p, domain, stack);
 
   const mvpScope = buildMvpScope(p, stack, features);
   const { screens, userJourneys } = planScreens(p, stack, features, entity);
-  const apis = planApis(p, stack, entity);
-  const models = planDatabaseModels(p, stack, entity);
-  const fileTree = planFileTree(p, stack, { screens, apis, models, entity });
-  const { tasks, roadmap } = planTasks(p, stack, { screens, apis, models, fileTree, features, entity });
+  const apis = planApis(p, stack, entity, domain);
+  const models = planDatabaseModels(p, stack, entity, domain);
+  const fileTree = planFileTree(p, stack, { screens, apis, models, entity, domain, featureSpecs });
+  const { tasks, roadmap } = planTasks(p, stack, { screens, apis, models, fileTree, features, entity, domain, featureSpecs });
   linkPlan({ screens, apis, models, tasks });
   linkFiles(fileTree, tasks);
 
@@ -77,6 +84,8 @@ export function buildWorkspacePlan({ project = {}, architecture = null, existing
     version: PLAN_VERSION,
     stack: { frontend: stack.frontend, backend: stack.backend, database: stack.database, isMern: stack.isMern, features: stack.features, cloudProvider: stack.cloudProvider, warnings: stack.warnings },
     primaryEntity: entity,
+    domain,
+    featureSpecs,
     projectSummary: {
       title: str(p.title),
       problemStatement: str(p.problemStatement || p.useCase),

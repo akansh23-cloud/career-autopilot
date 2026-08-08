@@ -24,6 +24,10 @@ export function buildTemplateContext(plan = {}, fileEntry = null) {
     deploymentPlan: obj(p.deploymentPlan),
     architectureSpec: obj(p.architecture).architectureSpec || null,
     workspacePlanExport: exportablePlan(p),
+    /* v2 domain context — every schema-driven template reads these. */
+    domain: obj(p.domain),
+    featureSpecs: arr(p.featureSpecs),
+    hasAuth: String(!!obj(obj(p.stack).features).auth),
   };
   /* Route files planned with a starter template — serverEntry mounts these. */
   base.routeFiles = arr(p.fileTree)
@@ -37,6 +41,27 @@ export function buildTemplateContext(plan = {}, fileEntry = null) {
      actually wires a placeholder route for it. */
   base.apis = annotateApisImplemented(p, base.routeFiles);
   if (!fileEntry) return base;
+
+  /* ---- v2 per-file domain binding -------------------------------------
+     A schema/model file binds to ONE entity; a feature file binds to ONE
+     compiled feature spec (and the task number that owns it, so the code,
+     the guide and `npm run check NN` all agree). */
+  const entities = arr(base.domain.entities);
+  const bySlug = (sl) => entities.find((x) => x.slug === sl || x.slugPlural === sl) || null;
+  const byName = (nm) => entities.find((x) => x.name === nm) || null;
+
+  const schemaMatch = path.match(/backend\/schemas\/([a-z0-9-]+)\.schema\.js$/);
+  if (schemaMatch) base.entityDef = bySlug(schemaMatch[1]) || entities[0] || null;
+  const modelMatch2 = path.match(/backend\/models\/([A-Za-z0-9]+)\.js$/);
+  if (modelMatch2) base.entityDef = byName(modelMatch2[1]) || null;
+  if (!base.entityDef) base.entityDef = entities[0] || null;
+
+  const spec = arr(p.featureSpecs).find((sp) =>
+    sp.serviceFile === path || sp.viewFile === path || path.endsWith(`tests/acceptance/${sp.slug}.test.js`));
+  if (spec) {
+    base.feature = spec;
+    base.featureTaskNo = featureTaskNo(p, spec.id);
+  }
 
   // Per-file specialization derived from the planned path.
   const m = path.match(/views\/([A-Za-z0-9]+)\.jsx$/);
@@ -78,9 +103,16 @@ function exportablePlan(p) {
    else (e.g. payments) is documented as planned only. */
 function annotateApisImplemented(p, routeFiles = []) {
   const have = new Set(routeFiles.map((r) => r.file));
-  const entity = str(p.primaryEntity) || 'Item';
-  const e = entity.toLowerCase();
+  /* v2: the entity path comes from the domain model (patients, invoices…),
+     not from lowercasing the entity name and bolting on an "s" — that broke
+     for every irregular plural. */
+  const primary = obj(obj(p.domain).primary);
+  const plural = str(primary.slugPlural) || `${str(p.primaryEntity || 'item').toLowerCase()}s`;
+  const entityRouteFile = `${plural}.routes.js`;
   const f = obj(obj(p.stack).features);
+  /* Feature modules are real mounted routers too — an endpoint they own is
+     shipped (answering 501 by design), so the docs must not call it "planned only". */
+  const featurePaths = new Set(arr(p.featureSpecs).map((x) => str(x.path)));
   return arr(p.apiPlan).map((a) => {
     const path = str(a.path);
     let implemented = false;
@@ -88,11 +120,12 @@ function annotateApisImplemented(p, routeFiles = []) {
     else if (path.startsWith('/api/auth/')) implemented = have.has('auth.routes.js');
     else if (path.startsWith('/api/admin/')) implemented = have.has('admin.routes.js');
     else if (path.startsWith('/api/recruiter/')) implemented = have.has('recruiter.routes.js');
-    else if (path.startsWith(`/api/${e}s`)) {
-      if (/\/upload$/.test(path)) implemented = have.has(`${e}s.routes.js`) && f.upload === true;
-      else if (/\/score$/.test(path)) implemented = have.has(`${e}s.routes.js`) && f.ai === true;
-      else implemented = have.has(`${e}s.routes.js`);
+    else if (path.startsWith(`/api/${plural}`)) {
+      if (/\/upload$/.test(path)) implemented = have.has(entityRouteFile) && f.upload === true;
+      else if (/\/score$/.test(path)) implemented = have.has(entityRouteFile) && f.ai === true;
+      else implemented = have.has(entityRouteFile);
     }
+    if (!implemented && featurePaths.has(path)) implemented = true;
     return { ...a, starterImplemented: implemented };
   });
 }
@@ -118,6 +151,13 @@ export function generateForFile(plan = {}, filePath = '', templateKeyOverride = 
     generatedFiles: [{ path: filePath, templateKey: key, language: rendered.language, content, label: rendered.label }],
     warnings,
   };
+}
+
+/* Which task owns a compiled feature — used to number its TODOs and to
+   print the right `npm run check NN` in the generated code. */
+function featureTaskNo(plan, featureId) {
+  const t = arr(obj(plan).tasks).find((x) => x.featureId === featureId);
+  return t ? String(t.order || 0).padStart(2, '0') : '';
 }
 
 /* The file's "primary" task: the earliest task (by order) that links it.

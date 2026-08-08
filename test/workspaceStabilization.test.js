@@ -147,16 +147,28 @@ test('generated backend/server.js imports and mounts every planned route file an
   assert.match(code, /import\.meta\.url === /, 'starts only when run directly');
 });
 
-test('health starter test calls the real exported app, entity test is labeled a harness example', () => {
+test('every generated test exercises the real app — no placeholder tests', () => {
+  /* v1 shipped one real health test plus a self-declared "harness example"
+     that verified nothing, and honestly labelled itself as such. v2 removes
+     the placeholder entirely: the smoke suite boots the real exported app,
+     and the acceptance suite asserts real endpoint contracts. This test now
+     guards the stronger property — that no generated test is a no-op. */
   const { plan } = makePlan();
-  const health = generateForFile(plan, 'backend/tests/health.test.js').generatedFiles[0].content;
-  assert.match(health, /import app from '\.\.\/server\.js'/);
-  assert.match(health, /fetch\(base \+ '\/api\/health'\)/);
-  assert.ok(!/const payload = \{ ok: true/.test(health), 'no hardcoded payload assertion');
-  const entityTest = plan.fileTree.find((f) => /backend\/tests\/(?!health).+\.test\.js$/.test(f.path));
-  const code = generateForFile(plan, entityTest.path).generatedFiles[0].content;
-  assert.match(code, /TEST HARNESS EXAMPLE/);
-  assert.match(code, /verifies nothing about your API/);
+  const helper = generateForFile(plan, 'backend/tests/helpers/server.js').generatedFiles[0].content;
+  assert.match(helper, /import app from '\.\.\/\.\.\/server\.js'/, 'helper boots the real app');
+  assert.match(helper, /app\.listen\(0/, 'binds an ephemeral port so tests never collide');
+
+  const smoke = generateForFile(plan, 'backend/tests/smoke.test.js').generatedFiles[0].content;
+  assert.match(smoke, /\/api\/health/);
+  assert.match(smoke, /assert\.equal\(created\.status, 201/, 'asserts a real create round-trip');
+  assert.ok(!/harness example|verifies nothing/i.test(smoke), 'no self-declared placeholder test');
+
+  const acceptance = plan.fileTree.filter((f) => /backend\/tests\/acceptance\//.test(f.path));
+  for (const f of acceptance) {
+    const code = generateForFile(plan, f.path).generatedFiles[0].content;
+    assert.match(code, /assert\.notEqual\(res\.status, 501/, `${f.path} asserts the endpoint is actually implemented`);
+    assert.match(code, /from '\.\.\/helpers\/server\.js'/, `${f.path} resolves its helper from tests/acceptance/`);
+  }
 });
 
 /* ---------- Fix 9: docs distinguish implemented vs planned ---------- */
@@ -200,11 +212,20 @@ test('starter pack includes the required student-experience files and run comman
     assert.ok(rels.includes(required), `pack includes ${required}`);
   }
   assert.ok(!rels.includes('.env'), 'no real .env in the pack');
-  assert.ok(pack.setupCommands.some((c) => /npm install/.test(c)));
-  // The guided flow points at start-here first and the local checker instead of a bare npm test.
+
+  /* v2 replaced the two-terminal install dance with one command. The intent of
+     the old `npm install` assertion — "the pack tells you how to install" —
+     is now carried by `npm run setup`, which also writes .env for the student. */
+  assert.ok(pack.setupCommands.some((c) => /npm run setup/.test(c)), 'setup is one command');
+  assert.ok(pack.setupCommands.some((c) => /npm run dev/.test(c)), 'running it is one command');
+  assert.ok(pack.setupCommands.some((c) => /npm test/.test(c)), 'the red/green loop is discoverable');
   assert.ok(pack.setupCommands.some((c) => /guide\/00-start-here/.test(c)), 'setup points to the start-here guide');
-  assert.ok(pack.setupCommands.some((c) => /scripts\/check\.mjs/.test(c)), 'setup includes the local check command');
+  assert.ok(pack.setupCommands.some((c) => /npm run check/.test(c)), 'setup includes the local check command');
   assert.ok(pack.warnings.some((w) => /starter skeleton/i.test(w)));
+
+  /* The pack must ship its own build report — the engine's self-check. */
+  assert.ok(rels.includes('BUILD-REPORT.md'), 'pack ships its build report');
+  assert.equal(pack.buildable, true, 'a pack with blocking problems must not be presented as buildable');
 });
 
 /* ---------- Fix 12: Done vs Verified stays enforced after this pass ---------- */

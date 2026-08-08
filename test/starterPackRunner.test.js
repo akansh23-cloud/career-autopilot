@@ -74,12 +74,16 @@ test('the runner resolves the pack root, not the current working directory', () 
   assert.match(out, /First task/);
 });
 
-test('no argument lists the available task numbers', () => {
+test('no argument shows a progress board with every task', () => {
+  /* v2: an unadorned prompt ("Which task?") told a stuck student nothing.
+     The board answers the question they actually have — where am I? */
   const root = tmp('pack-list-');
   const run = makePack(root);
   const out = run();
-  assert.match(out, /Which task\?/);
+  assert.match(out, /Your build so far/);
   assert.match(out, /18\s+Build the score result screen/);
+  assert.match(out, /01\s+First task/);
+  assert.match(out, /machine-checkable tasks passing/);
 });
 
 test('an unknown task number names the recovery command', () => {
@@ -92,7 +96,7 @@ test('an unknown task number names the recovery command', () => {
     out = `${e.stdout || ''}${e.stderr || ''}`;
   }
   assert.match(out, /No task "99"/);
-  assert.match(out, /check\.mjs all/);
+  assert.match(out, /npm run check/, 'names the command that shows every task');
 });
 
 test('a genuinely missing manifest still reports it', () => {

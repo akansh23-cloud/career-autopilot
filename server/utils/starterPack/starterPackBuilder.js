@@ -13,6 +13,7 @@ import { generateForFile } from '../codegen/codegenEngine.js';
 import { planGuide, planChecks, guideEntryToMarkdown, guideFileName, promptFileName, startHereMarkdown } from '../workspace/guidePlanner.js';
 import { renderCheckRunner, renderDevcontainer } from './kitFiles.js';
 import { createZip, isSafeZipPath } from './zipWriter.js';
+import { runBuildDoctor, buildReportMarkdown } from './buildDoctor.js';
 
 const MAX_FILES = 140; // higher ceiling: the kit adds one guide + one prompt per task
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024; // 4MB — guides are text, still tiny
@@ -90,15 +91,39 @@ export function buildStarterPack(plan = {}) {
 
   const setupCommands = [
     `unzip ${root}.zip && cd ${root}`,
-    'open guide/00-start-here.md   # ← READ THIS FIRST: pick your lane, then follow guide/01, 02, …',
-    'cp .env.example backend/.env   # optional — leave MONGODB_URI empty to run in MEMORY MODE',
-    'npm install --prefix backend && npm run dev --prefix backend',
-    'npm install --prefix frontend && npm run dev --prefix frontend',
-    'node scripts/check.mjs 01   # check your progress on task 01 (then 02, 03, …)',
+    'npm run setup    # installs both workspaces and writes backend/.env',
+    'npm run dev      # starts the API and the app together, with demo data already loaded',
+    'npm test         # smoke tests pass; acceptance tests fail on purpose — those are your tasks',
+    'npm run check    # progress board across every task',
+    'open guide/00-start-here.md   # ← read this first',
   ];
+
+  /* ---- Self-verification. The engine checks its own output before the
+     student ever sees it: unresolved imports, broken JSON, tasks pointing at
+     files that were never generated, checks reading paths that do not exist.
+     Blocking problems are surfaced loudly rather than shipped silently. */
+  let report = { ok: true, errors: [], warnings: [], stats: {}, summary: 'Build report unavailable.' };
+  try {
+    report = runBuildDoctor({ files, plan: p, root });
+    for (const w of report.warnings) warnings.push(`[build check] ${w.file ? `${w.file}: ` : ''}${w.message}`);
+    for (const e of report.errors) warnings.push(`[BLOCKING] ${e.file ? `${e.file}: ` : ''}${e.message}`);
+    addText('workspace/build-report.json', JSON.stringify(report, null, 2) + '\n');
+    addText('BUILD-REPORT.md', buildReportMarkdown(report, obj(p.projectSummary).title || p.title));
+  } catch (err) {
+    warnings.push(`Build check could not run (${err.message}); the pack still contains everything listed above.`);
+  }
+
   warnings.push('This is a starter skeleton + guided kit, not a completed project. Downloading it does not mark anything Done or Verified. Follow guide/00-start-here.md and build it yourself.');
 
-  return { name: root, files, setupCommands, warnings, guideTaskCount: guide.entries.length };
+  return {
+    name: root,
+    files,
+    setupCommands,
+    warnings,
+    guideTaskCount: guide.entries.length,
+    report,
+    buildable: report.ok,
+  };
 }
 
 export function packToZip(pack) {

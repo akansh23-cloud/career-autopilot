@@ -2,92 +2,68 @@
    Guided Build Kit — guide planner (deterministic).
    ------------------------------------------------------------
    ONE generator, TWO surfaces:
-   - structured entries embedded in the plan → rendered by the
-     in-app Guided Path stepper
-   - the same entries rendered to guide/NN-slug.md inside the
-     starter pack → the student's in-editor journey
-   Also produces: per-task AI Pair prompts (copy into any chatbot),
-   a 3-level hints ladder, "what you learned" recaps, and the
-   workspace/checks.json manifest that scripts/check.mjs executes.
+   - structured entries embedded in the plan → in-app Guided Path
+   - the same entries rendered to guide/NN-slug.md in the ZIP
 
-   No AI anywhere in generation. Same plan in → same guide out.
+   v2 rewrite. The v1 guide could say "No specific files — this task
+   is about your environment or process" for the most important task
+   in the project. Now every entry carries:
+     - the exact files to open
+     - the numbered TODOs inside them
+     - the command that proves it works
+     - a worked example in the student's own domain vocabulary
+
+   No AI anywhere. Same plan in → same guide out.
    ============================================================ */
 import { arr, str, obj, slug } from './planUtils.js';
 import { generateForFile } from '../codegen/codegenEngine.js';
 
-export const GUIDE_VERSION = 1;
+export const GUIDE_VERSION = 2;
 
-/* ---------------- concept library (skills → plain-language) ----------------
-   First sentence doubles as the "what you learned" recap line. */
+/* ---------------- concept library (skills → plain language) ---------------- */
 const CONCEPTS = {
-  'Node.js': 'Node.js runs JavaScript outside the browser — it is the engine your backend server runs on. When you run `npm run dev`, Node executes your server file and keeps it listening for requests.',
-  npm: 'npm installs the libraries your project depends on (listed in package.json) into node_modules. `npm install` downloads them; `npm run <script>` runs a named command.',
-  Git: 'Git records snapshots (commits) of your code so you can track history and prove your work. GitHub hosts those commits publicly — recruiters and verifiers read it as evidence.',
-  MongoDB: 'MongoDB stores your data as JSON-like documents in collections instead of rows in tables. Your app talks to it through Mongoose.',
-  Mongoose: 'Mongoose is the bridge between your Node code and MongoDB: a Schema declares what a valid document looks like, and a Model gives you methods like create() and find().',
-  Express: 'Express maps URLs to functions: when a request hits a route like GET /api/items, Express runs your handler and sends back the response you build.',
-  REST: 'REST is a naming convention for APIs: the URL names the thing (/api/tasks), and the HTTP method names the action — GET reads, POST creates, PATCH updates, DELETE removes.',
-  React: 'React builds UI from components — functions that return HTML-like JSX. State (useState) holds data that changes; when state changes, React re-renders the component for you.',
-  'express-session': 'A session is how the server remembers who you are between requests: it sets a signed cookie in your browser and keeps the matching user data server-side.',
-  'Security basics': 'Never store plaintext passwords, never trust client input, and never commit .env files — three rules that prevent most beginner security disasters.',
-  'multer/file handling': 'File uploads arrive as multipart form data; multer parses that stream into a file object you can size-check, sanitize, and store safely.',
-  'node:test': 'Automated tests are code that calls your code and asserts the result. If `npm test` passes, you have machine-checked proof the behavior works — far stronger than "it looked fine".',
-  Deployment: 'Deployment means running your app on a public server with a real URL. Env vars replace your local .env, and a health endpoint lets machines confirm it is alive.',
-  Vite: 'Vite is the dev server for your React app: it serves your code with instant reload and proxies /api requests to the backend so both feel like one app.',
+  'Node.js': 'Node.js runs JavaScript outside the browser — it is the engine your backend runs on. `npm run dev` hands your server file to Node and keeps it listening.',
+  npm: 'npm installs the libraries listed in package.json into node_modules. `npm install` downloads them; `npm run <script>` runs a named command.',
+  Git: 'Git records snapshots (commits) of your code so you can prove what you built and when. GitHub hosts those commits — recruiters and verifiers read them as evidence.',
+  'Data modelling': 'A schema is a promise about your data: which fields exist, which are required, what shape they take. Get this right and half your bugs never happen.',
+  MongoDB: 'MongoDB stores data as JSON-like documents in collections instead of rows in tables. Your app talks to it through Mongoose.',
+  Mongoose: 'Mongoose bridges Node and MongoDB: a Schema declares what a valid document looks like, a Model gives you create(), find() and friends.',
+  Express: 'Express maps URLs to functions: a request hits a route, Express runs your handler, your handler sends the response.',
+  REST: 'REST is a naming convention: the URL names the thing (/api/patients), the HTTP method names the action — GET reads, POST creates, PATCH updates, DELETE removes.',
+  React: 'React builds UI from components — functions returning JSX. State (useState) holds data that changes; when state changes, React re-renders for you.',
+  'express-session': 'A session is how the server remembers who you are between requests: a signed cookie in the browser, the matching user data server-side.',
+  'Security basics': 'Never store plaintext passwords, never trust client input, never commit .env. Three rules that prevent most beginner disasters.',
+  'multer/file handling': 'Uploads arrive as multipart form data; multer parses that stream into a file object you can size-check, sanitize and store.',
+  'node:test': 'A test is code that calls your code and asserts the result. A passing test is machine-checked proof — far stronger than "it looked fine".',
+  Deployment: 'Deployment means running your app on a public server with a real URL. Env vars replace your local .env; a health endpoint lets machines confirm it is alive.',
 };
-
-const conceptFor = (skill) => CONCEPTS[skill] || `${skill} — a core tool in this task; the guide steps show it in action.`;
+const conceptFor = (skill) => CONCEPTS[skill] || `${skill} — a core tool in this task; the steps below show it in action.`;
 const firstSentence = (s) => String(s).split(/(?<=\.)\s/)[0];
 
-/* ---------------- worked-example library (hint level 3) ----------------
-   Short, generic-but-concrete snippets keyed by task shape. */
-function exampleFor(task, ctx) {
-  const t = str(task.title).toLowerCase();
-  const E = ctx.entity;
-  if (/mongoose model/.test(t)) {
-    return `A finished field block looks like:\n\n\`\`\`js\nconst ${E.toLowerCase()}Schema = new mongoose.Schema({\n  title: { type: String, required: true, trim: true },\n  status: { type: String, enum: ['open', 'done'], default: 'open' },\n}, { timestamps: true });\n\`\`\`\n\nMatch each field in the Database tab, then restart the backend and re-run the check.`;
-  }
-  if (/crud routes/.test(t)) {
-    return `The create path, end to end: the route receives the request → the controller calls the service → the service talks to the data layer:\n\n\`\`\`js\n// service\nexport async function create${E}(body) {\n  if (!body?.title) throw new Error('title is required');\n  return store.create({ title: String(body.title).trim() });\n}\n\`\`\`\n\nTest it without the frontend: \`curl -X POST http://localhost:5050/api/${E.toLowerCase()}s -H "content-type: application/json" -d '{"title":"first one"}'\``;
-  }
-  if (/dashboard to the api|wire the dashboard/.test(t)) {
-    return `Fetching on mount, the React way:\n\n\`\`\`jsx\nconst [items, setItems] = useState([]);\nuseEffect(() => {\n  fetch('/api/${E.toLowerCase()}s').then(r => r.json())\n    .then(d => setItems(d.items || []));\n}, []);\n\`\`\`\n\nIf the list is empty, create one record with curl first — an empty state is not a bug.`;
-  }
-  if (/environment variables/.test(t)) {
-    return `.env.example lists NAMES; your local .env holds VALUES:\n\n\`\`\`\nPORT=5050\nMONGODB_URI=            # leave empty for memory mode, paste an Atlas URI for real persistence\n\`\`\`\n\nThe backend prints which mode it booted in — read its first log lines.`;
-  }
-  if (/session auth/.test(t)) {
-    return `The shape of a protected route:\n\n\`\`\`js\nfunction requireAuth(req, res, next) {\n  if (!req.session?.userId) return res.status(401).json({ message: 'Sign in first' });\n  next();\n}\nrouter.get('/api/auth/me', requireAuth, handler);\n\`\`\`\n\nSign-in sets \`req.session.userId\`; sign-out destroys the session.`;
-  }
-  if (/backend tests/.test(t)) {
-    return `A complete test is three lines of intent:\n\n\`\`\`js\ntest('health responds ok', async () => {\n  const res = await request(app).get('/api/health');\n  assert.equal(res.body.ok, true);\n});\n\`\`\`\n\nRun \`npm test --prefix backend\` — read the FIRST failure top to bottom; the rest are usually the same cause.`;
-  }
-  if (/deploy/.test(t)) {
-    return `Deploys fail on env vars 90% of the time. Checklist: build command runs clean locally → every name in docs/deployment-guide.md is set in the provider dashboard → the deployed /api/health URL returns ok in your browser. Fix in that order.`;
-  }
-  if (/github repository/.test(t)) {
-    return `The exact commands, from the project folder:\n\n\`\`\`bash\ngit init && git add . && git commit -m "starter skeleton"\ngit branch -M main\ngit remote add origin https://github.com/<you>/<repo>.git\ngit push -u origin main\n\`\`\`\n\nIf push asks for a password, create a Personal Access Token (GitHub → Settings → Developer settings).`;
-  }
-  return `Open “Preview starter code” for the first related file — your finished version keeps its structure and replaces each numbered TODO with 2–10 lines of real logic. Do them in order; run the check after each one.`;
-}
+export const taskNo = (task) => String(task.order || 0).padStart(2, '0');
 
 /* ---------------- run commands per task shape ---------------- */
 function runFor(task, ctx) {
   const t = str(task.title).toLowerCase();
-  const e = ctx.entity.toLowerCase();
-  if (/starter pack and run it locally/.test(t)) {
-    return ['npm install --prefix backend && npm run dev --prefix backend', 'npm install --prefix frontend && npm run dev --prefix frontend', 'curl http://localhost:5050/api/health'];
+  const p = ctx.entityPathPlural;
+  if (task.featureId) {
+    const f = ctx.featureById[task.featureId];
+    return [
+      'npm run dev            # keep this running in one terminal',
+      f ? `curl -X ${f.method} http://localhost:${ctx.port}${f.path}   # 501 now, 200 when you are done` : '',
+      `npm test               # the acceptance test for this task turns green`,
+    ].filter(Boolean);
   }
-  if (/github repository/.test(t)) return ['git init && git add . && git commit -m "starter skeleton"', 'git push -u origin main'];
-  if (/environment variables/.test(t)) return ['cp .env.example backend/.env', 'npm run dev --prefix backend   # read the boot log: which DB mode?'];
-  if (/mongoose model|crud routes|session auth|upload api|scoring service/.test(t)) {
-    const probe = /crud/.test(t) ? [`curl http://localhost:5050/api/${e}s`] : [];
-    return ['npm run dev --prefix backend', ...probe];
-  }
-  if (/dashboard|create\/edit|upload screen|score result|feature:/.test(t)) return ['npm run dev --prefix frontend   # keep the backend running in another terminal'];
-  if (/backend tests|validation/.test(t)) return ['npm test --prefix backend'];
-  if (/deploy/.test(t)) return ['npm run build --prefix frontend   # then follow docs/deployment-guide.md'];
-  return ['npm run dev --prefix backend', 'npm run dev --prefix frontend'];
+  if (/run the project/.test(t)) return ['npm run setup', 'npm run dev', 'npm test'];
+  if (/github/.test(t)) return ['git init && git add . && git commit -m "starter skeleton"', 'git branch -M main', 'git remote add origin https://github.com/<you>/<repo>.git', 'git push -u origin main'];
+  if (/schema|persist/.test(t)) return ['npm run dev', `curl http://localhost:${ctx.port}/api/${p}`];
+  if (/api \(validation|harden/.test(t)) return [`curl -X POST http://localhost:${ctx.port}/api/${p} -H "content-type: application/json" -d '{}'   # expect 400 with field messages`, 'npm test'];
+  if (/dashboard|search and sort/.test(t)) return ['npm run dev   # the web URL is printed by [web]'];
+  if (/test green|harden/.test(t)) return ['npm test'];
+  if (/real database/.test(t)) return ['# put your Atlas URI in backend/.env, then:', 'npm run seed --prefix backend', 'npm run dev'];
+  if (/deploy/.test(t)) return ['npm run build', '# then follow docs/deployment-guide.md'];
+  if (/auth/.test(t)) return ['npm run dev', `curl -X POST http://localhost:${ctx.port}/api/auth/login -H "content-type: application/json" -d '{"email":"a@b.com","password":"secret"}'`];
+  return ['npm run dev'];
 }
 
 /* ---------------- TODO tag extraction from generated starter code ---------- */
@@ -100,72 +76,207 @@ function todoTagsFor(plan, task, files) {
     for (const line of content.split('\n')) {
       const m = line.match(/TODO\((\d{2}-\d+)\):?\s*(.*)/);
       if (m) {
-        let text = m[2].trim().replace(/\*\/\s*$/, '').trim() // strip trailing */
-          .replace(/[,;]\s*$/, '') // trailing comma/semicolon from a wrapped comment line
-          .replace(/\.\.$/, '.'); // collapse an accidental double period
+        const text = m[2].trim().replace(/\*\/\s*$/, '').trim().replace(/[,;]\s*$/, '').replace(/\.\.$/, '.');
         tags.push({ tag: m[1], file: f.path, text });
       }
     }
   }
-  // Only this task's tags (prefix = its own number).
   const no = taskNo(task);
   return tags.filter((t) => t.tag.startsWith(`${no}-`));
 }
-
-export const taskNo = (task) => String(task.order || 0).padStart(2, '0');
 
 /* ---------------- per-task step composer ---------------- */
 function stepsFor(task, files, todoTags, ctx) {
   const t = str(task.title).toLowerCase();
   const steps = [];
-  if (/starter pack and run it locally/.test(t)) {
-    steps.push('Pick your lane in `guide/00-start-here.md` — Browser (fastest), Codespaces (recommended), or Local. All three end at the same running app.');
-    steps.push('Install and start the backend, then the frontend, with the commands below (two terminals for Local).');
-    steps.push('Open the frontend URL Vite prints. You should see the Dashboard shell with an empty state — empty is correct; you haven\'t created data yet.');
-    steps.push('Hit the health endpoint (last command below). `{ ok: true }` means the skeleton works end to end.');
-    return steps;
+
+  if (/run the project/.test(t)) {
+    return [
+      'Run `npm run setup`. It installs both halves of the app and writes `backend/.env` for you.',
+      'Run `npm run dev`. Two servers start; open the web URL printed by `[web]`.',
+      `You should see real demo ${ctx.entitiesLower} already in the list — the app ships with seeded data so your first run is never a blank page.`,
+      'Run `npm test`. The smoke tests pass; the acceptance tests FAIL. That is correct — each failing test is a feature you are about to build.',
+      'Run `npm run check` to see your progress board. Everything you finish from here turns a line green.',
+    ];
   }
-  if (/github repository/.test(t)) {
-    steps.push('Create an empty repository on github.com (no README — the project already has one).');
-    steps.push('Run the git commands below from the project folder to make your first commit and push it.');
-    steps.push('Refresh the repo page: your code, README and guide/ folder should all be visible. This repo IS your proof — every task ends with a commit from now on.');
-    return steps;
+  if (/github/.test(t)) {
+    return [
+      'Create an empty repository on github.com — no README, the project already has one.',
+      'Run the git commands below from the project folder.',
+      'Refresh the repo page: your code, README and `guide/` folder should all be there.',
+      'From now on every task ends with a commit. This repo is the proof recruiters and your college will actually look at.',
+    ];
   }
+
+  if (task.featureId) {
+    const f = ctx.featureById[task.featureId] || {};
+    return [
+      `Read the contract first: \`${f.method} ${f.path}\` must return **200** with \`${f.successShape}\`. Right now it returns 501.`,
+      `Open \`${f.serviceFile}\`. The commented sketch below the 501 shows the shape of a working implementation — adapt it, do not paste it blindly.`,
+      'Delete the `return res.status(501)...` block once your handler actually does the work.',
+      `Run \`npm test\` — \`backend/tests/acceptance/${f.slug}.test.js\` turns from red to green when you get it right.`,
+      `Then open \`${f.viewFile}\` and replace the raw JSON dump with a real UI for this feature.`,
+    ];
+  }
+
   const editFiles = files.filter((f) => f.templateKey);
   const manualFiles = files.filter((f) => !f.templateKey);
-  if (editFiles.length) steps.push(`Open ${editFiles.map((f) => `\`${f.path}\``).join(', ')} — starter code is already there; your job is the numbered TODOs.`);
+  if (/schema/.test(t)) {
+    steps.push(`Open \`${editFiles[0]?.path || 'backend/schemas/'}\`. This one file defines every ${ctx.entity} field.`);
+    steps.push('Read the field list out loud against your problem statement. What does a real user need that is missing?');
+    steps.push('Add at least one field of your own: name, type, whether it is required, and a label.');
+    steps.push('Mirror the same change in `frontend/src/lib/schema.js` so the form and table pick it up.');
+    steps.push('Restart the app — your new field appears in the form and the table with no other edit. That is what a single source of truth buys you.');
+    return steps;
+  }
+  if (editFiles.length) steps.push(`Open ${editFiles.slice(0, 4).map((f) => `\`${f.path}\``).join(', ')} — working starter code is already there; your job is the marked work.`);
   for (const tag of todoTags) steps.push(`In \`${tag.file}\`, find \`TODO(${tag.tag})\` — ${tag.text ? tag.text.replace(/\.\s*$/, '') : 'implement it as described in the comment'}.`);
-  if (!todoTags.length && editFiles.length) steps.push('Work through each `TODO` comment in those files top to bottom — each one is 2–10 lines of real logic.');
+  if (!todoTags.length && editFiles.length) steps.push('Work through each `TODO` in those files top to bottom — each one is a few lines of real logic, not a rewrite.');
   for (const f of manualFiles) steps.push(`Create \`${f.path}\` yourself — ${f.purpose || 'see the Blueprint tab for its shape'}. No template on purpose: this one is yours.`);
-  steps.push('Start the app with the run command below and exercise what you changed before checking yourself.');
+  steps.push('Run the command below and see the change for yourself before you check it.');
   return steps;
+}
+
+/* ---------------- worked examples, in the student's domain ---------------- */
+function exampleFor(task, ctx) {
+  const t = str(task.title).toLowerCase();
+  const E = ctx.entity;
+  const p = ctx.entityPathPlural;
+  const sample = ctx.sampleField;
+
+  if (task.featureId) {
+    const f = ctx.featureById[task.featureId] || {};
+    return `Read the sketch inside \`${f.serviceFile}\` — it is commented out directly under the 501 so you can see the shape without copying it blindly.
+
+The order that works:
+1. Make the endpoint return the right shape with fake data. Test goes green.
+2. Replace the fake data with a real store query. Test stays green.
+3. Only then touch the UI.
+
+Going the other way — UI first — is why features feel impossible.`;
+  }
+  if (/schema/.test(t)) {
+    return `A field is five keys:
+
+\`\`\`js
+{ name: 'followUpAt', label: 'Follow-up due', type: 'date', ui: 'date', required: false }
+\`\`\`
+
+Types the generated code understands: \`string\`, \`number\`, \`boolean\`, \`date\`, \`enum\` (add \`enumValues\`), \`email\`, \`phone\`, \`ref\`.
+Add one, restart, and watch it appear in the form AND the table without touching either file.`;
+  }
+  if (/persist/.test(t)) {
+    return `An index makes a query fast. Add the one that matches how you actually read data:
+
+\`\`\`js
+${ctx.entityCamel}Schema.index({ ${sample}: 1, createdAt: -1 });
+\`\`\`
+
+Rule of thumb: index what you filter or sort by, not everything.`;
+  }
+  if (/api \(validation/.test(t)) {
+    return `Good errors name the field. Try it:
+
+\`\`\`bash
+curl -X POST http://localhost:${ctx.port}/api/${p} -H "content-type: application/json" -d '{}'
+\`\`\`
+
+You should get \`400\` and \`{ "errors": { "${sample}": "… is required" } }\` — not a 500, and not a silent success.`;
+  }
+  if (/dashboard/.test(t)) {
+    return `Fetching on mount, the React way:
+
+\`\`\`jsx
+useEffect(() => {
+  api.get('/api/${p}')
+    .then((d) => setItems(d.items || []))
+    .catch((e) => setError(e.message));
+}, []);
+\`\`\`
+
+An empty list is not a bug — it is an empty state, and it should tell the user what to do next.`;
+  }
+  if (/search and sort/.test(t)) {
+    return `Client-side filtering is three lines:
+
+\`\`\`jsx
+const visible = items.filter((it) =>
+  JSON.stringify(it).toLowerCase().includes(query.toLowerCase()));
+\`\`\`
+
+Move it to the API when the list gets past a few hundred rows — not before.`;
+  }
+  if (/auth/.test(t)) {
+    return `The shape of a protected route:
+
+\`\`\`js
+function requireAuth(req, res, next) {
+  if (!req.session?.userId) return res.status(401).json({ message: 'Sign in first' });
+  next();
+}
+router.get('/api/${p}', requireAuth, controller.list);
+\`\`\`
+
+Hash with bcrypt before you store anything. Never compare plaintext.`;
+  }
+  if (/test green/.test(t)) {
+    return `Read the FIRST failure top to bottom; the rest are usually the same cause. A useful test of your own asserts a rule only you know:
+
+\`\`\`js
+test('a ${ctx.entityCamel} cannot be scheduled in the past', async () => {
+  const res = await call('POST', '/api/${p}', { ${sample}: 'x', scheduledFor: '2020-01-01' });
+  assert.equal(res.status, 400);
+});
+\`\`\``;
+  }
+  if (/real database/.test(t)) {
+    return `Atlas free tier, then:
+
+\`\`\`bash
+# backend/.env
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/${p}
+\`\`\`
+
+Restart. The log line changes from \`MEMORY MODE\` to \`connected to MongoDB\`. Then \`npm run seed --prefix backend\` and your data survives restarts.`;
+  }
+  if (/deploy/.test(t)) {
+    return `Deploys fail on env vars 90% of the time. In order: build runs clean locally → every name in \`docs/deployment-guide.md\` is set in the provider dashboard → the deployed \`/api/health\` returns ok in your browser.`;
+  }
+  if (/github/.test(t)) {
+    return `If push asks for a password, GitHub wants a Personal Access Token instead: Settings → Developer settings → Personal access tokens → generate, then paste it as the password.`;
+  }
+  return `Open the first file listed above. Your finished version keeps its structure and replaces each marked spot with real logic. Do them in order and run the check after each one.`;
 }
 
 /* ---------------- AI Pair prompt ---------------- */
 function aiPromptFor(plan, task, files, todoTags, ctx) {
   const s = obj(plan.projectSummary);
   const stackLine = arr(s.techStack).slice(0, 5).join(', ') || 'React, Node.js, Express, MongoDB';
-  const fileLines = files.map((f) => `- ${f.path}${f.templateKey ? ' (has starter code with numbered TODOs)' : ' (I create this from scratch)'}`).join('\n');
+  const fileLines = files.map((f) => `- ${f.path}${f.templateKey ? ' (has starter code)' : ' (I create this from scratch)'}`).join('\n');
   const todoLines = todoTags.map((t) => `- TODO(${t.tag}) in ${t.file}: ${t.text}`).join('\n');
   const criteria = arr(task.acceptanceCriteria).map((c) => `- ${c}`).join('\n');
-  return `You are my coding tutor. I am a college student building "${s.title || 'my project'}" (${stackLine}) to learn full-stack development. Primary entity: ${ctx.entity}.
+  const feature = task.featureId ? ctx.featureById[task.featureId] : null;
+  const contract = feature
+    ? `\nTHE EXACT CONTRACT I MUST SATISFY:\n${feature.method} ${feature.path} must return HTTP 200 with ${feature.successShape}.\nIt currently returns 501. The test at backend/tests/acceptance/${feature.slug}.test.js checks this.\n`
+    : '';
+  return `You are my coding tutor. I am a college student building "${s.title || 'my project'}" (${stackLine}). The app's main entity is ${ctx.entity} with these fields: ${ctx.fieldSummary}.
 
 I am on Task ${taskNo(task)}: "${task.title}".
-${task.description ? `Context: ${task.description}\n` : ''}
+${task.description ? `Context: ${task.description}\n` : ''}${contract}
 MY FILES FOR THIS TASK:
 ${fileLines || '- (no starter files — I implement this task from scratch)'}
-${todoLines ? `\nTHE NUMBERED TODOs I MUST IMPLEMENT:\n${todoLines}\n` : ''}
+${todoLines ? `\nTHE MARKED WORK IN THOSE FILES:\n${todoLines}\n` : ''}
 DONE MEANS (acceptance criteria):
 ${criteria || '- The task works end to end.'}
 
-I verify locally with: node scripts/check.mjs ${taskNo(task)}
+I prove it locally with: ${task.checkCommand || `npm run check ${taskNo(task)}`}
 
 RULES FOR YOU:
 1. Teach, don't solve. Explain the concept in simple words BEFORE any code.
 2. Give me ONE small step at a time, then wait for me to try it and reply.
 3. If I paste an error, first explain what the error MEANS, then guide the fix.
 4. Never write a whole file for me. Snippets of a few lines only, and make me type them.
-5. When the task is done, quiz me with 2 short questions about what I built — my platform verifies my understanding with a viva, so make sure I can explain this without you.`;
+5. When the task is done, quiz me with 2 short questions about what I built — my platform verifies understanding with a viva, so make sure I can explain this without you.`;
 }
 
 /* ---------------- checks manifest (consumed by scripts/check.mjs) ---------- */
@@ -173,21 +284,106 @@ function checksFor(task, files, todoTags, ctx) {
   const t = str(task.title).toLowerCase();
   const checks = [];
   const no = taskNo(task);
-  for (const f of files.filter((x) => !x.templateKey)) checks.push({ kind: 'fileExists', path: f.path, label: `${f.path} exists` });
-  for (const f of [...new Set(todoTags.map((x) => x.file))]) checks.push({ kind: 'todoCleared', path: f, prefix: `${no}-`, label: `No TODO(${no}-…) left in ${f}` });
-  if (/starter pack and run it locally|crud routes|session auth/.test(t)) {
-    checks.push({ kind: 'httpOk', url: 'http://localhost:5050/api/health', label: 'GET /api/health returns ok (backend must be running)' });
+
+  /* Feature tasks: the endpoint contract IS the check. */
+  if (task.featureId) {
+    const f = ctx.featureById[task.featureId];
+    if (f) {
+      checks.push({
+        kind: 'httpNot501',
+        url: `http://localhost:${ctx.port}${f.path}`,
+        method: f.method,
+        file: f.serviceFile,
+        label: `${f.method} ${f.path} returns 200, not 501 (app must be running)`,
+      });
+      /* Only THIS feature's test. Running the whole suite made a task look
+         failed because a different, untouched task was still red — and the
+         "first failing line" pointed at the wrong file. */
+      checks.push({
+        kind: 'testCmd',
+        cmd: `node --test backend/tests/acceptance/${f.slug}.test.js`,
+        label: `acceptance test for "${f.name}" passes`,
+      });
+    }
   }
-  if (/crud routes/.test(t)) checks.push({ kind: 'httpOk', url: `http://localhost:5050/api/${ctx.entity.toLowerCase()}s`, label: `GET /api/${ctx.entity.toLowerCase()}s responds (backend running)` });
-  if (/backend tests|validation/.test(t)) checks.push({ kind: 'testCmd', cmd: 'npm test --prefix backend', label: '`npm test --prefix backend` exits 0' });
+
+  if (/run the project/.test(t)) {
+    checks.push({ kind: 'fileExists', path: 'backend/node_modules', label: 'backend dependencies installed (npm run setup)' });
+    checks.push({ kind: 'fileExists', path: 'frontend/node_modules', label: 'frontend dependencies installed' });
+    checks.push({ kind: 'fileExists', path: 'backend/.env', label: 'backend/.env created' });
+    checks.push({ kind: 'httpOk', url: `http://localhost:${ctx.port}/api/health`, label: 'GET /api/health returns ok (app must be running)' });
+  }
+  if (/schema/.test(t)) {
+    checks.push({
+      kind: 'todoCleared', path: `backend/schemas/${ctx.entitySlug}.schema.js`, prefix: `${no}-`,
+      label: 'you added at least one field of your own to the schema',
+    });
+    checks.push({ kind: 'testCmd', cmd: 'node --test backend/tests/smoke.test.js', label: 'your schema change did not break the foundation' });
+  }
+  if (/api \(validation/.test(t)) {
+    checks.push({ kind: 'testCmd', cmd: 'node --test backend/tests/smoke.test.js', label: 'validation and error-handling tests pass' });
+  }
+  /* "Harden the edges" is deliberately check-yourself only: the scaffold's own
+     400/404 tests already pass, so any automated tick here would be green
+     before the student touched anything. Sending them garbage on purpose is
+     judgement work, and the board says so honestly (check-yourself icon). */
+  if (/test green/.test(t)) {
+    /* The ONE task that legitimately runs everything — by then nothing
+       should be red, including every feature you built. */
+    checks.push({ kind: 'testCmd', cmd: 'npm test --prefix backend', label: 'the ENTIRE suite exits 0 — no red left anywhere' });
+  }
+  if (/search and sort/.test(t)) {
+    /* Name-agnostic signal: the shipped Dashboard renders a form component and
+       a table, with no raw input of its own. Adding search means adding one.
+       (The earlier pattern matched the word "search" inside a TODO comment and
+       "filter" inside the delete handler — a green tick for doing nothing.) */
+    checks.push({
+      kind: 'fileContains', path: 'frontend/src/views/Dashboard.jsx',
+      pattern: '<input',
+      hint: 'Dashboard.jsx has no input of its own yet — add the search box there, then filter the rows you render.',
+      label: 'the dashboard has a search input of its own',
+    });
+  }
+  if (/persist|dashboard|auth/.test(t)) {
+    checks.push({ kind: 'httpOk', url: `http://localhost:${ctx.port}/api/health`, label: 'app is running' });
+  }
+  if (/real database/.test(t)) {
+    checks.push({ kind: 'fileContains', path: 'backend/.env', pattern: 'MONGODB_URI=.+', hint: 'MONGODB_URI is still empty — paste your Atlas connection string into backend/.env.', label: 'MONGODB_URI is set in backend/.env' });
+  }
+
+  for (const f of files.filter((x) => !x.templateKey)) {
+    checks.push({ kind: 'fileExists', path: f.path, label: `${f.path} exists` });
+  }
+  for (const f of [...new Set(todoTags.map((x) => x.file))]) {
+    checks.push({ kind: 'todoCleared', path: f, prefix: `${no}-`, label: `No TODO(${no}-…) left in ${f}` });
+  }
   for (const c of arr(task.acceptanceCriteria)) checks.push({ kind: 'manual', label: c });
   return checks;
+}
+
+/* ---------------- shared render context ---------------- */
+function guideCtx(plan) {
+  const p = obj(plan);
+  const d = obj(p.domain);
+  const primary = obj(d.primary);
+  const fields = arr(primary.fields).filter((f) => f.name !== 'userId');
+  return {
+    entity: primary.name || str(p.primaryEntity) || 'Item',
+    entityCamel: primary.camel || 'item',
+    entitySlug: primary.slug || 'item',
+    entityPathPlural: primary.slugPlural || 'items',
+    entitiesLower: primary.camelPlural || 'items',
+    sampleField: (fields[0] || {}).name || 'title',
+    fieldSummary: fields.slice(0, 8).map((f) => `${f.name} (${f.type})`).join(', ') || 'title, description, status',
+    port: Number(obj(p.deploymentPlan).port) || 5050,
+    featureById: Object.fromEntries(arr(p.featureSpecs).map((f) => [f.id, f])),
+  };
 }
 
 /* ================= main planner ================= */
 export function planGuide(plan = {}) {
   const p = obj(plan);
-  const ctx = { entity: str(p.primaryEntity) || 'Item' };
+  const ctx = guideCtx(p);
   const fileById = new Map(arr(p.fileTree).map((f) => [f.id, f]));
   const phaseTitles = Object.fromEntries(arr(p.roadmap).map((r) => [r.phase, r.title]));
   const tasks = [...arr(p.tasks)].sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -198,6 +394,7 @@ export function planGuide(plan = {}) {
     const todoTags = todoTagsFor(p, task, files);
     const skills = arr(task.skills);
     const no = taskNo(task);
+    const feature = task.featureId ? ctx.featureById[task.featureId] : null;
     return {
       taskId: task.id,
       no,
@@ -207,11 +404,12 @@ export function planGuide(plan = {}) {
       phaseTitle: phaseTitles[task.phase] || task.phase,
       estimatedHours: task.estimatedHours || null,
       why: task.description || `This step moves "${str(obj(p.projectSummary).title) || 'your project'}" forward: ${arr(task.acceptanceCriteria)[0] || task.title}.`,
+      contract: feature ? { method: feature.method, path: feature.path, shape: feature.successShape, testFile: `backend/tests/acceptance/${feature.slug}.test.js` } : null,
       files,
       steps: stepsFor(task, files, todoTags, ctx),
       todoTags,
       run: runFor(task, ctx),
-      check: { command: `node scripts/check.mjs ${no}`, criteria: arr(task.acceptanceCriteria) },
+      check: { command: task.checkCommand || `npm run check ${no}`, criteria: arr(task.acceptanceCriteria) },
       hints: {
         concept: skills.length ? conceptFor(skills[0]) : 'Break the task into the numbered steps above and do exactly one at a time — momentum beats understanding everything upfront.',
         nudge: arr(task.acceptanceCriteria)[0]
@@ -221,7 +419,7 @@ export function planGuide(plan = {}) {
       },
       aiPrompt: aiPromptFor(p, task, files, todoTags, ctx),
       learn: [...skills.map((s) => firstSentence(conceptFor(s))),
-        `You practiced the loop that professional work runs on: change → run → check → commit.`].slice(0, 4),
+        'You practiced the loop that professional work runs on: change → run → prove → commit.'].slice(0, 4),
       proofRequired: !!task.proofRequired,
     };
   });
@@ -231,7 +429,7 @@ export function planGuide(plan = {}) {
 
 export function planChecks(plan = {}) {
   const p = obj(plan);
-  const ctx = { entity: str(p.primaryEntity) || 'Item' };
+  const ctx = guideCtx(p);
   const fileById = new Map(arr(p.fileTree).map((f) => [f.id, f]));
   const tasks = [...arr(p.tasks)].sort((a, b) => (a.order || 0) - (b.order || 0));
   return {
@@ -251,14 +449,17 @@ export function guideEntryToMarkdown(entry, { total = 0 } = {}) {
   const e = entry;
   const fileList = e.files.length
     ? e.files.map((f) => `- \`${f.path}\` — **${f.action === 'edit' ? 'edit (starter code inside)' : 'create yourself'}**${f.purpose ? ` — ${f.purpose}` : ''}`).join('\n')
-    : '_No specific files — this task is about your environment or process._';
+    : '_No files for this one — it is a process step (git, deployment, or a decision you make outside the code)._';
+  const contract = e.contract
+    ? `\n## The contract you must satisfy\n\n\`\`\`\n${e.contract.method} ${e.contract.path}  ->  200  ${e.contract.shape}\n\`\`\`\n\nRight now it answers **501 Not Implemented**. The test in \`${e.contract.testFile}\` is red until you fix that. Nothing else counts as done.\n`
+    : '';
   return `# Task ${e.no} of ${String(total).padStart(2, '0')} — ${e.title}
 
 **Phase:** ${e.phaseTitle}${e.estimatedHours ? ` · **Estimated:** ~${e.estimatedHours}h` : ''}${e.proofRequired ? ' · **Proof required**' : ''}
 
 ## Why this matters
 ${e.why}
-
+${contract}
 ## Open these files
 ${fileList}
 
@@ -270,7 +471,7 @@ ${e.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 ${e.run.join('\n')}
 \`\`\`
 
-## Check yourself
+## Prove it
 \`\`\`bash
 ${e.check.command}
 \`\`\`
@@ -303,7 +504,7 @@ ${e.aiPrompt}
 ${e.learn.map((l) => `- ${l}`).join('\n')}
 
 ---
-✅ Done and checked? Mark the task **Done** in Career Autopilot, commit your work (\`git add . && git commit -m "task ${e.no}: ${e.title.toLowerCase()}"\`), and open \`guide/${nextGuideName(e)}\`.
+✅ Proved it? Commit your work (\`git add . && git commit -m "task ${e.no}: ${e.title.toLowerCase()}"\`), mark the task **Done** in Career Autopilot, and open \`guide/${nextGuideName(e)}\`.
 `;
 }
 
@@ -315,8 +516,10 @@ export function promptFileName(entry) { return `prompts/${entry.no}-${entry.slug
 export function startHereMarkdown(plan = {}, guide = null) {
   const p = obj(plan);
   const s = obj(p.projectSummary);
+  const ctx = guideCtx(p);
   const g = guide || planGuide(p);
   const total = g.entries.length;
+  const features = arr(p.featureSpecs).filter((f) => !f.builtin);
   const phases = [];
   for (const e of g.entries) {
     const last = phases[phases.length - 1];
@@ -325,35 +528,54 @@ export function startHereMarkdown(plan = {}, guide = null) {
   }
   return `# 🚀 Start here — ${s.title || 'your project'}
 
-You are about to build this project **yourself, end to end** — ${total} tasks, one guide file per task, in order. The starter code compiles and runs from minute one; every task replaces a few numbered TODOs with real logic you write and understand.
+## Three commands, then you are running
 
-## Step 1 — pick your lane (all three end at the same running app)
+\`\`\`bash
+npm run setup     # installs everything, creates backend/.env
+npm run dev       # starts the API and the app together
+npm test          # some tests FAIL on purpose — those are your tasks
+\`\`\`
 
-| Lane | Best for | How |
-|---|---|---|
-| ⚡ **Browser** | Seeing it run in ~2 minutes, no installs | Push this folder to GitHub (Task 02 shows how), then open \`https://stackblitz.com/github/<you>/<repo>\` |
-| ☁️ **Codespaces** *(recommended)* | A full VS Code + database in the cloud, one click | On your GitHub repo page: **Code → Codespaces → Create codespace**. Everything in \`.devcontainer/\` sets itself up |
-| 💻 **Local** | Your own machine, works offline | Install Node 18+ from nodejs.org, then follow \`SETUP.md\` |
+No database needed. The API boots in **memory mode with demo ${ctx.entitiesLower} already loaded**, so your first run shows a working app, not an empty screen.
 
-No MongoDB yet? No problem — **the backend boots in memory mode automatically** (data resets on restart). Connecting a real database is its own task later.
+Something broken? \`npm run doctor\` names the problem and the exact fix.
 
-## Step 2 — the loop you'll repeat ${total} times
+## What is already built vs what is yours
 
-1. Open the next \`guide/NN-….md\` file (start with \`guide/01\`).
-2. Read **Why**, open the listed files, do the numbered TODOs.
-3. Run it. Then run \`node scripts/check.mjs NN\` until everything passes.
-4. Stuck ≥15 minutes? Open the hints one at a time, or copy the **AI pair prompt** into ChatGPT/Claude — it's pre-loaded with your exact task.
-5. Commit, mark the task Done in Career Autopilot, move on.
+| Already working | Yours to build |
+|---|---|
+| ${ctx.entity} list, create, delete — end to end | ${features.length ? features.map((f) => f.name).join(', ') : 'the features in your roadmap'} |
+| Schema-driven form and table | Real validation rules for your domain |
+| Validation, 404s, one error handler | ${features.length ? `${features.length} endpoint${features.length === 1 ? '' : 's'} currently answering 501` : 'deployment and proof'} |
+| Smoke tests (green) | Acceptance tests (red until you build) |
 
-**Done ≠ Verified.** You mark Done; the platform marks Verified from evidence (your repo, tests, deployment) and a short viva. AI may help you build — the viva proves *you* understand it. That's the whole point.
+**A 501 response is not a bug.** It is the engine telling you exactly what is not built yet. Each one has a guide file, a starter module, and a test that turns green when you get it right.
+
+## The loop you will repeat ${total} times
+
+1. Open the next \`guide/NN-….md\`.
+2. Do the marked work in the files it lists.
+3. Run \`npm run check NN\` until it passes.
+4. Commit, mark it Done in Career Autopilot, move on.
+
+Run \`npm run check\` with no number any time to see the whole board.
+
+**Done ≠ Verified.** You mark Done; the platform marks Verified from evidence — your repo, your passing tests, your deployed URL — plus a short viva. AI may help you build; the viva proves *you* understand it.
 
 ## Your route
 ${phases.map((ph) => `- **${ph.title}** — tasks ${ph.from}–${ph.to}`).join('\n')}
 
-## When something breaks (it will — that's the job)
-- Read the error's **first line** out loud. It usually names the file and line.
-- Backend won't start? Another process may hold the port — stop old terminals first.
-- \`fetch\` fails in the frontend? Is the backend terminal actually running?
+## Working in the cloud instead
+
+| Lane | How |
+|---|---|
+| ☁️ **Codespaces** *(recommended)* | Push to GitHub (task 02), then **Code → Codespaces → Create codespace**. \`.devcontainer/\` runs \`npm run setup\` for you |
+| 💻 **Local** | Node 18+ from nodejs.org, then the three commands above |
+
+## When something breaks (it will — that is the job)
+- Read the error's **first line** out loud. It usually names the file and the line.
+- \`npm run doctor\` — dependencies, .env, port conflicts.
+- Backend unreachable from the browser? Is the \`[api]\` terminal still running?
 - Still stuck: Hint 3 in the current guide, then the AI pair prompt with your exact error pasted in.
 
 Now open **\`guide/01-….md\`**. Build something real.

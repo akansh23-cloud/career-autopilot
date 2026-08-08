@@ -1,7 +1,7 @@
 /* Guided Project Workspace — database model planner (deterministic). */
 import { did, slug } from './planUtils.js';
 
-export function planDatabaseModels(project = {}, stack = {}, entity = 'Item') {
+export function planDatabaseModels(project = {}, stack = {}, entity = 'Item', domain = null) {
   const f = stack.features || {};
   const type = stack.database === 'sql' ? 'table' : 'collection';
   const models = [];
@@ -21,15 +21,33 @@ export function planDatabaseModels(project = {}, stack = {}, entity = 'Item') {
       { name: 'createdAt', type: 'Date' },
     ]);
   }
-  add(entity, [
-    ...(f.auth ? [{ name: 'userId', type: 'ObjectId → User', required: true, note: 'owner; index' }] : []),
-    { name: 'title', type: 'String', required: true },
-    { name: 'description', type: 'String' },
-    { name: 'status', type: 'String', note: 'enum: draft, active, archived' },
-    ...(f.upload ? [{ name: 'fileName', type: 'String' }, { name: 'fileUrl', type: 'String', note: 'TODO: storage location' }, { name: 'fileSize', type: 'Number' }] : []),
-    ...(f.ai ? [{ name: 'score', type: 'Number', note: 'deterministic backend scoring; AI never changes this number' }, { name: 'scoreBreakdown', type: 'Mixed' }] : []),
-    { name: 'createdAt', type: 'Date' }, { name: 'updatedAt', type: 'Date' },
-  ], f.auth ? [{ to: 'User', kind: 'belongsTo', via: 'userId' }] : []);
+  /* v2: fields come from the domain model when one was inferred, so the
+     Database tab shows the student's real vocabulary (fullName, followUpAt,
+     invoiceNumber…) instead of a generic title/description/status triple. */
+  const domainEntities = Array.isArray(domain?.entities) ? domain.entities : [];
+  if (domainEntities.length) {
+    for (const ent of domainEntities) {
+      add(ent.name, [
+        ...ent.fields.map((fl) => ({
+          name: fl.name,
+          type: docType(fl),
+          required: !!fl.required,
+          note: fieldNote(fl),
+        })),
+        ...(f.upload && ent.role === 'primary' ? [{ name: 'fileName', type: 'String' }, { name: 'fileUrl', type: 'String', note: 'TODO: storage location' }] : []),
+        ...(f.ai && ent.role === 'primary' ? [{ name: 'score', type: 'Number', note: 'deterministic backend scoring; AI never changes this number' }] : []),
+        { name: 'createdAt', type: 'Date' }, { name: 'updatedAt', type: 'Date' },
+      ], ent.fields.filter((fl) => fl.ref).map((fl) => ({ to: fl.ref, kind: 'belongsTo', via: fl.name })));
+    }
+  } else {
+    add(entity, [
+      ...(f.auth ? [{ name: 'userId', type: 'ObjectId → User', required: true, note: 'owner; index' }] : []),
+      { name: 'title', type: 'String', required: true },
+      { name: 'description', type: 'String' },
+      { name: 'status', type: 'String', note: 'enum: draft, active, archived' },
+      { name: 'createdAt', type: 'Date' }, { name: 'updatedAt', type: 'Date' },
+    ], f.auth ? [{ to: 'User', kind: 'belongsTo', via: 'userId' }] : []);
+  }
 
   if (f.payments) {
     add('PaymentRecord', [
@@ -41,6 +59,24 @@ export function planDatabaseModels(project = {}, stack = {}, entity = 'Item') {
     ], [{ to: 'User', kind: 'belongsTo', via: 'userId' }]);
   }
   return models.slice(0, 8);
+}
+
+/* Human-readable type for the Database tab. */
+function docType(fl) {
+  switch (fl.type) {
+    case 'number': return 'Number';
+    case 'boolean': return 'Boolean';
+    case 'date': return 'Date';
+    case 'ref': return `ObjectId → ${fl.ref}`;
+    default: return 'String';
+  }
+}
+function fieldNote(fl) {
+  if (fl.type === 'enum' && fl.enumValues?.length) return `enum: ${fl.enumValues.join(', ')}`;
+  if (fl.ref) return 'relation; index';
+  if (fl.type === 'email') return 'validated as an email address';
+  if (fl.type === 'phone') return 'store in E.164 form (+91…)';
+  return '';
 }
 
 /* Cross-link helper: attach api/model/task ids to each other after planning. */

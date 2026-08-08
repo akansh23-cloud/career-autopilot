@@ -83,7 +83,10 @@ test('buildStarterPack includes only allowlisted template files and no secrets',
   // Guided Build Kit files are deterministic additions (not from the file tree):
   // guides, AI prompts, the checks manifest, the local runner, the devcontainer.
   const isKitFile = (rel) => rel.startsWith('guide/') || rel.startsWith('prompts/')
-    || rel === 'workspace/checks.json' || rel === 'scripts/check.mjs' || rel === '.devcontainer/devcontainer.json';
+    || rel === 'workspace/checks.json' || rel === 'scripts/check.mjs' || rel === '.devcontainer/devcontainer.json'
+    /* v2 kit additions: the engine's own build report, shipped with the pack
+       so the student sees what the generator knows about its output. */
+    || rel === 'workspace/build-report.json' || rel === 'BUILD-REPORT.md';
   const root = pack.name + '/';
   for (const f of pack.files) {
     const rel = f.path.startsWith(root) ? f.path.slice(root.length) : f.path;
@@ -105,7 +108,13 @@ test('starter pack ships the Guided Build Kit (start-here, one guide+prompt per 
   assert.ok(names.includes('scripts/check.mjs'), 'local check runner present');
   assert.ok(names.includes('workspace/checks.json'), 'checks manifest present');
   assert.ok(names.includes('.devcontainer/devcontainer.json'), 'Codespaces devcontainer present');
-  assert.ok(names.includes('backend/lib/memoryStore.js'), 'memory-mode store present');
+  /* v2 replaced memoryStore.js with store.js: one adapter whose methods behave
+     identically in memory mode and against MongoDB, so switching databases is
+     an env var rather than a rewrite. */
+  assert.ok(names.includes('backend/lib/store.js'), 'storage adapter present');
+  assert.ok(names.includes('backend/lib/seedData.js'), 'demo data present so the first run is not an empty screen');
+  assert.ok(names.includes('scripts/setup.mjs'), 'one-command setup present');
+  assert.ok(names.includes('backend/tests/smoke.test.js'), 'foundation tests present');
   // Task guides are 01..NN; guide/00-start-here is the intro, not a task.
   const guides = names.filter((n) => /^guide\/(?!00-)\d\d-/.test(n));
   const prompts = names.filter((n) => /^prompts\/\d\d-/.test(n));
@@ -113,7 +122,9 @@ test('starter pack ships the Guided Build Kit (start-here, one guide+prompt per 
   assert.equal(prompts.length, guides.length, 'one AI prompt per task');
   // Every guide carries its structure + a copy-paste AI prompt.
   const g1 = pack.files.find((f) => /guide\/01-/.test(f.path)).content;
-  for (const marker of ['## Why this matters', '## Open these files', '## Do this', '## Run this', '## Check yourself', '🤖 Your AI pair', '## What you just learned']) {
+  /* "Check yourself" became "Prove it" in v2 — the section now runs a real
+     command that either passes or does not, rather than offering checkboxes. */
+  for (const marker of ['## Why this matters', '## Open these files', '## Do this', '## Run this', '## Prove it', '🤖 Your AI pair', '## What you just learned']) {
     assert.ok(g1.includes(marker), `guide/01 missing "${marker}"`);
   }
   // Checks manifest and code speak the same TODO language.
@@ -158,15 +169,24 @@ test('starter upload and score routes have matching service methods', () => {
     flags: { auth: true, upload: true, ai: true },
   });
   const plan = buildWorkspacePlan({ project, architecture: null, userId: 'u1' });
-  const routes = generateForFile(plan, 'backend/routes/resumes.routes.js').generatedFiles[0].content;
-  const controller = generateForFile(plan, 'backend/controllers/resumeController.js').generatedFiles[0].content;
-  const service = generateForFile(plan, 'backend/services/resumeService.js').generatedFiles[0].content;
-  assert.match(routes, /router\.post\('\/api\/resumes\/upload', controller\.upload\)/);
-  assert.match(routes, /router\.post\('\/api\/resumes\/:id\/score', controller\.score\)/);
-  assert.match(controller, /service\.uploadResume\(req\)/);
-  assert.match(controller, /service\.scoreResume\(req\.params\.id, req\)/);
-  assert.match(service, /export async function uploadResume\(/);
-  assert.match(service, /export async function scoreResume\(/);
+  /* Resolve the generated paths from the plan rather than hardcoding them:
+     v2 names files from the domain model, so the entity may legitimately be
+     Resume, Candidate or Application depending on how the project is phrased. */
+  const routeFile = plan.fileTree.find((f) => /backend\/routes\/[a-z-]+\.routes\.js$/.test(f.path)
+    && !/health|auth|admin|recruiter|payments/.test(f.path));
+  const controllerFile = plan.fileTree.find((f) => /Controller\.js$/.test(f.path));
+  const serviceFile = plan.fileTree.find((f) => /Service\.js$/.test(f.path) && !/uploadService|scoringService/.test(f.path));
+  const entityPlural = plan.domain.primary.slugPlural;
+  const E = plan.domain.primary.name;
+  const routes = generateForFile(plan, routeFile.path).generatedFiles[0].content;
+  const controller = generateForFile(plan, controllerFile.path).generatedFiles[0].content;
+  const service = generateForFile(plan, serviceFile.path).generatedFiles[0].content;
+  assert.ok(routes.includes(`router.post('/api/${entityPlural}/upload', controller.upload)`), 'upload route wired');
+  assert.ok(routes.includes(`router.post('/api/${entityPlural}/:id/score', controller.score)`), 'score route wired');
+  assert.ok(controller.includes(`service.upload${E}(req)`), 'controller delegates upload to the service');
+  assert.ok(controller.includes(`service.score${E}(req.params.id, req)`), 'controller delegates scoring to the service');
+  assert.ok(service.includes(`export async function upload${E}(`), 'service implements upload');
+  assert.ok(service.includes(`export async function score${E}(`), 'service implements scoring');
   assert.match(service, /storeUpload\(req\.file\)/);
   assert.match(service, /runScore\(item\)/);
 });
