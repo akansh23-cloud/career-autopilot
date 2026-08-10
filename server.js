@@ -2894,7 +2894,7 @@ registerProjectBuilderRoutes(app, { requireAuth, currentUser, generationLimiter,
 registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerCareerIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
-registerResumeOsRoutes(app, { requireAuth, currentUser, generationLimiter, db });
+registerResumeOsRoutes(app, { requireAuth, currentUser, generationLimiter, db, requireRole, requireCollegeScope, observe: (event, data) => logger.info?.(`[resume-os] ${event}`, data) });
 registerProjectStoreRoutes(app, { requireAuth, currentUser, db });
 registerOpsRoutes(app, { requireAuth, requireAdmin, currentUser, db, logger });
 

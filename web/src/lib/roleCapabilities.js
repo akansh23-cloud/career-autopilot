@@ -78,6 +78,7 @@ const STUDENT_EARLY_SCREENS = [
 const STUDENT_PLACEMENT_SCREENS = [
   ...STUDENT_EARLY_SCREENS,
   'readiness',
+  'studio',            // resume-studio (Resume OS V3 canonical workspace)
   'resume',            // resume / resume-os
   'editor',            // resume-editor
   'applications',      // application-package

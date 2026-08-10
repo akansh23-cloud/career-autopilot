@@ -254,6 +254,8 @@ export function resumeCSS(templateOrId, densityId = null, sizeId = 'a4') {
     bar: `color:${accent};font-weight:700;font-size:${fs - 0.6}px;text-transform:uppercase;letter-spacing:.7px;border-bottom:2px solid ${accent};padding-bottom:2px;`,
     caps: `color:#000;font-weight:700;font-size:${fs - 1}px;text-transform:uppercase;letter-spacing:1.1px;border-bottom:1px solid #000;padding-bottom:1px;`,
     band: `color:${accent};font-weight:700;font-size:${fs - 0.6}px;text-transform:uppercase;letter-spacing:.9px;border-bottom:2px solid ${accent};padding-bottom:2px;`,
+    plain: `color:#111827;font-weight:700;font-size:${fs - 0.6}px;text-transform:uppercase;letter-spacing:1px;`,
+    thinline: `color:${accent};font-weight:700;font-size:${fs - 0.8}px;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #cdd3dd;padding-bottom:2px;`,
   };
   const sec = secStyles[theme.sectionStyle] || secStyles.rule;
   const bandBg = theme.bandBg || '#1c2433';

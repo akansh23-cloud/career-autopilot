@@ -21,7 +21,7 @@ import { canSeeScreen } from './roleCapabilities.js';
 // skills + readiness.
 export const NAV_GROUPS = [
   { label: 'Overview', short: 'Home', ids: ['dash', 'verification'] },
-  { label: 'Resume OS', short: 'Résumé', ids: ['resume', 'editor'] },
+  { label: 'Resume OS', short: 'Résumé', ids: ['studio', 'resume', 'editor'] },
   { label: 'Job Match', short: 'Jobs', ids: ['jobs', 'tracker', 'contacts', 'referralexchange'] },
   { label: 'Applications', short: 'Apply', ids: ['applications'] },
   { label: 'Project OS', short: 'Project OS', ids: ['projectstudio', 'teamproject', 'projectcreator', 'marketplace', 'inspirations', 'architecture', 'sandbox', 'partners'] },

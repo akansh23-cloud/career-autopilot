@@ -26,6 +26,7 @@ import { setTrackerStoreUser, hydrateTrackerFromServer } from './lib/trackerStor
 import RoleDashboard from './views/RoleDashboard.jsx';
 import Onboarding from './views/Onboarding.jsx';
 import Resume from './views/Resume.jsx';
+import ResumeStudio from './views/ResumeStudio.jsx';
 import Editor from './views/Editor.jsx';
 import JobsView from './views/Jobs.jsx';
 import Tracker from './views/Tracker.jsx';
@@ -65,6 +66,7 @@ const VIEWS = {
   dash: RoleDashboard,
   careerprofile: CareerProfile,
   projectcreator: ProjectCreator,
+  studio: ResumeStudio,
   resume: Resume,
   editor: Editor,
   jobs: JobsView,

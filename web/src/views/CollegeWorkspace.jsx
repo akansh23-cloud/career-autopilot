@@ -416,17 +416,80 @@ function ProjectsTab({ go }) {
 
 function ResumeReadinessTab() {
   const { loading, error, data } = useAsync(() => College.analytics());
+  const [v3, setV3] = useState(null);
+  const [v3Err, setV3Err] = useState('');
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/resume-os/college/overview', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
+      .then((j) => { if (alive) setV3(j.overview || null); })
+      .catch(() => { if (alive) setV3Err('Resume OS cohort data needs a signed-in college admin with the database enabled.'); });
+    return () => { alive = false; };
+  }, []);
   if (loading) return <Loading />;
   if (error) return <ErrorState message={error} />;
   const r = data?.resumeReadiness || { withResume: 0, total: 0, avgResume: 0 };
+  const b = v3?.buckets;
   return (
-    <SectionCard title="Resume readiness">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard i={0} icon={FileText} tone="violet" label="With a resume" value={`${r.withResume}/${r.total}`} />
-        <StatCard i={1} icon={BarChart3} tone="cyan" label="Avg resume score" value={String(r.avgResume)} />
-        <StatCard i={2} icon={GraduationCap} tone="mint" label="Coverage" value={`${r.total ? Math.round((r.withResume / r.total) * 100) : 0}%`} />
-      </div>
-    </SectionCard>
+    <div className="grid gap-4">
+      <SectionCard title="Resume readiness">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatCard i={0} icon={FileText} tone="violet" label="With a resume" value={`${r.withResume}/${r.total}`} />
+          <StatCard i={1} icon={BarChart3} tone="cyan" label="Avg resume score" value={String(r.avgResume)} />
+          <StatCard i={2} icon={GraduationCap} tone="mint" label="Coverage" value={`${r.total ? Math.round((r.withResume / r.total) * 100) : 0}%`} />
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Resume OS — cohort health" eyebrow="Deterministic engine scores, aggregate signals only (no resume content leaves the student account)">
+        {!v3 && !v3Err && <Spinner />}
+        {v3Err && !v3 && <p className="text-xs text-muted">{v3Err}</p>}
+        {v3 && (
+          <div className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[
+                ['Interview-ready (80+)', b.ready, 'text-emerald-700 bg-emerald-50 border-emerald-200'],
+                ['Minor fixes (60–79)', b.minorFixes, 'text-amber-700 bg-amber-50 border-amber-200'],
+                ['Critical gaps (<60)', b.criticalGaps, 'text-rose-700 bg-rose-50 border-rose-200'],
+                ['Zero verified evidence', b.evidenceGaps, 'text-sky-700 bg-sky-50 border-sky-200'],
+              ].map(([label, n, tone]) => (
+                <div key={label} className={`rounded-xl border p-3 text-center ${tone}`}>
+                  <p className="text-2xl font-bold">{n}</p>
+                  <p className="text-[11px] font-semibold">{label}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted">
+              {v3.totals.resumeOsAdopted}/{v3.totals.students} students on Resume OS · {v3.totals.noResume} without any resume
+              {v3.totals.avgResumeScore != null && <> · cohort average {v3.totals.avgResumeScore}/100</>}
+            </p>
+            {v3.commonGaps?.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Most common unproven must-have skills</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {v3.commonGaps.map((g) => (
+                    <span key={g.skill} className="rounded-full border border-subtle bg-surface-1 px-2.5 py-1 text-xs">
+                      <span className="font-semibold text-ink-950">{g.skill}</span>
+                      <span className="text-muted"> · {g.students} students</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {v3.interventionSuggestions?.length > 0 && (
+              <div className="grid gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Suggested interventions</p>
+                {v3.interventionSuggestions.map((s, i) => (
+                  <div key={i} className="rounded-xl border border-aurora-violet/25 bg-aurora-violet/5 p-3 text-[13px]">
+                    <p className="font-semibold text-ink-950">{s.label}</p>
+                    <p className="text-xs text-muted">{s.reason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </SectionCard>
+    </div>
   );
 }
 

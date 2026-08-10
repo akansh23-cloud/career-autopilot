@@ -37,6 +37,15 @@ export const SKILL_ALIASES = {
 };
 
 export const ROLE_DICTIONARIES = {
+  'Data Engineer': {
+    mustHave: ['sql', 'python', 'spark', 'etl', 'data pipeline'],
+    goodToHave: ['pyspark', 'airflow', 'kafka', 'data warehouse', 'data modeling', 'dbt', 'streaming', 'data lake', 'iceberg', 'databricks'],
+    tools: ['airflow', 'dbt', 'git', 'docker', 'glue', 'emr'],
+    cloud: ['aws', 'azure', 'gcp', 's3', 'redshift', 'bigquery'],
+    languages: ['python', 'sql', 'scala', 'java'],
+    databases: ['snowflake', 'redshift', 'postgresql', 'mysql', 'mongodb', 'cassandra'],
+    testing: ['great expectations', 'pytest', 'data quality'],
+  },
   'DevOps Engineer': {
     mustHave: ['kubernetes', 'docker', 'ci/cd', 'terraform', 'jenkins'],
     goodToHave: ['gitlab ci', 'github actions', 'ansible', 'openshift', 'helm', 'sre', 'incident', 'deployment', 'monitoring'],
@@ -148,6 +157,12 @@ export const ROLE_DICTIONARIES = {
 };
 
 const ROLE_ALIASES = {
+  'data engineer': 'Data Engineer',
+  'big data engineer': 'Data Engineer',
+  'etl developer': 'Data Engineer',
+  'data platform engineer': 'Data Engineer',
+  'analytics engineer': 'Data Engineer',
+  'cloud data engineer': 'Data Engineer',
   'frontend engineer': 'Frontend Developer',
   'frontend developer': 'Frontend Developer',
   'backend engineer': 'Backend Developer',

@@ -206,6 +206,42 @@ const resumeVersionSchema = new mongoose.Schema(
 );
 
 
+/* ---- Resume OS V3 canonical documents ----
+   One row per ResumeDocument (master or variant). `doc` holds the full
+   canonical model (normalized by server/utils/resume/resumeDocument.js on
+   every write). `snapshots` are meaningful version-history entries
+   (manual save / export / tailoring / template change), capped — never a
+   keystroke log. Engine versions persist so old scores stay explainable. */
+const resumeDocumentSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    docId: { type: String, required: true, index: true },
+    kind: { type: String, default: 'master', enum: ['master', 'variant'] },
+    parentId: { type: String, default: '' },
+    title: { type: String, trim: true, default: 'My Resume' },
+    targetRole: { type: String, trim: true, default: '' },
+    targetJobId: { type: String, trim: true, default: '' },
+    templateId: { type: String, trim: true, default: 'atlas' },
+    doc: { type: mongoose.Schema.Types.Mixed, default: {} },
+    lastScore: { type: Number, default: null },
+    lastJdMatch: { type: Number, default: null },
+    engineVersions: { type: mongoose.Schema.Types.Mixed, default: {} },
+    snapshots: {
+      type: [new mongoose.Schema({
+        at: { type: String, default: '' },
+        trigger: { type: String, default: 'manual' },
+        note: { type: String, default: '' },
+        score: { type: Number, default: null },
+        doc: { type: mongoose.Schema.Types.Mixed, default: {} },
+      }, { _id: false })],
+      default: [],
+    },
+  },
+  { timestamps: true, minimize: false }
+);
+resumeDocumentSchema.index({ userId: 1, docId: 1 }, { unique: true });
+
 const userStateSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
@@ -603,6 +639,7 @@ export const Activity = mongoose.models.Activity || mongoose.model('Activity', a
 export const UserState = mongoose.models.UserState || mongoose.model('UserState', userStateSchema);
 export const ResumeAnalysis = mongoose.models.ResumeAnalysis || mongoose.model('ResumeAnalysis', resumeAnalysisSchema);
 export const ResumeVersion = mongoose.models.ResumeVersion || mongoose.model('ResumeVersion', resumeVersionSchema);
+export const ResumeDocument = mongoose.models.ResumeDocument || mongoose.model('ResumeDocument', resumeDocumentSchema);
 export const SkillXp = mongoose.models.SkillXp || mongoose.model('SkillXp', skillXpSchema);
 export const ProjectSubmission = mongoose.models.ProjectSubmission || mongoose.model('ProjectSubmission', projectSubmissionSchema);
 export const MarketplaceListing = mongoose.models.MarketplaceListing || mongoose.model('MarketplaceListing', marketplaceListingSchema);
@@ -952,6 +989,167 @@ export async function deleteResumeVersion({ userId, email, id }) {
     console.error('[db] deleteResumeVersion failed:', err.message);
     return { ok: false, reason: 'db_error', error: err.message };
   }
+}
+
+/* ============================================================
+   RESUME OS V3 — canonical document persistence
+   ============================================================ */
+const MAX_SNAPSHOTS = 15;
+
+export async function listResumeDocuments({ userId, email }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const rows = await ResumeDocument.find({ userId: uid })
+      .sort({ updatedAt: -1 }).limit(60)
+      .select('docId kind parentId title targetRole targetJobId templateId lastScore lastJdMatch updatedAt createdAt')
+      .lean();
+    return rows.map((r) => ({ ...r, id: r.docId }));
+  } catch (err) { console.error('[db] listResumeDocuments failed:', err.message); return []; }
+}
+
+export async function getResumeDocument({ userId, email, docId }) {
+  if (!URI || !docId) return null;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return null;
+    const row = await ResumeDocument.findOne({ userId: uid, docId: String(docId) }).lean();
+    if (!row) return null;
+    return { ...row.doc, id: row.docId, lastScore: row.lastScore, lastJdMatch: row.lastJdMatch, snapshots: (row.snapshots || []).map((s) => ({ at: s.at, trigger: s.trigger, note: s.note, score: s.score })), updatedAt: row.updatedAt, createdAt: row.createdAt };
+  } catch (err) { console.error('[db] getResumeDocument failed:', err.message); return null; }
+}
+
+export async function saveResumeDocument({ userId, email, doc, lastScore = null, lastJdMatch = null, engineVersions = {} }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const d = doc || {};
+    if (!d.id) return { ok: false, reason: 'bad_request' };
+    const set = {
+      email: cleanEmail(email),
+      kind: d.kind === 'variant' ? 'variant' : 'master',
+      parentId: String(d.parentId || ''),
+      title: String(d.title || 'My Resume').slice(0, 160),
+      targetRole: String(d.targetRole || '').slice(0, 120),
+      targetJobId: String(d.targetJobId || '').slice(0, 80),
+      templateId: String(d.templateId || 'atlas').slice(0, 60),
+      doc: d,
+      engineVersions: engineVersions || {},
+    };
+    if (lastScore != null) set.lastScore = Math.round(Number(lastScore));
+    if (lastJdMatch != null) set.lastJdMatch = Math.round(Number(lastJdMatch));
+    await ResumeDocument.updateOne({ userId: uid, docId: String(d.id) }, { $set: set, $setOnInsert: { userId: uid, docId: String(d.id) } }, { upsert: true });
+    return { ok: true, id: String(d.id) };
+  } catch (err) { console.error('[db] saveResumeDocument failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+/* Meaningful version snapshots only (manual save / export / tailor / template
+   change) — capped, restorable, never a per-keystroke log. */
+export async function snapshotResumeDocument({ userId, email, docId, trigger = 'manual', note = '', score = null }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const row = await ResumeDocument.findOne({ userId: uid, docId: String(docId) }).select('doc snapshots').lean();
+    if (!row) return { ok: false, reason: 'not_found' };
+    const snap = { at: new Date().toISOString(), trigger: String(trigger).slice(0, 30), note: String(note).slice(0, 200), score: score == null ? null : Math.round(Number(score)), doc: row.doc };
+    const snapshots = [snap, ...(row.snapshots || [])].slice(0, MAX_SNAPSHOTS);
+    await ResumeDocument.updateOne({ userId: uid, docId: String(docId) }, { $set: { snapshots } });
+    return { ok: true, count: snapshots.length };
+  } catch (err) { console.error('[db] snapshotResumeDocument failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function restoreResumeSnapshot({ userId, email, docId, index }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const row = await ResumeDocument.findOne({ userId: uid, docId: String(docId) }).select('snapshots').lean();
+    const snap = row?.snapshots?.[Number(index)];
+    if (!snap?.doc) return { ok: false, reason: 'not_found' };
+    await ResumeDocument.updateOne({ userId: uid, docId: String(docId) }, { $set: { doc: snap.doc } });
+    return { ok: true, doc: snap.doc };
+  } catch (err) { console.error('[db] restoreResumeSnapshot failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function deleteResumeDocument({ userId, email, docId }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return { ok: false, reason: 'user_not_found' };
+    const r = await ResumeDocument.deleteOne({ userId: uid, docId: String(docId) });
+    return { ok: r.deletedCount > 0, reason: r.deletedCount ? undefined : 'not_found' };
+  } catch (err) { console.error('[db] deleteResumeDocument failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Everything the Master Career Profile assembler needs, in one read. */
+export async function masterProfileInputsFor({ userId, email }) {
+  const out = { profile: {}, user: {}, submissions: [], verifiedSkills: [], provenSkills: [], resumeSnapshot: null };
+  if (!URI) return out;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return out;
+    const [state, user, subs, ghAnalyses] = await Promise.all([
+      UserState.findOne({ userId: uid }).select('profile resume').lean(),
+      User.findById(uid).select('name email targetRole').lean(),
+      ProjectSubmission.find({ userId: uid }).sort({ updatedAt: -1 }).limit(40).lean(),
+      GithubRepoAnalysis.find({ userId: uid }).sort({ updatedAt: -1 }).limit(12).select('detectedSkills').lean(),
+    ]);
+    out.profile = state?.profile || {};
+    out.resumeSnapshot = state?.resume || null;
+    out.user = user || {};
+    out.submissions = subs || [];
+    const v = new Set();
+    for (const s of subs || []) {
+      if (String(s.verificationStatus).toLowerCase() !== 'verified') continue;
+      for (const sk of s.verifiedSkills || []) if (sk) v.add(String(sk));
+    }
+    out.verifiedSkills = [...v];
+    out.provenSkills = [...new Set((ghAnalyses || []).flatMap((a) => a.detectedSkills || []))];
+    return out;
+  } catch (err) { console.error('[db] masterProfileInputsFor failed:', err.message); return out; }
+}
+
+/* College Resume OS observability — aggregate signals only, tenant-scoped
+   via the same membership resolver as every other college read. */
+export async function listCollegeResumeSignals({ collegeId }) {
+  const scope = String(collegeId || '').trim();
+  if (!scope || !URI) return [];
+  try {
+    await connectDB();
+    const matched = await collegeScopeMembers(scope);
+    const uids = matched.map((m) => m.user._id);
+    const docs = await ResumeDocument.find({ userId: { $in: uids } })
+      .sort({ updatedAt: -1 })
+      .select('userId lastScore lastJdMatch targetRole doc.skills doc.projects updatedAt')
+      .lean();
+    const latestByUser = new Map();
+    for (const d of docs) { const k = String(d.userId); if (!latestByUser.has(k)) latestByUser.set(k, d); }
+    return matched.map(({ user: u, state }) => {
+      const rd = latestByUser.get(String(u._id)) || null;
+      const skills = rd?.doc?.skills || [];
+      return {
+        studentId: String(u._id),
+        hasResumeDoc: !!rd,
+        resumeScore: rd?.lastScore ?? state?.resume?.analysis?.score ?? state?.resume?.score ?? null,
+        jdMatch: rd?.lastJdMatch ?? null,
+        targetRole: rd?.targetRole || state?.profile?.targetRole || '',
+        verifiedSkillsOnResume: skills.filter((s) => s?.status === 'VERIFIED').length,
+        declaredSkillsOnResume: skills.filter((s) => s?.status === 'DECLARED').length,
+        verifiedProjectsOnResume: (rd?.doc?.projects || []).filter((p) => p?.verified).length,
+        legacyResumeAnalyzed: !!(state?.resume?.analysis),
+      };
+    });
+  } catch (err) { console.error('[db] listCollegeResumeSignals failed:', err.message); return []; }
 }
 
 /* ---- Verified Skills + XP ----

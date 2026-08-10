@@ -31,8 +31,10 @@ import { buildCustomTemplate, atsEstimate } from '../web/src/lib/resumeTemplates
 
 /* ------------------------------ registry ------------------------------ */
 
-test('registry ships exactly the 8 required templates with full metadata', () => {
-  assert.equal(RESUME_TEMPLATES.length, 8);
+test('registry ships the 8 required legacy templates (V3 set is additive) with full metadata', () => {
+  const legacy = RESUME_TEMPLATES.filter((t) => t.set !== 'v3');
+  assert.equal(legacy.length, 8);
+  assert.equal(RESUME_TEMPLATES.length, 20); // 8 legacy + 12 Resume OS V3
   const ids = RESUME_TEMPLATES.map((t) => t.id);
   for (const id of ['jake-ats-classic', 'clean-ats-pro', 'modern-pro', 'cloud-devops',
     'senior-engineer', 'fresher-project-first', 'executive-leadership', 'visual-creative']) {

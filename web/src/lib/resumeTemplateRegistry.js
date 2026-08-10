@@ -197,6 +197,112 @@ export const RESUME_TEMPLATES = [
   },
 ];
 
+/* ============================================================
+   RESUME OS V3 ORIGINAL TEMPLATE SET (12) — Career Autopilot
+   originals; layout conventions only, no copied commercial
+   designs, system/web-safe font stacks only. Every template is
+   certified by the automated ATS render round-trip
+   (templateCertification.js) — the badge is earned, not claimed.
+   ============================================================ */
+const V3 = { pageMode: 'auto', supportsOnePage: true, supportsMultiPage: true, previewType: 'structural', set: 'v3' };
+const V3_SECTIONS = ['Header', 'Summary', 'Skills', 'Experience', 'Projects', 'Education', 'Certifications', 'Achievements'];
+const ORDER_STD = ['summary', 'skills', 'experience', 'projects', 'education', 'certifications', 'achievements'];
+const ORDER_STUDENT = ['summary', 'education', 'skills', 'projects', 'experience', 'certifications', 'achievements'];
+const ORDER_EXEC = ['summary', 'experience', 'skills', 'projects', 'education', 'certifications', 'achievements'];
+
+export const V3_TEMPLATES = [
+  /* ---- ATS STRICT ---- */
+  {
+    ...V3, id: 'atlas', name: 'Atlas', category: 'ats-strict', strictAts: true, atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Any ATS portal', 'Default choice', 'Corporate applications'], badges: ['ATS Strict', 'Single-column'],
+    description: 'The Career Autopilot default. Plain single column, standard headings, conventional dates — built to survive every parser first and look sharp second.',
+    sections: V3_SECTIONS,
+    theme: { font: '"Helvetica Neue", Helvetica, Arial, sans-serif', accent: '#1f2937', headerAlign: 'center', sectionStyle: 'caps', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  {
+    ...V3, id: 'oxford', name: 'Oxford', category: 'ats-strict', strictAts: true, atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Traditional industries', 'Finance', 'Government', 'Academia-adjacent'], badges: ['ATS Strict', 'Serif'],
+    description: 'Conservative serif single column. Reads like a well-set legal brief — for banks, consultancies and anywhere tradition still screens resumes.',
+    sections: V3_SECTIONS,
+    theme: { font: '"Times New Roman", Times, serif', accent: '#111827', headerAlign: 'center', sectionStyle: 'caps', bulletChar: 'disc', density: 'comfortable', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  {
+    ...V3, id: 'mono', name: 'Mono', category: 'ats-strict', strictAts: true, atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Minimalists', 'Text-first portals', 'Plain-text conversions'], badges: ['ATS Strict', 'Zero decoration'],
+    description: 'The most austere layout in the set: no rules, no accent colour, pure typographic hierarchy. Nothing exists that a parser could misread.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Calibri, "Segoe UI", Arial, sans-serif', accent: '#111827', headerAlign: 'left', sectionStyle: 'plain', bulletChar: 'disc', density: 'compact', nameSize: 19, skillsStyle: 'inline-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  /* ---- PROFESSIONAL ---- */
+  {
+    ...V3, id: 'sterling', name: 'Sterling', category: 'professional', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Experienced professionals', 'Client-facing roles', 'Consulting'], badges: ['ATS-safe', 'Serif accent'],
+    description: 'Georgia serif with a restrained navy rule under each heading. Polished without a single parser risk.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Georgia, "Times New Roman", serif', accent: '#1e3a5f', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'compact', nameSize: 21, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_EXEC },
+  },
+  {
+    ...V3, id: 'summit', name: 'Summit', category: 'professional', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Managers', 'Program / delivery roles', 'Operations'], badges: ['ATS-safe', 'Confident header'],
+    description: 'Left-aligned confident name block, deep-green section bars, comfortable spacing — for profiles where breadth of ownership is the story.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Calibri, "Segoe UI", Arial, sans-serif', accent: '#14532d', headerAlign: 'left', sectionStyle: 'bar', bulletChar: 'disc', density: 'comfortable', nameSize: 22, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_EXEC },
+  },
+  {
+    ...V3, id: 'ledger', name: 'Ledger', category: 'professional', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Finance', 'Analysts', 'Audit / risk'], badges: ['ATS-safe', 'Understated'],
+    description: 'Thin hairline dividers and a muted oxblood accent — the quiet confidence of a well-kept ledger.',
+    sections: V3_SECTIONS,
+    theme: { font: '"Times New Roman", Times, serif', accent: '#7f1d1d', headerAlign: 'center', sectionStyle: 'thinline', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  /* ---- TECH ---- */
+  {
+    ...V3, id: 'kernel', name: 'Kernel', category: 'tech', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['SDE', 'Backend', 'Systems', 'DevOps'], badges: ['ATS-safe', 'Compact'],
+    description: 'Dense, engineering-first single column in the compact tradition — maximum verified evidence per square inch, still fully parser-clean.',
+    sections: V3_SECTIONS,
+    theme: { font: '"Helvetica Neue", Helvetica, Arial, sans-serif', accent: '#334155', headerAlign: 'center', sectionStyle: 'rule', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  {
+    ...V3, id: 'stack', name: 'Stack', category: 'tech', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Full-stack', 'Product engineering', 'Startups'], badges: ['ATS-safe', 'Modern'],
+    description: 'Contemporary indigo bars and a left-aligned header — modern product-company energy without a single layout risk.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Calibri, "Segoe UI", Arial, sans-serif', accent: '#4338ca', headerAlign: 'left', sectionStyle: 'bar', bulletChar: 'disc', density: 'compact', nameSize: 22, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  {
+    ...V3, id: 'circuit', name: 'Circuit', category: 'tech', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Data engineering', 'Cloud', 'Platform'], badges: ['ATS-safe', 'Grouped skills'],
+    description: 'Teal hairlines and grouped skill lines tuned for infra/data profiles where the stack itself is the headline.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Arial, Helvetica, sans-serif', accent: '#0f766e', headerAlign: 'left', sectionStyle: 'thinline', bulletChar: 'disc', density: 'compact', nameSize: 21, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STD },
+  },
+  /* ---- STUDENT ---- */
+  {
+    ...V3, id: 'launch', name: 'Launch', category: 'student', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Freshers', 'Internships', 'Campus placement'], badges: ['ATS-safe', 'Project-first'],
+    description: 'Education and projects lead — the order campus recruiters actually read. Verified projects belong here.',
+    sections: ['Header', 'Summary', 'Education', 'Skills', 'Projects', 'Experience', 'Certifications', 'Achievements'],
+    theme: { font: 'Calibri, "Segoe UI", Arial, sans-serif', accent: '#1d4ed8', headerAlign: 'center', sectionStyle: 'bar', bulletChar: 'disc', density: 'compact', nameSize: 21, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STUDENT },
+  },
+  {
+    ...V3, id: 'campus', name: 'Campus', category: 'student', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['First resume', 'Off-campus drives', 'Conservative recruiters'], badges: ['ATS-safe', 'Classic'],
+    description: 'The classic first resume: centered header, capital headings, education up top. Zero surprises for any screening system.',
+    sections: ['Header', 'Summary', 'Education', 'Skills', 'Projects', 'Experience', 'Certifications', 'Achievements'],
+    theme: { font: 'Arial, Helvetica, sans-serif', accent: '#111827', headerAlign: 'center', sectionStyle: 'caps', bulletChar: 'disc', density: 'comfortable', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ORDER_STUDENT },
+  },
+  /* ---- EXECUTIVE ---- */
+  {
+    ...V3, id: 'boardroom', name: 'Boardroom', category: 'executive', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    bestFor: ['Directors', 'Heads of function', 'Senior leadership'], badges: ['ATS-safe', 'Leadership-first'],
+    description: 'Serif authority with a charcoal name band and impact-led ordering. The band is plain text on a background — parsers read straight through it.',
+    sections: ['Header', 'Summary', 'Experience', 'Skills', 'Education', 'Achievements', 'Certifications'],
+    theme: { font: 'Georgia, "Times New Roman", serif', accent: '#374151', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'comfortable', nameSize: 23, skillsStyle: 'grouped-lines', headerBand: true, bandBg: '#1f2430', bandText: '#ffffff', sectionOrder: ORDER_EXEC, experienceTitle: 'Leadership Experience' },
+  },
+];
+RESUME_TEMPLATES.push(...V3_TEMPLATES);
+
 /* Broken legacy templates that are intentionally REMOVED (not just hidden):
    - 'two-col-tech'  — sidebar two-column collapsed in preview/export and
                        confused ATS parsers. Mapped to Jake ATS Classic.
