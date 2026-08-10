@@ -201,8 +201,13 @@ export default function InterventionsPanel() {
   const s = data?.summary || {};
   const tasks = data?.tasks || [];
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
   return (
     <div className="space-y-4">
+      {/* PRESCRIPTIVE first: detected gaps -> reviewable cohorts -> one-click assignment. */}
+      <RecommendedInterventions onAssigned={() => { load(); setRefreshKey((k) => k + 1); }} />
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard i={0} icon={ClipboardList} tone="violet" label="Tasks assigned" value={String(s.assigned ?? 0)} hint={`across ${s.tasks ?? 0} task(s)`} />
         <StatCard i={1} icon={CheckCircle2} tone="mint" label="Completed" value={String(s.done ?? 0)} hint={`${s.completionRate ?? 0}% completion rate`} />
@@ -325,6 +330,8 @@ export default function InterventionsPanel() {
           </div>
         </div>
       </Modal>
+
+      <AssignedInterventions refreshKey={refreshKey} />
     </div>
   );
 }
@@ -352,5 +359,205 @@ function AudiencePicker({ value, onChange, resolved }) {
           : <><RefreshCw size={11} /> {resolved.count} student(s) match this audience right now.</>}
       </p>
     </div>
+  );
+}
+
+
+/* ============================================================
+   RECOMMENDED INTERVENTIONS  (Intervention OS — prescriptive)
+   ------------------------------------------------------------
+   Deterministic cohort recommendations from the SAME scoped rows
+   the rest of the command center reads. Each card: the gap, the
+   auto-detected cohort (reviewable member by member, with the
+   reason each student qualified), labelled TARGET outcomes, and
+   one-click assignment through the existing task+notification
+   pipeline. Nothing here is AI-ranked; nothing is a forecast
+   dressed as a measurement.
+   ============================================================ */
+export function RecommendedInterventions({ onAssigned }) {
+  const [state, setState] = useState({ loading: true, error: '', recs: [] });
+  const [open, setOpen] = useState(null);   // rec id whose cohort is expanded
+  const [busyId, setBusyId] = useState(null);
+  const [status, setStatus] = useState('');
+
+  const load = async () => {
+    setState((p) => ({ ...p, loading: true, error: '' }));
+    try {
+      const r = await College.interventionRecommendations();
+      setState({ loading: false, error: '', recs: r?.recommendations || [] });
+    } catch (e) {
+      setState({ loading: false, error: e?.message || 'Could not load recommendations.', recs: [] });
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const assign = async (rec) => {
+    setBusyId(rec.id); setStatus('');
+    try {
+      const r = await College.assignIntervention({
+        ruleId: rec.id, type: rec.type, title: rec.title, gapLabel: rec.gapLabel,
+        description: rec.description, durationDays: rec.suggestedDurationDays,
+        expectedOutcomes: rec.expectedOutcomes, studentIds: rec.cohort.map((m) => m.id),
+      });
+      if (r?.ok) {
+        setStatus(`Assigned "${rec.title}" to ${r.assigned} student(s) — due ${new Date(r.dueAt).toLocaleDateString()}. Baseline captured for outcome measurement.`);
+        onAssigned?.();
+        load();
+      } else {
+        setStatus(r?.message || 'Assignment needs the database.');
+      }
+    } catch (e) { setStatus(e?.message || 'Could not assign.'); }
+    finally { setBusyId(null); }
+  };
+
+  return (
+    <SectionCard
+      title="Recommended interventions"
+      eyebrow="Detected from real cohort gaps — review the students, then assign"
+      action={<Button size="sm" variant="soft" onClick={load}><RefreshCw size={13} /> Refresh</Button>}
+    >
+      {status && <p className="mb-3 rounded-lg border border-subtle bg-surface-1 px-3 py-2 text-sm text-fg-secondary">{status}</p>}
+      {state.loading ? (
+        <div className="flex items-center gap-2 py-8 text-sm text-muted"><Spinner /> Analysing cohort gaps…</div>
+      ) : state.error ? (
+        <EmptyState icon={AlertTriangle} title="Couldn’t analyse the cohort" hint={state.error}
+          action={<Button size="sm" variant="soft" onClick={load}>Retry</Button>} />
+      ) : state.recs.length === 0 ? (
+        <EmptyState icon={CheckCircle2} title="No intervention needed right now"
+          hint="No cohort of 3+ students currently shares a meaningful gap. As readiness data changes, recommendations appear here automatically." />
+      ) : (
+        <div className="space-y-3">
+          {state.recs.map((rec) => (
+            <div key={rec.id} className="rounded-xl border border-subtle bg-surface-1 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[14px] font-semibold text-fg">{rec.title}</p>
+                    <Badge tone="violet">{rec.type}</Badge>
+                    <Badge tone="amber"><Users size={11} /> {rec.cohortSize} students</Badge>
+                    <Badge>{rec.suggestedDurationDays} days</Badge>
+                  </div>
+                  <p className="mt-1 text-[12.5px] text-fg-secondary">{rec.description}</p>
+                  <p className="mt-0.5 text-[12px] text-fg-muted">Gap: {rec.gapLabel} · avg readiness {rec.avgReadinessBefore}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button size="sm" variant="soft" onClick={() => setOpen((id) => (id === rec.id ? null : rec.id))}>
+                    {open === rec.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Review cohort
+                  </Button>
+                  <Button size="sm" onClick={() => assign(rec)} disabled={busyId === rec.id}>
+                    {busyId === rec.id ? <Spinner className="h-3.5 w-3.5" /> : <Send size={13} />} Assign
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {rec.expectedOutcomes.map((o) => <Badge key={o} tone="mint">{o}</Badge>)}
+              </div>
+              <p className="mt-1.5 text-[11px] text-fg-muted">{rec.outcomesNote}</p>
+
+              {open === rec.id && (
+                <div className="mt-3 overflow-x-auto rounded-lg border border-subtle">
+                  <table className="w-full text-[12.5px]">
+                    <thead className="text-left text-[10.5px] uppercase tracking-wide text-fg-muted">
+                      <tr><th className="px-2.5 py-1.5">Student</th><th className="px-2.5 py-1.5">Branch</th><th className="px-2.5 py-1.5 text-right">Readiness</th><th className="px-2.5 py-1.5">Why included</th></tr>
+                    </thead>
+                    <tbody>
+                      {rec.cohort.map((m) => (
+                        <tr key={m.id} className="border-t border-subtle">
+                          <td className="px-2.5 py-1.5 text-fg">{m.name || m.email}</td>
+                          <td className="px-2.5 py-1.5 text-fg-secondary">{m.branch}{m.batch ? ` · ${m.batch}` : ''}</td>
+                          <td className="px-2.5 py-1.5 text-right font-medium text-fg">{m.readinessScore}</td>
+                          <td className="px-2.5 py-1.5 text-fg-secondary">{m.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+/* ============================================================
+   ASSIGNED INTERVENTIONS + MEASURED OUTCOMES
+   ------------------------------------------------------------
+   Every assigned intervention with its live before/after impact:
+   readiness delta, verified skills gained, completion rate — all
+   measured from real student state against the baseline captured
+   at assignment. No baseline (or no matched students) is said
+   plainly instead of being papered over with a forecast.
+   ============================================================ */
+export function AssignedInterventions({ refreshKey = 0 }) {
+  const [state, setState] = useState({ loading: true, error: '', items: [] });
+
+  const load = async () => {
+    setState((p) => ({ ...p, loading: true, error: '' }));
+    try {
+      const r = await College.interventions();
+      setState({ loading: false, error: '', items: r?.interventions || [] });
+    } catch (e) {
+      setState({ loading: false, error: e?.message || 'Could not load assigned interventions.', items: [] });
+    }
+  };
+  useEffect(() => { load(); }, [refreshKey]);
+
+  if (!state.loading && !state.error && state.items.length === 0) return null;
+
+  return (
+    <SectionCard title="Intervention outcomes" eyebrow="Measured before/after — never forecast"
+      action={<Button size="sm" variant="soft" onClick={load}><RefreshCw size={13} /> Refresh</Button>}>
+      {state.loading ? (
+        <div className="flex items-center gap-2 py-6 text-sm text-muted"><Spinner /> Measuring…</div>
+      ) : state.error ? (
+        <p className="text-sm text-danger">{state.error}</p>
+      ) : (
+        <div className="space-y-3">
+          {state.items.map((it) => {
+            const o = it.outcome || {};
+            return (
+              <div key={it.id} className="rounded-xl border border-subtle bg-surface-1 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[13.5px] font-semibold text-fg">{it.title}</p>
+                  {it.type && <Badge tone="violet">{it.type}</Badge>}
+                  <Badge><Users size={11} /> {it.cohortSize}</Badge>
+                  {it.createdAt && <span className="text-[11.5px] text-fg-muted">assigned {new Date(it.createdAt).toLocaleDateString()}</span>}
+                </div>
+                {o.measured ? (
+                  <div className="mt-2.5 grid gap-3 text-[12.5px] sm:grid-cols-4">
+                    <div>
+                      <p className="text-fg-muted">Avg readiness</p>
+                      <p className="font-semibold text-fg">{o.readiness.before} → {o.readiness.after}
+                        <span className={`ml-1.5 ${o.readiness.delta >= 0 ? 'text-ok' : 'text-danger'}`}>({o.readiness.delta >= 0 ? '+' : ''}{o.readiness.delta})</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-fg-muted">Verified skills gained</p>
+                      <p className="font-semibold text-fg">+{o.verifiedSkills.gained}</p>
+                    </div>
+                    <div>
+                      <p className="text-fg-muted">Verified projects gained</p>
+                      <p className="font-semibold text-fg">+{o.verifiedProjects.gained}</p>
+                    </div>
+                    <div>
+                      <p className="text-fg-muted">Task completion</p>
+                      <p className="font-semibold text-fg">{o.assignment ? `${o.assignment.done}/${o.assignment.assigned} (${o.assignment.completionRate}%)` : '—'}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[12.5px] text-fg-secondary">
+                    Not measured yet — {o.reason === 'no_baseline' ? 'no baseline snapshot exists for this intervention.' : 'the baseline students are not in the current cohort.'} Nothing is estimated in its place.
+                  </p>
+                )}
+                {o.measured && <p className="mt-2 text-[11px] text-fg-muted">{o.note} Measured over {o.students.matched}/{o.students.baseline} baseline students.</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
   );
 }

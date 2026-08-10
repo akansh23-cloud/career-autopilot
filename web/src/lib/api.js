@@ -285,6 +285,9 @@ export const Admin = {
 // college_admin (or admin) and scoped to the caller's own collegeId.
 export const College = {
   overview: () => api.get('/api/college/overview'),
+  interventionRecommendations: () => api.get('/api/college/interventions/recommendations'),
+  interventions: () => api.get('/api/college/interventions'),
+  assignIntervention: (body) => api.post('/api/college/interventions/assign', body),
   students: (params = {}) => {
     const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== false && v != null));
     const qs = new URLSearchParams(clean).toString();

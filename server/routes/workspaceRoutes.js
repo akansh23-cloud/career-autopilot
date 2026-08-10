@@ -22,6 +22,9 @@ import { planPatch } from '../utils/codegen/patchPlanner.js';
 import { listTemplates } from '../utils/codegen/templateRegistry.js';
 import { buildStarterPack, packToZip, newPackId, sanitizeProjectName } from '../utils/starterPack/starterPackBuilder.js';
 import { gatherProofEvidence } from '../utils/workspace/proofVerification.js';
+import { verifyPlanTasks } from '../utils/workspace/taskVerification.js';
+import { verifyProjectSubmission, levelForXp } from '../utils/skillVerificationEngine.js';
+import { buildEvidenceGraph, traceSkill } from '../utils/evidenceGraph.js';
 
 const shortText = (max) => z.string().max(max);
 
@@ -344,17 +347,75 @@ export function registerWorkspaceRoutes(app, deps = {}) {
       const evidence = hasEvidence ? await gatherProofEvidence(rawEvidence) : null;
 
       const { proofRequirements, verificationSummary } = runVerification(plan, evidence);
+
+      /* Verification V3 — requirement-aware, per task. Connects
+         acceptance criteria to the same evidence, promotes done→verified
+         only when every machine rule passed, and attributes skills to the
+         tasks whose evidence proved them. */
+      const { tasks, taskVerification } = verifyPlanTasks({ ...plan, proofRequirements }, evidence);
+
       const updated = recalculatePlan({
         ...plan,
+        tasks,
         proofRequirements,
         proofEvidence: { ...rawEvidence, lastVerifiedAt: new Date().toISOString() },
         verificationSummary,
+        taskVerification,
       });
       await savePlan(req, projectId, updated);
-      res.json({ success: true, verificationSummary, updatedWorkspacePlan: updated });
+
+      /* Verified workspace evidence flows into the EXISTING skill ledger via
+         the canonical submission engine (duplicate-safe), so "verified
+         evidence produces verified skills" without a parallel XP path. Only
+         runs when real repo evidence verified at least one task. */
+      let skillLedger = null;
+      if (taskVerification.promotedTaskIds.length && evidence?.github?.present && db?.dbEnabled?.() && db.saveProjectSubmission && db.applySkillVerification) {
+        try {
+          const skills = taskVerification.skillEvidence.map((s) => s.skill);
+          const submission = {
+            subjectId: userOf(req).userId || userOf(req).email || '',
+            projectTitle: updated.title,
+            description: `${updated.projectSummary?.problemStatement || updated.title}. Workspace-verified tasks: ${taskVerification.promotedTaskIds.length}.`,
+            technologies: [...new Set([...(updated.projectSummary?.techStack || []), ...skills])],
+            claimedSkills: skills,
+            complexity: String(updated.projectSummary?.difficulty || 'intermediate').toLowerCase(),
+            githubUrl: rawEvidence.repoUrl,
+            liveDemoUrl: rawEvidence.liveUrl || '',
+            sourceFeature: 'workspace-verification',
+            workspaceProjectId: projectId,
+          };
+          const result = verifyProjectSubmission(submission);
+          const { userId, email } = userOf(req);
+          const saved = await db.saveProjectSubmission({ userId, email, submission, result });
+          if (saved?.ok) {
+            await db.applySkillVerification({ userId, email, projectId: saved.id, result, levelForXp });
+            skillLedger = { applied: true, submissionId: saved.id || null, status: result.verificationStatus };
+          }
+        } catch (e) { skillLedger = { applied: false, reason: e.message }; }
+      }
+
+      res.json({ success: true, verificationSummary, taskVerification, skillLedger, updatedWorkspacePlan: updated });
     } catch (err) {
       console.error('[workspace] verify failed:', err.message);
       res.status(500).json({ success: false, error: 'verify_failed' });
+    }
+  });
+
+  /* ============ GET /api/workspace/:projectId/evidence-graph ============
+     Traceability: role → gaps → project → milestones → tasks → criteria →
+     evidence → skills, from real plan state. ?skill=<name> answers
+     "why is this skill considered verified?" as a readable chain. */
+  app.post('/api/workspace/:projectId/evidence-graph', requireAuth, validate(planBodySchema), async (req, res) => {
+    try {
+      const projectId = String(req.params.projectId || '');
+      const { plan } = await resolvePlan(req, projectId);
+      if (!plan) return res.status(404).json({ success: false, error: 'workspace_not_found' });
+      const graph = buildEvidenceGraph(plan, {});
+      const skill = String(req.query.skill || req.body?.skill || '').trim();
+      res.json({ success: true, graph, trace: skill ? traceSkill(graph, skill) : null });
+    } catch (err) {
+      console.error('[workspace] evidence-graph failed:', err.message);
+      res.status(500).json({ success: false, error: 'evidence_graph_failed' });
     }
   });
 

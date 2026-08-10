@@ -60,7 +60,19 @@ export function progressOf(plan) {
     blockedTasks: p.blockedTasks ?? 0,
     percentDone: p.percentDone ?? 0,
     percentVerified: p.percentVerified ?? 0,
+    /* Effort-weighted view (Phase 2): a README task no longer equals a
+       backend build. Old plans without weights fall back to the counts. */
+    builtPercent: p.weightedPercentDone ?? p.percentDone ?? 0,
+    verifiedPercent: p.weightedPercentVerified ?? p.percentVerified ?? 0,
   };
+}
+
+/* Per-task Verification V3 results, keyed by task id (empty for old plans). */
+export function taskVerificationOf(plan) {
+  const tv = plan?.taskVerification;
+  const map = new Map();
+  for (const r of tv?.results || []) map.set(r.taskId, r);
+  return { map, counts: tv?.counts || null, nextActions: tv?.nextActions || [], ranAt: tv?.ranAt || null };
 }
 
 export function designScoreOf(plan) {

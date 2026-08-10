@@ -11,6 +11,7 @@
 
    Done and Verified always stay separate. */
 import { did, arr, obj, str, slug } from './planUtils.js';
+import { deriveDependencies } from './dependencyPlanner.js';
 
 const PHASES = [
   { id: 'setup', title: 'Phase 1 — Run it', description: 'Get the skeleton running on your machine and pushed to GitHub.' },
@@ -212,7 +213,7 @@ export function planTasks(project = {}, stack = {}, ctx = {}) {
     tasks: tasks.filter((t) => t.phase === p.id).map((t) => t.id),
   }));
 
-  return { tasks: tasks.slice(0, 40), roadmap };
+  return { tasks: deriveDependencies(tasks.slice(0, 40)), roadmap };
 }
 
 export { PHASES };

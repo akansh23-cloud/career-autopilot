@@ -24,7 +24,9 @@ import { buildInspirations, generateProjectBlueprint } from './server/modules/in
 import { generateArchitecture, ARCH_LEVELS } from './server/utils/architectureEngine.js';
 import { assessPatentReadiness, priorArtKeywords, inventionDisclosureDraft, PATENT_STATUSES, PATENT_DISCLAIMER } from './server/utils/patentEngine.js';
 import { generateApplicationPackage } from './server/utils/applicationPackageEngine.js';
-import { computeReadiness, READINESS_CATEGORIES } from './server/utils/readinessEngine.js';
+import { computeReadiness, READINESS_CATEGORIES, computeRoleReadiness, explainReadinessChange } from './server/utils/readinessEngine.js';
+import { rankNextBestActions } from './server/utils/nextBestActionEngine.js';
+import { classifyResumeEvidenceGaps } from './server/utils/resume/evidenceGapClassifier.js';
 import collegeObservability from './server/utils/collegeObservability.js';
 import { scorePatentIdea } from './server/utils/patentScoringEngine.js';
 import { generateIdeasDeterministic, normalizeAIIdea, buildGenerationPrompt } from './server/utils/ideaGenerationEngine.js';
@@ -2974,9 +2976,83 @@ app.post('/api/applications/package', requireAuth, generationLimiter, validateBo
 /* My own placement readiness. */
 app.get('/api/readiness', requireAuth, async (req, res) => {
   const u = currentUser(req);
-  const inputs = await db.readinessInputsFor({ userId: u?.id, email: u?.email });
-  const readiness = computeReadiness(inputs);
-  res.json({ ok: true, readiness, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
+  const inputs = await db.roleReadinessInputsFor({ userId: u?.id, email: u?.email });
+  const readiness = computeReadiness(inputs); // v1 — unchanged contract for college/recruiter consumers.
+
+  /* readiness-v2: role-specific, explainable, delta-attributed. The client
+     may pass ?targetRole= (profile is client-held when the DB is off);
+     server-side profile/resume role wins when present. */
+  const targetRole = String(req.query.targetRole || inputs.targetRole || '').trim();
+  let roleReadiness = null; let change = null;
+  if (targetRole) {
+    roleReadiness = computeRoleReadiness({
+      targetRole,
+      verifiedSkills: inputs.verifiedSkills,
+      provenSkills: inputs.provenSkills,
+      claimedSkills: inputs.claimedSkills,
+      resumeSkills: inputs.resumeSkills,
+      verifiedProjectCount: inputs.verifiedProjectCount,
+      recruiterReadyProjectCount: inputs.recruiterReadyProjectCount,
+      resumeScore: inputs.resumeScore,
+    });
+    const prev = inputs.roleReadinessSnapshot;
+    change = explainReadinessChange(
+      prev && prev.targetRole === roleReadiness.targetRole ? prev : null,
+      roleReadiness,
+    );
+    /* Persist the new baseline (fire-and-forget; measuring must never break
+       the endpoint). Only when it moved or no baseline existed. */
+    if (db.dbEnabled() && (!prev || prev.targetRole !== roleReadiness.targetRole || prev.score !== roleReadiness.score)) {
+      db.saveRoleReadinessSnapshot({ userId: u?.id, email: u?.email, snapshot: { ...roleReadiness, savedAt: new Date().toISOString() } }).catch(() => {});
+    }
+  }
+  res.json({ ok: true, readiness, roleReadiness, change, categories: READINESS_CATEGORIES, db: db.dbEnabled() });
+});
+
+/* ============================================================
+   NEXT BEST ACTION  (platform-wide; deterministic)
+   ------------------------------------------------------------
+   One ranked answer to "what should I do next?", assembled from
+   real state: college task deadlines, workspace verification
+   remediation, active-project momentum, role-readiness gaps and
+   verified-evidence resume wins. db-off returns ok:false with
+   reason so the client falls back to its local computation — it
+   never fabricates server state.
+   ============================================================ */
+app.get('/api/next-best-action', requireAuth, async (req, res) => {
+  const u = currentUser(req);
+  if (!db.dbEnabled()) return res.json({ ok: false, reason: 'db_off', db: false });
+  try {
+    const [inputs, workspaces, collegeTasks] = await Promise.all([
+      db.roleReadinessInputsFor({ userId: u?.id, email: u?.email }),
+      db.listProjectWorkspaces({ userId: u?.id, email: u?.email }),
+      db.listMyTasks({ userId: u?.id, email: u?.email }).catch(() => []),
+    ]);
+    const targetRole = String(req.query.targetRole || inputs.targetRole || '').trim();
+    const roleReadiness = targetRole ? computeRoleReadiness({
+      targetRole,
+      verifiedSkills: inputs.verifiedSkills, provenSkills: inputs.provenSkills,
+      claimedSkills: inputs.claimedSkills, resumeSkills: inputs.resumeSkills,
+      verifiedProjectCount: inputs.verifiedProjectCount,
+      recruiterReadyProjectCount: inputs.recruiterReadyProjectCount,
+      resumeScore: inputs.resumeScore,
+    }) : null;
+    const resumeGaps = classifyResumeEvidenceGaps({
+      targetRole, verifiedSkills: inputs.verifiedSkills,
+      resumeSkills: inputs.resumeSkills, provenSkills: inputs.provenSkills,
+    });
+    const nba = rankNextBestActions({
+      roleReadiness,
+      workspaces,
+      collegeTasks: (collegeTasks || []).map((t) => ({ id: t.id, title: t.title, dueAt: t.dueAt, done: !!t.done })),
+      resumeRecommendations: resumeGaps.recommendations.filter((r) => r.type === 'evidence_exists'),
+    });
+    logger.info?.('nba.computed', { actions: nba.actions.length, top: nba.highestImpact?.actionType || 'none' });
+    res.json({ ok: true, ...nba, roleReadiness, db: true });
+  } catch (err) {
+    logger.error('next-best-action failed', { message: err.message });
+    res.status(500).json({ ok: false, error: 'nba_failed' });
+  }
 });
 
 /* ============================================================

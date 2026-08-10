@@ -219,6 +219,10 @@ const userStateSchema = new mongoose.Schema(
        real database. Declaring them is additive — existing documents simply
        read as the defaults. */
     readiness: { type: mongoose.Schema.Types.Mixed, default: null },
+    /* Last role-specific readiness (readiness-v2) — the baseline that lets
+       /api/readiness explain WHY the number moved. Additive; old documents
+       read as null and the API reports "no baseline yet". */
+    roleReadinessSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     verifiedProjectCount: { type: Number, default: 0 },
     projects: { type: [mongoose.Schema.Types.Mixed], default: [] },
     tracker: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -774,7 +778,7 @@ export async function patchUserState({ userId, email, patch }) {
     const uid = await resolveUserId({ userId, email });
     if (!uid) return { ok: false, reason: 'user_not_found' };
     const em = cleanEmail(email);
-    const allowed = ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot', 'creator'];
+    const allowed = ['profile', 'resume', 'projects', 'tracker', 'xpSnapshot', 'creator', 'roleReadinessSnapshot'];
     const set = { email: em };
     for (const k of allowed) if (Object.prototype.hasOwnProperty.call(patch || {}, k)) set[k] = patch[k];
     await UserState.updateOne({ userId: uid }, { $set: set }, { upsert: true });
@@ -4550,6 +4554,123 @@ export async function saveProjectWorkspace({ userId, email, projectId, workspace
     ).lean();
     return { ok: true, id: String(doc._id) };
   } catch (err) { console.error('[db] saveProjectWorkspace failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+/* ---- College Intervention OS: assigned interventions + baselines ----
+   Additive collection. An intervention is a recommendation a coordinator
+   ACCEPTED: it stores the cohort, the baseline snapshot (for honest
+   before/after measurement) and the college task that carries the work.
+   Isolation: every helper filters by collegeId — provided by routes that
+   already passed requireCollegeScope. */
+const collegeInterventionSchema = new mongoose.Schema(
+  {
+    collegeId: { type: String, required: true, index: true },
+    ruleId: { type: String, default: '' },
+    type: { type: String, default: '' },
+    title: { type: String, required: true },
+    gapLabel: { type: String, default: '' },
+    description: { type: String, default: '' },
+    durationDays: { type: Number, default: 14 },
+    expectedOutcomes: { type: [String], default: [] },
+    studentIds: { type: [String], default: [] },
+    baseline: { type: mongoose.Schema.Types.Mixed, default: null },
+    taskId: { type: String, default: '' },
+    status: { type: String, default: 'active' }, // active | complete | cancelled
+    createdByEmail: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+collegeInterventionSchema.index({ collegeId: 1, createdAt: -1 });
+export const CollegeIntervention = mongoose.models.CollegeIntervention || mongoose.model('CollegeIntervention', collegeInterventionSchema);
+
+export async function createCollegeIntervention(doc = {}) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const created = await CollegeIntervention.create(doc);
+    return { ok: true, id: String(created._id) };
+  } catch (err) { console.error('[db] createCollegeIntervention failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function listCollegeInterventions({ collegeId, limit = 30 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const docs = await CollegeIntervention.find({ collegeId: String(collegeId || '') })
+      .sort({ createdAt: -1 }).limit(limit).lean();
+    return docs.map((d) => ({ ...d, id: String(d._id) }));
+  } catch (err) { console.error('[db] listCollegeInterventions failed:', err.message); return []; }
+}
+
+export async function setCollegeInterventionStatus({ collegeId, id, status }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const r = await CollegeIntervention.updateOne({ _id: id, collegeId: String(collegeId || '') }, { $set: { status: String(status || 'active') } });
+    return { ok: r.matchedCount > 0 };
+  } catch (err) { console.error('[db] setCollegeInterventionStatus failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+/* Workspace summaries for the Next Best Action engine — small projection,
+   never the full plans. */
+export async function listProjectWorkspaces({ userId, email, limit = 10 }) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return [];
+    const docs = await ProjectWorkspace.find({ userId: uid })
+      .sort({ updatedAt: -1 }).limit(limit)
+      .select('projectId updatedAt workspacePlan.title workspacePlan.progress workspacePlan.nextAction workspacePlan.currentPhase workspacePlan.taskVerification.counts workspacePlan.taskVerification.nextActions workspacePlan.proofEvidence.repoUrl workspacePlan.proofEvidence.liveUrl')
+      .lean();
+    return docs.map((d) => ({
+      projectId: d.projectId,
+      updatedAt: d.updatedAt || null,
+      title: d.workspacePlan?.title || 'Project workspace',
+      progress: d.workspacePlan?.progress || null,
+      nextAction: d.workspacePlan?.nextAction || null,
+      currentPhase: d.workspacePlan?.currentPhase || '',
+      verificationCounts: d.workspacePlan?.taskVerification?.counts || null,
+      verificationNextActions: d.workspacePlan?.taskVerification?.nextActions || [],
+      hasRepoEvidence: !!d.workspacePlan?.proofEvidence?.repoUrl,
+      hasLiveEvidence: !!d.workspacePlan?.proofEvidence?.liveUrl,
+    }));
+  } catch (err) { console.error('[db] listProjectWorkspaces failed:', err.message); return []; }
+}
+
+/* Everything readiness-v2 needs, in one query batch. Extends (never replaces)
+   readinessInputsFor: verified signals stay the backbone; claimed/resume/
+   GitHub-proven skills are added as the weaker signal tiers v2 scores lower. */
+export async function roleReadinessInputsFor({ userId, email }) {
+  const base = await readinessInputsFor({ userId, email });
+  const out = {
+    ...base, targetRole: '', claimedSkills: [], resumeSkills: [], provenSkills: [],
+    roleReadinessSnapshot: null,
+  };
+  if (!URI) return out;
+  try {
+    await connectDB();
+    const uid = await resolveUserId({ userId, email });
+    if (!uid) return out;
+    const [state, latestResume, ghAnalyses, user] = await Promise.all([
+      UserState.findOne({ userId: uid }).select('profile roleReadinessSnapshot').lean(),
+      ResumeAnalysis.findOne({ userId: uid }).sort({ updatedAt: -1 }).select('targetRole matchedKeywords missingKeywords').lean(),
+      GithubRepoAnalysis.find({ userId: uid }).sort({ updatedAt: -1 }).limit(12).select('detectedSkills').lean(),
+      User.findById(uid).select('targetRole').lean(),
+    ]);
+    out.targetRole = state?.profile?.targetRole || latestResume?.targetRole || user?.targetRole || '';
+    if (out.targetRole === 'General') out.targetRole = state?.profile?.targetRole || user?.targetRole || '';
+    out.claimedSkills = Array.isArray(state?.profile?.skills) ? state.profile.skills : [];
+    out.resumeSkills = Array.isArray(latestResume?.matchedKeywords) ? latestResume.matchedKeywords : [];
+    out.resumeMissingSkills = Array.isArray(latestResume?.missingKeywords) ? latestResume.missingKeywords : [];
+    out.provenSkills = [...new Set(ghAnalyses.flatMap((a) => a.detectedSkills || []))];
+    out.roleReadinessSnapshot = state?.roleReadinessSnapshot || null;
+    return out;
+  } catch (err) { console.error('[db] roleReadinessInputsFor failed:', err.message); return out; }
+}
+
+export async function saveRoleReadinessSnapshot({ userId, email, snapshot }) {
+  return patchUserState({ userId, email, patch: { roleReadinessSnapshot: snapshot } });
 }
 
 export async function saveWorkspaceUiState({ userId, email, projectId, currentTab, selectedItem }) {

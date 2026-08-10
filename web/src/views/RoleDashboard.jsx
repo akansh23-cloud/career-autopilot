@@ -17,6 +17,7 @@ import { getAccessForUser } from '../lib/access.js';
 import { getProfile, ROLE_LABELS } from '../lib/userProfile.js';
 import { getCurrentEffectiveRole, canSeeScreen } from '../lib/roleCapabilities.js';
 import { getWeeklyMissions, setMissionDone, missionStats } from '../lib/missions.js';
+import { fetchNextBestActions, fetchReadiness } from '../lib/nextBestAction.js';
 import { assembleMyProfile, adoptionSuggestions, requestCareerProfileEditor } from '../lib/network.js';
 import { BadgeCheck, Medal, Handshake } from 'lucide-react';
 
@@ -156,6 +157,21 @@ function StudentDashboard({ go }) {
   const [badgeOpen, setBadgeOpen] = useState(null);
   const effRole = getCurrentEffectiveRole();
 
+  /* ---- Phase 2: the dashboard answers "what should I do today?" ----
+     Server-first (readiness v2 + platform Next Best Action), honest local
+     fallback when the DB is off. Nothing below renders fabricated state. */
+  const [nba, setNba] = useState(null);
+  const [readinessData, setReadinessData] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const role = getProfile().targetRole || '';
+    fetchNextBestActions({ targetRole: role }).then((r) => { if (alive) setNba(r); });
+    fetchReadiness({ targetRole: role }).then((r) => { if (alive) setReadinessData(r); });
+    return () => { alive = false; };
+  }, []);
+  const roleReadiness = readinessData?.roleReadiness || nba?.roleReadiness || null;
+  const readinessChange = readinessData?.change || null;
+
   const skillXP = useMemo(() => deriveSkillXP(projects), [projects]);
   const badges = useMemo(() => deriveBadges(projects, access), [projects, access]);
   const verifiedBadges = useMemo(() => classifyBadges(badges).verified, [badges]);
@@ -164,36 +180,146 @@ function StudentDashboard({ go }) {
   const avgProof = projects.length ? Math.round(projects.reduce((s, p) => s + proofScoreBreakdown(p).score, 0) / projects.length) : 0;
   const warnings = projects.map((p) => ({ p, c: roleConsistency(p) })).filter((x) => !x.c.ok);
 
-  const nba = projects.length === 0
-    ? { title: 'Build your first proof-of-work project', description: 'Pick a guided project matched to your target role and start earning verified skill XP and badges.', primary: { label: 'Start a project', icon: Rocket, onClick: () => go('projectstudio') } }
-    : published.length === 0
-    ? { title: 'Publish a project to get discovered', description: 'Publish your strongest project so it counts toward leaderboards and recruiter discovery.', primary: { label: 'Publish to sandbox', icon: Rocket, onClick: () => go('sandbox') } }
-    : { title: 'Keep your proof growing', description: 'Add evidence, finish this week’s missions and raise your proof score to stay recruiter-ready.', primary: { label: 'Open Project Studio', icon: Rocket, onClick: () => go('projectstudio') } };
+  /* Highest-impact action from the engine (server or local). */
+  const top = nba?.highestImpact || null;
+  const goCta = (a) => go(a?.cta?.view || 'projectstudio');
+  const verificationActions = (nba?.actions || []).filter((a) => a.actionType === 'submit_evidence').slice(0, 2);
+  const resumeAction = (nba?.actions || []).find((a) => a.actionType === 'resume_add_evidence') || null;
+
+  /* Active project: prefer one with a real workspace plan. */
+  const activeProject = projects.find((p) => p.workspacePlan && (p.workspacePlan.tasks || []).length) || projects[0] || null;
+  const activeProg = activeProject?.workspacePlan?.progress || null;
+
+  const gapChips = (roleReadiness?.topActions || []).flatMap((a) => a.skills || []).slice(0, 6);
 
   return (
     <>
       <PageIntro
         title={`Hi ${user?.name?.split(' ')[0] || 'there'} 👋`}
-        sub={`${ROLE_LABELS[access.role]}${profile.targetRole ? ` · targeting ${profile.targetRole}` : ''} — build proof, earn XP, get recruiter-ready.`}
+        sub={`${ROLE_LABELS[access.role]}${profile.targetRole ? ` · targeting ${profile.targetRole}` : ''} — the plan below is computed from your real evidence state.`}
       />
 
-      <NextBestAction
-        title={nba.title}
-        description={nba.description}
-        primary={nba.primary}
-        secondary={[
-          { label: 'Tailor resume', icon: Briefcase, onClick: () => go('resume'), screen: 'resume' },
-          { label: 'Track applications', icon: KanbanSquare, onClick: () => go('tracker'), screen: 'tracker' },
-        ].filter((s) => canSeeScreen(effRole, s.screen))}
-        score={projects.length ? avgProof : 0}
-        scoreLabel="Proof"
-      />
+      {/* 1 ── TARGET-ROLE READINESS (readiness-v2: role dimensions, explainable) */}
+      {roleReadiness && (
+        <SectionCard title={`${roleReadiness.targetRole} readiness — ${roleReadiness.score}%`}
+          action={readinessChange?.hasBaseline && readinessChange.delta ? (
+            <span className={`text-xs font-semibold ${readinessChange.delta > 0 ? 'text-ok' : 'text-danger'}`}>
+              {readinessChange.delta > 0 ? '+' : ''}{readinessChange.delta} since last check
+            </span>
+          ) : null}
+        >
+          <div className="grid gap-x-6 gap-y-2.5 sm:grid-cols-2">
+            {roleReadiness.dimensions.slice(0, 8).map((d) => (
+              <div key={d.id}>
+                <div className="mb-1 flex items-center justify-between text-[12px]">
+                  <span className="text-fg-secondary">{d.label}</span>
+                  <span className="font-semibold text-fg">{d.score}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface-1">
+                  <div className={`h-full rounded-full ${d.score >= 70 ? 'bg-aurora-mint' : d.score >= 40 ? 'bg-aurora-cta' : 'bg-amber-glow'}`} style={{ width: `${d.score}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {readinessChange?.hasBaseline && (readinessChange.reasons || []).length > 0 && (
+            <p className="mt-3 text-[12px] text-fg-secondary">
+              Why it moved: {readinessChange.reasons.slice(0, 2).map((r) => `${r.dimension} — ${r.detail}`).join(' · ')}
+            </p>
+          )}
+        </SectionCard>
+      )}
 
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard i={0} icon={TrendingUp} tone="violet" label="Career XP" value={String(career.total)} hint={career.next ? `${career.toNext} XP to ${career.next}` : 'Max level'} onClick={() => go('careerprofile')} />
-        <StatCard i={1} icon={Award} tone="mint" label="Verified badges" value={String(verifiedBadges.length)} onClick={() => go('skillsxp')} />
-        <StatCard i={2} icon={Rocket} tone="cyan" label="Published" value={String(published.length)} hint={!published.length ? 'Publish your first project' : undefined} onClick={() => go('sandbox')} />
-        <StatCard i={3} icon={Target} tone="amber" label="Avg proof" value={projects.length ? String(avgProof) : '—'} hint={!projects.length ? 'Build a project' : undefined} />
+      {/* 2 ── HIGHEST-IMPACT NEXT ACTION (real engine output, never a slogan) */}
+      {top && (
+        <div className="mt-4">
+          <NextBestAction
+            title={top.title}
+            description={`${top.explanation}${top.estimatedEffort && top.estimatedEffort !== 'varies' ? ` Estimated effort: ${top.estimatedEffort}.` : ''}`}
+            primary={{ label: top.cta?.label || 'Open', icon: Rocket, onClick: () => goCta(top) }}
+            secondary={(nba?.actions || []).slice(1, 3).map((a) => ({
+              label: a.cta?.label || a.title.slice(0, 28), icon: a.actionType === 'resume_add_evidence' ? Briefcase : ArrowRight,
+              onClick: () => goCta(a), screen: a.cta?.view,
+            })).filter((sBtn) => canSeeScreen(effRole, sBtn.screen))}
+            score={roleReadiness ? roleReadiness.score : (projects.length ? avgProof : 0)}
+            scoreLabel={roleReadiness ? 'Ready' : 'Proof'}
+          />
+        </div>
+      )}
+
+      {/* 3+4 ── ACTIVE PROJECT (built vs verified) + VERIFICATION ATTENTION */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <SectionCard title="Active project" action={activeProject ? <button onClick={() => go('projectworkspace')} className="text-xs text-brand hover:underline">Open workspace</button> : null}>
+          {activeProject ? (
+            <div>
+              <p className="text-sm font-semibold text-fg">{activeProject.title}</p>
+              {activeProg ? (
+                <>
+                  <div className="mt-2 flex items-center gap-4 text-[12px] text-fg-secondary">
+                    <span><span className="font-semibold text-fg">{activeProg.weightedPercentDone ?? activeProg.percentDone ?? 0}%</span> built</span>
+                    <span><span className="font-semibold text-ok">{activeProg.weightedPercentVerified ?? activeProg.percentVerified ?? 0}%</span> verified</span>
+                  </div>
+                  <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-surface-1">
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-aurora-cta" style={{ width: `${activeProg.weightedPercentDone ?? activeProg.percentDone ?? 0}%` }} />
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-aurora-mint" style={{ width: `${activeProg.weightedPercentVerified ?? activeProg.percentVerified ?? 0}%` }} />
+                  </div>
+                  {activeProject.workspacePlan?.nextAction?.title && (
+                    <p className="mt-2.5 text-[12px] text-fg-secondary"><span className="font-medium text-fg">Next:</span> {activeProject.workspacePlan.nextAction.title}</p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-1.5 text-[12.5px] text-fg-secondary">No guided workspace yet — open it to generate the build plan.</p>
+              )}
+            </div>
+          ) : (
+            <EmptyState icon={Rocket} title="No active project" hint="Your readiness gaps are best closed with a matched guided project." action={<Button size="sm" onClick={() => go('projectstudio')}>Start now</Button>} />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Verification needing attention">
+          {verificationActions.length ? (
+            <div className="space-y-2">
+              {verificationActions.map((a, i) => (
+                <button key={i} onClick={() => goCta(a)} className="lift block w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-left">
+                  <p className="text-[13px] font-medium text-fg">{a.title}</p>
+                  <p className="mt-0.5 text-[11.5px] text-warn">{a.explanation}</p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12.5px] text-fg-secondary">Nothing waiting on evidence right now. When a verification run needs something from you, it appears here with the exact item to submit.</p>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* 5+6 ── CRITICAL SKILL GAPS + RESUME ACTION */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <SectionCard title="Critical skill gaps" action={<button onClick={() => go('projectstudio')} className="text-xs text-brand hover:underline">Build evidence</button>}>
+          {gapChips.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {gapChips.map((sk) => (
+                <button key={sk} onClick={() => go('projectstudio')} className="rounded-full border border-subtle bg-surface-1 px-3 py-1 text-[12px] text-fg hover:border-strong">
+                  {sk}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12.5px] text-fg-secondary">{roleReadiness ? 'No critical gaps detected for your target role — keep converting built work into verified evidence.' : 'Set a target role in your profile to see role-specific gaps.'}</p>
+          )}
+          {roleReadiness?.topActions?.[0] && (
+            <p className="mt-3 text-[12px] text-fg-secondary">{roleReadiness.topActions[0].why}</p>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Resume action" action={<button onClick={() => go('resume')} className="text-xs text-brand hover:underline">Open Resume OS</button>}>
+          {resumeAction ? (
+            <button onClick={() => goCta(resumeAction)} className="lift block w-full rounded-xl border border-subtle bg-surface-1 px-4 py-2.5 text-left hover:border-strong">
+              <p className="text-[13px] font-medium text-fg">{resumeAction.title}</p>
+              <p className="mt-0.5 text-[11.5px] text-fg-secondary">{resumeAction.explanation}</p>
+            </button>
+          ) : (
+            <p className="text-[12.5px] text-fg-secondary">Analyze your resume to surface evidence-backed improvements — verified skills that are missing from the document appear here automatically.</p>
+          )}
+        </SectionCard>
       </div>
 
       {warnings.length > 0 && (
@@ -206,8 +332,28 @@ function StudentDashboard({ go }) {
         </div>
       )}
 
+      {/* 7 ── applications / deadlines shortcuts */}
       <div className="mt-4">
-        <ProfileAdoptionPanel go={go} />
+        <SectionCard title="Applications & next steps">
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {[[KanbanSquare, 'Track applications', 'tracker'], [Briefcase, 'Find matching jobs', 'jobs'], [Rocket, 'Project Studio', 'projectstudio'], [Award, 'Career Profile', 'careerprofile']]
+              .filter(([, , id]) => canSeeScreen(effRole, id))
+              .map(([Icon, label, id]) => (
+              <button key={id} onClick={() => go(id)} className="lift flex items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-4 py-3 text-sm text-fg hover:border-strong">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Icon size={16} /></span>
+                {label}<ArrowRight size={15} className="ml-auto text-fg-muted" />
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+      </div>
+
+      {/* 8 ── XP / badges / missions — deliberately BELOW employability actions */}
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard i={0} icon={TrendingUp} tone="violet" label="Career XP" value={String(career.total)} hint={career.next ? `${career.toNext} XP to ${career.next}` : 'Max level'} onClick={() => go('careerprofile')} />
+        <StatCard i={1} icon={Award} tone="mint" label="Verified badges" value={String(verifiedBadges.length)} onClick={() => go('skillsxp')} />
+        <StatCard i={2} icon={Rocket} tone="cyan" label="Published" value={String(published.length)} hint={!published.length ? 'Publish your first project' : undefined} onClick={() => go('sandbox')} />
+        <StatCard i={3} icon={Target} tone="amber" label="Avg proof" value={projects.length ? String(avgProof) : '—'} hint={!projects.length ? 'Build a project' : undefined} />
       </div>
 
       <div className="mt-4">
@@ -232,18 +378,7 @@ function StudentDashboard({ go }) {
       </div>
 
       <div className="mt-4">
-        <SectionCard title="Next steps">
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {[[Rocket, 'Generate a project roadmap', 'projectstudio'], [KanbanSquare, 'Track applications', 'tracker'], [Briefcase, 'Find matching jobs', 'jobs'], [Award, 'View your Career Profile', 'careerprofile']]
-              .filter(([, , id]) => canSeeScreen(effRole, id))
-              .map(([Icon, label, id]) => (
-              <button key={id} onClick={() => go(id)} className="lift flex items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-4 py-3 text-sm text-fg hover:border-strong">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Icon size={16} /></span>
-                {label}<ArrowRight size={15} className="ml-auto text-fg-muted" />
-              </button>
-            ))}
-          </div>
-        </SectionCard>
+        <ProfileAdoptionPanel go={go} />
       </div>
 
       <BadgeModal badge={badgeOpen} open={!!badgeOpen} onClose={() => setBadgeOpen(null)} />

@@ -19,8 +19,12 @@ export default function WorkspaceHeader({ plan, busy = {}, onPreviewPack, onDown
             <Badge tone="cyan">Phase: {phase}</Badge>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-[12.5px]">
-            <span className="text-fg-secondary"><span className="font-semibold text-fg">{prog.percentDone}%</span> done ({prog.doneTasks + prog.verifiedTasks}/{prog.totalTasks} tasks)</span>
-            <span className="text-fg-secondary"><span className="font-semibold text-brand">{prog.percentVerified}%</span> verified</span>
+            <span className="text-fg-secondary" title="Effort-weighted: bigger tasks move this more than small ones.">
+              <span className="font-semibold text-fg">{prog.builtPercent}%</span> built ({prog.doneTasks + prog.verifiedTasks}/{prog.totalTasks} tasks)
+            </span>
+            <span className="text-fg-secondary" title="Only evidence the system verified counts here. Built is not Verified.">
+              <span className="font-semibold text-ok">{prog.verifiedPercent}%</span> verified
+            </span>
             {prog.blockedTasks > 0 && <span className="text-danger">{prog.blockedTasks} blocked</span>}
             {score != null && (
               <span className="text-fg-secondary" title="Quality of the proposed architecture — not implementation proof.">
@@ -28,8 +32,12 @@ export default function WorkspaceHeader({ plan, busy = {}, onPreviewPack, onDown
               </span>
             )}
           </div>
-          <div className="mt-3 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-surface-1">
-            <div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${prog.percentDone}%` }} />
+          {/* Two truths, one bar: indigo = built (self-marked), green = verified
+              (evidence-backed). The gap between them is exactly the work a
+              recruiter cannot yet trust. */}
+          <div className="relative mt-3 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-surface-1">
+            <div className="absolute inset-y-0 left-0 rounded-full bg-aurora-cta transition-all" style={{ width: `${prog.builtPercent}%` }} />
+            <div className="absolute inset-y-0 left-0 rounded-full bg-aurora-mint transition-all" style={{ width: `${prog.verifiedPercent}%` }} />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

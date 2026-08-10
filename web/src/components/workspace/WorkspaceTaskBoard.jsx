@@ -9,9 +9,9 @@
 // comfortable column widths — the board is allowed to be wider than the
 // viewport, because a kanban board naturally is.
 import { useMemo, useState } from 'react';
-import { Code2, ChevronDown, EyeOff, Eye } from 'lucide-react';
+import { Code2, ChevronDown, EyeOff, Eye, Lock, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { Badge } from '../ui/kit.jsx';
-import { TASK_COLUMNS, tasksByColumn } from '../../lib/workspaceSelectors.js';
+import { TASK_COLUMNS, tasksByColumn, taskVerificationOf } from '../../lib/workspaceSelectors.js';
 
 const USER_STATUSES = ['backlog', 'ready', 'in_progress', 'blocked', 'done'];
 
@@ -30,7 +30,15 @@ const COLUMN_ACCENT = {
   verified: 'text-aurora-violet',
 };
 
-function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockDraft, setBlockDraft, move }) {
+function VerifyChip({ result }) {
+  if (!result) return null;
+  if (result.status === 'verified') return <Badge tone="mint"><ShieldCheck size={10} /> Verified</Badge>;
+  if (result.status === 'partially_verified') return <Badge tone="amber"><ShieldAlert size={10} /> Partially verified</Badge>;
+  if (result.status === 'insufficient_evidence') return <Badge tone="rose"><ShieldAlert size={10} /> Needs evidence</Badge>;
+  return null;
+}
+
+function TaskCard({ task, verifyResult, taskTitleById, selected, onSelect, onTaskPatch, onPreviewCode, blockDraft, setBlockDraft, move }) {
   const isBlocking = blockDraft.id === task.id;
   return (
     <div
@@ -51,7 +59,19 @@ function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockD
           <Badge>{task.phase}</Badge>
           {task.proofRequired && <Badge tone="amber">Proof</Badge>}
           {task.starterCodeAvailable && <Badge tone="cyan"><Code2 size={10} /> Starter</Badge>}
+          <VerifyChip result={verifyResult} />
         </div>
+        {/* Dependency gate: the build order is real — a task whose
+            prerequisites are open cannot be the next move. */}
+        {task.depsMet === false && !['done', 'verified'].includes(task.status) && (
+          <p className="mt-1.5 flex items-start gap-1 text-[11.5px] leading-snug text-fg-muted">
+            <Lock size={11} className="mt-0.5 shrink-0" />
+            Waiting on: {(task.dependsOn || []).map((id) => taskTitleById.get(id)).filter(Boolean).slice(0, 2).join(' · ') || 'earlier tasks'}
+          </p>
+        )}
+        {verifyResult?.remediation && verifyResult.status !== 'verified' && selected && (
+          <p className="mt-1.5 text-[11.5px] leading-snug text-warn">{verifyResult.remediation.title}</p>
+        )}
         {task.status === 'blocked' && task.blockerReason && (
           <div className="mt-2 rounded-lg border border-rose-400/25 bg-rose-500/10 px-2.5 py-1.5 text-[11.5px] leading-relaxed text-danger">
             Blocked: {task.blockerReason}
@@ -118,6 +138,8 @@ function TaskCard({ task, selected, onSelect, onTaskPatch, onPreviewCode, blockD
 
 export default function WorkspaceTaskBoard({ plan, selected, onSelect, onTaskPatch, onPreviewCode }) {
   const cols = tasksByColumn(plan);
+  const verification = useMemo(() => taskVerificationOf(plan), [plan]);
+  const taskTitleById = useMemo(() => new Map((plan?.tasks || []).map((t) => [t.id, t.title])), [plan]);
   const [blockDraft, setBlockDraft] = useState({ id: null, reason: '' });
   const [showEmpty, setShowEmpty] = useState(false);
 
@@ -179,6 +201,8 @@ export default function WorkspaceTaskBoard({ plan, selected, onSelect, onTaskPat
               <div className={`space-y-2.5 overflow-y-auto pr-1 ${COLUMN_SCROLL}`}>
                 {cols[col.id].map((t) => (
                   <TaskCard
+                    verifyResult={verification.map.get(t.id) || null}
+                    taskTitleById={taskTitleById}
                     key={t.id}
                     task={t}
                     selected={selected?.id === t.id}

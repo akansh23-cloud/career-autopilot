@@ -18,6 +18,7 @@ import { planFileTree } from './fileTreePlanner.js';
 import { planTasks } from './taskPlanner.js';
 import { planTests, planDeployment, planProof, planPatent } from './proofAndPlanners.js';
 import { calculateProgress, currentPhase, nextBestAction, detectRisks, refreshRoadmapStatus } from './progressCalculator.js';
+import { annotateDependencyState } from './dependencyPlanner.js';
 import { validateWorkspacePlan } from './workspaceValidator.js';
 
 const PLAN_VERSION = 1;
@@ -128,6 +129,7 @@ export function buildWorkspacePlan({ project = {}, architecture = null, existing
 /* Refresh all derived fields (progress, phase status, next action, risks). */
 export function recalculatePlan(plan = {}, { now } = {}) {
   const p = { ...obj(plan) };
+  p.tasks = annotateDependencyState(arr(p.tasks));
   p.progress = calculateProgress(p);
   p.roadmap = refreshRoadmapStatus(p);
   p.currentPhase = currentPhase(p);

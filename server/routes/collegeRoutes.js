@@ -27,6 +27,7 @@
    ============================================================ */
 import { z } from 'zod';
 import collegeObservability from '../utils/collegeObservability.js';
+import { recommendInterventions, measureInterventionOutcome, snapshotCohort } from '../utils/interventionEngine.js';
 import placement from '../utils/placementOutcomes.js';
 import trends from '../utils/collegeTrends.js';
 import { parseRosterCsv, isValidJoinCodeFormat, ROSTER_MAX_ROWS } from '../utils/collegeOnboarding.js';
@@ -730,12 +731,102 @@ export function registerCollegeRoutes(app, deps = {}) {
   });
 
   /* ---- Tasks: REAL assignments with per-student completion ---- */
+  const interventionAssignSchema = z.object({
+    ruleId: z.string().max(80).optional().default(''),
+    type: z.string().max(80).optional().default(''),
+    title: z.string().min(3).max(200),
+    gapLabel: z.string().max(240).optional().default(''),
+    description: z.string().max(1200).optional().default(''),
+    durationDays: z.number().int().min(1).max(60).optional().default(14),
+    expectedOutcomes: z.array(z.string().max(160)).max(10).optional().default([]),
+    studentIds: z.array(z.string().max(64)).min(1).max(400),
+  });
+
   const taskSchema = z.object({
     studentIds: z.array(z.string().max(40)).min(1).max(500),
     title: z.string().min(3).max(200),
     description: z.string().max(2000).optional().default(''),
     dueAt: z.string().max(40).optional().nullable().default(null),
   });
+  /* =====================================================================
+     INTERVENTION OS — prescriptive, cohort-scoped, outcome-measured
+     ===================================================================== */
+
+  /* Deterministic recommendations from the SAME scoped rows the command
+     center reads: gap -> auto-detected cohort -> reviewable member list ->
+     labelled expected outcomes. Nothing here is AI-ranked. */
+  app.get('/api/college/interventions/recommendations', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const { rows } = await db.collegeStudentsDeep({ collegeId });
+    const scored = attachReadiness(rows);
+    const out = recommendInterventions({ rows: scored, now: Date.now() });
+    res.json({ ok: true, collegeId, ...out, db: db.dbEnabled() });
+  });
+
+  /* Assign: coordinator reviewed the cohort and accepted. Reuses the
+     EXISTING task + notification infrastructure (students see it in
+     /api/my/tasks like any placement-cell task) and stores a baseline
+     snapshot so the outcome can be measured honestly later. */
+  app.post('/api/college/interventions/assign', ...guard, validate(interventionAssignSchema), async (req, res) => {
+    if (!db.dbEnabled()) return res.json({ ok: false, reason: 'db_off', message: 'Intervention assignment needs the database.' });
+    const collegeId = callerCollegeId(req);
+    const { rows } = await db.collegeStudentsDeep({ collegeId });
+    const scored = attachReadiness(rows);
+    const inScope = new Set(scored.map((s) => String(s.id)));
+    const targets = req.body.studentIds.filter((id) => inScope.has(String(id)));
+    if (!targets.length) return res.status(404).json({ ok: false, error: 'no_targets_in_scope' });
+
+    const dueAt = new Date(Date.now() + Math.max(1, Math.min(60, req.body.durationDays)) * 86400000).toISOString();
+    const task = await db.createCollegeTask({
+      collegeId, title: req.body.title,
+      description: `${req.body.description || req.body.gapLabel || ''}\n\nIntervention: ${req.body.type || 'Sprint'} - target outcomes: ${(req.body.expectedOutcomes || []).join('; ')}`.trim().slice(0, 2000),
+      dueAt, studentIds: targets, createdByEmail: me(req).email,
+    });
+    if (!task.ok) return res.status(400).json({ ...task, db: db.dbEnabled() });
+
+    const baseline = snapshotCohort(scored, targets);
+    const created = await db.createCollegeIntervention({
+      collegeId, ruleId: req.body.ruleId || '', type: req.body.type || '', title: req.body.title,
+      gapLabel: req.body.gapLabel || '', description: req.body.description || '',
+      durationDays: req.body.durationDays, expectedOutcomes: req.body.expectedOutcomes || [],
+      studentIds: targets, baseline, taskId: task.id || '', createdByEmail: me(req).email,
+    });
+    await db.createNotifications({
+      collegeId, userIds: targets, type: 'task',
+      title: `New intervention from your placement cell: ${req.body.title}`.slice(0, 200),
+      body: (req.body.description || 'Open your tasks to see the details.').slice(0, 500),
+      actionView: 'readiness', createdByEmail: me(req).email,
+    }).catch(() => {});
+    logger?.info?.('intervention.created', { collegeId, ruleId: req.body.ruleId, cohort: targets.length });
+    res.json({ ok: true, id: created.id || null, taskId: task.id || null, assigned: targets.length, dueAt, db: true });
+  });
+
+  /* List assigned interventions with LIVE outcome measurement: baseline vs
+     the students' current state + the linked task's completion stats. */
+  app.get('/api/college/interventions', ...guard, async (req, res) => {
+    const collegeId = callerCollegeId(req);
+    const [records, deep, tasks] = await Promise.all([
+      db.listCollegeInterventions({ collegeId }),
+      db.collegeStudentsDeep({ collegeId }),
+      db.listCollegeTasks({ collegeId }).catch(() => []),
+    ]);
+    const scored = attachReadiness(deep.rows || []);
+    const taskById = new Map((tasks || []).map((t) => [String(t.id), t]));
+    const interventions = records.map((r) => {
+      const t = taskById.get(String(r.taskId)) || null;
+      const a = t ? Number(t.assigned ?? t.assignedCount ?? 0) : 0;
+      const d = t ? Number(t.done ?? t.completedCount ?? 0) : 0;
+      const taskStats = t ? { assigned: a, done: d, completionRate: a ? Math.round((d / a) * 100) : 0 } : null;
+      return {
+        id: r.id, ruleId: r.ruleId, type: r.type, title: r.title, gapLabel: r.gapLabel,
+        description: r.description, durationDays: r.durationDays, expectedOutcomes: r.expectedOutcomes,
+        cohortSize: (r.studentIds || []).length, status: r.status, createdAt: r.createdAt, taskId: r.taskId,
+        outcome: measureInterventionOutcome({ before: r.baseline, afterRows: scored, taskStats }),
+      };
+    });
+    res.json({ ok: true, interventions, count: interventions.length, db: db.dbEnabled() });
+  });
+
   app.post('/api/college/tasks', ...guard, validate(taskSchema), async (req, res) => {
     if (!db.dbEnabled()) return res.json({ ok: false, reason: 'db_off', message: 'Task assignment needs the database.' });
     const collegeId = callerCollegeId(req);

@@ -3,7 +3,7 @@ import { Briefcase, ChevronDown, FileText, Sparkles, AlertTriangle, CheckCircle2
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Skeleton, EmptyState, Field } from '../components/ui/kit.jsx';
 import ResumeTailor from './ResumeTailor.jsx';
-import { ResumeApi } from '../lib/api.js';
+import { api, ResumeApi } from '../lib/api.js';
 import { extractResumeText, ACCEPT } from '../lib/resume.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
 import { clearStoredResume, getStoredResume, queueResumeJobSearch, saveResumeAnalysis, saveStoredResume } from '../lib/resumeStore.js';
@@ -64,6 +64,74 @@ function BreakdownBar({ label, value, max }) {
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone, transition: 'width .8s ease' }} />
       </div>
     </div>
+  );
+}
+
+
+/* ============================================================
+   EVIDENCE-BACKED RECOMMENDATIONS  (Resume OS V2)
+   ------------------------------------------------------------
+   The three-type classification from /api/resume/evidence-gaps:
+   TYPE 1  verified evidence exists but the resume never shows it
+   TYPE 2  wording is weak (deterministic scorer findings)
+   TYPE 3  role-critical evidence is missing -> build it
+   Every card carries provenance or an honest "no evidence yet";
+   TYPE 3 routes straight into the project recommender with the
+   real skill gap, closing the resume -> project loop.
+   ============================================================ */
+function EvidenceGapsPanel({ resumeText, targetRole, analysis, go }) {
+  const [state, setState] = useState({ loading: false, error: '', gaps: null });
+
+  useEffect(() => {
+    if (!analysis) { setState({ loading: false, error: '', gaps: null }); return; }
+    let alive = true;
+    setState((p) => ({ ...p, loading: true, error: '' }));
+    api.post('/api/resume/evidence-gaps', {
+      targetRole: targetRole || '',
+      resumeText: resumeText || '',
+      resumeSkills: analysis.matchedKeywords || [],
+    })
+      .then((r) => { if (alive) setState({ loading: false, error: '', gaps: r?.ok ? r : null }); })
+      .catch((e) => { if (alive) setState({ loading: false, error: e?.message || '', gaps: null }); });
+    return () => { alive = false; };
+  }, [analysis, resumeText, targetRole]);
+
+  if (!analysis) return null;
+  if (state.loading) return <SectionCard title="Evidence-backed recommendations"><div className="flex items-center gap-2 py-4 text-sm text-fg-muted"><Loader2 size={15} className="animate-spin" /> Classifying against your verified evidence…</div></SectionCard>;
+  const recs = state.gaps?.recommendations || [];
+  if (!recs.length) return null;
+
+  const TYPE_META = {
+    evidence_exists: { label: 'Verified — add it to the resume', tone: 'mint' },
+    weak_wording: { label: 'Wording is weak', tone: 'amber' },
+    evidence_missing: { label: 'Evidence missing — build it', tone: 'violet' },
+  };
+  return (
+    <SectionCard title="Evidence-backed recommendations" >
+      <p className="mb-3 text-[12.5px] text-fg-secondary">
+        Classified against your verified skills, GitHub proof and the {state.gaps.targetRole} role requirements. Nothing below invents metrics or experience.
+      </p>
+      <div className="space-y-2">
+        {recs.slice(0, 8).map((r, i) => (
+          <div key={i} className="rounded-xl border border-subtle bg-surface-1 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={TYPE_META[r.type]?.tone || 'default'}>{TYPE_META[r.type]?.label || r.type}</Badge>
+              {r.priority === 'high' && <Badge tone="amber">High impact</Badge>}
+            </div>
+            <p className="mt-1.5 text-[13px] font-medium text-fg">{r.title}</p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-fg-secondary">{r.explanation}</p>
+            {r.provenance?.projectTitle && (
+              <p className="mt-1 text-[11.5px] text-fg-muted">Evidence: project “{r.provenance.projectTitle}”{r.provenance.taskIds?.length ? ` · ${r.provenance.taskIds.length} verified task(s)` : ''}</p>
+            )}
+            {r.cta?.view === 'projectstudio' && (
+              <Button size="sm" variant="soft" className="mt-2" onClick={() => go?.('projectstudio')}>
+                {r.cta.label || 'Build evidence'}
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+    </SectionCard>
   );
 }
 
@@ -335,6 +403,7 @@ export default function Resume({ go }) {
                   </div>
                 </SectionCard>
               )}
+              <EvidenceGapsPanel resumeText={resume} targetRole={scoredRole !== 'General' ? scoredRole : role} analysis={result} go={go} />
               {result.skillEvidence?.length > 0 && (
                 <SectionCard title="Skill evidence">
                   <div className="flex flex-wrap gap-2">

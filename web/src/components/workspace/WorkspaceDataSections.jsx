@@ -242,6 +242,31 @@ export function WorkspaceProof({ plan, selected, onSelect, onVerify, verifying }
         </div>
       </Card>
 
+      {/* ---- Verification V3: task-level matrix ----
+          The proof items above prove the PROJECT; this proves the TASKS.
+          Partially verified names the exact missing evidence, so "what do I
+          submit next?" always has one concrete answer. */}
+      {plan?.taskVerification?.counts && (
+        <Card className="mt-4 p-5">
+          <div className="mb-1 flex items-center gap-2 text-[13.5px] font-semibold text-fg">
+            <ShieldCheck size={15} className="text-ok" /> Task verification
+          </div>
+          <p className="mb-3 text-[12.5px] text-fg-secondary">
+            {plan.taskVerification.counts.verified} task(s) fully verified · {plan.taskVerification.counts.partiallyVerified} partially verified · {plan.taskVerification.counts.pending + plan.taskVerification.counts.insufficientEvidence} awaiting evidence.
+            {plan.taskVerification.counts.promotedTasks > 0 && ` ${plan.taskVerification.counts.promotedTasks} task(s) were promoted to Verified this run.`}
+          </p>
+          {(plan.taskVerification.nextActions || []).length > 0 && (
+            <div className="space-y-1.5">
+              {plan.taskVerification.nextActions.map((a, i) => (
+                <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-warn">
+                  <span className="font-medium text-fg">Next:</span> {a.title} — {a.note}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
       <div className="mt-4 space-y-1.5">
         {active.map((p) => (
           <ItemRow
