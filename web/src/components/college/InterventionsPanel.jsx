@@ -36,7 +36,7 @@ function ProgressBar({ pct, overdue }) {
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-1">
         <div
-          className={`h-full rounded-full ${overdue ? 'bg-amber-glow' : 'bg-gradient-to-r from-aurora-indigo/60 to-aurora-mint'}`}
+          className={`h-full rounded-full ${overdue ? 'bg-amber-glow' : 'bg-aurora-mint'}`}
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />
       </div>

@@ -97,7 +97,7 @@ export function ModeBanner({ mode, aiProvider, warnings = [] }) {
 
 export function NotLegalAdvice({ text }) {
   return (
-    <p className="text-[11px] leading-relaxed text-amber-glow/80">
+    <p className="text-[11px] leading-relaxed text-warn/90">
       {text || 'Not legal advice and not a final patent application — an invention disclosure draft for faculty / IP-cell / patent-agent review.'}
     </p>
   );

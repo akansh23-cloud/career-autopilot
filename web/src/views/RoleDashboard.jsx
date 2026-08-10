@@ -76,7 +76,7 @@ function WeeklyMissionPanel({ go }) {
           const meta = MISSION_STYLE[m.type] || MISSION_STYLE.project;
           const Icon = meta.icon;
           return (
-            <div key={m.id} className={`rounded-xl border p-3 transition ${m.done ? 'border-aurora-mint/25 bg-aurora-mint/8' : 'border-subtle bg-surface-1 hover:border-strong'}`}>
+            <div key={m.id} className={`rounded-xl border p-3 transition ${m.done ? 'border-aurora-mint/25 bg-aurora-mint/10' : 'border-subtle bg-surface-1 hover:border-strong'}`}>
               <div className="flex items-start gap-3">
                 <button onClick={() => toggle(m)} className={`mt-0.5 ${m.done ? 'text-aurora-mint' : 'text-fg-muted hover:text-fg'}`}>{m.done ? <CheckCircle2 size={18} /> : <Circle size={18} />}</button>
                 <div className="min-w-0 flex-1">
@@ -111,7 +111,7 @@ function ProfileAdoptionPanel({ go }) {
   return (
     <SectionCard
       title="Grow your Career Proof Profile"
-      action={<button onClick={() => go('careerprofile')} className="text-xs text-aurora-cyan hover:underline">Open profile</button>}
+      action={<button onClick={() => go('careerprofile')} className="text-xs text-brand hover:underline">Open profile</button>}
     >
       <div className="grid gap-4 md:grid-cols-[auto,1fr] md:items-center">
         <div className="flex items-center gap-4">
@@ -125,12 +125,12 @@ function ProfileAdoptionPanel({ go }) {
         <div className="space-y-2">
           {suggestions.length ? suggestions.map((s, i) => (
             <button key={i} onClick={() => { go(s.cta); if (s.editor) requestCareerProfileEditor(s.editor); }} className="lift flex w-full items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-left text-[13px] text-fg hover:border-strong">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Sparkles size={14} /></span>
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Sparkles size={14} /></span>
               <span className="flex-1">{s.text}</span>
               <ArrowRight size={14} className="text-fg-muted" />
             </button>
           )) : (
-            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 px-3 py-2.5 text-[13px] text-ok">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
+            <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 px-3 py-2.5 text-[13px] text-ok">Your profile is fully set up — keep your streak going and stay on the leaderboards.</div>
           )}
         </div>
       </div>
@@ -139,7 +139,7 @@ function ProfileAdoptionPanel({ go }) {
           .filter(([, , id]) => canSeeScreen(getCurrentEffectiveRole(), id))
           .map(([Icon, label, id]) => (
           <button key={id} onClick={() => go(id)} className="lift flex items-center gap-2.5 rounded-xl border border-subtle bg-surface-1 px-3 py-2.5 text-sm text-fg hover:border-strong">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={15} /></span>
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Icon size={15} /></span>
             {label}
           </button>
         ))}
@@ -199,7 +199,7 @@ function StudentDashboard({ go }) {
       {warnings.length > 0 && (
         <div className="mt-4 space-y-2">
           {warnings.slice(0, 2).map(({ p, c }) => (
-            <div key={p.id} className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-4 py-2.5 text-[13px] text-amber-100">
+            <div key={p.id} className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-4 py-2.5 text-[13px] text-warn">
               <span className="font-medium text-fg">{p.title}:</span> {c.warning}
             </div>
           ))}
@@ -215,7 +215,7 @@ function StudentDashboard({ go }) {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Top skill XP" action={<button onClick={() => go('skillsxp')} className="text-xs text-aurora-cyan hover:underline">View all</button>}>
+        <SectionCard title="Top skill XP" action={<button onClick={() => go('skillsxp')} className="text-xs text-brand hover:underline">View all</button>}>
           {skillXP.length ? (
             <div className="space-y-2.5">
               {skillXP.slice(0, 4).map((s) => <XpBar key={s.skillName} skill={s} />)}
@@ -226,7 +226,7 @@ function StudentDashboard({ go }) {
           )}
         </SectionCard>
 
-        <SectionCard title="Verified skill badges" action={<button onClick={() => go('careerprofile')} className="text-xs text-aurora-cyan hover:underline">Career Profile</button>}>
+        <SectionCard title="Verified skill badges" action={<button onClick={() => go('careerprofile')} className="text-xs text-brand hover:underline">Career Profile</button>}>
           <VerifiedBadgePanel badges={badges} onOpen={setBadgeOpen} onViewAll={() => go('skillsxp')} limit={16} />
         </SectionCard>
       </div>
@@ -238,7 +238,7 @@ function StudentDashboard({ go }) {
               .filter(([, , id]) => canSeeScreen(effRole, id))
               .map(([Icon, label, id]) => (
               <button key={id} onClick={() => go(id)} className="lift flex items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-4 py-3 text-sm text-fg hover:border-strong">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={16} /></span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Icon size={16} /></span>
                 {label}<ArrowRight size={15} className="ml-auto text-fg-muted" />
               </button>
             ))}

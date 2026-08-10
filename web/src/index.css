@@ -3,148 +3,125 @@
 @tailwind utilities;
 
 /* ============================================================
-   PROVENANCE — design system (v3)
-   Archival security-print aesthetic for a verified proof-of-work
-   platform: deep green-cast ink, engraved guilloché line-work,
-   print-proof registration marks, serial-number typography, and
-   a holographic verification foil reserved for CTAs, brand text
-   and "verified" moments.
-   Class NAMES preserved so all views inherit automatically.
+   CAREER AUTOPILOT — design system (v4)
+   ------------------------------------------------------------
+   A restrained, enterprise-grade light system: white working
+   surfaces on a near-white slate page, one institutional indigo
+   as the only brand color, quiet semantic inks, 1px borders,
+   small radii and minimal shadow. Typography is a single Inter
+   stack with hierarchy from size/weight, plus JetBrains Mono
+   for identifiers and metrics.
+
+   All legacy class NAMES (.panel, .gradient-border, .btn-primary,
+   .text-aurora, .lift, …) are preserved so every view inherits
+   the new system automatically; their VALUES are redefined here.
    ============================================================ */
 :root {
-  /* color-scheme is now set on <html> by lib/theme.js per resolved theme. */
-  --shell-sidebar: 268px;
-  --shell-topbar: 66px;
-  --foil-a: #8DE8C0;   /* jade facet */
-  --foil-b: #7DDCF5;   /* ice facet */
-  --foil-c: #BCA8FF;   /* lilac facet — primary */
-  --foil-d: #F0A6D8;   /* rose facet */
-  --gold: #EAC97C;     /* champagne foil */
-  --teal: #6EE0F2;
-  --mint: #57E6A8;
-  --paper: #EDF2EE;
-  /* cursor position (updated by Atmosphere) */
-  --cursor-x: 50%;
-  --cursor-y: 22%;
+  --shell-sidebar: 248px;
+  --shell-sidebar-rail: 64px;
+  --shell-topbar: 56px;
 }
 
 /* ============================================================
    THEME TOKENS — LIGHT IS THE BASE
-   ------------------------------------------------------------
-   These used to be inverted: dark lived on `:root` and light was
-   an `html.light` override applied by JS. That made dark the true
-   default of the stylesheet, so any moment the class was missing
-   — first paint before lib/theme.js ran, a JS error, a `system`
-   preference on a dark OS — rendered the product dark.
-
-   Now `:root` IS light. Dark is opt-in under `html.dark` and is
-   currently never applied (see lib/theme.js: the app ships light
-   only). The dark block is kept, complete and correct, so the day
-   a theme switcher is added it is one class away — but nothing
-   reaches it by accident, and there is no dark first paint to
-   prevent.
-
-   `html.light` is retained as an explicit alias of the base so
-   any selector written against it keeps working.
+   `:root` is light; dark is opt-in under `html.dark` and is not
+   currently reachable (lib/theme.js ships light only). The dark
+   block is kept correct so a future switcher is one class away.
    ============================================================ */
-
 :root,
 html.light {
   /* --- surfaces --- */
-  --bg-base:        #F7F8F6;
+  --bg-base:        #F8FAFC;
   --bg-elevated:    #FFFFFF;
-  --bg-sunken:      #EEF1EC;
-  --surface-1:      rgba(11, 14, 12, 0.035);
-  --surface-2:      rgba(11, 14, 12, 0.07);
-  --surface-hover:  rgba(11, 14, 12, 0.05);
+  --bg-sunken:      #F1F5F9;
+  --surface-1:      #F8FAFC;
+  --surface-2:      #F1F5F9;
+  --surface-hover:  #F1F5F9;
 
-  /* --- form controls ---
-     Deliberately OPAQUE, not a translucent tint. Native <select>
-     popups, <option> and <optgroup> are painted by the browser
-     outside the page's stacking context: a translucent background
-     there renders as an unreadable smear over whatever is behind
-     the menu. Every field, menu and dropdown surface reads these. */
+  /* --- form controls — deliberately OPAQUE ---
+     Native <select> popups, <option> and <optgroup> are painted by the
+     browser outside the page's stacking context: any translucency there
+     renders as an unreadable smear. Every field/menu surface reads these. */
   --field-bg:        #FFFFFF;
-  --field-bg-subtle: #F3F5F2;
-  --field-bg-hover:  #EEF1EC;
-  /* 3.06:1 against both #FFFFFF and #F7F8F6 — WCAG 1.4.11 requires 3:1 for
-     the boundary of a UI component. The previous #C9D0C9 measured 1.57:1,
-     i.e. the 'visible neutral border' on every select was not actually
-     visible to the standard. */
-  --field-border:    #848E85;
-  --field-text:      #141815;
-  --field-selected-bg:   #E9E4FF;
-  --field-selected-text: #2A2158;
+  --field-bg-subtle: #F8FAFC;
+  --field-bg-hover:  #F1F5F9;
+  /* 3.42:1 against white / 3.27:1 against the page — clears the WCAG 1.4.11
+     3:1 component-boundary requirement on both surfaces. */
+  --field-border:    #7E8CA0;
+  --field-text:      #0F172A;
+  --field-selected-bg:   #EEF2FF;
+  --field-selected-text: #3730A3;
   --menu-bg:         #FFFFFF;
 
   /* --- text --- */
-  --text-primary:   #141815;
-  --text-secondary: rgba(20, 24, 21, 0.70);
-  --text-muted:     rgba(20, 24, 21, 0.50);
+  --text-primary:   #0F172A;
+  --text-secondary: #475569;
+  --text-muted:     #64748B;
   --text-inverse:   #FFFFFF;
 
   /* --- lines --- */
-  --border-subtle:  rgba(11, 14, 12, 0.10);
-  --border-strong:  rgba(11, 14, 12, 0.20);
+  --border-subtle:  #E2E8F0;
+  --border-strong:  #CBD5E1;
 
-  /* Foil lilac sits at roughly 2:1 on white — brand text and solids
-     come down to clear AA (4.5:1) for body copy. */
-  --brand-text:     #5B47C4;
-  --brand-solid:    #6B57E0;
-  --ok:             #0B7A4E;   /* 4.12:1 on white was below AA for body text */
-  --info:           #0A6C86;   /* informational (was pale cyan #C3F0FA on dark) */
-  --warn:           #8A6A12;
-  --danger:         #B3261E;
+  /* --- brand + semantic inks (AA on white for text use) --- */
+  --brand-text:     #4338CA;
+  --brand-solid:    #4F46E5;
+  --brand-hover:    #4338CA;
+  --brand-soft:     #EEF2FF;
+  --ok:             #047857;
+  --info:           #0369A1;
+  --warn:           #92400E;
+  --danger:         #B91C1C;
 
-  --shadow-card:    0 18px 40px -28px rgba(20, 24, 21, 0.35);
-  --shadow-lift:    0 26px 60px -30px rgba(20, 24, 21, 0.42);
-  --scrim:          rgba(20, 24, 21, 0.46);
-  --scroll-thumb:   #C6CCC6;
+  --shadow-card:    0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-lift:    0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 8px 24px -12px rgba(15, 23, 42, 0.18);
+  --scrim:          rgba(15, 23, 42, 0.45);
+  --scroll-thumb:   #CBD5E1;
 }
 
 html.dark {
-  --bg-base:        #070908;
-  --bg-elevated:    #101413;
-  --bg-sunken:      #0B0E0C;
-  --surface-1:      rgba(255, 255, 255, 0.055);
-  --surface-2:      rgba(255, 255, 255, 0.09);
-  --surface-hover:  rgba(255, 255, 255, 0.06);
+  --bg-base:        #0B1120;
+  --bg-elevated:    #111827;
+  --bg-sunken:      #0B1120;
+  --surface-1:      #172033;
+  --surface-2:      #1E293B;
+  --surface-hover:  #1E293B;
 
-  --field-bg:        #101413;
-  --field-bg-subtle: #0B0E0C;
-  --field-bg-hover:  #1A211D;
-  --field-border:    rgba(255, 255, 255, 0.18);
-  --field-text:      #EDF2EE;
-  --field-selected-bg:   #2A2450;
-  --field-selected-text: #FFFFFF;
-  --menu-bg:         #101413;
+  --field-bg:        #111827;
+  --field-bg-subtle: #0B1120;
+  --field-bg-hover:  #1E293B;
+  --field-border:    #475569;
+  --field-text:      #F1F5F9;
+  --field-selected-bg:   #312E81;
+  --field-selected-text: #E0E7FF;
+  --menu-bg:         #111827;
 
-  --text-primary:   #EDF2EE;
-  --text-secondary: rgba(237, 242, 238, 0.72);
-  --text-muted:     rgba(237, 242, 238, 0.48);
-  --text-inverse:   #081009;
+  --text-primary:   #F1F5F9;
+  --text-secondary: #CBD5E1;
+  --text-muted:     #94A3B8;
+  --text-inverse:   #0F172A;
 
-  --border-subtle:  rgba(255, 255, 255, 0.08);
-  --border-strong:  rgba(255, 255, 255, 0.16);
+  --border-subtle:  #1E293B;
+  --border-strong:  #334155;
 
-  --brand-text:     #BCA8FF;
-  --brand-solid:    #7C6BF2;
-  --ok:             #57E6A8;
-  --info:           #6EE0F2;
-  --warn:           #EAC97C;
-  --danger:         #FF8A8A;
+  --brand-text:     #A5B4FC;
+  --brand-solid:    #6366F1;
+  --brand-hover:    #4F46E5;
+  --brand-soft:     #1E1B4B;
+  --ok:             #34D399;
+  --info:           #38BDF8;
+  --warn:           #FBBF24;
+  --danger:         #F87171;
 
-  --shadow-card:    0 30px 70px -34px rgba(0, 0, 0, 0.9);
-  --shadow-lift:    0 40px 90px -34px rgba(0, 0, 0, 0.95);
-  --scrim:          rgba(0, 0, 0, 0.72);
-  --scroll-thumb:   #2b342e;
+  --shadow-card:    0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-lift:    0 12px 32px -12px rgba(0, 0, 0, 0.6);
+  --scrim:          rgba(2, 6, 23, 0.7);
+  --scroll-thumb:   #334155;
 }
 
 * { box-sizing: border-box; }
-/* html anchors a full-viewport height for the fixed gradient backdrops, while
-   body and #root use min-height so tall pages (e.g. the Admin console) grow with
-   their content and the document scrolls with a single scrollbar — no clamped
-   container clipping content below the fold. */
+/* html anchors a full-viewport height; body/#root use min-height so tall pages
+   grow with content and the document scrolls with a single scrollbar. */
 html { height: 100%; }
 html, body, #root { min-height: 100%; }
 html { scroll-behavior: smooth; scrollbar-gutter: stable; }
@@ -154,222 +131,129 @@ body {
   overflow-x: hidden;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: 'Switzer', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
 h1, h2, h3, h4, .font-display {
-  font-family: 'Zodiak', Georgia, serif;
-  letter-spacing: -0.015em;
-  font-weight: 700;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  font-weight: 600;
 }
 
-/* White-on-lilac selection is ~1.9:1 on paper. Use ink on a light foil wash. */
-::selection { background: rgba(188,168,255,0.42); color: var(--text-primary); }
-html.dark ::selection { background: rgba(188,168,255,0.34); color: #fff; }
+/* Metrics and counters align on tabular figures. */
+.tabular, .font-display { font-variant-numeric: tabular-nums; }
 
-/* ---- Single premium scrollbar ---- */
-::-webkit-scrollbar { width: 11px; height: 11px; }
+::selection { background: rgba(79, 70, 229, 0.18); color: var(--text-primary); }
+html.dark ::selection { background: rgba(99, 102, 241, 0.35); color: #fff; }
+
+/* ---- Neutral scrollbar ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb);
   border: 3px solid var(--bg-base);
   border-radius: 999px;
 }
-::-webkit-scrollbar-thumb:hover { background: linear-gradient(#3d4a42, #232b26); }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 
+/* Visible keyboard focus everywhere interactive, without mouse-focus noise. */
+:focus-visible {
+  outline: 2px solid var(--brand-solid);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 @layer components {
-  /* Frosted utility surface */
+  /* Utility surface (formerly frosted glass) — now a solid quiet panel. */
   .glass {
-    background: var(--surface-1);
-    backdrop-filter: blur(16px);
+    background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
   }
 
-  /* Archive-plate surface — matte ink with a cool top light */
+  /* Standard card surface. */
   .panel {
     position: relative;
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: 0.9rem;
+    border-radius: 12px;
     box-shadow: var(--shadow-card);
   }
 
-  /* Hairline foil-edged card — the credential plate */
+  /* Legacy "credential plate" card — now the same clean card. The name is
+     load-bearing across ~12 files, the foil pseudo-element is gone. */
   .gradient-border {
     position: relative;
-    border-radius: 0.9rem;
-    background: var(--bg-elevated) padding-box;
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
     box-shadow: var(--shadow-card);
   }
-  /* The foil edge fades to rgba(255,255,255,.05) at its tail — invisible
-     against paper, which left cards edgeless on light. The light edge below
-     keeps the foil hue at the head but lands on a neutral ink hairline, so a
-     card always has a readable boundary. Dark keeps the original foil. */
-  .gradient-border::before {
-    content: '';
-    position: absolute; inset: 0;
-    border-radius: inherit; padding: 1px;
-    background: linear-gradient(150deg, rgba(107,87,224,0.38), rgba(60,150,180,0.20) 36%, rgba(20,24,21,0.14) 62%, rgba(20,24,21,0.12) 82%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude;
-    pointer-events: none;
-  }
-  html.dark .gradient-border::before {
-    background: linear-gradient(150deg, rgba(188,168,255,0.55), rgba(125,220,245,0.22) 36%, rgba(141,232,192,0.10) 62%, rgba(255,255,255,0.05) 82%);
-  }
 
-  /* Holographic foil text */
-  .text-aurora {
-    background: linear-gradient(105deg,#A9F0CE 0%,#8FE3F7 32%,#C9B8FF 62%,#F2B5DF 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  /* Animated shifting foil text */
+  /* Former holographic foil text — solid brand ink, AA on white. */
+  .text-aurora,
   .text-flow {
-    background: linear-gradient(105deg,#A9F0CE,#8FE3F7,#C9B8FF,#F2B5DF,#A9F0CE);
-    background-size: 250% 100%;
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: text-flow 8s linear infinite;
+    color: var(--brand-text);
   }
 
-  /* Primary action — holographic foil seal with ink text + light sweep */
+  /* Primary action — one solid institutional indigo. */
   .btn-primary {
-    position: relative; overflow: hidden;
-    color: #081009;
-    background-image: linear-gradient(105deg,#8DE8C0 0%,#7DDCF5 30%,#BCA8FF 62%,#F0A6D8 100%);
-    background-size: 160% 100%;
-    background-position: 0% 50%;
-    transition: background-position .6s cubic-bezier(.2,.7,.2,1);
-    box-shadow: 0 14px 38px -12px rgba(124,107,242,0.55), inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -8px 18px -10px rgba(30,20,80,0.45);
+    position: relative;
+    color: #FFFFFF;
+    background-color: var(--brand-solid);
+    box-shadow: var(--shadow-card);
+    transition: background-color .15s ease, box-shadow .15s ease;
   }
-  .btn-primary:hover { background-position: 100% 50%; }
-  .btn-primary::after {
-    content: ''; position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,0.7) 50%, transparent 68%);
-    mix-blend-mode: screen;
-    transform: translateX(-130%);
-    transition: transform .75s cubic-bezier(.2,.7,.2,1);
-  }
-  .btn-primary:hover::after { transform: translateX(130%); }
+  .btn-primary:hover { background-color: var(--brand-hover); }
+  .btn-primary:active { background-color: #3730A3; }
 
-  .lift { transition: transform .4s cubic-bezier(.2,.7,.2,1), box-shadow .4s, border-color .4s; }
-  .lift:hover { transform: translateY(-5px); }
+  /* Interactive-card affordance: border + shadow only, no levitation. */
+  .lift { transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  .lift:hover { border-color: var(--border-strong); box-shadow: var(--shadow-lift); }
 
-  /* Cursor spotlight for cards (parent gets --mx/--my via JS; defaults centered) */
-  .spotlight { position: relative; --mx: 50%; --my: 50%; }
-  .spotlight::after {
-    content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-    background: radial-gradient(420px circle at var(--mx) var(--my), rgba(188,168,255,0.14), transparent 42%);
-    opacity: 0; transition: opacity .4s; z-index: 1;
-  }
-  .spotlight:hover::after { opacity: 1; }
-
-  /* Pulsing foil ring (opt-in) */
-  .glow-ring { animation: glow-pulse 3.4s ease-in-out infinite; }
-
-  /* Print-proof registration marks (crop ticks) */
-  .ticks::before, .ticks::after {
-    content: ''; position: absolute; width: 13px; height: 13px; pointer-events: none; z-index: 2;
-    border-color: rgba(188,168,255,0.55); border-style: solid;
-  }
-  .ticks::before { top: 9px; left: 9px; border-width: 1px 0 0 1px; }
-  .ticks::after { bottom: 9px; right: 9px; border-width: 0 1px 1px 0; }
-
-  /* Engraved ghost / outline display text */
+  /* Decorative-era hooks kept as harmless no-ops so stray markup is inert. */
+  .spotlight::after { content: none; }
+  .glow-ring { animation: none; }
+  .ticks::before, .ticks::after { content: none; }
   .outline-text {
     color: transparent;
-    -webkit-text-stroke: 1px rgba(188,168,255,0.16);
-    text-stroke: 1px rgba(188,168,255,0.16);
+    -webkit-text-stroke: 1px var(--border-strong);
+    text-stroke: 1px var(--border-strong);
   }
 }
 
-/* ---- Background atmosphere helpers ---- */
-.bg-grid {
-  background-image:
-    linear-gradient(rgba(188,168,255,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(188,168,255,0.05) 1px, transparent 1px);
-  background-size: 58px 58px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 64% at 50% 0%, #000 30%, transparent 78%);
-  mask-image: radial-gradient(ellipse 80% 64% at 50% 0%, #000 30%, transparent 78%);
+/* ---- Former background-atmosphere helpers — all inert now. ---- */
+.bg-grid, .dotgrid, .noise, .vignette, .aurora-field, .scanline, .guilloche {
+  background: none;
+  background-image: none;
 }
-.dotgrid {
-  background-image: radial-gradient(rgba(141,232,192,0.14) 1px, transparent 1.4px);
-  background-size: 26px 26px;
-}
-.noise {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
-  opacity: 0.04;
-}
-.glow-blob { filter: blur(90px); border-radius: 999px; will-change: transform; }
-.vignette {
-  background: radial-gradient(120% 90% at 50% 0%, transparent 55%, rgba(0,0,0,0.55) 100%);
-}
-/* Cursor-reactive foil light (a light-table under the plate) */
-.aurora-field {
-  background:
-    radial-gradient(640px circle at var(--cursor-x) var(--cursor-y), rgba(188,168,255,0.10), transparent 45%),
-    radial-gradient(900px circle at calc(var(--cursor-x) + 12%) calc(var(--cursor-y) + 18%), rgba(110,224,242,0.06), transparent 48%);
-  transition: background .25s ease-out;
-}
-/* Press-roller light pass */
-.scanline {
-  position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, transparent, rgba(141,232,192,0.06) 48%, rgba(188,168,255,0.12) 50%, transparent 52%, transparent);
-  mix-blend-mode: screen;
-}
-/* Guilloché engraving — fine concentric security line-work */
-.guilloche {
-  position: absolute; pointer-events: none;
-  background-image: repeating-radial-gradient(circle at 50% 50%, rgba(188,168,255,0.10) 0px, rgba(188,168,255,0.10) 1px, transparent 1px, transparent 9px);
-  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 70%);
-  mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 70%);
-  border-radius: 999px;
-}
-/* Security microtext rule */
+.glow-blob { display: none; }
+.atmosphere-layer { display: none; }
 .microtext {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 8px; letter-spacing: 0.35em; text-transform: uppercase;
-  color: rgba(237,242,238,0.18); white-space: nowrap; overflow: hidden;
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-muted); white-space: nowrap; overflow: hidden;
 }
 
-/* ---- Keyframes ---- */
-@keyframes text-flow { to { background-position: 250% center; } }
-@keyframes glow-pulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(188,168,255,0.0), 0 18px 50px -16px rgba(124,107,242,0.55); }
-  50%     { box-shadow: 0 0 0 6px rgba(188,168,255,0.10), 0 26px 70px -16px rgba(124,107,242,0.8); }
-}
+/* ---- Keyframes still in use ---- */
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
-  .text-flow { background-position: 0 center; }
 }
 
 /* ============================================================
    FORM CONTROLS — opaque, theme-token driven
-   ------------------------------------------------------------
-   This block replaces:
-
-     select, select option, select optgroup {
-       background-color: #0B0E0C; color: var(--paper); }
-
-   which hard-pinned every native dropdown in the product to near
-   black regardless of theme. On light that produced the black
-   "Job role" menu with pale text — the one place no Tailwind
-   class can reach, because <option> and <optgroup> are painted by
-   the browser's own menu layer.
-
-   Rules here are ELEMENT selectors in the base layer, so any
-   component-level utility class (`bg-elevated`, `bg-field`, …)
-   still wins on the control itself. What they guarantee is a
-   sane, OPAQUE floor for controls nobody styled explicitly, and —
-   critically — for option/optgroup, which have no other route.
-
-   Opacity is non-negotiable here: `--field-bg` is a solid hex in
-   both themes. Never give a popup surface an rgba() background.
+   Element selectors provide a sane OPAQUE floor for any control
+   nobody styled explicitly — critically <option>/<optgroup>,
+   which no utility class can reach. Never give a popup surface
+   an rgba() background.
    ============================================================ */
 select,
 input,
@@ -379,7 +263,6 @@ textarea {
   border-color: var(--field-border);
 }
 
-/* The browser paints these outside the page. Solid colour only. */
 select option,
 select optgroup,
 datalist,
@@ -393,14 +276,12 @@ select option[selected] {
   background-color: var(--field-selected-bg);
   color: var(--field-selected-text);
 }
-/* Chrome/Edge on Windows paint the hovered row from these two. */
 select option:hover,
 select option:focus {
   background-color: var(--field-bg-hover);
   color: var(--field-text);
 }
 
-/* Disabled controls must still read as light, not as a dark plate. */
 select:disabled,
 input:disabled,
 textarea:disabled {
@@ -409,17 +290,14 @@ textarea:disabled {
   cursor: not-allowed;
 }
 
-/* A visible focus ring on every control, at AA contrast against the page. */
 select:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--brand-solid);
-  outline-offset: 1px;
+  outline-offset: 0;
   border-color: var(--brand-solid);
 }
 
-/* Chrome's autofill paints its own pale-yellow (or, in dark UA mode, near
-   black) plate over the field. Pin it back to the field token. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
@@ -431,7 +309,6 @@ select:-webkit-autofill {
   caret-color: var(--field-text);
 }
 
-/* Date/time pickers ship a UA icon tuned for the opposite theme. */
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="time"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
@@ -446,81 +323,13 @@ html.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 }
 
 /* ============================================================
-   LANDING motion utilities (ca-* namespaced, reduced-motion safe).
+   LANDING motion utilities (ca-*), retained but calmed: marquees
+   keep their scroll (content carousels), morph/bob/sheen are off.
    ============================================================ */
 @keyframes ca-marquee { to { transform: translateX(-50%); } }
 @keyframes ca-marquee-rev { from { transform: translateX(-50%); } to { transform: translateX(0); } }
-@keyframes ca-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-@keyframes ca-flow { to { background-position: 200% center; } }
-@keyframes ca-sheen { 0%,70% { transform: translateX(-120%); } 85%,100% { transform: translateX(120%); } }
-@keyframes ca-morph {
-  0%,100% { border-radius: 38% 62% 56% 44% / 50% 44% 56% 50%; transform: rotate(0deg); }
-  50%     { border-radius: 58% 42% 40% 60% / 46% 58% 42% 54%; transform: rotate(8deg); }
-}
-.animate-marquee { animation: ca-marquee 32s linear infinite; }
-.animate-marquee-rev { animation: ca-marquee-rev 36s linear infinite; }
-.animate-bob { animation: ca-bob 6s ease-in-out infinite; }
-.animate-flow { background-size: 200% 100%; animation: ca-flow 8s linear infinite; }
-.animate-sheen { animation: ca-sheen 5s cubic-bezier(.2,.7,.2,1) infinite; }
-.animate-morph { animation: ca-morph 16s ease-in-out infinite; }
+.animate-marquee { animation: ca-marquee 40s linear infinite; }
+.animate-marquee-rev { animation: ca-marquee-rev 44s linear infinite; }
+.animate-bob, .animate-flow, .animate-sheen, .animate-morph { animation: none; }
 .pause-on-hover:hover .animate-marquee, .pause-on-hover:hover .animate-marquee-rev { animation-play-state: paused; }
 .mask-fade-x { -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-
-/* ============================================================
-   LIGHT SURFACE CORRECTIONS  (now the DEFAULT, not an override)
-   ------------------------------------------------------------
-   The atmosphere canvas, guilloché line-work and foil gradient text
-   are additive-light effects: on white they turn to grey mud, and the
-   foil text drops to roughly 2:1 contrast. Dim the first, replace the
-   second with a solid AA-compliant brand colour.
-
-   These were scoped to `html.light`, i.e. they only worked once JS had
-   added the class. They are unconditional now and REVERSED under
-   `html.dark`, so the light presentation survives a missing class.
-   ============================================================ */
-.atmosphere-layer,
-.guilloche,
-.scanline { opacity: 0.28; }
-
-html.dark .atmosphere-layer,
-html.dark .guilloche,
-html.dark .scanline { opacity: 1; }
-
-/* Foil gradient text is ~2:1 on white. Solid brand ink instead. */
-.text-aurora,
-.text-flow {
-  background: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
-  color: var(--brand-text);
-  animation: none;
-}
-
-html.dark .text-aurora {
-  background: linear-gradient(105deg,#A9F0CE 0%,#8FE3F7 32%,#C9B8FF 62%,#F2B5DF 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-html.dark .text-flow {
-  background: linear-gradient(105deg,#A9F0CE,#8FE3F7,#C9B8FF,#F2B5DF,#A9F0CE);
-  background-size: 250% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: text-flow 8s linear infinite;
-}
-
-/* The full-bleed vignette is a black radial wash — correct over the dark
-   plate, grey haze over paper. */
-.vignette { background: radial-gradient(120% 90% at 50% 0%, transparent 60%, rgba(20, 24, 21, 0.06) 100%); }
-html.dark .vignette { background: radial-gradient(120% 90% at 50% 0%, transparent 55%, rgba(0,0,0,0.55) 100%); }
-
-/* Security microtext was pinned to a pale ink that vanishes on paper. */
-.microtext { color: var(--text-muted); opacity: 0.55; }
-
-/* Engraved outline display text needs ink, not white-ish foil, on paper. */
-.outline-text {
-  -webkit-text-stroke: 1px rgba(91, 71, 196, 0.30);
-  text-stroke: 1px rgba(91, 71, 196, 0.30);
-}
-html.dark .outline-text {
-  -webkit-text-stroke: 1px rgba(188,168,255,0.16);
-  text-stroke: 1px rgba(188,168,255,0.16);
-}

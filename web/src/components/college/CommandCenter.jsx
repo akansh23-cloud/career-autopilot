@@ -26,11 +26,12 @@ const FUNNEL_LABELS = {
   submitted: 'In review', verified: 'Verified', recruiter_ready: 'Recruiter-ready',
 };
 const ENGAGE_META = [
-  ['active7', 'Active · 7d', '#57E6A8'], ['active30', 'Active · 30d', '#6EE0F2'],
-  ['dormant', 'Dormant', '#EAC97C'], ['never', 'Never active', '#FB7185'],
+  ['active7', 'Active · 7d', '#059669'], ['active30', 'Active · 30d', '#0284C7'],
+  ['dormant', 'Dormant', '#D97706'], ['never', 'Never active', '#DC2626'],
 ];
-const STAGE_TONES = ['#8A958D', '#8FE3F7', '#6EE0F2', '#EAC97C', '#57E6A8', '#BCA8FF'];
-const heatBg = (v) => (v == null ? 'transparent' : `rgba(188,168,255,${0.06 + 0.5 * Math.min(1, v / 100)})`);
+/* Funnel stages progress toward recruiter-ready on a single indigo ramp. */
+const STAGE_TONES = ['#C7D2FE', '#A5B4FC', '#818CF8', '#6366F1', '#4F46E5', '#4338CA'];
+const heatBg = (v) => (v == null ? 'transparent' : `rgba(79,70,229,${0.04 + 0.24 * Math.min(1, v / 100)})`);
 
 /* ---- Verification funnel — proportional stage bars with conversion. */
 function Funnel({ funnel = [] }) {
@@ -44,13 +45,10 @@ function Funnel({ funnel = [] }) {
         return (
           <div key={f.stage} className="flex items-center gap-3">
             <span className="w-32 shrink-0 text-[11px] uppercase tracking-wider text-fg-muted">{FUNNEL_LABELS[f.stage] || f.stage}</span>
-            <div className="h-6 flex-1 overflow-hidden rounded-md bg-surface-1">
-              <div className="flex h-full items-center rounded-md pl-2 text-[11px] font-medium text-ink-950"
-                style={{ width: `${width}%`, background: STAGE_TONES[i] }}>
-                {reached}
-              </div>
+            <div className="h-5 flex-1 overflow-hidden rounded bg-sunken">
+              <div className="h-full rounded" style={{ width: `${width}%`, background: STAGE_TONES[i] }} />
             </div>
-            <span className="w-10 shrink-0 text-right font-mono text-[11px] text-fg-muted">{pct}%</span>
+            <span className="w-20 shrink-0 text-right font-mono text-[11px] text-fg-secondary">{reached} · {pct}%</span>
           </div>
         );
       })}
@@ -224,7 +222,7 @@ function Roster({ roster = [], onOpen, selected = new Set(), onToggle, onToggleA
         <span className="ml-2 text-fg-muted">Sort:</span>
         {ROSTER_SORTS.map(([k, label]) => (
           <button key={k} onClick={() => setSortKey(k)}
-            className={`rounded-lg border px-2 py-1 transition ${sortKey === k ? 'border-aurora-violet/40 bg-aurora-violet/10 text-brand' : 'border-subtle text-fg-secondary hover:border-strong'}`}>
+            className={`rounded-lg border px-2 py-1 transition ${sortKey === k ? 'border-indigo-200 bg-indigo-50 text-brand' : 'border-subtle text-fg-secondary hover:border-strong'}`}>
             {label}
           </button>
         ))}
@@ -232,10 +230,10 @@ function Roster({ roster = [], onOpen, selected = new Set(), onToggle, onToggleA
       </div>
       <div className="max-h-[420px] overflow-auto rounded-xl border border-subtle">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-base text-left text-[10px] uppercase tracking-wider text-fg-muted">
+          <thead className="sticky top-0 z-10 bg-sunken text-left text-[10px] uppercase tracking-wider text-fg-muted">
             <tr>
               <th className="px-3 py-2">
-                <input type="checkbox" className="h-3.5 w-3.5 accent-violet-400" checked={allVisibleSelected}
+                <input type="checkbox" className="h-3.5 w-3.5 accent-indigo-600" checked={allVisibleSelected}
                   onChange={() => onToggleAll?.(rows.map((r) => r.id), !allVisibleSelected)} aria-label="Select all visible" />
               </th>
               <th className="px-3 py-2">Student</th><th className="px-2 py-2">Stage</th>
@@ -248,7 +246,7 @@ function Roster({ roster = [], onOpen, selected = new Set(), onToggle, onToggleA
             {rows.map((r) => (
               <tr key={r.id} className={`border-t border-subtle hover:bg-surface-1 ${selected.has(r.id) ? 'bg-aurora-violet/[0.05]' : ''}`}>
                 <td className="px-3 py-2">
-                  <input type="checkbox" className="h-3.5 w-3.5 accent-violet-400" checked={selected.has(r.id)}
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-indigo-600" checked={selected.has(r.id)}
                     onChange={() => onToggle?.(r.id)} aria-label={`Select ${r.name || r.email}`} />
                 </td>
                 <td className="px-3 py-2">

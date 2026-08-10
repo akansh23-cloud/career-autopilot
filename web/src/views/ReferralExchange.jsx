@@ -173,7 +173,7 @@ export default function ReferralExchange({ go }) {
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-subtle bg-surface-1 px-4 py-3 text-[13px]">
         <ShieldCheck size={16} className="text-aurora-mint" />
         <span className="text-fg-secondary">Referral requests this week: <span className="font-semibold text-fg">{used}{access.isAdmin ? '' : ` / ${limit}`}</span></span>
-        {!access.isAdmin && access.effectivePlan === 'free' && <button onClick={() => go?.('settings')} className="text-aurora-cyan hover:underline">Upgrade for more</button>}
+        {!access.isAdmin && access.effectivePlan === 'free' && <button onClick={() => go?.('settings')} className="text-brand hover:underline">Upgrade for more</button>}
       </div>
 
       {notice && <div className="mb-4 rounded-xl border border-aurora-cyan/30 bg-aurora-cyan/10 px-4 py-2.5 text-[13px] text-info">{notice}</div>}
@@ -232,8 +232,8 @@ export default function ReferralExchange({ go }) {
         )}
       </SectionCard>
 
-      <div className="mt-4 rounded-2xl border border-amber-glow/25 bg-amber-glow/[0.06] p-4 text-[12px] leading-relaxed text-amber-100/90">
-        <p className="flex items-center gap-2 font-medium text-amber-100"><AlertTriangle size={14} /> Please note</p>
+      <div className="mt-4 rounded-2xl border border-amber-glow/25 bg-amber-glow/[0.06] p-4 text-[12px] leading-relaxed text-warn">
+        <p className="flex items-center gap-2 font-medium text-warn"><AlertTriangle size={14} /> Please note</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Referrals are voluntary. The platform does not guarantee a referral or a job.</li>
           <li>Do not share confidential company information.</li>

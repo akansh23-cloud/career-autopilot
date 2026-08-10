@@ -111,7 +111,7 @@ function RequestCard({ r, score, onView, onDelete, primary }) {
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-medium leading-tight text-fg">{r.title}</h4>
         {typeof score === 'number' ? <Badge tone={score >= 60 ? 'mint' : score >= 30 ? 'cyan' : 'amber'}>{score}% match</Badge>
-          : <button onClick={() => onDelete(r.id)} className="text-fg-muted hover:text-rose-400"><Trash2 size={14} /></button>}
+          : <button onClick={() => onDelete(r.id)} className="text-fg-muted hover:text-danger"><Trash2 size={14} /></button>}
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {r.targetRole && <Badge tone="violet">{r.targetRole}</Badge>}

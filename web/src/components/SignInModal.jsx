@@ -48,11 +48,11 @@ export default function SignInModal({ open, onClose }) {
           Continue with Google
         </button>
         {authError ? (
-          <p className="text-center text-xs text-amber-glow/80">
+          <p className="text-center text-xs text-warn/90">
             Auth server is unavailable. Check MongoDB/session configuration (see <code className="font-mono">/health/db</code>).
           </p>
         ) : !providers?.google?.enabled && (
-          <p className="text-center text-xs text-amber-glow/80">
+          <p className="text-center text-xs text-warn/90">
             Google OAuth isn’t configured on this server yet — add the keys in <code className="font-mono">.env</code>.
           </p>
         )}

@@ -57,7 +57,7 @@ export default function ConsentModal() {
             type="checkbox"
             checked={collegeVisibility}
             onChange={(e) => setCollegeVisibility(e.target.checked)}
-            className="mt-1 h-4 w-4 accent-violet-400"
+            className="mt-1 h-4 w-4 accent-indigo-600"
           />
           <span className="text-[13px] leading-relaxed text-fg-secondary">
             <span className="font-medium text-fg">Share my readiness with my college's placement cell.</span>{' '}

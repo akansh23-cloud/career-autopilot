@@ -351,7 +351,7 @@ function FormTeams({ onAssigned }) {
                 <button
                   key={s.id} type="button" onClick={() => toggle(s.id)}
                   className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${
-                    on ? 'border-violet-400/40 bg-violet-400/[0.08] text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
+                    on ? 'border-indigo-200 bg-indigo-50 text-brand' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
                   }`}
                 >
                   <span className="min-w-0">

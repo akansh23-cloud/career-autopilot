@@ -240,7 +240,7 @@ export default function Dashboard({ go }) {
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         {/* ---- Top matches ---- */}
         <SectionCard title="Top matches for you" className="lg:col-span-2"
-          action={<button onClick={() => go('jobs')} className="text-xs text-aurora-cyan hover:underline">View all</button>}>
+          action={<button onClick={() => go('jobs')} className="text-xs text-brand hover:underline">View all</button>}>
           {matches.length === 0 ? (
             <EmptyState icon={Target} title="No matches yet" hint="Search jobs to see matches here, ranked by fit."
               action={<Button size="sm" onClick={() => go('jobs')}>Find jobs</Button>} />
@@ -266,7 +266,7 @@ export default function Dashboard({ go }) {
             {[[Briefcase, 'Find verified jobs', 'jobs'], [KanbanSquare, 'Open tracker', 'tracker'], [Send, 'Draft outreach', 'contacts'], [Trophy, 'Browse arena', 'opportunities']].map(([Icon, label, id]) => (
               <button key={id} onClick={() => go(id)}
                 className="lift flex items-center gap-3 rounded-xl border border-subtle bg-surface-1 px-4 py-3 text-sm text-fg hover:border-strong">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={16} /></span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Icon size={16} /></span>
                 {label}
                 <Plus size={15} className="ml-auto text-fg-muted" />
               </button>

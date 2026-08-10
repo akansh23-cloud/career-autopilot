@@ -142,7 +142,7 @@ function Stat({ value, suffix = '', label }) {
   const fmt = (x) => (value >= 10000 ? Math.round(x).toLocaleString('en-IN') : (Number.isInteger(value) ? String(Math.round(x)) : x.toFixed(0)));
   return (
     <div ref={ref}>
-      <div className="font-display text-3xl font-extrabold drop-shadow-[0_0_24px_rgba(188,168,255,0.25)] sm:text-4xl">
+      <div className="font-display text-3xl font-bold sm:text-4xl">
         <span className="text-aurora">{fmt(n)}{suffix}</span>
       </div>
       <div className="mt-1.5 text-[13px] text-muted">{label}</div>
@@ -156,7 +156,7 @@ function Logo() {
       <span className="grid h-9 w-9 place-items-center rounded-full btn-primary shadow-glow ring-1 ring-strong">
         <ShieldCheck size={17} strokeWidth={2.5} className="relative z-[2] text-ink-950" />
       </span>
-      <span className="font-display text-[17px] font-extrabold tracking-tight text-fg">Career&nbsp;Autopilot</span>
+      <span className="font-display text-[17px] font-bold tracking-tight text-fg">Career&nbsp;Autopilot</span>
     </div>
   );
 }
@@ -164,7 +164,7 @@ function Logo() {
 function ScrollProgress() {
   const { scrollYProgress } = useScroll();
   const w = useSpring(scrollYProgress, { stiffness: 120, damping: 30, restDelta: 0.001 });
-  return <motion.div style={{ scaleX: w }} className="fixed inset-x-0 top-0 z-[60] h-[3px] origin-left bg-aurora-cta" />;
+  return <motion.div style={{ scaleX: w }} className="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left bg-aurora-violet" />;
 }
 
 function Nav({ onSignIn }) {
@@ -181,7 +181,7 @@ function Nav({ onSignIn }) {
     <header className="fixed inset-x-0 top-0 z-50 px-3">
       <div className={cx(
         'mx-auto flex max-w-7xl items-center justify-between rounded-2xl border px-4 transition-all duration-300 sm:px-5',
-        scrolled ? 'mt-2 border-subtle bg-base/80 py-2 shadow-lift backdrop-blur-xl' : 'mt-4 border-transparent bg-transparent py-3'
+        scrolled ? 'mt-2 border-subtle bg-elevated py-2 shadow-card' : 'mt-4 border-transparent bg-transparent py-3'
       )}>
         <Logo />
         <nav className="hidden items-center gap-7 md:flex">
@@ -199,7 +199,7 @@ function Nav({ onSignIn }) {
         </div>
       </div>
       {open && (
-        <div className="mx-auto mt-2 max-w-7xl rounded-2xl border border-subtle bg-menu p-4 backdrop-blur-xl md:hidden">
+        <div className="mx-auto mt-2 max-w-7xl rounded-xl border border-subtle bg-menu p-4 shadow-lift md:hidden">
           {links.map(([l, h]) => (
             <a key={l} href={h} onClick={() => setOpen(false)} className="block border-b border-subtle py-3 font-display text-xl text-fg">{l}</a>
           ))}
@@ -214,7 +214,7 @@ function FloatCard({ className, icon: Icon, tone, title, sub, delay = 0 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay, duration: 0.7 }}
-      className={cx('absolute z-20 flex items-center gap-2.5 rounded-2xl border border-subtle bg-menu px-3.5 py-2.5 shadow-lift backdrop-blur-xl', className)}
+      className={cx('absolute z-20 flex items-center gap-2.5 rounded-xl border border-subtle bg-elevated px-3.5 py-2.5 shadow-lift', className)}
     >
       <span className={cx('grid h-8 w-8 shrink-0 place-items-center rounded-lg', tone)}><Icon size={15} /></span>
       <div className="leading-tight">
@@ -230,7 +230,7 @@ function Hero({ onSignIn }) {
     <section className="relative px-4 pt-32 sm:px-6 sm:pt-40">
       {/* editorial ghost word */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-24 select-none text-center">
-        <span className="outline-text font-display text-[clamp(80px,20vw,300px)] font-extrabold leading-none tracking-tighter">AUTOPILOT</span>
+        <span className="outline-text font-display text-[clamp(64px,16vw,200px)] font-bold leading-none tracking-tighter">AUTOPILOT</span>
       </div>
 
       <div className="relative mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
@@ -239,11 +239,11 @@ function Hero({ onSignIn }) {
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
             className="inline-flex items-center gap-2 rounded-full border border-aurora-violet/30 bg-aurora-violet/10 px-3.5 py-1.5 text-xs font-semibold tracking-wide text-brand"
           >
-            <span className="h-1.5 w-1.5 animate-ticker rounded-full bg-aurora-mint shadow-[0_0_8px_rgba(87,230,168,0.9)]" />
+            <span className="h-1.5 w-1.5 animate-ticker rounded-full bg-aurora-mint" />
             Your career, on autopilot
           </motion.span>
 
-          <h1 className="mt-5 font-display text-[clamp(42px,6.6vw,84px)] font-extrabold leading-[0.94] text-fg">
+          <h1 className="mt-5 font-display text-[clamp(34px,5vw,60px)] font-bold leading-[1.04] tracking-tight text-fg">
             <motion.span initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.06 }} className="block">From résumé to</motion.span>
             <motion.span initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.14 }} className="block">
               <span className="text-flow"><Decode text="offer letter" /></span>,
@@ -330,7 +330,7 @@ function SectionHead({ kicker, title, sub, id }) {
   return (
     <div id={id} className="mx-auto max-w-2xl text-center">
       <V><Tele>{kicker}</Tele></V>
-      <V i={1}><h2 className="mt-3 font-display text-[clamp(30px,4.4vw,54px)] font-extrabold leading-[1.02] text-fg">{title}</h2></V>
+      <V i={1}><h2 className="mt-3 font-display text-[clamp(26px,3.4vw,40px)] font-bold leading-[1.1] tracking-tight text-fg">{title}</h2></V>
       {sub && <V i={2}><p className="mt-4 text-[16px] text-fg-secondary">{sub}</p></V>}
     </div>
   );
@@ -357,7 +357,7 @@ function MatchRing({ pct = 96 }) {
         </defs>
       </svg>
       <div className="absolute text-center">
-        <div className="font-display text-2xl font-extrabold text-fg">{pct}%</div>
+        <div className="font-display text-2xl font-bold text-fg">{pct}%</div>
         <div className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">match</div>
       </div>
     </div>
@@ -377,7 +377,7 @@ function Bento() {
                 <span className="grid h-12 w-12 place-items-center rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 text-aurora-violet"><FileText size={22} /></span>
                 <span className="font-mono text-xs text-fg-muted">01</span>
               </div>
-              <h3 className="mt-5 font-display text-[26px] font-extrabold text-fg">Résumé Studio</h3>
+              <h3 className="mt-5 font-display text-[26px] font-bold text-fg">Résumé Studio</h3>
               <p className="mt-2 max-w-md text-[15px] leading-relaxed text-fg-secondary">AI rewrites every bullet against the live job description, tunes for ATS, and exports a recruiter-ready PDF in seconds.</p>
               {/* mini before/after */}
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -406,7 +406,7 @@ function Bento() {
               <MatchRing pct={96} />
               <div>
                 <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-aurora-cyan"><Radar size={11} /> Job Engine</span>
-                <h3 className="mt-1.5 font-display text-[20px] font-extrabold text-fg">Verified roles, ranked.</h3>
+                <h3 className="mt-1.5 font-display text-[20px] font-bold text-fg">Verified roles, ranked.</h3>
                 <p className="mt-1.5 text-sm text-fg-secondary">Real match scores, tracked from applied to offer.</p>
               </div>
             </div>
@@ -421,7 +421,7 @@ function Bento() {
                 <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-aurora-violet"><Wand2 size={11} /> Project Studio</span>
                 <span className="inline-flex items-center gap-1 text-[11px] text-fg-muted"><GitBranch size={12} /> synced</span>
               </div>
-              <h3 className="mt-2 font-display text-[20px] font-extrabold text-fg">Proof recruiters trust.</h3>
+              <h3 className="mt-2 font-display text-[20px] font-bold text-fg">Proof recruiters trust.</h3>
               <p className="mt-1.5 text-sm text-fg-secondary">Generate projects, sync GitHub, earn evidence-based badges.</p>
               <div className="mt-auto flex flex-wrap gap-2 pt-4">
                 {['React', 'Node', 'Docker', '+ badge'].map((c) => (
@@ -436,8 +436,8 @@ function Bento() {
         <V i={1} className="lg:col-span-3">
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-subtle bg-surface-1 sm:grid-cols-4">
             {[['Bullets rewritten', '2.4M'], ['Verified roles', '40K'], ['Avg. ATS lift', '+34%'], ['Offers landed', '12K']].map(([k, v]) => (
-              <div key={k} className="bg-base/80 p-5">
-                <div className="font-display text-2xl font-extrabold text-aurora">{v}</div>
+              <div key={k} className="bg-elevated p-5">
+                <div className="font-display text-2xl font-bold text-aurora">{v}</div>
                 <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-fg-muted">{k}</div>
               </div>
             ))}
@@ -466,10 +466,10 @@ function Sequence() {
               <Tilt className="h-full" max={6}>
                 <div className="panel spotlight relative h-full p-6">
                   <div className="flex items-center justify-between">
-                    <span className="grid h-12 w-12 place-items-center rounded-2xl border border-subtle bg-gradient-to-b from-ink-800 to-ink-900 text-aurora-violet shadow-glow"><s.icon size={20} /></span>
-                    <span className="font-display text-3xl font-extrabold text-fg/[0.08]">0{i + 1}</span>
+                    <span className="grid h-12 w-12 place-items-center rounded-xl border border-indigo-200 bg-indigo-50 text-aurora-violet"><s.icon size={20} /></span>
+                    <span className="font-display text-3xl font-bold text-fg/[0.08]">0{i + 1}</span>
                   </div>
-                  <h3 className="mt-4 font-display text-[18px] font-extrabold text-fg">{s.t}</h3>
+                  <h3 className="mt-4 font-display text-[18px] font-bold text-fg">{s.t}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-fg-secondary">{s.d}</p>
                 </div>
               </Tilt>
@@ -501,11 +501,11 @@ function Deck() {
         <Tilt max={4}>
           <div className="mx-auto mt-14 max-w-5xl">
             <div className="gradient-border spotlight ticks relative overflow-hidden p-2 shadow-lift">
-              <div className="rounded-[14px] border border-subtle bg-base/85 p-5 sm:p-7">
+              <div className="rounded-[14px] border border-subtle bg-elevated p-5 sm:p-7">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-subtle pb-5">
                   <div>
                     <Tele>Workspace · Live</Tele>
-                    <div className="mt-1 font-display text-xl font-extrabold text-fg">Good evening, Kamal</div>
+                    <div className="mt-1 font-display text-xl font-bold text-fg">Good evening, Kamal</div>
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-aurora-mint/30 bg-aurora-mint/12 px-2.5 py-1 text-[11px] font-medium text-ok">
                     <span className="h-1.5 w-1.5 rounded-full bg-aurora-mint" style={{ animation: 'blink 1.6s ease-in-out infinite' }} /> All systems go
@@ -515,7 +515,7 @@ function Deck() {
                   {metrics.map(([k, v, c]) => (
                     <div key={k} className="rounded-2xl border border-subtle bg-surface-1 p-4">
                       <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted">{k}</div>
-                      <div className={cx('mt-1 font-display text-2xl font-extrabold', c)}>{v}</div>
+                      <div className={cx('mt-1 font-display text-2xl font-bold', c)}>{v}</div>
                     </div>
                   ))}
                 </div>
@@ -567,7 +567,7 @@ function Personas() {
             <Tilt className="h-full" max={7}>
               <div className="panel spotlight h-full p-6 text-center">
                 <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-aurora-violet/25 bg-aurora-violet/10 text-aurora-violet"><x.icon size={24} /></span>
-                <h3 className="mt-4 font-display text-[20px] font-extrabold text-fg">{x.t}</h3>
+                <h3 className="mt-4 font-display text-[20px] font-bold text-fg">{x.t}</h3>
                 <p className="mt-2 text-sm text-fg-secondary">{x.d}</p>
               </div>
             </Tilt>
@@ -582,7 +582,7 @@ function Numbers() {
   return (
     <section id="numbers" className="px-4 py-24 sm:px-6">
       <V>
-        <div className="relative mx-auto grid max-w-5xl grid-cols-2 gap-8 overflow-hidden rounded-3xl border border-subtle bg-base/50 p-10 sm:grid-cols-4">
+        <div className="relative mx-auto grid max-w-5xl grid-cols-2 gap-8 overflow-hidden rounded-3xl border border-subtle bg-elevated p-10 sm:grid-cols-4">
           <div className="pointer-events-none absolute inset-0 dotgrid opacity-30" />
           <div className="relative"><Stat value={40000} label="Verified roles tracked" /></div>
           <div className="relative"><Stat value={96} suffix="%" label="Match precision" /></div>
@@ -599,8 +599,8 @@ function Quote() {
     <section className="px-4 py-24 sm:px-6">
       <V>
         <div className="mx-auto max-w-3xl text-center">
-          <span className="block font-display text-7xl leading-[0.4] text-aurora-violet/45">“</span>
-          <p className="font-display text-[clamp(22px,2.7vw,36px)] font-bold leading-snug text-fg">
+          <span className="block font-display text-5xl leading-[0.4] text-aurora-violet/40">“</span>
+          <p className="font-display text-[clamp(20px,2.2vw,28px)] font-semibold leading-snug text-fg">
             I went from scattered tabs to a single deck that told me exactly what to do next. Offer in <span className="text-aurora">eighteen days</span>.
           </p>
           <div className="mt-7 flex items-center justify-center gap-3">
@@ -617,14 +617,14 @@ function FinalCTA({ onSignIn }) {
   return (
     <section className="px-4 pb-28 sm:px-6">
       <V>
-        <div className="relative mx-auto max-w-5xl overflow-hidden rounded-[28px] border border-aurora-violet/20 p-10 text-center sm:p-16">
+        <div className="relative mx-auto max-w-5xl overflow-hidden rounded-2xl border border-subtle bg-elevated p-10 text-center shadow-card sm:p-14">
           <div className="absolute inset-0 -z-10 bg-gradient-to-br from-aurora-violet/14 via-transparent to-aurora-indigo/14" />
           <div className="absolute inset-0 -z-10 bg-grid opacity-60" />
           <div aria-hidden className="pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 select-none">
-            <span className="outline-text font-display text-[clamp(60px,14vw,180px)] font-extrabold leading-none">LIFTOFF</span>
+            <span className="outline-text font-display text-[clamp(48px,11vw,140px)] font-bold leading-none">LIFTOFF</span>
           </div>
           <Tele>Cleared for departure</Tele>
-          <h2 className="mt-4 font-display text-[clamp(30px,4.8vw,56px)] font-extrabold leading-[1.02] text-fg">Your career, on autopilot.</h2>
+          <h2 className="mt-4 font-display text-[clamp(26px,3.6vw,40px)] font-bold leading-[1.1] tracking-tight text-fg">Your career, on autopilot.</h2>
           <p className="mx-auto mt-4 max-w-xl text-[16px] text-fg-secondary">Free to start. No card. Land your next role with a full flight deck behind you.</p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <Magnetic>

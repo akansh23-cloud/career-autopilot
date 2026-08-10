@@ -126,7 +126,7 @@ export default function GeneratedProjectWorkspace({ project, projectId, persiste
         {TABS.map((t) => {
           const Icon = t.Icon;
           return (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-medium transition ${tab === t.id ? 'border-aurora-violet/45 bg-aurora-violet/12 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
+            <button key={t.id} onClick={() => setTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12.5px] font-medium transition ${tab === t.id ? 'border-indigo-200 bg-indigo-50 text-brand' : 'border-subtle text-fg-secondary hover:bg-surface-hover'}`}>
               <Icon size={13} /> {t.label}
             </button>
           );

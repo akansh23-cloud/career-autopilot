@@ -49,7 +49,7 @@ export default function Arena() {
         <div className="mt-3 flex flex-wrap gap-2">
           {FILTERS.map((f) => (
             <button key={f} type="button" onClick={() => setFilter(f)}
-              className={`rounded-lg px-3 py-1 text-xs transition ${filter === f ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30' : 'text-fg-secondary hover:bg-surface-1'}`}>{f}</button>
+              className={`rounded-lg px-3 py-1 text-xs transition ${filter === f ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30' : 'text-fg-secondary hover:bg-surface-hover'}`}>{f}</button>
           ))}
         </div>
       </form>

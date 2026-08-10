@@ -250,19 +250,19 @@ export default function RecruiterConsole() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
-                on ? 'border-aurora-violet/40 bg-aurora-violet/15 text-fg'
-                  : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-1'
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                on ? 'border-indigo-200 bg-indigo-50 text-brand'
+                  : 'border-transparent text-fg-secondary hover:bg-surface-hover hover:text-fg'
               }`}
             >
-              <Icon size={14} className={on ? 'text-aurora-cyan' : ''} /> {t.label}
+              <Icon size={14} className={on ? 'text-aurora-violet' : 'text-fg-muted'} /> {t.label}
             </button>
           );
         })}
       </div>
 
       {bridgeData.demo && tab !== 'talent' && (
-        <div className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/[0.07] p-3.5 text-[12px] leading-relaxed text-amber-100/85">
+        <div className="mb-4 rounded-2xl border border-amber-300/25 bg-amber-400/[0.07] p-3.5 text-[12px] leading-relaxed text-warn/85">
           This workspace is showing the demo campus — one connected college, its real cohort of 200 students,
           and requisitions run against them. It is the same cohort the placement-cell console sees, so both
           sides always agree. Connect a live database to replace it with your own hiring data.
@@ -313,14 +313,14 @@ export default function RecruiterConsole() {
           <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Required skills (comma separated)" />
           <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
             <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min fit</span>
-            <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-violet-500" />
+            <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-indigo-600" />
             <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minScore}</span>
           </div>
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
             <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min Skill XP</span>
-            <input type="range" min="0" max="3000" step="100" value={minXP} onChange={(e) => setMinXP(Number(e.target.value))} className="flex-1 accent-cyan-500" />
+            <input type="range" min="0" max="3000" step="100" value={minXP} onChange={(e) => setMinXP(Number(e.target.value))} className="flex-1 accent-indigo-600" />
             <span className="w-10 text-right font-mono text-xs text-fg-secondary">{minXP}</span>
           </div>
           <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
@@ -335,7 +335,7 @@ export default function RecruiterConsole() {
             ['Live demo verified', reqLive, () => setReqLive((v) => !v)],
             ['Open to recruiters', reqAvail, () => setReqAvail((v) => !v)],
           ].map(([label, on, toggle]) => (
-            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-info' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-1'}`}>{label}</button>
+            <button key={label} onClick={toggle} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${on ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-info' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-hover'}`}>{label}</button>
           ))}
         </div>
 

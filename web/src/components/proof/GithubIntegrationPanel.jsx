@@ -105,7 +105,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
       action={connected ? <Badge tone="mint"><ShieldCheck size={11} /> Connected via GitHub</Badge> : <Badge tone="default">Not connected</Badge>}
     >
       {notice && (
-        <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-[13px] ${notice.type === 'error' ? 'border-rose-400/30 bg-rose-400/10 text-rose-100' : 'border-aurora-mint/30 bg-aurora-mint/10 text-emerald-100'}`}>
+        <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-[13px] ${notice.type === 'error' ? 'border-rose-400/30 bg-rose-400/10 text-danger' : 'border-aurora-mint/30 bg-aurora-mint/10 text-ok'}`}>
           {notice.type === 'error' ? <AlertTriangle size={15} className="mt-0.5 shrink-0" /> : <CheckCircle2 size={15} className="mt-0.5 shrink-0" />}
           <span>{notice.text}</span>
         </div>
@@ -251,7 +251,7 @@ export default function GithubIntegrationPanel({ projects = [], onProofChanged }
       <Modal open={!!confirmPrivate} onClose={() => setConfirmPrivate(null)} title="Analyze a private repository?" width="max-w-md">
         {confirmPrivate && (
           <div className="space-y-4">
-            <div className="flex items-start gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2.5 text-[13px] text-amber-100">
+            <div className="flex items-start gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2.5 text-[13px] text-warn">
               <Lock size={15} className="mt-0.5 shrink-0" />
               <span>You are about to analyze a private repository. The analysis will remain private by default and will never appear on your public profile unless you explicitly enable a safe proof summary. Continue?</span>
             </div>
@@ -302,7 +302,7 @@ function RepoRow({ repo, busy, onAnalyze, onVisibility, onLink, onImport, onViva
             {repo.linkedProjectId && <Badge tone="violet"><Link2 size={10} /> Linked</Badge>}
           </div>
           {repo.private && (
-            <p className="mt-1.5 text-[11px] text-amber-100/80">Private repository. Hidden from public profile by default.</p>
+            <p className="mt-1.5 text-[11px] text-warn/90">Private repository. Hidden from public profile by default.</p>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -458,7 +458,7 @@ function AnalysisDetailModal({ data, onClose }) {
             </div>
           </div>
         )}
-        {a.truncated && <p className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100">Repository too large for full analysis. Partial proof analysis completed.</p>}
+        {a.truncated && <p className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-warn">Repository too large for full analysis. Partial proof analysis completed.</p>}
         {(a.recommendations || []).length > 0 && (
           <div>
             <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">Recommended improvements</p>

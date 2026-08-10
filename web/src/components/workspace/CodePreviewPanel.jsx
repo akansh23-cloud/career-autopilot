@@ -36,7 +36,7 @@ export function CodePreviewPanel({ open, onClose, loading, generatedFiles = [], 
             <div className="mt-3 flex flex-wrap gap-1.5">
               {generatedFiles.map((f, i) => (
                 <button key={f.path} onClick={() => setActive(i)}
-                  className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] transition ${i === active ? 'border-aurora-violet/40 bg-aurora-violet/10 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
+                  className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] transition ${i === active ? 'border-aurora-violet/40 bg-aurora-violet/10 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-hover'}`}>
                   {f.path}
                 </button>
               ))}

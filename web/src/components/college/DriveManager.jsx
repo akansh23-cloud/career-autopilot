@@ -154,7 +154,7 @@ function Funnel({ funnel }) {
           <span className="w-24 shrink-0 text-xs text-fg-secondary">{s.label}</span>
           <div className="h-6 flex-1 overflow-hidden rounded-lg bg-surface-1">
             <div
-              className="h-full rounded-lg bg-gradient-to-r from-aurora-indigo/60 to-aurora-violet transition-all"
+              className="h-full rounded-lg bg-aurora-violet transition-all"
               style={{ width: `${Math.max(2, (s.count / top) * 100)}%` }}
             />
           </div>

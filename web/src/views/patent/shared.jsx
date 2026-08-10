@@ -29,5 +29,5 @@ export function ScorePill({ score, grade }) {
 }
 
 export function Disclaimer({ className = '' }) {
-  return <p className={`text-[11px] leading-relaxed text-amber-glow/80 ${className}`}>{PATENT_DISCLAIMER}</p>;
+  return <p className={`text-[11px] leading-relaxed text-warn/90 ${className}`}>{PATENT_DISCLAIMER}</p>;
 }

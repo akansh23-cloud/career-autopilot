@@ -92,7 +92,7 @@ function SectionAdder({ resume, onChange }) {
             placeholder={`Add bullet to ${active[0] + active.slice(1).toLowerCase()}…`}
             className="h-8 flex-1 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
           <button onClick={() => appendBullet(active, bullet)} disabled={!bullet.trim()} className="h-8 rounded-lg bg-aurora-violet/20 px-3 text-[11px] font-medium text-fg hover:bg-aurora-violet/30 disabled:opacity-40">Add</button>
-          <button onClick={() => setActive(null)} className="h-8 rounded-lg bg-surface-1 px-3 text-[11px] text-fg-secondary hover:bg-surface-1">✕</button>
+          <button onClick={() => setActive(null)} className="h-8 rounded-lg bg-surface-1 px-3 text-[11px] text-fg-secondary hover:bg-surface-hover">✕</button>
         </div>
       )}
       {showNew ? (
@@ -108,7 +108,7 @@ function SectionAdder({ resume, onChange }) {
               placeholder="Custom section name…"
               className="h-8 flex-1 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none placeholder:text-fg-muted focus:border-aurora-violet/50" />
             <button onClick={() => addSection(custom)} disabled={!custom.trim()} className="h-8 rounded-lg bg-aurora-cyan/15 px-3 text-[11px] text-aurora-cyan hover:bg-aurora-cyan/25 disabled:opacity-40">Add</button>
-            <button onClick={() => { setShowNew(false); setCustom(''); }} className="h-8 rounded-lg bg-surface-1 px-3 text-[11px] text-fg-secondary hover:bg-surface-1">Cancel</button>
+            <button onClick={() => { setShowNew(false); setCustom(''); }} className="h-8 rounded-lg bg-surface-1 px-3 text-[11px] text-fg-secondary hover:bg-surface-hover">Cancel</button>
           </div>
         </div>
       ) : (
@@ -207,7 +207,7 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
 
   return (
     <div className={`flex flex-col overflow-hidden rounded-2xl border transition ${selected ? 'border-aurora-violet/60 ring-1 ring-aurora-violet/30 bg-aurora-violet/5' : 'border-dashed border-strong bg-surface-1'}`}>
-      <div className="relative flex h-[176px] items-center justify-center border-b border-subtle bg-[#0d1018] p-2">
+      <div className="relative flex h-[176px] items-center justify-center border-b border-subtle bg-[#e9edf5] p-2">
         {preview ? (
           <>
             <img src={preview} alt="uploaded template" className="max-h-full max-w-full rounded object-contain" />
@@ -245,7 +245,7 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
         <div className="mt-auto flex flex-wrap gap-2 pt-1">
           {status === 'done' ? (
             <>
-              <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-aurora-violet/25 text-ink-950 ring-1 ring-aurora-violet/40' : 'btn-primary text-ink-950 hover:brightness-110'}`}>
+              <button onClick={() => onSelectCustom()} className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${selected ? 'bg-indigo-50 text-brand ring-1 ring-indigo-200' : 'btn-primary hover:brightness-105'}`}>
                 {selected ? <><Check size={11} className="mr-1 inline" /> Selected</> : 'Use this custom template'}
               </button>
               <button onClick={reAnalyze} title="Re-analyse template" className="rounded-lg border border-subtle px-2.5 py-1.5 text-[11px] text-fg-secondary hover:bg-surface-2"><RefreshCw size={12} /></button>
@@ -436,7 +436,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
           <SectionCard title="Resume length">
             <div className="flex flex-wrap items-center gap-2">
               {LENGTHS.map((l) => (
-                <button key={l} onClick={() => setLen(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-fg ring-1 ring-aurora-cyan/30' : 'text-fg-secondary hover:bg-surface-1'}`}>{l}</button>
+                <button key={l} onClick={() => setLen(l)} className={`rounded-lg px-3 py-1.5 text-xs transition ${len === l ? 'bg-aurora-cyan/15 text-fg ring-1 ring-aurora-cyan/30' : 'text-fg-secondary hover:bg-surface-hover'}`}>{l}</button>
               ))}
             </div>
             <p className="mt-2 text-xs text-fg-muted">Single page fits everything cleanly on one A4. Multi page keeps sections intact across pages.</p>

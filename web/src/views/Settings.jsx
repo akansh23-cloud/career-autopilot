@@ -120,7 +120,7 @@ export default function Settings() {
               <div className="flex flex-wrap gap-2">
                 {MODES.map((m) => (
                   <button key={m} onClick={() => setPrefs({ ...prefs, workMode: m })}
-                    className={`rounded-lg px-3 py-1.5 text-xs transition ${prefs.workMode === m ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30' : 'text-fg-secondary hover:bg-surface-1'}`}>{m}</button>
+                    className={`rounded-lg px-3 py-1.5 text-xs transition ${prefs.workMode === m ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30' : 'text-fg-secondary hover:bg-surface-hover'}`}>{m}</button>
                 ))}
               </div>
             </div>
@@ -198,7 +198,7 @@ export default function Settings() {
             </button>
             <button
               onClick={() => support?.openSupport({ tab: 'help' })}
-              className="mt-2 w-full text-center text-xs text-aurora-cyan hover:underline"
+              className="mt-2 w-full text-center text-xs text-brand hover:underline"
             >
               Visit Help Center
             </button>

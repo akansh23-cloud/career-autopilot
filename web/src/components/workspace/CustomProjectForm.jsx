@@ -101,7 +101,7 @@ export default function CustomProjectForm({ onSubmit, busy }) {
             <div className="flex flex-wrap gap-2">
               {FLAGS.map(([k, label]) => (
                 <button key={k} onClick={() => setFlag(k, !form.flags[k])}
-                  className={`rounded-full border px-3 py-1.5 text-[12px] transition ${form.flags[k] ? 'border-aurora-violet/40 bg-aurora-violet/14 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-1'}`}>
+                  className={`rounded-full border px-3 py-1.5 text-[12px] transition ${form.flags[k] ? 'border-aurora-violet/40 bg-aurora-violet/14 text-fg' : 'border-subtle text-fg-secondary hover:bg-surface-hover'}`}>
                   {label}
                 </button>
               ))}

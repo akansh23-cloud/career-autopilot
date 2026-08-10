@@ -196,21 +196,25 @@ test('light is the base token set; dark is opt-in only', () => {
   assert.ok(rootIdx > -1, ':root must carry the light tokens');
   assert.ok(darkIdx > rootIdx, 'dark must be a scoped override, not the base');
   const lightBlock = css.slice(rootIdx, darkIdx);
-  assert.match(lightBlock, /--bg-base:\s*#F7F8F6/, 'base background must be light paper');
+  assert.match(lightBlock, /--bg-base:\s*#F8FAFC/, 'base background must be a light neutral');
 });
 
 test('the HTML shell ships light, not class="dark"', () => {
   const html = read('web/index.html');
   assert.ok(!/<html[^>]*class="[^"]*\bdark\b/.test(html), 'the document must not ship class="dark"');
   assert.match(html, /<html[^>]*class="light"/);
-  assert.match(html, /theme-color" content="#F7F8F6"/);
+  assert.match(html, /theme-color" content="#F8FAFC"/);
 });
 
 test('the app-wide backdrop is theme-token driven, not near-black', () => {
+  // v4: the decorative atmosphere is retired. The component must render ONLY a
+  // token-driven base layer — no near-black plate and no foil-era decoration.
   const src = code('web/src/components/Atmosphere.jsx');
   assert.ok(!/bg-ink-950/.test(src), 'the full-bleed backdrop must not be pinned to ink-950');
-  assert.match(src, /atmosphere-layer/, 'must carry the class index.css already styles');
-  assert.match(src, /className="absolute inset-0 bg-base"/);
+  assert.match(src, /bg-base/, 'the backdrop must read the base surface token');
+  for (const banned of ['glow-blob', 'guilloche', 'aurora-field', 'scanline', 'noise', 'vignette']) {
+    assert.ok(!src.includes(banned), `decorative layer must not return: ${banned}`);
+  }
 });
 
 test('no dark-coupled utility classes survive in app UI', () => {

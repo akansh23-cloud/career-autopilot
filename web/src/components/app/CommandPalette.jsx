@@ -143,7 +143,7 @@ export default function CommandPalette({ open, setOpen, onPick }) {
           >
             {/* search row */}
             <div className="flex items-center gap-3 border-b border-subtle px-4">
-              <Search size={18} className="shrink-0 text-aurora-cyan" />
+              <Search size={17} className="shrink-0 text-fg-muted" />
               <input
                 ref={inputRef}
                 value={q}
@@ -179,11 +179,11 @@ export default function CommandPalette({ open, setOpen, onPick }) {
                           data-active={active}
                           onMouseEnter={() => setCursor(idx)}
                           onClick={() => choose(item)}
-                          className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                            active ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/25' : 'text-fg-secondary hover:bg-surface-1'
+                          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            active ? 'bg-indigo-50 text-fg' : 'text-fg-secondary hover:bg-surface-hover'
                           }`}
                         >
-                          {Icon && <Icon size={17} className={active ? 'text-aurora-cyan' : 'text-fg-muted'} />}
+                          {Icon && <Icon size={17} className={active ? 'text-aurora-violet' : 'text-fg-muted'} />}
                           <span className="flex-1 truncate">{item.label}</span>
                           {item.hint && <span className="shrink-0 text-[11px] text-fg-muted">{item.hint}</span>}
                           {active && <CornerDownLeft size={14} className="shrink-0 text-fg-muted" />}

@@ -186,7 +186,7 @@ export function ExplainPanel({ project }) {
       <div className="grid gap-3 md:grid-cols-2">
         <Panel title="Don't build yet">
           {(e.whatNotToBuildYet || []).length
-            ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-amber-100/90">{e.whatNotToBuildYet.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            ? <ul className="list-disc space-y-1 pl-4 text-[12px] text-warn">{e.whatNotToBuildYet.map((x, i) => <li key={i}>{x}</li>)}</ul>
             : <span className="text-xs text-fg-muted">—</span>}
         </Panel>
         <Panel title="First-week tasks">
@@ -318,7 +318,7 @@ export function FeasibilityPanel({ project }) {
       <Panel title="Resources required"><Chips items={f.resourcesRequired} tone="cyan" /></Panel>
       {!!(f.executionRisks || []).length && (
         <Panel title="Execution risks">
-          <ul className="list-disc space-y-1 pl-4 text-[12px] text-amber-100/90">{f.executionRisks.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          <ul className="list-disc space-y-1 pl-4 text-[12px] text-warn">{f.executionRisks.map((r, i) => <li key={i}>{r}</li>)}</ul>
         </Panel>
       )}
       <div className="grid gap-3 md:grid-cols-2">
@@ -425,7 +425,7 @@ export function ResumeOutputPanel({ project }) {
   return (
     <div className="space-y-3">
       {!!(r.unsupportedClaimsWarning || []).length && (
-        <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100">
+        <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-warn">
           <AlertTriangle size={13} className="mr-1.5 inline" />
           {r.unsupportedClaimsWarning.map((w, i) => <div key={i}>{w}</div>)}
         </div>
@@ -463,7 +463,7 @@ export function SimilarPanel({ project }) {
   return (
     <div className="space-y-3">
       {s.isDuplicate ? (
-        <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100">
+        <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-warn">
           <AlertTriangle size={13} className="mr-1.5 inline" />
           A similar project already exists{typeof s.similarity === 'number' ? ` (${Math.round(s.similarity * 100)}% match)` : ''}. {s.suggestion}
         </div>

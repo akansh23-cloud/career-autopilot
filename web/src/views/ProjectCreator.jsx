@@ -50,7 +50,7 @@ function Accordion({ title, icon: Icon, defaultOpen = false, badge, children }) 
   return (
     <div className="overflow-hidden rounded-2xl border border-subtle bg-surface-1">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-1">
-        {Icon && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-aurora-violet/12 text-aurora-cyan"><Icon size={15} /></span>}
+        {Icon && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-aurora-violet"><Icon size={15} /></span>}
         <span className="flex-1 text-sm font-medium text-fg">{title}</span>
         {badge}
         {open ? <ChevronDown size={16} className="text-fg-muted" /> : <ChevronRight size={16} className="text-fg-muted" />}
@@ -134,7 +134,7 @@ function DeterministicChecks({ result, onOpenDuplicate }) {
               : <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-glow" />}
             <span className={c.ok ? 'text-fg-secondary' : 'text-fg'}>
               {c.label}
-              {!c.ok && c.detail && <span className="block text-[12px] text-amber-100/80">{c.detail}</span>}
+              {!c.ok && c.detail && <span className="block text-[12px] text-warn/90">{c.detail}</span>}
             </span>
           </div>
         ))}
@@ -152,14 +152,14 @@ function DeterministicChecks({ result, onOpenDuplicate }) {
 function RequiredFieldsGate({ result }) {
   return (
     <div className="rounded-2xl border border-amber-glow/30 bg-amber-glow/10 p-4">
-      <div className="flex items-center gap-2 text-amber-100">
+      <div className="flex items-center gap-2 text-warn">
         <AlertTriangle size={16} className="text-amber-glow" />
         <p className="text-sm font-semibold">Complete the required fields first</p>
       </div>
-      <p className="mt-1 text-[13px] text-amber-100/80">This step uses your actual project context. Add the missing items below, then come back:</p>
+      <p className="mt-1 text-[13px] text-warn/90">This step uses your actual project context. Add the missing items below, then come back:</p>
       <ul className="mt-2 space-y-1">
         {result.blocking.map((c) => (
-          <li key={c.id} className="text-[13px] text-amber-100">• {c.detail || c.label}</li>
+          <li key={c.id} className="text-[13px] text-warn">• {c.detail || c.label}</li>
         ))}
       </ul>
     </div>
@@ -258,7 +258,7 @@ function Stepper({ step, setStep, selected }) {
             className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
               on ? 'border-aurora-violet/40 bg-aurora-violet/15 text-fg'
                 : locked ? 'border-subtle bg-surface-1 text-fg-muted'
-                : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-1'
+                : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-hover'
             }`}
           >
             <span className={`grid h-6 w-6 place-items-center rounded-lg text-[11px] ${on ? 'bg-aurora-cta text-ink-950' : 'bg-surface-1 text-fg-secondary'}`}>{i + 1}</span>
@@ -365,7 +365,7 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
   return (
     <div className="space-y-5">
       {buildNotice && (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-[13px] ${buildNotice.tone === 'warn' ? 'border-amber-300/30 bg-amber-400/10 text-amber-100' : 'border-aurora-cyan/30 bg-aurora-cyan/10 text-info'}`}>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-[13px] ${buildNotice.tone === 'warn' ? 'border-amber-300/30 bg-amber-400/10 text-warn' : 'border-aurora-cyan/30 bg-aurora-cyan/10 text-info'}`}>
           <span className="min-w-0">{buildNotice.text}</span>
           <div className="flex shrink-0 gap-2">
             {buildNotice.upgrade && <Button size="sm" onClick={() => promptUpgrade(buildNotice.text, 'pro')}>See plans</Button>}
@@ -377,7 +377,7 @@ function DiscoverStep({ access, isPremium, state, setState, pickProject, project
         <div className="flex flex-wrap gap-2">
           {START_SOURCES.map((s) => (
             <button key={s.id} onClick={() => { setSource(s.id); if (s.id === 'github' || s.id === 'producthunt') { setTab('marketplace'); loadTrends(); } }}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${source === s.id ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-info' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-1'}`}>
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${source === s.id ? 'border-aurora-cyan/50 bg-aurora-cyan/15 text-info' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-hover'}`}>
               {s.label}
             </button>
           ))}
@@ -511,7 +511,7 @@ function Marketplace({ projects, trends, onBuild, busyId, isPremium }) {
     <SectionCard title="Idea marketplace" action={<Lightbulb size={16} className="text-amber-glow" />}>
       <div className="mb-4 flex flex-wrap gap-2">
         {MARKETPLACE_TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${tab === t ? 'border-aurora-violet/40 bg-aurora-violet/15 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-1'}`}>{t}</button>
+          <button key={t} onClick={() => setTab(t)} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${tab === t ? 'border-aurora-violet/40 bg-aurora-violet/15 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-hover'}`}>{t}</button>
         ))}
       </div>
 
@@ -605,7 +605,7 @@ function ValidateStep({ selected, isPremium, setStep, pickProject }) {
       <SectionCard title="Validation">
         <DeterministicChecks result={det} onOpenDuplicate={(id) => pickProject?.(id, 'validate')} />
         {det && !det.requiredOk && (
-          <p className="mt-3 text-[13px] text-amber-100/80">Resolve the required checks above before generating AI suggestions or moving on.</p>
+          <p className="mt-3 text-[13px] text-warn/90">Resolve the required checks above before generating AI suggestions or moving on.</p>
         )}
         {det && det.requiredOk && (
           <div className="mt-3 flex justify-end"><Button onClick={() => setStep('blueprint')}>Next: Blueprint <ArrowRight size={15} /></Button></div>
@@ -632,7 +632,7 @@ function ValidateStep({ selected, isPremium, setStep, pickProject }) {
               </div>
             </div>
             {r?.genericWarning && (
-              <div className="flex gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-4 py-3 text-[13px] text-amber-100">
+              <div className="flex gap-2 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-4 py-3 text-[13px] text-warn">
                 <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-glow" /> <span>{r.genericWarning}</span>
               </div>
             )}
@@ -800,7 +800,7 @@ function TaskRow({ t, projectId }) {
   const [open, setOpen] = useState(false);
   const done = t.status === 'done';
   return (
-    <div className={`rounded-xl border p-3 transition ${done ? 'border-aurora-mint/25 bg-aurora-mint/8' : 'border-subtle bg-surface-1'}`}>
+    <div className={`rounded-xl border p-3 transition ${done ? 'border-aurora-mint/25 bg-aurora-mint/10' : 'border-subtle bg-surface-1'}`}>
       <div className="flex items-start gap-3">
         <button onClick={() => toggleTask(projectId, t.id)} className={`mt-0.5 ${done ? 'text-aurora-mint' : 'text-fg-muted hover:text-fg'}`}>{done ? <Check size={18} /> : <Circle size={18} />}</button>
         <div className="min-w-0 flex-1">
@@ -814,7 +814,7 @@ function TaskRow({ t, projectId }) {
               {t.filesToCreateOrEdit?.length > 0 && <p><span className="text-fg-secondary">Files: </span>{t.filesToCreateOrEdit.join(', ')}</p>}
               {t.expectedOutput && <p><span className="text-fg-secondary">Expected output: </span>{t.expectedOutput}</p>}
               {t.howToTest && <p><span className="text-fg-secondary">How to test: </span>{t.howToTest}</p>}
-              {t.commonMistakes && <p className="text-amber-100/80"><span className="text-fg-secondary">Common mistakes: </span>{t.commonMistakes}</p>}
+              {t.commonMistakes && <p className="text-warn/90"><span className="text-fg-secondary">Common mistakes: </span>{t.commonMistakes}</p>}
               <div className="flex flex-wrap items-center gap-2">
                 {t.estimatedTime && <Badge tone="violet">{t.estimatedTime}</Badge>}
                 {(t.skillsPracticed || []).map((s, i) => <Badge key={i} tone="cyan">{s}</Badge>)}
@@ -887,7 +887,7 @@ function VerifyStep({ selected, user, isPremium, setStep }) {
         )}
         {!st.startupReady && st.startupReqs?.length > 0 && (
           <div className="mt-3 rounded-xl border border-amber-glow/25 bg-amber-glow/8 p-3">
-            <p className="text-[12px] font-medium text-amber-100">For Startup Ready:</p>
+            <p className="text-[12px] font-medium text-warn">For Startup Ready:</p>
             <List items={st.startupReqs} tone="amber" />
           </div>
         )}
@@ -906,7 +906,7 @@ function VerifyStep({ selected, user, isPremium, setStep }) {
             {selected.liveVerification?.reachable && <p className="mt-1.5 text-[12px] text-aurora-mint">Live link verified reachable.</p>}
           </div>
         </div>
-        {msg && <p className="mt-3 text-[12px] text-amber-100">{msg}</p>}
+        {msg && <p className="mt-3 text-[12px] text-warn">{msg}</p>}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button size="sm" variant="soft" onClick={() => genArtifact('readme')} disabled={busy === 'readme'}><FileText size={13} /> {selected.readme ? 'Regenerate README' : 'Generate README'}</Button>
           <Button size="sm" variant="soft" onClick={() => genArtifact('bullets')} disabled={busy === 'bullets'}><Award size={13} /> Resume bullets</Button>
@@ -948,7 +948,7 @@ function PatentPipeline({ stageId, onSet }) {
     <div className="flex flex-wrap items-center gap-1.5">
       {PATENT_STAGES.map((s, i) => (
         <button key={s.id} onClick={() => onSet(s.id)}
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${i <= idx ? 'border-aurora-mint/40 bg-aurora-mint/12 text-ok' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-1'}`}>
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${i <= idx ? 'border-aurora-mint/40 bg-aurora-mint/12 text-ok' : 'border-subtle bg-surface-1 text-fg-secondary hover:bg-surface-hover'}`}>
           {i < idx ? <Check size={10} className="mr-1 inline" /> : null}{s.label}
         </button>
       ))}
@@ -1003,7 +1003,7 @@ function PatentRegistration({ project, rep, attest, setAttest, onReassess }) {
 
       {!eligible ? (
         <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/8 p-3">
-          <p className="text-[13px] font-medium text-amber-100">Not eligible to register yet.</p>
+          <p className="text-[13px] font-medium text-warn">Not eligible to register yet.</p>
           <List items={[...(gate.reasonsBlocking || []), ...(gate.nextActions || [])]} tone="amber" />
         </div>
       ) : (
@@ -1024,7 +1024,7 @@ function PatentRegistration({ project, rep, attest, setAttest, onReassess }) {
                 <p className="mb-1 mt-2 text-fg-secondary">Databases:</p>
                 <ul className="space-y-1">
                   {(d?.priorArt?.databases || []).map((db) => (
-                    <li key={db.name} className="text-[13px]"><a href={db.url} target="_blank" rel="noreferrer" className="text-aurora-cyan hover:underline">{db.name}</a> <span className="text-fg-muted">— {db.note}</span></li>
+                    <li key={db.name} className="text-[13px]"><a href={db.url} target="_blank" rel="noreferrer" className="text-brand hover:underline">{db.name}</a> <span className="text-fg-muted">— {db.note}</span></li>
                   ))}
                 </ul>
                 <Button size="sm" variant="soft" className="mt-2" onClick={savePriorArt}><Check size={13} /> Mark prior-art done & re-score</Button>
@@ -1041,7 +1041,7 @@ function PatentRegistration({ project, rep, attest, setAttest, onReassess }) {
                 <p className="mb-1 mt-2 text-fg-secondary">Independent claim (skeleton):</p>
                 <pre className="whitespace-pre-wrap rounded-lg border border-subtle bg-base/60 p-2.5 text-[12px] text-fg">{d?.claims?.independent}</pre>
                 <p className="mb-1 mt-2 text-fg-secondary">Dependent claims:</p><List items={d?.claims?.dependents} />
-                <p className="mt-2 text-[12px] text-amber-100/80">{d?.claims?.note}</p>
+                <p className="mt-2 text-[12px] text-warn/90">{d?.claims?.note}</p>
                 <p className="mb-1 mt-2 text-fg-secondary">Drawings checklist:</p><List items={d?.drawings} />
                 <p className="mb-1 mt-2 text-fg-secondary">Abstract (draft):</p><p className="text-[13px]">{d?.abstract}</p>
               </Accordion>
@@ -1057,7 +1057,7 @@ function PatentRegistration({ project, rep, attest, setAttest, onReassess }) {
                     <p className="text-fg-muted">{j.timeline} · {j.feeNote}</p>
                   </div>
                 ))}
-                <p className="mt-1 text-[12px] text-amber-100/80">{d?.filing?.costDisclaimer}</p>
+                <p className="mt-1 text-[12px] text-warn/90">{d?.filing?.costDisclaimer}</p>
               </Accordion>
 
               <Accordion title="5 · Record your filing" icon={BadgeCheck}>
@@ -1091,7 +1091,7 @@ function IpModal({ open, onClose, project, isPremium }) {
 
   return (
     <Modal open={open} onClose={onClose} title="IP / Patent Readiness Studio" width="max-w-2xl">
-      <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/8 px-3 py-2.5 text-[12px] leading-relaxed text-amber-100">{IP_DISCLAIMER}</div>
+      <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/8 px-3 py-2.5 text-[12px] leading-relaxed text-warn">{IP_DISCLAIMER}</div>
       {!isPremium ? (
         <div className="mt-4"><EmptyState icon={Lock} title="Premium feature" hint="IP readiness analysis and draft preparation are available on the Premium plan." action={<Button size="sm" onClick={() => { promptUpgrade('IP Readiness Studio is a Premium feature.', 'premium'); onClose(); }}>Upgrade to Premium</Button>} /></div>
       ) : loading ? <Loading msg="Assessing patentability…" /> : !rep ? (
@@ -1139,7 +1139,7 @@ function PublishStep({ selected, isPaid, go }) {
       <SectionCard title="Publish to Sandbox marketplace" action={<StatusBadge status={st.status} />}>
         {!canPublish ? (
           <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/8 p-3">
-            <p className="text-[13px] font-medium text-amber-100">Not ready to publish yet — reach “Completed”.</p>
+            <p className="text-[13px] font-medium text-warn">Not ready to publish yet — reach “Completed”.</p>
             <List items={st.reasons} tone="amber" />
           </div>
         ) : (
@@ -1157,7 +1157,7 @@ function PublishStep({ selected, isPaid, go }) {
       <div className="rounded-2xl border border-aurora-violet/30 bg-aurora-violet/10 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-aurora-violet/20 text-aurora-cyan"><Users size={18} /></span>
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-100 text-aurora-violet"><Users size={18} /></span>
             <div>
               <p className="text-sm font-medium text-fg">Want collaborators for this project?</p>
               <p className="text-[13px] text-fg-secondary">Your collaboration post draft is ready — review it before anything is posted.</p>
@@ -1209,7 +1209,7 @@ function CollabModal({ open, onClose, project, isPaid, go }) {
         <p><span className="text-fg-secondary">Collaboration mode: </span>{draft.collaborationMode}</p>
         <p><span className="text-fg-secondary">Collaborators gain: </span>{draft.collaboratorGain}</p>
         {posted ? (
-          <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/8 p-3 text-aurora-mint">
+          <div className="rounded-xl border border-aurora-mint/25 bg-aurora-mint/10 p-3 text-aurora-mint">
             Posted to the Find Project Partner board. <button onClick={() => { onClose(); go && go('partners'); }} className="underline">Open board</button>
           </div>
         ) : (

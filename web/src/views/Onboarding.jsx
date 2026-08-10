@@ -80,7 +80,7 @@ export default function Onboarding({ onDone }) {
                 onClick={() => { setRole(c.role); setValues({}); }}
                 className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${on ? 'border-aurora-violet/50 bg-aurora-violet/[0.08] ring-1 ring-aurora-violet/25' : 'border-subtle bg-surface-1 hover:border-strong'}`}
               >
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? 'bg-aurora-violet/20 text-aurora-cyan' : 'bg-surface-1 text-fg-secondary'}`}><Icon size={20} /></span>
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? 'bg-indigo-100 text-aurora-violet' : 'bg-surface-1 text-fg-secondary'}`}><Icon size={20} /></span>
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5 text-sm font-medium text-fg">{c.label}{on && <Check size={14} className="text-aurora-mint" />}</span>
                   <span className="mt-0.5 block text-xs text-fg-secondary">{c.hint}</span>

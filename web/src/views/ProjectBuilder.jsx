@@ -164,7 +164,7 @@ function ArchitectureInputs({ guide }) {
         <Panel title="Missing details" icon={AlertTriangle}>
           <p className="mb-1.5 text-[12px] text-fg-secondary">A guide was still generated. Add these in the Project Workspace for a sharper, architecture-backed build:</p>
           <ul className="space-y-1">
-            {missing.map((m, i) => <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-amber-100"><span className="mt-1 text-amber-glow">•</span> {m}</li>)}
+            {missing.map((m, i) => <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-warn"><span className="mt-1 text-amber-glow">•</span> {m}</li>)}
           </ul>
         </Panel>
       )}
@@ -430,7 +430,7 @@ function TasksSection({ guide, activeStageId, onPickStage, activeTaskId, onPickT
           const d = t.filter((x) => x.status === 'done').length;
           const isActive = s.id === stage.id;
           return (
-            <button key={s.id} onClick={() => onPickStage(s.id)} className={`block w-full rounded-lg px-2.5 py-2 text-left text-[12px] transition ${isActive ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-1'}`}>
+            <button key={s.id} onClick={() => onPickStage(s.id)} className={`block w-full rounded-lg px-2.5 py-2 text-left text-[12px] transition ${isActive ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-hover'}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 truncate">{s.status === 'done' ? <CheckCircle2 size={12} className="shrink-0 text-aurora-mint" /> : <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-surface-2 text-[9px]">{i + 1}</span>}<span className="truncate">{s.title}</span></span>
                 <span className="shrink-0 text-[10px] text-fg-muted">{d}/{t.length}</span>
@@ -554,7 +554,7 @@ function ProofSection({ guide, onOpenWorkspace }) {
   const p = guide.proofSubmission || {};
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/5 p-3.5 text-[12.5px] leading-relaxed text-amber-100">
+      <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/5 p-3.5 text-[12.5px] leading-relaxed text-warn">
         <AlertTriangle size={14} className="mr-1.5 inline" /> Completing build tasks is <span className="font-medium">not</span> the same as verified proof. To get a verified project + resume bullets, attach real evidence in the Project Workspace.
         {onOpenWorkspace && <Button size="sm" variant="soft" className="ml-2 mt-2" onClick={onOpenWorkspace}><ShieldCheck size={13} /> Open Workspace to submit proof</Button>}
       </div>
@@ -730,7 +730,7 @@ export default function ProjectBuilder({ go, projectId, project: projectProp }) 
           <button
             key={id}
             onClick={() => setSection(id)}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-medium transition ${section === id ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/40' : 'bg-surface-1 text-fg-secondary hover:bg-surface-1'}`}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-medium transition ${section === id ? 'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/40' : 'bg-surface-1 text-fg-secondary hover:bg-surface-hover'}`}
           >
             <Icon size={14} /> {label}
           </button>

@@ -312,7 +312,7 @@ export default function CareerProfile({ go, publicUserId }) {
       <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} />
       <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Recruiter view (preview)" width="max-w-2xl">
         <ProofCard p={me} isPrivate={me.visibility === 'private'} />
-        {me.visibility === 'private' && <p className="mt-3 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-xs text-amber-100">Your profile is private — recruiters cannot see it. Set visibility to Public to be discoverable.</p>}
+        {me.visibility === 'private' && <p className="mt-3 rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-xs text-warn">Your profile is private — recruiters cannot see it. Set visibility to Public to be discoverable.</p>}
       </Modal>
       <BadgeModal badge={badgeOpen} open={!!badgeOpen} onClose={() => setBadgeOpen(null)} />
     </>

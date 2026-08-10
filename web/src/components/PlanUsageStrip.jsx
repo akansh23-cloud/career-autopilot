@@ -47,7 +47,7 @@ function Meter({ meter, planId }) {
         <>
           <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-1">
             <div
-              className={`h-full rounded-full transition-all ${left === 0 ? 'bg-rose-400/70' : 'bg-gradient-to-r from-aurora-mint to-aurora-violet'}`}
+              className={`h-full rounded-full transition-all ${left === 0 ? 'bg-rose-400/70' : 'bg-aurora-violet'}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -115,7 +115,7 @@ export default function PlanUsageStrip() {
       )}
 
       {lowBuckets.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-400/8 p-3.5 text-[12.5px] leading-relaxed text-amber-100">
+        <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-3.5 text-[12.5px] leading-relaxed text-warn">
           {lowBuckets.map((b) => (
             <div key={b.bucket}>
               {BUCKET_SHORT[b.bucket] || b.bucket}: {b.remaining} left today

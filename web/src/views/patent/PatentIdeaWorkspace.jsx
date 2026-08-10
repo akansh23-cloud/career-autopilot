@@ -155,7 +155,7 @@ export default function PatentIdeaWorkspace({ ideaId, go }) {
           <SectionCard title="Prior-art search plan" action={<Button size="sm" onClick={doPriorArtPlan} disabled={busy === 'plan'}>{busy === 'plan' ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Generate plan</Button>}>
             {!plan ? <p className="text-[13px] text-fg-muted">Generate a suggested prior-art research plan (queries, classes, differentiation angles).</p> : (
               <div className="space-y-3">
-                <p className="text-[12px] text-amber-glow/80">{plan.note}</p>
+                <p className="text-[12px] text-warn/90">{plan.note}</p>
                 <div><div className="text-[11px] uppercase tracking-wide text-fg-muted">Keywords</div><div className="mt-1 flex flex-wrap gap-1.5">{(plan.keywords || []).map((k) => <span key={k} className="rounded-md bg-surface-1 px-2 py-0.5 text-[11px] text-fg-secondary">{k}</span>)}</div></div>
                 {plan.queries?.googlePatents?.length > 0 && <Detail label="Google Patents queries" value={plan.queries.googlePatents.join('  •  ')} />}
                 {plan.classificationHints?.length > 0 && <Detail label="Classification hints" value={plan.classificationHints.join('  •  ')} />}

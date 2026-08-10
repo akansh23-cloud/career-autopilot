@@ -3,8 +3,8 @@ import { useEffect, useRef } from 'react';
 /* Interactive "talent network" sphere for the landing hero.
    - three.js is loaded via dynamic import so it is code-split into its own
      chunk and never bloats the main app bundle (the app itself doesn't use 3D).
-   - Recoloured to the aurora palette (violet -> cyan -> mint) with additive
-     glow so it reads as native to the dark Aurora theme.
+   - Recoloured to the product palette (indigo -> sky) with normal blending
+     so it reads correctly on the light surface.
    - Fully cleaned up on unmount (geometries/materials/renderer disposed).
    - Respects prefers-reduced-motion (renders a single static frame) and pauses
      the RAF loop while scrolled off-screen to save battery.
@@ -52,7 +52,7 @@ export default function NetworkSphere() {
         const th = i * Math.PI * (3 - Math.sqrt(5));
         pts.push(new THREE.Vector3(Math.cos(th) * rad * R, y * R, Math.sin(th) * rad * R));
       }
-      const cA = new THREE.Color(0xbca8ff), cB = new THREE.Color(0x7c6bf2), cC = new THREE.Color(0x6ee0f2);
+      const cA = new THREE.Color(0x818cf8), cB = new THREE.Color(0x4f46e5), cC = new THREE.Color(0x0284c7);
       const grad = (t) => (t < 0.5 ? cA.clone().lerp(cB, t * 2) : cB.clone().lerp(cC, (t - 0.5) * 2));
 
       const nPos = new Float32Array(N * 3), nCol = new Float32Array(N * 3);
@@ -64,7 +64,7 @@ export default function NetworkSphere() {
       const nGeo = new THREE.BufferGeometry();
       nGeo.setAttribute('position', new THREE.BufferAttribute(nPos, 3));
       nGeo.setAttribute('color', new THREE.BufferAttribute(nCol, 3));
-      const nMat = new THREE.PointsMaterial({ size: 0.13, vertexColors: true, transparent: true, opacity: 0.98, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+      const nMat = new THREE.PointsMaterial({ size: 0.13, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.NormalBlending, depthWrite: false, sizeAttenuation: true });
       group.add(new THREE.Points(nGeo, nMat));
 
       const lp = [], lc = [], maxD = 1.05;
@@ -78,13 +78,13 @@ export default function NetworkSphere() {
       const lGeo = new THREE.BufferGeometry();
       lGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lp), 3));
       lGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(lc), 3));
-      const lMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending, depthWrite: false });
+      const lMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.3, blending: THREE.NormalBlending, depthWrite: false });
       group.add(new THREE.LineSegments(lGeo, lMat));
 
       const SP = 4;
       sparkGeo = new THREE.BufferGeometry();
       sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SP * 3), 3));
-      const spMat = new THREE.PointsMaterial({ size: 0.28, color: 0x8de8c0, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+      const spMat = new THREE.PointsMaterial({ size: 0.24, color: 0x059669, transparent: true, opacity: 0.9, blending: THREE.NormalBlending, depthWrite: false });
       group.add(new THREE.Points(sparkGeo, spMat));
 
       const resize = () => {

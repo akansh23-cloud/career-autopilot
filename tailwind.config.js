@@ -2,20 +2,35 @@
 export default {
   content: ['./web/index.html', './web/src/**/*.{js,jsx}'],
   theme: {
+    /* ------------------------------------------------------------------
+       RADIUS SCALE — overridden globally (not extended) so the whole
+       product shares one restrained radius rhythm. Existing markup that
+       says `rounded-2xl` now resolves to 12px instead of 16px, `rounded-xl`
+       to 10px, etc. One decision, applied everywhere at once.
+       ------------------------------------------------------------------ */
+    borderRadius: {
+      none: '0px',
+      sm: '4px',
+      DEFAULT: '6px',
+      md: '6px',
+      lg: '8px',
+      xl: '10px',
+      '2xl': '12px',
+      '3xl': '14px',
+      full: '9999px',
+    },
     extend: {
       fontFamily: {
-        // "PROVENANCE" type system — certificate-grade serif display,
-        // Swiss-precision body, mono for serials & telemetry.
-        display: ['"Zodiak"', 'Georgia', 'ui-serif', 'serif'],
-        sans: ['"Switzer"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        /* One professional sans throughout. `font-display` is kept as a
+           NAME for drop-in compatibility across 30+ views, but it now
+           resolves to the same Inter stack — headings differentiate by
+           size/weight/tracking, not by a second (serif) family. */
+        display: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        /* THEME TOKENS. These read the CSS custom properties in index.css, so
-           `text-fg` / `bg-elevated` / `border-subtle` resolve differently in
-           light and dark without any conditional class logic in components.
-           The codemod (scripts/theme-codemod.mjs) rewrites the old hardcoded
-           `text-white` / `bg-white/5` / `border-white/10` usages to these. */
+        /* THEME TOKENS — read the CSS custom properties in index.css. */
         fg: {
           DEFAULT: 'var(--text-primary)',
           secondary: 'var(--text-secondary)',
@@ -33,11 +48,8 @@ export default {
         subtle: 'var(--border-subtle)',
         strong: 'var(--border-strong)',
 
-        /* FORM CONTROLS — opaque by contract.
-           `surface-1`/`surface-2` are translucent tints, which is correct for
-           panels stacked on the page but wrong for anything that opens over
-           other content (selects, popovers, menus, command palette). Those use
-           these instead so they never show what is behind them. */
+        /* FORM CONTROLS — opaque by contract (menus/popovers must never
+           show what is behind them). */
         field: {
           DEFAULT: 'var(--field-bg)',
           subtle: 'var(--field-bg-subtle)',
@@ -45,66 +57,77 @@ export default {
           border: 'var(--field-border)',
         },
         menu: 'var(--menu-bg)',
-
-        /* Modal / overlay scrim. Was a fixed bg-black/72 everywhere, which is
-           correct behind a dark plate and a heavy blackout over paper. */
         scrim: 'var(--scrim)',
 
-        /* Semantic signal inks. These already existed as CSS vars but nothing
-           could reach them from a class, so views fell back to fixed
-           rose-300 / mint-ish literals that lose contrast on white. */
+        /* Semantic signal inks. */
         ok: 'var(--ok)',
         info: 'var(--info)',
         warn: 'var(--warn)',
         danger: 'var(--danger)',
         brand: 'var(--brand-text)',
 
-        // Archival green-cast inks (token names kept for drop-in compatibility).
-        ink: {
-          950: '#070908',
-          900: '#0B0E0C',
-          850: '#101413',
-          800: '#161B19',
-          700: '#212824',
-          600: '#2C3530',
-        },
-        // Brand/signal ramp (names kept; values are the new foil palette).
+        /* ------------------------------------------------------------------
+           LEGACY ACCENT NAMES → PROFESSIONAL PALETTE
+           ~60 files reference `aurora-*` / `amber-glow` (usually as /10–/40
+           washes for chips, rings and tints). The NAMES are kept so nothing
+           breaks; the VALUES are now the product palette:
+             aurora-violet — primary indigo (brand)
+             aurora-indigo — primary hover/deep
+             aurora-cyan   — informational blue
+             aurora-mint   — success green
+             amber-glow    — warning amber
+           ------------------------------------------------------------------ */
         aurora: {
-          violet: '#BCA8FF', // PRIMARY — holographic foil lilac
-          indigo: '#7C6BF2', // deep violet, secondary
-          cyan: '#6EE0F2',   // ice — informational
-          mint: '#57E6A8',   // jade — verified / success
+          violet: '#4F46E5',
+          indigo: '#4338CA',
+          cyan: '#0284C7',
+          mint: '#059669',
         },
-        amber: { glow: '#EAC97C' }, // champagne gold foil — premium/warn, sparing
-        muted: '#8A958D',
+        amber: { glow: '#D97706' },
+        muted: '#64748B',
+
+        /* Legacy "ink" ramp. 950 was only ever used as ON-ACCENT text over
+           the old pale foil gradient; accents are now solid indigo, so
+           on-accent ink is white. Names kept for drop-in compatibility. */
+        ink: {
+          950: '#FFFFFF',
+          900: '#0F172A',
+          850: '#1E293B',
+          800: '#1E293B',
+          700: '#334155',
+          600: '#475569',
+        },
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(188,168,255,0.22), 0 22px 60px -18px rgba(124,107,242,0.45)',
-        /* Were pinned to rgba(0,0,0,.9)/.95 — a bruise under every card on
-           paper. Both now read theme tokens (index.css), so light gets a soft
-           archival drop and dark keeps the deep plate shadow. */
+        /* `glow` used to be a violet halo; it now reads as one quiet
+           elevation step so the 10 legacy call-sites stay subtle. */
+        glow: 'var(--shadow-lift)',
         card: 'var(--shadow-card)',
         lift: 'var(--shadow-lift)',
       },
       backgroundImage: {
-        'aurora-text': 'linear-gradient(105deg,#A9F0CE 0%,#8FE3F7 32%,#C9B8FF 62%,#F2B5DF 100%)',
-        'aurora-cta': 'linear-gradient(105deg,#8DE8C0 0%,#7DDCF5 30%,#BCA8FF 62%,#F0A6D8 100%)',
+        /* Old holographic gradients — now flat brand fills, which converts
+           every `bg-aurora-cta` progress bar / chip / avatar to the solid
+           primary without touching the call-sites. */
+        'aurora-text': 'linear-gradient(0deg,#4F46E5,#4F46E5)',
+        'aurora-cta': 'linear-gradient(0deg,#4F46E5,#4F46E5)',
       },
       keyframes: {
-        float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-14px)' } },
         shimmer: { '100%': { transform: 'translateX(100%)' } },
         'spin-slow': { to: { transform: 'rotate(360deg)' } },
-        scan: { '0%': { transform: 'translateY(-100%)' }, '100%': { transform: 'translateY(100%)' } },
-        sweep: { to: { transform: 'rotate(360deg)' } },
-        ticker: { '0%,100%': { opacity: '0.25' }, '50%': { opacity: '1' } },
+        /* Legacy names kept as no-ops so stray `animate-*` classes are inert. */
+        float: { '0%,100%': { transform: 'none' }, '50%': { transform: 'none' } },
+        scan: { '0%,100%': { opacity: '0' } },
+        sweep: { to: { transform: 'none' } },
+        ticker: { '0%,100%': { opacity: '1' } },
       },
       animation: {
-        float: 'float 7s ease-in-out infinite',
         shimmer: 'shimmer 1.6s infinite',
         'spin-slow': 'spin-slow 22s linear infinite',
-        scan: 'scan 9s linear infinite',
-        sweep: 'sweep 16s linear infinite',
-        ticker: 'ticker 2.4s ease-in-out infinite',
+        float: 'none',
+        scan: 'none',
+        sweep: 'none',
+        ticker: 'none',
       },
     },
   },

@@ -43,7 +43,7 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
         <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2">
           <ResumePaper data={data} templateId={tpl.id} mode={tpl.pages === 'multi' ? 'multi' : 'auto'} scale={0.205} />
         </div>
-        <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-sunken group-hover:opacity-100">
+        <span className="absolute inset-0 grid place-items-center bg-white/0 opacity-0 transition group-hover:bg-white/60 group-hover:opacity-100">
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-ink-950">
             <Eye size={13} /> Preview
           </span>
@@ -79,7 +79,7 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
           <button
             onClick={() => onSelect(tpl.id)}
             className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition ${
-              selected ? 'bg-aurora-violet/25 text-ink-950 ring-1 ring-aurora-violet/40'
+              selected ? 'bg-indigo-50 text-brand ring-1 ring-indigo-200'
                        : 'btn-primary text-ink-950 hover:brightness-110'
             }`}
           >

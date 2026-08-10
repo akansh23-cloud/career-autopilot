@@ -88,7 +88,7 @@ export default class AppErrorBoundary extends React.Component {
     return (
       <div className="mx-auto max-w-lg px-4 py-10 sm:py-16">
         <div className="rounded-2xl border border-red-400/25 bg-red-500/[0.07] p-5 sm:p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-red-300">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-danger">
             This screen stopped responding
           </p>
           <h2 className="mt-2 text-lg font-semibold">

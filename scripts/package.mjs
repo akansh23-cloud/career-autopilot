@@ -22,6 +22,7 @@ const EXCLUDES = [
   'node_modules/*', 'web/node_modules/*',
   'dist/*',                            // rebuilt on deploy: npm run build
   'career-autopilot-*.zip',            // no zip-inside-zip
+  '.data/*',                           // local runtime state (demo verifications etc.)
   '*.log', '.DS_Store',
 ];
 

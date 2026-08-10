@@ -88,11 +88,11 @@ test('opaque surfaces are genuinely opaque, never rgba', () => {
 });
 
 /* ---- Badge readability -------------------------------------------------
-   A Badge draws its ink on a TINTED wash (e.g. bg-aurora-mint/12) over the
-   card, not on the card directly. Pale dark-mode inks (#BDF5DC, #F3E3B2,
-   #E4DCFF) sat near 1.5:1 there — legible on a black plate, invisible on
-   paper. These assert the replacements actually read. */
-const AURORA = { violet: '#BCA8FF', cyan: '#6EE0F2', mint: '#57E6A8', amber: '#EAC97C', rose: '#F43F5E' };
+   Semantic ink is drawn on TINTED washes (e.g. bg-aurora-mint/12) over the
+   card, not on the card directly. These composite the v4 accent palette at
+   the wash opacities actually used in views and assert the ink still clears
+   4.5:1 there — not just on plain white. */
+const AURORA = { violet: '#4F46E5', cyan: '#0284C7', mint: '#059669', amber: '#D97706', rose: '#F43F5E' };
 const overCard = (hex, alpha) => {
   const t = toRgb(hex);
   return [0, 1, 2].map((i) => Math.round(t[i] * alpha + ELEVATED[i] * (1 - alpha)));

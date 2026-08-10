@@ -60,7 +60,7 @@ export default function NotificationsBell({ onPick }) {
       align="right"
       trigger={
         <button onClick={openPanel} aria-label="Notifications"
-          className="relative grid h-9 w-9 place-items-center rounded-xl border border-subtle bg-surface-1 text-fg-secondary transition hover:bg-surface-1">
+          className="relative grid h-9 w-9 place-items-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg">
           <Bell size={17} />
           {total > 0 && (
             <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-aurora-cta px-1 text-[9px] font-bold text-ink-950">

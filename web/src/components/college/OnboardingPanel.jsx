@@ -69,7 +69,7 @@ function JoinCodeCard({ college, onChanged }) {
           ['autoApproveDomainJoins', 'Auto-bind sign-ins from your verified email domains', 'Students signing in with a listed domain link to your college automatically.'],
         ].map(([key, label, hint]) => (
           <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border border-subtle bg-surface-1 p-3 transition hover:bg-surface-1">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-violet-400"
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-600"
               checked={!!s[key]} disabled={busy === key}
               onChange={(e) => toggle(key, e.target.checked)} />
             <span>
@@ -115,7 +115,7 @@ function DomainsCard({ college, onChanged }) {
         {(college.domains || []).map((d) => (
           <span key={d} className="inline-flex items-center gap-1.5 rounded-lg border border-subtle bg-surface-1 px-2.5 py-1 text-[12px] text-fg">
             {d}
-            <button onClick={() => remove(d)} className="text-fg-muted transition hover:text-rose-400" aria-label={`Remove ${d}`}><XCircle size={13} /></button>
+            <button onClick={() => remove(d)} className="text-fg-muted transition hover:text-danger" aria-label={`Remove ${d}`}><XCircle size={13} /></button>
           </span>
         ))}
       </div>

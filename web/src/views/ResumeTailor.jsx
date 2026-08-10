@@ -158,7 +158,7 @@ export default function ResumeTailor({ resumeText, fileName, targetRole, resumeS
         {err && <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
 
         {blocked && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-400/10 p-3.5 text-[13px] text-amber-100">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-400/10 p-3.5 text-[13px] text-warn">
             <span className="min-w-0">{blocked.message}</span>
             <div className="flex shrink-0 gap-2">
               <Button size="sm" onClick={() => promptUpgrade(blocked.message, blocked.suggestPlan || 'pro')}>See plans</Button>

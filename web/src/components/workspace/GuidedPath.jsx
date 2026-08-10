@@ -150,7 +150,7 @@ export default function GuidedPath({ plan, project, onTaskPatch, onPreviewCode, 
           </Button>
         </div>
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-1">
-          <div className="h-full rounded-full bg-gradient-to-r from-aurora-violet to-aurora-cyan transition-all" style={{ width: `${pct}%` }} />
+          <div className="h-full rounded-full bg-aurora-violet transition-all" style={{ width: `${pct}%` }} />
         </div>
         <div className="mt-3"><StepRail entries={entries} statusById={statusById} activeIdx={idx} onPick={setIdx} /></div>
       </Card>

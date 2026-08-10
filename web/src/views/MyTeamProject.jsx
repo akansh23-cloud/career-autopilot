@@ -92,7 +92,7 @@ function ProjectCard({ project, onRefresh }) {
 
       {/* ---- What YOU own — first, deliberately ---- */}
       {mine && (
-        <div className="mb-5 rounded-xl border border-violet-400/25 bg-violet-400/[0.05] p-4">
+        <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
           <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-brand">
             <Target size={13} /> Your part
           </p>

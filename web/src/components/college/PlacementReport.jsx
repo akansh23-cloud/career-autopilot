@@ -40,7 +40,7 @@ function RateBar({ value }) {
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-1">
-        <div className="h-full rounded-full bg-gradient-to-r from-aurora-indigo/60 to-aurora-mint" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+        <div className="h-full rounded-full bg-aurora-mint" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
       </div>
       <span className="w-9 text-right text-sm text-fg-secondary">{value}%</span>
     </div>

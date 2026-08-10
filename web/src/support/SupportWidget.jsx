@@ -122,8 +122,8 @@ function ChatTab({ quickActions, onTicket, prefillUser }) {
                 ) : (
                   <>
                     <span className="text-[11px] text-fg-muted">Was this helpful?</span>
-                    <button onClick={() => setFeedbackFor(m.id)} className="rounded-md p-1 text-fg-secondary hover:bg-surface-1 hover:text-aurora-mint"><ThumbsUp size={13} /></button>
-                    <button onClick={() => { setFeedbackFor(m.id); onTicket(); }} className="rounded-md p-1 text-fg-secondary hover:bg-surface-1 hover:text-amber-glow"><ThumbsDown size={13} /></button>
+                    <button onClick={() => setFeedbackFor(m.id)} className="rounded-md p-1 text-fg-secondary hover:bg-surface-hover hover:text-aurora-mint"><ThumbsUp size={13} /></button>
+                    <button onClick={() => { setFeedbackFor(m.id); onTicket(); }} className="rounded-md p-1 text-fg-secondary hover:bg-surface-hover hover:text-amber-glow"><ThumbsDown size={13} /></button>
                   </>
                 )}
               </div>
@@ -199,7 +199,7 @@ function HelpTab({ faqs, categories, onTicket }) {
           <div className="flex flex-col items-center gap-2 py-10 text-center">
             <BookOpen size={26} className="text-fg-muted" />
             <p className="text-sm text-fg-secondary">No articles match “{q}”.</p>
-            <button onClick={onTicket} className="text-xs text-aurora-cyan hover:underline">Ask support instead →</button>
+            <button onClick={onTicket} className="text-xs text-brand hover:underline">Ask support instead →</button>
           </div>
         )}
         {filtered.map((f) => {
@@ -462,18 +462,17 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
             initial={{ opacity: 0, y: 40, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-            className="fixed z-[61] flex flex-col overflow-hidden border border-subtle bg-base/85 backdrop-blur-2xl
-                       inset-x-0 bottom-0 h-[88vh] rounded-t-3xl
-                       sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[640px] sm:max-h-[85vh] sm:w-[420px] sm:rounded-3xl
-                       shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)]"
+            className="fixed z-[61] flex flex-col overflow-hidden border border-subtle bg-elevated
+                       inset-x-0 bottom-0 h-[88vh] rounded-t-2xl
+                       sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[640px] sm:max-h-[85vh] sm:w-[420px] sm:rounded-2xl
+                       shadow-lift"
           >
             {/* header */}
             <div className="relative shrink-0 overflow-hidden border-b border-subtle px-4 pb-3 pt-4">
-              <div className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full bg-aurora-violet/20 blur-3xl" />
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-aurora-cta shadow-glow">
-                    <Sparkles size={17} className="text-fg" />
+                  <div className="grid h-9 w-9 place-items-center rounded-lg bg-aurora-violet">
+                    <Sparkles size={17} className="text-white" />
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold text-fg">Support</h3>
@@ -482,7 +481,7 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
                     </p>
                   </div>
                 </div>
-                <button onClick={closeSupport} aria-label="Close support" className="rounded-lg p-2 text-fg-secondary hover:bg-surface-1 hover:text-fg">
+                <button onClick={closeSupport} aria-label="Close support" className="rounded-lg p-2 text-fg-secondary hover:bg-surface-hover hover:text-fg">
                   <X size={18} />
                 </button>
               </div>
@@ -493,7 +492,7 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
                     className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition ${
                       tab === t.id ? 'text-fg' : 'text-fg-secondary hover:text-fg'
                     }`}>
-                    {tab === t.id && <motion.span layoutId="supTab" className="absolute inset-0 -z-0 rounded-lg bg-aurora-violet/20 ring-1 ring-aurora-violet/30" />}
+                    {tab === t.id && <motion.span layoutId="supTab" className="absolute inset-0 -z-0 rounded-md bg-elevated shadow-card ring-1 ring-subtle" />}
                     <t.icon size={13} className="relative z-10" />
                     <span className="relative z-10">{t.label}</span>
                   </button>
@@ -509,7 +508,7 @@ export default function SupportWidget({ open, setOpen, tab, setTab, draft, clear
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <AlertTriangle className="text-amber-glow" />
                   <p className="text-sm text-fg-secondary">Couldn’t load help content. You can still create a ticket.</p>
-                  <button onClick={() => setTab('ticket')} className="text-xs text-aurora-cyan hover:underline">Open ticket form →</button>
+                  <button onClick={() => setTab('ticket')} className="text-xs text-brand hover:underline">Open ticket form →</button>
                 </div>
               ) : tab === 'chat' ? (
                 <ChatTab quickActions={kb.quickActions} onTicket={() => setTab('ticket')} />

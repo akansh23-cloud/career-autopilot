@@ -252,7 +252,7 @@ export default function Sandbox({ go }) {
           </select>
           <div className="flex items-center gap-2 rounded-xl border border-subtle bg-surface-1 px-3">
             <span className="whitespace-nowrap text-[11px] text-fg-secondary">Min proof</span>
-            <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-violet-500" />
+            <input type="range" min="0" max="100" step="10" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} className="flex-1 accent-indigo-600" />
             <span className="w-8 text-right font-mono text-xs text-fg-secondary">{minScore}</span>
           </div>
         </div>

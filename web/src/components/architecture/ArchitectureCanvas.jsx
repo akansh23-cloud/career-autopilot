@@ -119,10 +119,10 @@ export default function ArchitectureCanvas({ view, height = 420 }) {
       <div className="flex items-center justify-between border-b border-subtle px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-widest text-fg-muted">{view.title || view.type}</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} className="rounded p-1 text-fg-secondary hover:bg-surface-1 hover:text-fg" title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
+          <button onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} className="rounded p-1 text-fg-secondary hover:bg-surface-hover hover:text-fg" title="Zoom out" aria-label="Zoom out"><ZoomOut size={13} /></button>
           <span className="w-9 text-center font-mono text-[10px] text-fg-muted">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))} className="rounded p-1 text-fg-secondary hover:bg-surface-1 hover:text-fg" title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
-          <button onClick={() => setZoom(1)} className="rounded p-1 text-fg-secondary hover:bg-surface-1 hover:text-fg" title="Fit" aria-label="Reset zoom"><Maximize2 size={13} /></button>
+          <button onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))} className="rounded p-1 text-fg-secondary hover:bg-surface-hover hover:text-fg" title="Zoom in" aria-label="Zoom in"><ZoomIn size={13} /></button>
+          <button onClick={() => setZoom(1)} className="rounded p-1 text-fg-secondary hover:bg-surface-hover hover:text-fg" title="Fit" aria-label="Reset zoom"><Maximize2 size={13} /></button>
         </div>
       </div>
 

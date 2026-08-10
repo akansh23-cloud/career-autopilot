@@ -160,7 +160,7 @@ export function BridgeOverview({ summary, partners, interviews, onGoto }) {
                       <span className="text-[13px] font-medium text-fg">{r.title}</span>
                       <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-glow" />
                     </div>
-                    <p className="mt-1 text-[11px] text-amber-100/70">{r.reasons.join(' · ')}</p>
+                    <p className="mt-1 text-[11px] text-warn/70">{r.reasons.join(' · ')}</p>
                     <div className="mt-2"><Meter value={r.hired} max={r.openings} tone="amber" /></div>
                   </button>
                 ))}
@@ -732,7 +732,7 @@ export function SkillGap({ gaps = [], partners = [] }) {
 
         {shortfalls.length > 0 && (
           <>
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-amber-glow/80">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-warn/90">
               Campus cannot currently fill
             </p>
             <div className="grid gap-2.5 md:grid-cols-2">

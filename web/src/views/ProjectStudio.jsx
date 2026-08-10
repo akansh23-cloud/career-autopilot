@@ -108,7 +108,7 @@ class TabCrashBoundary extends React.Component {
   componentDidUpdate(prevProps) { if (prevProps.resetKey !== this.props.resetKey && this.state.error) this.setState({ error: null }); }
   render() {
     if (this.state.error) {
-      return <div className="rounded-xl border border-red-400/25 bg-red-500/10 p-4 text-[13px] text-red-100">This section could not render because some saved project data is malformed. Other project tabs are still safe to use.</div>;
+      return <div className="rounded-xl border border-red-400/25 bg-red-500/10 p-4 text-[13px] text-danger">This section could not render because some saved project data is malformed. Other project tabs are still safe to use.</div>;
     }
     return this.props.children;
   }
@@ -216,7 +216,7 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
       <div className="flex gap-1 overflow-x-auto border-b border-subtle px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map(([id, label, Icon]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${tab === id ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-1 hover:text-fg'}`}>
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium transition ${tab === id ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-hover hover:text-fg'}`}>
             <Icon size={14} /> {label}
           </button>
         ))}
@@ -315,10 +315,10 @@ function ProjectResult({ project, seed, onSave, onAddBullets, onOpenEditor }) {
 /* ---------------- Workspace card + modal ---------------- */
 function TabBar({ tabs, active, onPick }) {
   return (
-    <div className="sticky top-0 z-10 -mx-5 mb-4 flex gap-1 overflow-x-auto border-b border-subtle bg-menu px-5 pb-2 pt-1 backdrop-blur-xl sm:-mx-6 sm:px-6">
+    <div className="sticky top-0 z-10 -mx-5 mb-4 flex gap-1 overflow-x-auto border-b border-subtle bg-elevated px-5 pb-2 pt-1 sm:-mx-6 sm:px-6">
       {tabs.map(([id, label, Icon]) => (
         <button key={id} onClick={() => onPick(id)}
-          className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${active === id ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-1 hover:text-fg'}`}>
+          className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${active === id ? 'bg-aurora-violet/20 text-fg ring-1 ring-aurora-violet/40' : 'text-fg-secondary hover:bg-surface-hover hover:text-fg'}`}>
           <Icon size={13} /> {label}
         </button>
       ))}
@@ -515,7 +515,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
 
       {tab === 'overview' && (
         <div className="space-y-3">
-          {!cons.ok && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-amber-100"><AlertTriangle size={13} className="mr-1.5 inline" /> {cons.warning}</div>}
+          {!cons.ok && <div className="rounded-xl border border-amber-glow/30 bg-amber-glow/10 px-3 py-2 text-[12px] text-warn"><AlertTriangle size={13} className="mr-1.5 inline" /> {cons.warning}</div>}
           <div>
             <div className="mb-1 flex justify-between text-[11px] text-fg-secondary"><span>Task completion</span><span>{progress}%</span></div>
             <div className="h-2 overflow-hidden rounded-full bg-surface-1"><div className="h-full rounded-full bg-aurora-cta transition-all" style={{ width: `${progress}%` }} /></div>
@@ -645,7 +645,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                 <p><span className="text-fg-muted">Goal:</span> {m.goal}</p>
                 <div><span className="text-fg-muted">Tasks:</span><ul className="ml-1 mt-0.5 list-disc pl-4 text-fg-secondary">{m.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>
                 <p><span className="text-fg-muted">Expected output:</span> {m.expectedOutput}</p>
-                <p className="text-amber-100/80"><AlertTriangle size={11} className="mr-1 inline" />Common mistake: {m.commonMistakes}</p>
+                <p className="text-warn/90"><AlertTriangle size={11} className="mr-1 inline" />Common mistake: {m.commonMistakes}</p>
                 <div><span className="text-fg-muted">Verify:</span><ul className="ml-1 mt-0.5 list-disc pl-4 text-aurora-mint/90">{m.verification.map((v, i) => <li key={i}>{v}</li>)}</ul></div>
               </div>
             </details>
@@ -665,7 +665,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                       <div><span className="text-fg-muted">Steps:</span><ol className="ml-1 list-decimal pl-4">{t.steps.map((s, i) => <li key={i}>{s}</li>)}</ol></div>
                       <p><span className="text-fg-muted">Expected:</span> {t.expectedOutput}</p>
                       <p><span className="text-fg-muted">Test:</span> {t.howToTest}</p>
-                      <p className="text-amber-100/80">Avoid: {t.commonMistakes}</p>
+                      <p className="text-warn/90">Avoid: {t.commonMistakes}</p>
                     </div>
                   </div>
                 ))}
@@ -700,7 +700,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
           <Panel title="Roadmap checklist">
             <div className="space-y-1.5">
               {p.checklist.map((c, i) => (
-                <button key={i} onClick={() => toggleCheck(i)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-fg-secondary hover:bg-surface-1">
+                <button key={i} onClick={() => toggleCheck(i)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-fg-secondary hover:bg-surface-hover">
                   {c.done ? <CheckCircle2 size={15} className="text-aurora-mint" /> : <Circle size={15} className="text-fg-muted" />}
                   <span className={c.done ? 'text-fg-muted line-through' : ''}>{c.label}</span>
                 </button>
@@ -738,7 +738,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                 {(p.resources || []).map((r, i) => (
                   <li key={i} className="flex items-center justify-between gap-2 rounded-md bg-surface-1 px-2 py-1 text-[12px] text-fg-secondary">
                     <span className="truncate">{r}</span>
-                    <button onClick={() => patch({ resources: p.resources.filter((_, idx) => idx !== i) })} className="text-fg-muted hover:text-rose-400"><Trash2 size={12} /></button>
+                    <button onClick={() => patch({ resources: p.resources.filter((_, idx) => idx !== i) })} className="text-fg-muted hover:text-danger"><Trash2 size={12} /></button>
                   </li>
                 ))}
                 {!(p.resources || []).length && <li className="text-[11px] text-fg-muted">No resources yet.</li>}
@@ -749,7 +749,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
                 {(p.screenshots || []).map((s, i) => (
                   <div key={i} className="relative grid h-16 w-20 place-items-center rounded-lg border border-dashed border-strong bg-surface-1 text-[9px] text-fg-muted">
                     {s.label}
-                    <button onClick={() => patch({ screenshots: p.screenshots.filter((_, idx) => idx !== i) })} className="absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full bg-base text-fg-secondary ring-1 ring-strong hover:text-rose-400"><X size={10} /></button>
+                    <button onClick={() => patch({ screenshots: p.screenshots.filter((_, idx) => idx !== i) })} className="absolute -right-1.5 -top-1.5 grid h-4 w-4 place-items-center rounded-full bg-base text-fg-secondary ring-1 ring-strong hover:text-danger"><X size={10} /></button>
                   </div>
                 ))}
                 {!(p.screenshots || []).length && <p className="text-[11px] text-fg-muted">Add slots to boost the proof score.</p>}
@@ -794,7 +794,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
               </Panel>
               {(p.github.warnings?.length > 0 || p.github.recommendations?.length > 0) && (
                 <Panel title="Missing items & recommendations">
-                  <ul className="list-disc space-y-0.5 pl-4 text-[12px] text-amber-100/90">{(p.github.warnings || []).map((w, i) => <li key={i}>{w}</li>)}</ul>
+                  <ul className="list-disc space-y-0.5 pl-4 text-[12px] text-warn">{(p.github.warnings || []).map((w, i) => <li key={i}>{w}</li>)}</ul>
                   <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12px] text-fg-secondary">{(p.github.recommendations || []).map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </Panel>
               )}
@@ -813,7 +813,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
             </div>
             {statusInfo.status === 'Recruiter Ready'
               ? <p className="text-[12px] text-aurora-mint">This project is Recruiter Ready — fully proven.</p>
-              : <p className="text-[12px] text-amber-100/90"><AlertTriangle size={12} className="mr-1 inline" />To reach <b>{statusInfo.next}</b>: {statusInfo.reasons.join('; ')}.</p>}
+              : <p className="text-[12px] text-warn"><AlertTriangle size={12} className="mr-1 inline" />To reach <b>{statusInfo.next}</b>: {statusInfo.reasons.join('; ')}.</p>}
           </Panel>
 
           <Panel title="Verify live demo">
@@ -892,7 +892,7 @@ function WorkspaceModal({ project, open, onClose, onChange, onPublish, onOpenEdi
         {(() => {
           const { ready, missing } = publishReadiness(p);
           if (ready || p.published) return null;
-          return <span className="text-[11px] text-amber-100/80"><AlertTriangle size={12} className="mr-1 inline" />To publish, add {missing.join(', ')}.</span>;
+          return <span className="text-[11px] text-warn/90"><AlertTriangle size={12} className="mr-1 inline" />To publish, add {missing.join(', ')}.</span>;
         })()}
       </div>
     </Modal>
@@ -907,7 +907,7 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild, onGuided }) {
     <div className="flex flex-col rounded-2xl border border-subtle bg-surface-1 p-4 transition hover:border-strong">
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-medium leading-tight text-fg">{p.title}</h4>
-        <button onClick={() => onDelete(p.id)} className="text-fg-muted hover:text-rose-400"><Trash2 size={14} /></button>
+        <button onClick={() => onDelete(p.id)} className="text-fg-muted hover:text-danger"><Trash2 size={14} /></button>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         <StatusBadge status={st.status} />
@@ -1147,7 +1147,7 @@ export default function ProjectStudio({ go, openProjectId }) {
           </div>
         )}
         {status === 'idle' && !project && (
-          <div className="gradient-border p-8 sm:p-10">
+          <div className="gradient-border p-6 sm:p-7">
             <EmptyState icon={Rocket} title="Generate your first portfolio project" hint="Set your target role, level, duration and type above, then generate a full roadmap with milestones, tech stack, a README, resume bullets, a LinkedIn post and interview prep — all in one full-width workspace." />
           </div>
         )}

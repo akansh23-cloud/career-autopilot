@@ -127,11 +127,11 @@ export default function CollegeWorkspace({ params = {}, go }) {
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${
-                  tab === t.id ? 'border-strong bg-surface-1 text-fg' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                  tab === t.id ? 'border-indigo-200 bg-indigo-50 text-brand' : 'border-transparent text-fg-secondary hover:bg-surface-hover hover:text-fg'
                 }`}
               >
-                <t.icon size={15} /> {t.label}
+                <t.icon size={14} className={tab === t.id ? 'text-aurora-violet' : 'text-fg-muted'} /> {t.label}
               </button>
             ))}
           </div>

@@ -94,7 +94,7 @@ function ModuleRow({ projectId, name, module: mod, onChanged }) {
         )}
       </div>
 
-      {err && <p className="mt-2 text-[11px] text-red-300">{err}</p>}
+      {err && <p className="mt-2 text-[11px] text-danger">{err}</p>}
     </div>
   );
 }

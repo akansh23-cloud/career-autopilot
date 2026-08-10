@@ -106,7 +106,7 @@ function Splash() {
       <Atmosphere variant="app" />
       <div className="flex flex-col items-center gap-4">
         <div className="grid h-14 w-14 place-items-center rounded-2xl bg-aurora-cta shadow-glow">
-          <span className="font-display text-2xl font-bold text-fg">C</span>
+          <span className="text-2xl font-bold text-white">C</span>
         </div>
         <Spinner />
         <p className="text-sm text-muted">Loading your workspace…</p>
@@ -177,9 +177,8 @@ export default function App() {
   // One-time cleanup of any pre-scoping legacy keys left by older builds.
   useEffect(() => { purgeLegacyUnscopedKeys(); }, []);
 
-  // ⌘K / Ctrl-K opens the command palette. The palette component was built and
-  // RBAC-filtered but never mounted, so the shortcut did nothing — every
-  // workspace had to be reached through the top nav.
+  // ⌘K / Ctrl-K toggles the command palette; the Shell's search controls open
+  // it via a custom event so the trigger lives next to the navigation.
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
@@ -187,8 +186,13 @@ export default function App() {
         setPaletteOpen((v) => !v);
       }
     };
+    const onOpen = () => setPaletteOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('career-command-palette', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('career-command-palette', onOpen);
+    };
   }, []);
 
   useEffect(() => {

@@ -90,7 +90,7 @@ export default function VerificationStatus({ go }) {
           </div>
 
           {status === 'pending' ? (
-            <div className="rounded-2xl border border-amber-glow/25 bg-amber-glow/10 p-4 text-sm text-amber-100">
+            <div className="rounded-2xl border border-amber-glow/25 bg-amber-glow/10 p-4 text-sm text-warn">
               Your request is pending admin review. You can keep using the student/professional-safe workspace while approval is pending.
             </div>
           ) : (
@@ -112,7 +112,7 @@ export default function VerificationStatus({ go }) {
           )}
 
           {status === 'rejected' && (
-            <div className="rounded-2xl border border-rose-400/25 bg-rose-400/10 p-4 text-sm text-rose-100">
+            <div className="rounded-2xl border border-rose-400/25 bg-rose-400/10 p-4 text-sm text-danger">
               Your previous request was rejected. Update the identifier above and submit again if needed.
             </div>
           )}

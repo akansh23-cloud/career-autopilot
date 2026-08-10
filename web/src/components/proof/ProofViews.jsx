@@ -77,7 +77,7 @@ export function ArchitectureDiagram({ mermaid, height = 320 }) {
   } catch (err) {
     return (
       <div className="rounded-xl border border-amber-glow/25 bg-amber-glow/10 p-3">
-        <p className="text-[12px] text-amber-100">Unable to render this architecture diagram. The Mermaid text is still available below.</p>
+        <p className="text-[12px] text-warn">Unable to render this architecture diagram. The Mermaid text is still available below.</p>
         <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-fg-secondary">{source}</pre>
       </div>
     );

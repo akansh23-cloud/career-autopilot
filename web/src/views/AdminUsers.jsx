@@ -232,7 +232,7 @@ function DetailDrawer({ id, onClose, onMutated }) {
       >
         <div className="flex shrink-0 items-center justify-between border-b border-subtle px-5 py-4">
           <p className="font-display text-[15px] font-semibold text-fg">User detail</p>
-          <button onClick={onClose} className="rounded-lg p-2 text-fg-secondary hover:bg-surface-1"><X size={18} /></button>
+          <button onClick={onClose} className="rounded-lg p-2 text-fg-secondary hover:bg-surface-hover"><X size={18} /></button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 [scrollbar-width:thin]">
@@ -665,7 +665,7 @@ export default function AdminUsers() {
         <button
           onClick={() => setShowFilters((s) => !s)}
           className={`inline-flex h-11 items-center gap-2 rounded-xl border px-3.5 text-sm transition ${
-            showFilters || activeFilterCount ? 'border-aurora-violet/40 bg-aurora-violet/10 text-brand' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
+            showFilters || activeFilterCount ? 'border-indigo-200 bg-indigo-50 text-brand' : 'border-subtle bg-surface-1 text-fg-secondary hover:border-strong'
           }`}
         >
           <SlidersHorizontal size={15} /> Filters{activeFilterCount ? ` · ${activeFilterCount}` : ''}

@@ -95,7 +95,7 @@ I'm a candidate interested in DevOps/Platform Engineering roles. Keep it under 9
               {c.email && (
                 <a
                   href={`mailto:${c.email}`}
-                  className="truncate font-mono text-xs text-aurora-cyan hover:underline"
+                  className="truncate font-mono text-xs text-brand hover:underline"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {c.email}

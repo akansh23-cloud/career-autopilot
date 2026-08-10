@@ -211,7 +211,7 @@ export function PriorArtWorkspace({ project, projectId, persisted, onChange }) {
   const sel = 'h-11 w-full rounded-xl border border-subtle bg-surface-1 px-3 text-sm text-fg outline-none focus:border-aurora-violet/50';
   return (
     <SectionCard title="Prior-art workspace" eyebrow={persisted ? `${records.length} record(s)` : 'Saving requires DB'}>
-      {!persisted && <p className="mb-3 text-[12px] text-amber-glow/80">Prior-art records persist only when the database is enabled. Until at least one record is added, prior-art risk is reported as unknown.</p>}
+      {!persisted && <p className="mb-3 text-[12px] text-warn/90">Prior-art records persist only when the database is enabled. Until at least one record is added, prior-art risk is reported as unknown.</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Source type"><select className={sel} value={form.sourceType} onChange={(e) => setForm({ ...form, sourceType: e.target.value })}>{['patent', 'paper', 'product', 'github', 'article', 'manual'].map((s) => <option key={s} value={s}>{s}</option>)}</select></Field>
         <Field label="Title"><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Reference title" /></Field>

@@ -19,7 +19,7 @@ export default function WorkspaceSidebar({ active, onSelect, counts = {} }) {
             key={s.id}
             onClick={() => onSelect(s.id)}
             className={`flex shrink-0 items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-[13px] font-medium transition
-              ${isActive ? 'bg-aurora-violet/14 text-fg' : 'text-fg-secondary hover:bg-surface-1 hover:text-fg'}`}
+              ${isActive ? 'bg-aurora-violet/14 text-fg' : 'text-fg-secondary hover:bg-surface-hover hover:text-fg'}`}
           >
             <Icon size={16} className={isActive ? 'text-brand' : 'text-fg-muted'} />
             <span className="whitespace-nowrap">{s.label}</span>
