@@ -1,0 +1,605 @@
+{
+  "version": "template-preview-cache-v1",
+  "fixtureVersion": "template-preview-fixtures-v1",
+  "dimensions": {
+    "width": 360,
+    "height": 509
+  },
+  "generatedAt": "2026-08-11T13:05:55.137Z",
+  "surfaces": {
+    "resume-studio": [
+      {
+        "id": "jake-ats-classic",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/jake-ats-classic.png",
+        "bytes": 46822,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "clean-ats-pro",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/clean-ats-pro.png",
+        "bytes": 42196,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "modern-pro",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/modern-pro.png",
+        "bytes": 39551,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "cloud-devops",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/cloud-devops.png",
+        "bytes": 48281,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "senior-engineer",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/senior-engineer.png",
+        "bytes": 45975,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "fresher-project-first",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/fresher-project-first.png",
+        "bytes": 40620,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "executive-leadership",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/executive-leadership.png",
+        "bytes": 59416,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "visual-creative",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/visual-creative.png",
+        "bytes": 45655,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "atlas",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/atlas.png",
+        "bytes": 46541,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "oxford",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/oxford.png",
+        "bytes": 42196,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "mono",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/mono.png",
+        "bytes": 38659,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "sterling",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/sterling.png",
+        "bytes": 41549,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "summit",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/summit.png",
+        "bytes": 40124,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "ledger",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/ledger.png",
+        "bytes": 42385,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "kernel",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/kernel.png",
+        "bytes": 46506,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "stack",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/stack.png",
+        "bytes": 39551,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "circuit",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/circuit.png",
+        "bytes": 45590,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "launch",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/launch.png",
+        "bytes": 35903,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "campus",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/campus.png",
+        "bytes": 41507,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "boardroom",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/boardroom.png",
+        "bytes": 59483,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "sentinel",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/sentinel.png",
+        "bytes": 40472,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "tensor",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/tensor.png",
+        "bytes": 46625,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "meridian",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/meridian.png",
+        "bytes": 39447,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "compass",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/compass.png",
+        "bytes": 44250,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "gradient",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/gradient.png",
+        "bytes": 36316,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "internship",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/internship.png",
+        "bytes": 38758,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "foreman",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/foreman.png",
+        "bytes": 58641,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "directorate",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "resume-renderer-blocks-css",
+        "path": "/template-previews/resume-studio/directorate.png",
+        "bytes": 59408,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "technical-sidebar",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/technical-sidebar.png",
+        "bytes": 41761,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "cloud-infrastructure-pro",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/cloud-infrastructure-pro.png",
+        "bytes": 42070,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "data-platform-sidebar",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/data-platform-sidebar.png",
+        "bytes": 42369,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "balanced-two-column",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/balanced-two-column.png",
+        "bytes": 44949,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "editorial-professional",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/editorial-professional.png",
+        "bytes": 42686,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "executive-technology",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/executive-technology.png",
+        "bytes": 55837,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "campus-portfolio",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/campus-portfolio.png",
+        "bytes": 37910,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "signature-engineering",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/signature-engineering.png",
+        "bytes": 41191,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "modern-corporate",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/modern-corporate.png",
+        "bytes": 40863,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "security-engineering",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/security-engineering.png",
+        "bytes": 41218,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "analytics-insight",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/analytics-insight.png",
+        "bytes": 41081,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "product-strategy",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/product-strategy.png",
+        "bytes": 43672,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "research-innovation",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/research-innovation.png",
+        "bytes": 43595,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "minimal-ats-premium",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/minimal-ats-premium.png",
+        "bytes": 39132,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "precision-engineering-classic",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/precision-engineering-classic.png",
+        "bytes": 40090,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "heritage-detailed",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/heritage-detailed.png",
+        "bytes": 41039,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "graduate-violet",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/graduate-violet.png",
+        "bytes": 34320,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "cloud-devops-modern",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/cloud-devops-modern.png",
+        "bytes": 39064,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "midnight-technical-rail",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/midnight-technical-rail.png",
+        "bytes": 42901,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "minimal-serif-ats",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/minimal-serif-ats.png",
+        "bytes": 38923,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "dark-executive-classic",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/dark-executive-classic.png",
+        "bytes": 52686,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "centered-ats-engineering",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/centered-ats-engineering.png",
+        "bytes": 39893,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "violet-modern-professional",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "template-os-vector-pdf",
+        "path": "/template-previews/resume-studio/violet-modern-professional.png",
+        "bytes": 38586,
+        "width": 360,
+        "height": 509
+      }
+    ],
+    "editor": [
+      {
+        "id": "jake-ats",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/jake-ats.png",
+        "bytes": 48846,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "modern-pro",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/modern-pro.png",
+        "bytes": 46882,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "dark-exec",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/dark-exec.png",
+        "bytes": 62714,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "minimal-ats",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/minimal-ats.png",
+        "bytes": 44826,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "two-col-tech",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/two-col-tech.png",
+        "bytes": 56593,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "cloud-devops",
+        "templateVersion": 1,
+        "fixtureId": "devops-cloud",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/cloud-devops.png",
+        "bytes": 52595,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "fresher",
+        "templateVersion": 1,
+        "fixtureId": "student-project-heavy",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/fresher.png",
+        "bytes": 40127,
+        "width": 360,
+        "height": 509
+      },
+      {
+        "id": "multipage",
+        "templateVersion": 1,
+        "fixtureId": "senior-long",
+        "renderer": "resume-templates-html",
+        "path": "/template-previews/editor/multipage.png",
+        "bytes": 60849,
+        "width": 360,
+        "height": 509
+      }
+    ]
+  }
+}

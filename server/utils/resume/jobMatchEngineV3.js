@@ -21,7 +21,7 @@ import { parseResumeDate, dateOrdinal } from './dateEngine.js';
 import { bulletSimilarity } from './textQualityEngines.js';
 
 export const JOB_MATCH_VERSION = 'job-match-v3';
-export const SELECTION_VERSION = 'content-selection-v1';
+export const SELECTION_VERSION = 'content-selection-v2-budget-aware';
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const pct = (n) => clamp(Math.round(n), 0, 100);
@@ -211,10 +211,38 @@ export function rankContentForTarget(doc, { jd = null, targetRole = '', verified
   const rankedSkills = d.skills.filter((s) => s.enabled).map((s) => {
     const imp = importanceOf(s.name);
     const verified = vSet.has(canonicalSkill(s.name)) || s.status === 'VERIFIED';
-    return { skillId: s.id, name: s.name, value: Number((imp * (verified ? 1.3 : 1)).toFixed(2)), verified, importance: imp };
+    return { skillId: s.id, itemId: s.id, name: s.name, value: Number((imp * (verified ? 1.3 : 1)).toFixed(2)), verified, importance: imp };
   }).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
 
-  return { version: SELECTION_VERSION, targetRole: role, bullets: rankedBullets, projects: rankedProjects, skills: rankedSkills };
+  const scoreSimpleItem = (item, kind) => {
+    const text = String(item.text || '');
+    const hits = allSkillTerms.filter((skill) => skillPresent(text, skill));
+    const targetWeight = hits.reduce((sum, hit) => sum + importanceOf(hit), 0);
+    const evidence = item.evidenceIds?.length || item.provenance === 'VERIFIED' ? 1.2 : 1;
+    const quantified = /\d/.test(text) ? 1.2 : 1;
+    const base = kind === 'certification' ? 0.8 : 0.65;
+    const value = Number(((base + targetWeight) * evidence * (kind === 'achievement' ? quantified : 1)).toFixed(3));
+    return {
+      itemId: item.id, text, value, skills: hits,
+      reasons: [
+        hits.length ? `aligns with ${hits.slice(0, 3).join(', ')}` : 'general credential/achievement',
+        evidence > 1 ? 'evidence-backed' : null,
+        kind === 'achievement' && quantified > 1 ? 'quantified impact' : null,
+      ].filter(Boolean),
+    };
+  };
+
+  const rankedCertifications = d.certifications.filter((x) => x.enabled)
+    .map((x) => scoreSimpleItem(x, 'certification'))
+    .sort((a, b) => b.value - a.value || a.itemId.localeCompare(b.itemId));
+  const rankedAchievements = d.achievements.filter((x) => x.enabled)
+    .map((x) => scoreSimpleItem(x, 'achievement'))
+    .sort((a, b) => b.value - a.value || a.itemId.localeCompare(b.itemId));
+
+  return {
+    version: SELECTION_VERSION, targetRole: role, bullets: rankedBullets, projects: rankedProjects, skills: rankedSkills,
+    certifications: rankedCertifications, achievements: rankedAchievements,
+  };
 }
 
 /* Propose a variant selection (explainable, non-destructive). */

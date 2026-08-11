@@ -35,6 +35,7 @@ import Arena from './views/Arena.jsx';
 import Growth from './views/Growth.jsx';
 import Settings from './views/Settings.jsx';
 import ProjectStudio from './views/ProjectStudio.jsx';
+import TemplateBuilder from './views/TemplateBuilder.jsx';
 import ProjectBuilder from './views/ProjectBuilder.jsx';
 import Sandbox from './views/Sandbox.jsx';
 import PartnerMatch from './views/PartnerMatch.jsx';
@@ -85,6 +86,7 @@ const VIEWS = {
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
+  templatebuilder: TemplateBuilder,
   skillsxp: SkillsXp,
   marketplace: MarketplaceView,
   inspirations: InspirationsView,

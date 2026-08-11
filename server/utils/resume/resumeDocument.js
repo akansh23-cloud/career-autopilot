@@ -16,7 +16,7 @@
      UNSUPPORTED        appears in content with no known source
    ============================================================ */
 
-export const RESUME_DOCUMENT_VERSION = 'resume-doc-v3';
+export const RESUME_DOCUMENT_VERSION = 'resume-doc-v4-template-pin';
 
 export const PROVENANCE = Object.freeze({
   VERIFIED: 'VERIFIED',
@@ -182,6 +182,10 @@ export function normalizeResumeDocument(doc) {
     targetJobId: str(o.targetJobId, 80),
     targetJobDescription: str(o.targetJobDescription, 60000),
     templateId: str(o.templateId, 60) || 'atlas',
+    /* Phase 18: exact template revision used by this resume. Null preserves
+       legacy documents created before template version pinning; the first
+       authoritative save/render may resolve and pin the current version. */
+    templateVersion: Number.isInteger(Number(o.templateVersion)) && Number(o.templateVersion) > 0 ? Number(o.templateVersion) : null,
     pageSize: ['a4', 'letter'].includes(o.pageSize) ? o.pageSize : 'a4',
     density: ['comfortable', 'compact', 'tight'].includes(o.density) ? o.density : 'compact',
     atsStrict: bool(o.atsStrict),
@@ -266,7 +270,11 @@ export function fromStructuredResume(s, { verifiedSkillSet = null } = {}) {
     achievements: arr(src.achievements),
     publications: arr(src.publications),
     patents: arr(src.patents),
-    customSections: arr(src.extraSections).map((x) => ({ title: x.title, items: arr(x.items) })),
+    volunteer: arr(src.volunteer),
+    languages: arr(src.languages),
+    customSections: (arr(src.customSections).length ? arr(src.customSections) : arr(src.extraSections))
+      .filter((x) => !['volunteer', 'volunteering', 'volunteer experience', 'languages', 'language'].includes(String(x?.title || '').trim().toLowerCase()))
+      .map((x) => ({ title: x.title, items: arr(x.items) })),
   });
 }
 
@@ -316,6 +324,12 @@ export function toRendererStructured(doc) {
     achievements: d.achievements.filter(on).map((x) => x.text),
     publications: d.publications.filter(on).map((x) => x.text),
     patents: d.patents.filter(on).map((x) => x.text),
+    volunteer: d.volunteer.filter(on).map((x) => x.text),
+    languages: d.languages.filter(on).map((x) => x.text),
+    customSections: d.customSections.filter((s) => s.enabled).map((s) => ({ title: s.title, items: s.items.filter((i) => i.enabled).map((i) => i.text) })),
+    /* Legacy renderer compatibility: it historically receives volunteer,
+       languages and custom sections through extraSections. Template OS reads
+       the dedicated fields above and de-duplicates this compatibility view. */
     extraSections: [
       ...d.customSections.filter((s) => s.enabled).map((s) => ({ title: s.title, items: s.items.filter((i) => i.enabled).map((i) => i.text) })),
       ...(d.volunteer.some(on) ? [{ title: 'Volunteer', items: d.volunteer.filter(on).map((x) => x.text) }] : []),

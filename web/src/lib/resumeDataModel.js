@@ -12,7 +12,7 @@
      projects:   [{ name, techStack, link, bullets[] }],
      education:  [{ school, degree, dates, details[] }],
      certifications: [], achievements: [], publications: [], patents: [],
-     extraSections: [{ title, items[] }]
+     volunteer: [], languages: [], extraSections: [{ title, items[] }]
    }
 
    • parseResumeText(text)        -> legacy section model (name/contacts/sections)
@@ -325,6 +325,8 @@ export function emptyStructuredResume() {
     achievements: [],
     publications: [],
     patents: [],
+    volunteer: [],
+    languages: [],
     extraSections: [],
   };
 }
@@ -350,6 +352,8 @@ export function toStructuredResume(parsed) {
       achievements: (parsed.achievements || []).slice(),
       publications: (parsed.publications || []).slice(),
       patents: (parsed.patents || []).slice(),
+      volunteer: (parsed.volunteer || []).slice(),
+      languages: (parsed.languages || []).slice(),
       extraSections: (parsed.extraSections || []).slice(),
     };
   }
@@ -394,6 +398,12 @@ export function toStructuredResume(parsed) {
       case 'patents':
         out.patents.push(...listItemsFromSection(s));
         break;
+      case 'volunteer':
+        out.volunteer.push(...listItemsFromSection(s));
+        break;
+      case 'languages-spoken':
+        out.languages.push(...listItemsFromSection(s));
+        break;
       default:
         out.extraSections.push({ title: s.title || 'Additional', items: listItemsFromSection(s) });
     }
@@ -414,7 +424,7 @@ export function estimateContentUnits(data) {
   for (const e of d.experience) units += 2 + e.bullets.length * 1.2;
   for (const p of d.projects) units += 2 + p.bullets.length * 1.2;
   units += d.education.length * 2;
-  units += d.certifications.length + d.achievements.length + d.publications.length + d.patents.length;
+  units += d.certifications.length + d.achievements.length + d.publications.length + d.patents.length + d.volunteer.length + d.languages.length * 0.45;
   for (const s of d.extraSections) units += 1 + s.items.length;
   return Math.round(units);
 }

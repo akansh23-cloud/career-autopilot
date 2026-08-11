@@ -14,7 +14,7 @@
    ============================================================ */
 import { eligiblePatterns, conjugateVerb, verbInfo, tenseForContext } from './grammarLibrary.js';
 
-export const COMPILER_VERSION = 'bullet-compiler-v1';
+export const COMPILER_VERSION = 'bullet-compiler-v2-vocabulary';
 
 const clean = (s) => String(s == null ? '' : s).trim().replace(/\s+/g, ' ');
 

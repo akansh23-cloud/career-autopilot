@@ -25,7 +25,8 @@
     "seed:demo:reset": "node scripts/seed-demo.mjs --reset",
     "seed:demo:status": "node scripts/seed-demo.mjs --status",
     "seed:demo:recruiter": "node scripts/seed-demo.mjs --talent-only",
-    "seed:demo:recruiter:reset": "node scripts/seed-demo.mjs --talent-only --reset"
+    "seed:demo:recruiter:reset": "node scripts/seed-demo.mjs --talent-only --reset",
+    "previews:templates": "node scripts/generate-template-previews.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -36,6 +37,7 @@
     "helmet": "^8.0.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
     "mongoose": "^8.24.0",
     "nodemailer": "^9.0.3",

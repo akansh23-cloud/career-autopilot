@@ -303,6 +303,115 @@ export const V3_TEMPLATES = [
 ];
 RESUME_TEMPLATES.push(...V3_TEMPLATES);
 
+/* ============================================================
+   V4 TEMPLATE PLATFORM ADDITIONS
+   ------------------------------------------------------------
+   • Eight new original designs covering role families the V3 set
+     missed (security, data science/ML, consulting/finance, PM,
+     graduate/internship, engineering management, director).
+   • License metadata on EVERY template. Legal state is data, not
+     code: flipping LICENSE_PENDING → LICENSED and
+     productionEnabled → true requires a config change only.
+     All shipped designs are INTERNAL_ORIGINAL and enabled.
+   • Descriptor fields consumed by the deterministic template
+     recommender: supportedRoles, careerStages, atsLevel.
+   ============================================================ */
+export const LICENSE_STATES = Object.freeze(['INTERNAL_ORIGINAL', 'OWNED', 'OPEN_SOURCE', 'LICENSED', 'LICENSE_PENDING', 'DEVELOPMENT_REFERENCE']);
+const INTERNAL_LICENSE = Object.freeze({ licenseStatus: 'INTERNAL_ORIGINAL', source: 'Career Autopilot design team', licenseName: '', licenseNotice: '', productionEnabled: true });
+
+const V4 = { ...V3, set: 'v4' };
+export const V4_TEMPLATES = [
+  {
+    ...V4, id: 'sentinel', name: 'Sentinel', category: 'tech', atsSafe: true, layoutType: 'single-column', riskLevel: 'low', strictAts: false,
+    supportedRoles: ['security', 'cyber', 'devops', 'sre'], careerStages: ['professional', 'senior'], atsLevel: 'very-high',
+    bestFor: ['Security engineers', 'SOC / AppSec', 'Compliance-heavy shops'], badges: ['ATS-safe', 'Certification-forward'],
+    description: 'Security-engineering layout: certifications ride directly under skills, dark slate rules, zero parser risk.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Calibri, "Segoe UI", Arial, sans-serif', accent: '#0f172a', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ['summary', 'skills', 'certifications', 'experience', 'projects', 'education', 'achievements'] },
+  },
+  {
+    ...V4, id: 'tensor', name: 'Tensor', category: 'tech', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['data scientist', 'ml', 'machine learning', 'ai'], careerStages: ['professional', 'senior'], atsLevel: 'high',
+    bestFor: ['Data scientists', 'ML engineers', 'Research-adjacent roles'], badges: ['ATS-safe', 'Publications-ready'],
+    description: 'DS/ML layout with a deep-teal accent; projects sit above experience so models and papers lead.',
+    sections: V3_SECTIONS,
+    theme: { font: '"Helvetica Neue", Helvetica, Arial, sans-serif', accent: '#0f766e', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ['summary', 'skills', 'projects', 'experience', 'education', 'certifications', 'achievements'] },
+  },
+  {
+    ...V4, id: 'meridian', name: 'Meridian', category: 'professional', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['consultant', 'consulting', 'finance', 'analyst'], careerStages: ['professional', 'senior'], atsLevel: 'high',
+    bestFor: ['Consulting', 'Finance', 'Strategy'], badges: ['ATS-safe', 'Serif'],
+    description: 'Consulting/finance serif with hairline burgundy rules — the quiet confidence of a well-set engagement letter.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Georgia, "Times New Roman", serif', accent: '#7f1d1d', headerAlign: 'center', sectionStyle: 'rule', bulletChar: 'disc', density: 'comfortable', nameSize: 21, skillsStyle: 'inline-lines', headerBand: false, sectionOrder: ORDER_EXEC },
+  },
+  {
+    ...V4, id: 'compass', name: 'Compass', category: 'professional', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['product manager', 'product', 'program manager'], careerStages: ['professional', 'senior'], atsLevel: 'high',
+    bestFor: ['Product managers', 'Program managers'], badges: ['ATS-safe', 'Outcome-forward'],
+    description: 'PM layout: summary and impact-heavy experience first, skills demoted, indigo hairlines.',
+    sections: V3_SECTIONS,
+    theme: { font: '"Helvetica Neue", Helvetica, Arial, sans-serif', accent: '#4338ca', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'inline-lines', headerBand: false, sectionOrder: ['summary', 'experience', 'projects', 'skills', 'education', 'certifications', 'achievements'] },
+  },
+  {
+    ...V4, id: 'gradient', name: 'Graduate', category: 'student', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['graduate', 'intern', 'fresher'], careerStages: ['student'], atsLevel: 'very-high',
+    bestFor: ['Final-year students', 'First job applications'], badges: ['ATS Strict', 'Education-first'], strictAts: true,
+    description: 'Graduate hiring layout: education on top, projects immediately after, formal and utterly parser-safe.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Calibri, "Segoe UI", Arial, sans-serif', accent: '#1e3a5f', headerAlign: 'center', sectionStyle: 'caps', bulletChar: 'disc', density: 'compact', nameSize: 20, skillsStyle: 'grouped-lines', headerBand: false, sectionOrder: ['education', 'summary', 'projects', 'skills', 'experience', 'certifications', 'achievements'] },
+  },
+  {
+    ...V4, id: 'internship', name: 'Internship Sprint', category: 'student', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['intern', 'internship', 'trainee'], careerStages: ['student'], atsLevel: 'high',
+    bestFor: ['Internship applications', 'Semester placements'], badges: ['ATS-safe', 'Compact'],
+    description: 'Tight one-pager for internship season: coursework-friendly education block, project bullets front and centre.',
+    sections: V3_SECTIONS,
+    contentBudget: { projects: { preferredCount: 4, maxCount: 5, preferredBullets: 2, maxBullets: 3 } },
+    theme: { font: '"Helvetica Neue", Helvetica, Arial, sans-serif', accent: '#0e7490', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'tight', nameSize: 19, skillsStyle: 'inline-lines', headerBand: false, sectionOrder: ['education', 'projects', 'skills', 'summary', 'experience', 'certifications', 'achievements'] },
+  },
+  {
+    ...V4, id: 'foreman', name: 'Foreman', category: 'executive', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['engineering manager', 'manager', 'lead'], careerStages: ['senior'], atsLevel: 'high',
+    bestFor: ['Engineering managers', 'Tech leads moving up'], badges: ['ATS-safe', 'Leadership + hands-on'],
+    description: 'EM layout balancing leadership scope with retained technical depth — team outcomes lead, stack stays visible.',
+    sections: V3_SECTIONS,
+    theme: { font: 'Georgia, "Times New Roman", serif', accent: '#334155', headerAlign: 'left', sectionStyle: 'rule', bulletChar: 'disc', density: 'compact', nameSize: 21, skillsStyle: 'inline-lines', headerBand: false, experienceTitle: 'Leadership & Engineering Experience', sectionOrder: ORDER_EXEC },
+  },
+  {
+    ...V4, id: 'directorate', name: 'Directorate', category: 'executive', atsSafe: true, layoutType: 'single-column', riskLevel: 'low',
+    supportedRoles: ['director', 'vp', 'head'], careerStages: ['senior'], atsLevel: 'balanced',
+    bestFor: ['Directors', 'VPs', 'Heads of function'], badges: ['ATS-safe', 'Impact-first'],
+    description: 'Director-level presentation: a wider executive summary, impact-led experience, education reduced to a single line each.',
+    sections: V3_SECTIONS,
+    contentBudget: { summary: { preferredLines: 4, maxLines: 5 }, skills: { preferredCount: 10, maxCount: 14 } },
+    theme: { font: 'Georgia, "Times New Roman", serif', accent: '#1f2430', headerAlign: 'center', sectionStyle: 'thinline', bulletChar: 'disc', density: 'comfortable', nameSize: 22, skillsStyle: 'inline-lines', headerBand: true, experienceTitle: 'Leadership Experience', sectionOrder: ORDER_EXEC },
+  },
+];
+RESUME_TEMPLATES.push(...V4_TEMPLATES);
+
+/* ============================================================
+   TEMPLATE OS (V5) — DSL-compiled premium layouts
+   These cards are PROJECTIONS of TemplateDefinitions; rendering
+   goes through the Template OS layout compiler, not the legacy
+   theme renderer (previewType 'template-os' keeps them out of
+   the legacy certification path). Their ATS level is measured
+   at certification time by the Template OS pipeline.
+   ============================================================ */
+import { TEMPLATE_OS_BUILTINS, BUILTIN_CERTIFICATION } from './templateOs/builtins.js';
+import { toRegistryCard } from './templateOs/adapter.js';
+import { getRuntimeTemplateCard, mergeTemplateCatalog } from './runtimeTemplateCatalog.js';
+export const TEMPLATE_OS_CARDS = TEMPLATE_OS_BUILTINS.map((d) => toRegistryCard(d, BUILTIN_CERTIFICATION[d.id] || null));
+RESUME_TEMPLATES.push(...TEMPLATE_OS_CARDS);
+
+/* License metadata for every template. All current designs are original
+   Career Autopilot work; the fields exist so externally sourced templates can
+   ship as LICENSE_PENDING / DEVELOPMENT_REFERENCE with productionEnabled=false
+   until rights are cleared — enabling them is a data flip, not a rewrite. */
+for (const t of RESUME_TEMPLATES) {
+  if (!t.license) t.license = { ...INTERNAL_LICENSE };
+}
+
 /* Broken legacy templates that are intentionally REMOVED (not just hidden):
    - 'two-col-tech'  — sidebar two-column collapsed in preview/export and
                        confused ATS parsers. Mapped to Jake ATS Classic.
@@ -326,14 +435,35 @@ let _customTemplate = null;
 export function setCustomResumeTemplate(tpl) { _customTemplate = tpl; }
 export function getCustomResumeTemplate() { return _customTemplate; }
 
-export function getResumeTemplate(idOrName) {
+export function getResumeTemplateCatalog() {
+  return mergeTemplateCatalog(RESUME_TEMPLATES);
+}
+
+export function templateVersionOf(tpl) {
+  const n = Number(tpl?.templateVersion || tpl?.definition?.version || 1);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
+export function getResumeTemplate(idOrName, templateVersion = null, { strictVersion = false } = {}) {
   if (!idOrName) return RESUME_TEMPLATES[0];
-  if (_customTemplate && (idOrName === 'custom' || idOrName === _customTemplate.id || idOrName === _customTemplate.name)) return _customTemplate;
+  const requested = Number.isInteger(Number(templateVersion)) && Number(templateVersion) > 0 ? Number(templateVersion) : null;
+  if (_customTemplate && (idOrName === 'custom' || idOrName === _customTemplate.id || idOrName === _customTemplate.name)) {
+    if (!requested || templateVersionOf(_customTemplate) === requested) return _customTemplate;
+    return strictVersion ? null : _customTemplate;
+  }
+  const runtime = getRuntimeTemplateCard(idOrName, requested);
+  if (runtime) return runtime;
   const direct = RESUME_TEMPLATES.find((t) => t.id === idOrName || t.name === idOrName);
+  if (direct && (!requested || templateVersionOf(direct) === requested)) return direct;
+  if (requested && strictVersion) return null;
   if (direct) return direct;
   const mapped = LEGACY_TEMPLATE_MAP[idOrName];
-  if (mapped) return RESUME_TEMPLATES.find((t) => t.id === mapped) || RESUME_TEMPLATES[0];
-  return RESUME_TEMPLATES[0];
+  if (mapped) {
+    const mappedTpl = RESUME_TEMPLATES.find((t) => t.id === mapped) || RESUME_TEMPLATES[0];
+    if (!requested || templateVersionOf(mappedTpl) === requested || !strictVersion) return mappedTpl;
+    return null;
+  }
+  return strictVersion ? null : RESUME_TEMPLATES[0];
 }
 
 /* JD / role -> template recommendation with reasons (no fake numbers). */

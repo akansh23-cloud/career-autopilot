@@ -51,6 +51,12 @@ export const ResumeOsApi = {
   restore: (docId, index) => api.post('/api/resume-os/snapshots/restore', { docId, index }),
   compile: (payload) => api.post('/api/resume-os/compile', payload),
   tailor: (payload) => api.post('/api/resume-os/tailor-v3', payload),
+  /* V4 — canonical zero-AI job tailoring package */
+  tailorForJob: (payload) => api.post('/api/resume-os/tailor-for-job', payload),
+  compileSummary: (payload) => api.post('/api/resume-os/summary/compile', payload),
+  recommendTemplates: (payload) => api.post('/api/resume-os/templates/recommend', payload),
+  autofit: (payload) => api.post('/api/resume-os/autofit', payload),
+  assist: (payload) => api.post('/api/resume-os/assist', payload),
   compileBullet: (facts) => api.post('/api/resume-os/bullet/compile', { facts }),
   quantify: (text) => api.post('/api/resume-os/bullet/quantify', { text }),
   atsSimulate: (payload) => api.post('/api/resume-os/ats-simulate', payload),
@@ -58,6 +64,80 @@ export const ResumeOsApi = {
   exportText: (doc) => api.post('/api/resume-os/export/text', { doc }),
   collegeOverview: (collegeId) => api.get(`/api/resume-os/college/overview?collegeId=${encodeURIComponent(collegeId || '')}`),
 };
+
+/* Real DOCX download (server-generated WordprocessingML, editable). */
+export async function downloadRealDocx(doc) {
+  const m = typeof document !== 'undefined' && document.cookie.match(/(?:^|;\s*)ca_csrf=([^;]+)/);
+  const res = await fetch('/api/resume-os/export/docx', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(m ? { 'X-CSRF-Token': decodeURIComponent(m[1]) } : {}) },
+    body: JSON.stringify({ doc }),
+  });
+  if (!res.ok) throw new Error('DOCX export failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${(doc.title || 'resume').replace(/[^\w.-]+/g, '_')}.docx`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------------------------------------------------------------------------
+   Deterministic import extraction — PDF (pdfjs), DOCX (mammoth), TXT.
+   Libraries are lazy-loaded so the Studio bundle stays lean; no AI anywhere.
+--------------------------------------------------------------------------- */
+export async function extractTextFromFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  if (name.endsWith('.txt') || file.type === 'text/plain') {
+    return { ok: true, kind: 'txt', text: await file.text() };
+  }
+  if (name.endsWith('.docx') || file.type.includes('officedocument.wordprocessingml')) {
+    const mammoth = await import('mammoth/mammoth.browser.js');
+    const buf = await file.arrayBuffer();
+    const out = await (mammoth.default || mammoth).extractRawText({ arrayBuffer: buf });
+    return { ok: true, kind: 'docx', text: String(out.value || '') };
+  }
+  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+    const pdfjs = await import('pdfjs-dist');
+    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+    pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data: buf }).promise;
+    const lines = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      /* group items by line (y position) so structure survives extraction */
+      let lastY = null; let line = [];
+      for (const it of tc.items) {
+        const y = Math.round(it.transform[5]);
+        if (lastY !== null && Math.abs(y - lastY) > 2) { lines.push(line.join(' ')); line = []; }
+        line.push(it.str); lastY = y;
+      }
+      if (line.length) lines.push(line.join(' '));
+      lines.push('');
+    }
+    return { ok: true, kind: 'pdf', text: lines.join('\n').replace(/[ \t]+\n/g, '\n') };
+  }
+  return { ok: false, kind: 'unsupported', text: '' };
+}
+
+/* Validate an exported PDF blob by re-parsing it with pdfjs and checking
+   that the document's critical content survived — REAL PDF validation,
+   not just an HTML simulation. */
+export async function validatePdfBlob(blob, doc) {
+  const pdfjs = await import('pdfjs-dist');
+  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+  pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+  const buf = await blob.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: buf }).promise;
+  let text = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    text += tc.items.map((i) => i.str).join(' ') + '\n';
+  }
+  const { measureParseIntegrity } = await import('../../../server/utils/resume/atsParseSimulator.js');
+  return { ...measureParseIntegrity(doc, text), pages: pdf.numPages };
+}
 
 /* Small pure helpers the Studio editor uses -------------------------------- */
 export function updateItemInSection(doc, section, itemId, patch) {

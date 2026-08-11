@@ -25,10 +25,21 @@ import { certifyAllTemplates } from '../utils/resume/templateCertification.js';
 import { assembleMasterProfile, seedResumeDocument, buildEvidenceIndex, detectEvidenceOpportunities } from '../utils/resume/masterProfileEngine.js';
 import { buildCollegeResumeOverview } from '../utils/resume/collegeResumeOverview.js';
 import { structuredFromText } from '../../web/src/lib/resumeDataModel.js';
+import { sanitizeDocumentTrust, TRUST_BOUNDARY_VERSION } from '../utils/resume/trustBoundary.js';
+import { compileSummary, SUMMARY_COMPILER_VERSION } from '../utils/resume/summaryCompiler.js';
+import { planContentBudget, buildAutoFitPlan, budgetForTemplate, CONTENT_BUDGET_VERSION } from '../utils/resume/contentBudget.js';
+import { rankTemplates, TEMPLATE_RECOMMENDER_VERSION } from '../utils/resume/templateRecommender.js';
+import { assistRewrite, makeAnthropicWritingProvider, WRITING_PROVIDERS_VERSION } from '../utils/resume/writingProviders.js';
+import { renderResumeDocx, DOCX_WRITER_VERSION } from '../utils/docxWriter.js';
+import { makeRuntimeTemplateCatalog, SERVER_RUNTIME_TEMPLATE_CATALOG_VERSION } from '../utils/templateOs/runtimeCatalog.js';
 
 const ENGINE_VERSIONS = Object.freeze({
   document: RESUME_DOCUMENT_VERSION, truth: TRUTH_ENGINE_VERSION, ats: ATS_ENGINE_VERSION,
   jdParser: JD_PARSER_VERSION, jobMatch: JOB_MATCH_VERSION, compiler: COMPILER_VERSION,
+  trustBoundary: TRUST_BOUNDARY_VERSION, summary: SUMMARY_COMPILER_VERSION,
+  contentBudget: CONTENT_BUDGET_VERSION, templateRecommender: TEMPLATE_RECOMMENDER_VERSION,
+  writingProviders: WRITING_PROVIDERS_VERSION, docx: DOCX_WRITER_VERSION,
+  runtimeTemplateCatalog: SERVER_RUNTIME_TEMPLATE_CATALOG_VERSION,
 });
 
 const atsAuditSchema = z.object({
@@ -68,6 +79,11 @@ export function registerResumeOsRoutes(app, deps = {}) {
   } = deps;
   if (!requireAuth || !currentUser) throw new Error('resumeOsRoutes: requireAuth + currentUser required');
   const emit = (event, data = {}) => { try { observe?.(event, data); } catch { /* observability is never fatal */ } };
+  /* Phase 18: recommendations/tailoring/export resolve the same published
+     runtime catalog AND honor an exact templateVersion when a ResumeDocument
+     is pinned. Legacy documents without a pin resolve latest once, then the
+     authoritative save path persists that exact version. */
+  const runtimeTemplates = makeRuntimeTemplateCatalog(db, () => !!process.env.MONGODB_URI);
 
   const validate = (schema) => (req, res, next) => {
     const r = schema.safeParse(req.body || {});
@@ -191,14 +207,21 @@ export function registerResumeOsRoutes(app, deps = {}) {
   app.post('/api/resume-os/documents', requireAuth, validate(docSchema), async (req, res) => {
     try {
       const u = userOf(req);
-      const doc = normalizeResumeDocument({ ...req.body.doc, userId: u.id || u.email || '' });
+      /* TRUST BOUNDARY V2: what gets persisted is server-truth, never client
+         flags — verified markers are recomputed from the evidence store. */
+      const ctx = await truthContext(req);
+      const trust = sanitizeDocumentTrust({ ...req.body.doc, userId: u.id || u.email || '' }, ctx);
+      let doc = trust.doc;
+      const pin = await runtimeTemplates.pinDocument(doc, { strictExisting: true });
+      if (!pin.ok) return res.status(409).json({ ok: false, error: pin.error, templateId: pin.templateId, templateVersion: pin.templateVersion });
+      doc = normalizeResumeDocument(pin.pinned);
       doc.updatedAt = new Date().toISOString();
       if (!doc.createdAt) doc.createdAt = doc.updatedAt;
       const result = dbOn() && db.saveResumeDocument
         ? await db.saveResumeDocument({ userId: u.id, email: u.email, doc, engineVersions: ENGINE_VERSIONS })
         : { ok: false, reason: 'db_disabled' };
       emit('resume.saved', { docId: doc.id, kind: doc.kind });
-      res.json({ ok: true, doc, persisted: result.ok, db: dbOn(), result });
+      res.json({ ok: true, doc, trust: { changes: trust.changes, version: trust.version }, persisted: result.ok, db: dbOn(), result });
     } catch (err) { res.status(500).json({ ok: false, error: 'save_failed', message: err.message }); }
   });
 
@@ -214,12 +237,13 @@ export function registerResumeOsRoutes(app, deps = {}) {
     title: z.string().max(140).optional().default(''),
     targetRole: z.string().max(120).optional().default(''),
     templateId: z.string().max(60).optional().default('atlas'),
+    templateVersion: z.number().int().min(1).optional().nullable().default(null),
     importText: z.string().max(60000).optional().default(''),
   }).passthrough();
   app.post('/api/resume-os/create', requireAuth, validate(createSchema), async (req, res) => {
     try {
       const u = userOf(req);
-      const { source, title, targetRole, templateId, importText } = req.body;
+      const { source, title, targetRole, templateId, templateVersion, importText } = req.body;
       let doc;
       let importReview = null;
       if (source === 'profile') {
@@ -249,6 +273,10 @@ export function registerResumeOsRoutes(app, deps = {}) {
       } else {
         doc = normalizeResumeDocument({ title: title || 'My Resume', targetRole, templateId });
       }
+      if (templateVersion) doc.templateVersion = templateVersion;
+      const pin = await runtimeTemplates.pinDocument(doc, { strictExisting: !!templateVersion });
+      if (!pin.ok) return res.status(409).json({ ok: false, error: pin.error, templateId: pin.templateId, templateVersion: pin.templateVersion });
+      doc = normalizeResumeDocument(pin.pinned);
       doc.id = makeId('rd');
       doc.userId = u.id || u.email || '';
       doc.createdAt = doc.updatedAt = new Date().toISOString();
@@ -324,8 +352,10 @@ export function registerResumeOsRoutes(app, deps = {}) {
   app.post('/api/resume-os/compile', requireAuth, generationLimiter, validate(compileSchema), async (req, res) => {
     try {
       const u = userOf(req);
-      const doc = normalizeResumeDocument(req.body.doc);
       const ctx = await truthContext(req);
+      /* TRUST BOUNDARY V2: every verdict below runs on the sanitized doc. */
+      const trust = sanitizeDocumentTrust(req.body.doc, ctx);
+      let doc = trust.doc;
       const jdText = req.body.jobDescription || doc.targetJobDescription || '';
       const jd = jdText.trim().length >= 40 ? parseJDv2({ jobDescription: jdText, targetRole: doc.targetRole }) : null;
 
@@ -345,6 +375,9 @@ export function registerResumeOsRoutes(app, deps = {}) {
       const nba = pickResumeNextBestAction({ truth, health, match, opportunities });
 
       if (req.body.persist && dbOn() && db.saveResumeDocument) {
+        const pin = await runtimeTemplates.pinDocument(doc, { strictExisting: true });
+        if (!pin.ok) return res.status(409).json({ ok: false, error: pin.error, templateId: pin.templateId, templateVersion: pin.templateVersion });
+        doc = normalizeResumeDocument(pin.pinned);
         await db.saveResumeDocument({
           userId: u.id, email: u.email, doc,
           lastScore: health.score, lastJdMatch: match?.overall ?? null, engineVersions: ENGINE_VERSIONS,
@@ -357,6 +390,7 @@ export function registerResumeOsRoutes(app, deps = {}) {
         ok: true,
         engineVersions: ENGINE_VERSIONS,
         truth, health, jd, match, ranking, opportunities, nextBestAction: nba,
+        doc, trust: { changes: trust.changes, version: trust.version },
         db: dbOn(),
       });
     } catch (err) { res.status(500).json({ ok: false, error: 'compile_failed', message: err.message }); }
@@ -371,14 +405,203 @@ export function registerResumeOsRoutes(app, deps = {}) {
   }).passthrough();
   app.post('/api/resume-os/tailor-v3', requireAuth, generationLimiter, validate(tailorSchema), async (req, res) => {
     try {
-      const doc = normalizeResumeDocument(req.body.doc);
       const ctx = await truthContext(req);
+      const doc = sanitizeDocumentTrust(req.body.doc, ctx).doc;
       const jdText = req.body.jobDescription || doc.targetJobDescription || '';
       const jd = jdText.trim().length >= 40 ? parseJDv2({ jobDescription: jdText, targetRole: doc.targetRole }) : null;
       const ranking = rankContentForTarget(doc, { jd, targetRole: doc.targetRole, verifiedSkills: ctx.verifiedSkills });
       const proposal = proposeTailoredSelection(doc, ranking, { maxBulletsPerItem: req.body.maxBulletsPerItem, maxProjects: req.body.maxProjects });
       res.json({ ok: true, ranking, proposal, jd, db: dbOn() });
     } catch (err) { res.status(500).json({ ok: false, error: 'tailor_v3_failed', message: err.message }); }
+  });
+
+  /* ============================================================
+     RESUME OS V4 — canonical zero-AI "Tailor for Job"
+     One request produces the complete job package: sanitized trust,
+     parsed JD, weighted match, ranked content, budgeted selection,
+     deterministic summary candidates, template recommendation and a
+     ready-to-apply VARIANT PROPOSAL. Everything is a proposal — the
+     client applies on explicit Accept; nothing is silently written.
+     ============================================================ */
+  const tailorJobSchema = z.object({
+    doc: z.object({}).passthrough(),
+    jobDescription: z.string().min(40).max(60000),
+    job: z.object({ company: z.string().max(200).optional(), title: z.string().max(200).optional() }).optional().default({}),
+    pageTarget: z.number().int().min(1).max(2).optional().default(1),
+    atsPreference: z.enum(['very-high', 'high', 'balanced']).optional().default('high'),
+  }).passthrough();
+  app.post('/api/resume-os/tailor-for-job', requireAuth, generationLimiter, validate(tailorJobSchema), async (req, res) => {
+    try {
+      const ctx = await truthContext(req);
+      const trust = sanitizeDocumentTrust(req.body.doc, ctx);
+      const master = trust.doc;
+      const { jobDescription, job, pageTarget, atsPreference } = req.body;
+
+      /* 1–5. parse + weight the JD (detects role, must-have vs preferred) */
+      const jd = parseJDv2({ jobDescription, targetRole: master.targetRole });
+      const targetRole = jd.detectedRole || master.targetRole || '';
+
+      /* 6–12. compare profile + evidence, rank all content */
+      const match = matchDocumentToJD(master, jd, { verifiedSkills: ctx.verifiedSkills, targetRole });
+      const ranking = rankContentForTarget(master, { jd, targetRole, verifiedSkills: ctx.verifiedSkills });
+
+      /* 17–18. rank the complete published runtime catalog for THIS document + target */
+      const templateCatalog = await runtimeTemplates.listPublishedCards();
+      const templateRanking = rankTemplates(templateCatalog, master, { targetRole, atsPreference, pageTarget });
+      const templateId = templateRanking.best?.id || master.templateId;
+      const template = await runtimeTemplates.resolve(templateId, templateRanking.best?.templateVersion || null);
+
+      /* 12. choose content within the recommended template's budget */
+      const budgetPlan = planContentBudget(master, ranking, template, { pageTarget });
+
+      /* 13. deterministic summary candidates from facts only. Phase 19 feeds
+         the selected template's actual summary capacity into the compiler. */
+      const summary = compileSummary(master, {
+        targetRole, verifiedSkills: ctx.verifiedSkills,
+        maxChars: budgetPlan.summary?.maxChars,
+      });
+      let variantSummary = master.summary;
+      const shouldCompileSummary = !String(master.summary || '').trim() || !!budgetPlan.summary?.overBudget;
+      if (shouldCompileSummary && summary.ok && summary.candidates[0]?.text) {
+        variantSummary = summary.candidates[0].text;
+        if (budgetPlan.summary?.overBudget) {
+          budgetPlan.decisions.unshift({
+            action: 'replace_summary_for_fit', section: 'summary',
+            reason: `The current summary exceeds the ${template?.name || 'selected template'} budget (${budgetPlan.summary.maxChars} chars). Proposed a shorter deterministic summary built only from confirmed resume facts.`,
+          });
+        }
+      }
+
+      /* variant proposal — non-destructive; master untouched */
+      const variantDoc = normalizeResumeDocument({
+        ...master,
+        id: makeId('rd'),
+        kind: 'variant', parentId: master.id,
+        title: [job.company, job.title].filter(Boolean).join(' — ') || `${targetRole || 'Job'} variant`,
+        targetRole, targetJobDescription: jobDescription,
+        templateId,
+        templateVersion: Number(template?.templateVersion || template?.definition?.version || 1),
+        overrides: budgetPlan.overrides,
+        summary: variantSummary,
+      });
+
+      /* 20–23. truth, health, coverage, gaps on the PROPOSED variant */
+      const truth = auditResumeTruth(variantDoc, { verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills, verifiedProjectIds: ctx.verifiedProjectIds, evidenceIndex: ctx.evidenceIndex });
+      const health = scoreResumeDocument(variantDoc, { targetRole, jd, verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills });
+      const requiredTotal = (jd.required || []).length;
+      const requiredMet = (match.strong || []).filter((x) => x.tier === 'required').length;
+      const missingEvidence = (match.missing || []).filter((x) => x.tier === 'required');
+      const evidenceCoverage = requiredTotal ? Math.round(((requiredTotal - missingEvidence.length) / requiredTotal) * 100) : 100;
+
+      emit('resume.tailored_for_job', { docId: master.id, jobTitle: job.title || jd.jobTitle || '', match: match.overall });
+      res.json({
+        ok: true,
+        engineVersions: ENGINE_VERSIONS,
+        package: {
+          job: { company: job.company || '', title: job.title || jd.jobTitle || '', detectedRole: targetRole },
+          jobMatch: match.overall,
+          atsHealth: health.score,
+          evidenceCoverage,
+          criticalRequirements: { met: requiredMet, total: requiredTotal },
+          missingEvidence: missingEvidence.map((m2) => ({ skill: m2.skill, provable: !!m2.provable })),
+          template: templateRanking.best,
+          templateAlternatives: templateRanking.ranked.slice(1, 4),
+          pageTarget,
+        },
+        variant: variantDoc,
+        jd, match, ranking, budgetPlan, summary, truth, health, templateRanking,
+        trust: { changes: trust.changes, version: trust.version },
+        db: dbOn(),
+      });
+    } catch (err) { res.status(500).json({ ok: false, error: 'tailor_for_job_failed', message: err.message }); }
+  });
+
+  /* ---- deterministic summary compiler ---- */
+  app.post('/api/resume-os/summary/compile', requireAuth, validate(docSchema), async (req, res) => {
+    try {
+      const ctx = await truthContext(req);
+      const doc = sanitizeDocumentTrust(req.body.doc, ctx).doc;
+      res.json({ ok: true, summary: compileSummary(doc, { targetRole: req.body.targetRole || doc.targetRole, verifiedSkills: ctx.verifiedSkills, domain: req.body.domain || '' }) });
+    } catch (err) { res.status(500).json({ ok: false, error: 'summary_failed', message: err.message }); }
+  });
+
+  /* ---- template recommendation (explainable, deterministic) ---- */
+  app.post('/api/resume-os/templates/recommend', requireAuth, validate(docSchema), async (req, res) => {
+    try {
+      const ctx = await truthContext(req);
+      const doc = sanitizeDocumentTrust(req.body.doc, ctx).doc;
+      const cert = certifyAllTemplates();
+      const catalog = await runtimeTemplates.listPublishedCards();
+      const withCert = catalog.map((t) => ({
+        ...t,
+        certification: t.certification || { certified: cert.certified.includes(t.id) },
+      }));
+      res.json({ ok: true, recommendation: rankTemplates(withCert, doc, { targetRole: req.body.targetRole || doc.targetRole, atsPreference: req.body.atsPreference || 'high', pageTarget: req.body.pageTarget || 1 }), catalogVersion: runtimeTemplates.version });
+    } catch (err) { res.status(500).json({ ok: false, error: 'recommend_failed', message: err.message }); }
+  });
+
+  /* ---- auto-fit plan (deterministic overflow resolution) ---- */
+  app.post('/api/resume-os/autofit', requireAuth, validate(docSchema), async (req, res) => {
+    try {
+      const ctx = await truthContext(req);
+      const doc = sanitizeDocumentTrust(req.body.doc, ctx).doc;
+      const jdText = req.body.jobDescription || doc.targetJobDescription || '';
+      const jd = jdText.trim().length >= 40 ? parseJDv2({ jobDescription: jdText, targetRole: doc.targetRole }) : null;
+      const ranking = rankContentForTarget(doc, { jd, targetRole: doc.targetRole, verifiedSkills: ctx.verifiedSkills });
+      const template = await runtimeTemplates.resolve(doc.templateId, doc.templateVersion, { strictVersion: !!doc.templateVersion });
+      if (!template) return res.status(409).json({ ok: false, error: 'template_version_unavailable', templateId: doc.templateId, templateVersion: doc.templateVersion });
+      const budgetPlan = planContentBudget(doc, ranking, template, { pageTarget: req.body.pageTarget || 1 });
+      const plan = buildAutoFitPlan({
+        overflowLines: Number(req.body.overflowLines) || 0,
+        density: doc.density, pageTarget: req.body.pageTarget || 1,
+        duplicates: req.body.duplicates || [], ranking, doc, budgetPlan,
+      });
+      res.json({ ok: true, plan, budgetPlan, budget: budgetForTemplate(template) });
+    } catch (err) { res.status(500).json({ ok: false, error: 'autofit_failed', message: err.message }); }
+  });
+
+  /* ============================================================
+     OPTIONAL AI ASSIST — wording only, truth-gated, never required
+     Deterministic candidates are always returned; AI candidates are
+     returned ONLY when the user opted in AND each one passed the
+     truth gate. Rejected AI output is counted, never shown as
+     applyable. AI failure degrades to deterministic-only.
+     ============================================================ */
+  const assistSchema = z.object({
+    kind: z.enum(['bullet', 'summary', 'concise', 'alternatives']).default('bullet'),
+    text: z.string().min(1).max(2000),
+    facts: z.object({}).passthrough().nullish(),
+    jdSkills: z.array(z.string().max(80)).max(20).optional().default([]),
+    allowedSkills: z.array(z.string().max(80)).max(200).optional().default([]),
+    useAi: z.boolean().optional().default(false),
+  }).passthrough();
+  app.post('/api/resume-os/assist', requireAuth, generationLimiter, validate(assistSchema), async (req, res) => {
+    try {
+      const aiProvider = process.env.ANTHROPIC_API_KEY
+        ? makeAnthropicWritingProvider({ apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.AI_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5' })
+        : null;
+      const result = await assistRewrite({
+        kind: req.body.kind, text: req.body.text, facts: req.body.facts || null,
+        jdSkills: req.body.jdSkills, allowedSkills: req.body.allowedSkills,
+        useAi: !!req.body.useAi, aiProvider,
+      });
+      res.json({ ok: true, result });
+    } catch (err) { res.status(500).json({ ok: false, error: 'assist_failed', message: err.message }); }
+  });
+
+  /* ---- REAL DOCX export (WordprocessingML, editable) ---- */
+  app.post('/api/resume-os/export/docx', requireAuth, validate(docSchema), async (req, res) => {
+    try {
+      const ctx = await truthContext(req);
+      const doc = sanitizeDocumentTrust(req.body.doc, ctx).doc;
+      const template = await runtimeTemplates.resolve(doc.templateId, doc.templateVersion, { strictVersion: !!doc.templateVersion });
+      if (!template) return res.status(409).json({ ok: false, error: 'template_version_unavailable', templateId: doc.templateId, templateVersion: doc.templateVersion });
+      const buf = await renderResumeDocx(doc, template);
+      const name = String(doc.title || 'resume').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'resume';
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}.docx"`);
+      res.send(buf);
+    } catch (err) { res.status(500).json({ ok: false, error: 'docx_failed', message: err.message }); }
   });
 
   /* ---- deterministic bullet compiler + quantification prompts ---- */

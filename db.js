@@ -223,6 +223,7 @@ const resumeDocumentSchema = new mongoose.Schema(
     targetRole: { type: String, trim: true, default: '' },
     targetJobId: { type: String, trim: true, default: '' },
     templateId: { type: String, trim: true, default: 'atlas' },
+    templateVersion: { type: Number, default: null },
     doc: { type: mongoose.Schema.Types.Mixed, default: {} },
     lastScore: { type: Number, default: null },
     lastJdMatch: { type: Number, default: null },
@@ -629,9 +630,29 @@ const projectArchitectureSpecSchema = new mongoose.Schema(
 projectArchitectureSpecSchema.index({ userId: 1, projectId: 1, version: -1 });
 
 /* avoid OverwriteModelError on hot-reload / warm starts */
+/* ---- Template OS: versioned TemplateDefinition storage ---- */
+const templateDefinitionSchema = new mongoose.Schema(
+  {
+    templateId: { type: String, required: true, index: true },
+    version: { type: Number, required: true },
+    status: { type: String, default: 'DRAFT' },
+    source: { type: String, default: 'internal' },
+    definition: { type: mongoose.Schema.Types.Mixed, default: {} },
+    certification: { type: mongoose.Schema.Types.Mixed, default: null },
+    parentTemplateId: { type: String, default: '' },
+    baseVersion: { type: Number, default: null },
+    changeNote: { type: String, default: '' },
+    lifecycle: { type: mongoose.Schema.Types.Mixed, default: {} },
+    createdBy: { type: String, default: '' },
+  },
+  { timestamps: true },
+);
+templateDefinitionSchema.index({ templateId: 1, version: 1 }, { unique: true });
+
 export const User = mongoose.models.User || mongoose.model('User', userSchema);export const SupportTicket =
   mongoose.models.SupportTicket || mongoose.model('SupportTicket', ticketSchema);
 export const Resume = mongoose.models.Resume || mongoose.model('Resume', resumeSchema);
+export const TemplateDefinitionModel = mongoose.models.TemplateDefinition || mongoose.model('TemplateDefinition', templateDefinitionSchema);
 export const Application =
   mongoose.models.Application || mongoose.model('Application', applicationSchema);
 export const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
@@ -1004,7 +1025,7 @@ export async function listResumeDocuments({ userId, email }) {
     if (!uid) return [];
     const rows = await ResumeDocument.find({ userId: uid })
       .sort({ updatedAt: -1 }).limit(60)
-      .select('docId kind parentId title targetRole targetJobId templateId lastScore lastJdMatch updatedAt createdAt')
+      .select('docId kind parentId title targetRole targetJobId templateId templateVersion lastScore lastJdMatch updatedAt createdAt')
       .lean();
     return rows.map((r) => ({ ...r, id: r.docId }));
   } catch (err) { console.error('[db] listResumeDocuments failed:', err.message); return []; }
@@ -1038,6 +1059,7 @@ export async function saveResumeDocument({ userId, email, doc, lastScore = null,
       targetRole: String(d.targetRole || '').slice(0, 120),
       targetJobId: String(d.targetJobId || '').slice(0, 80),
       templateId: String(d.templateId || 'atlas').slice(0, 60),
+      templateVersion: Number.isInteger(Number(d.templateVersion)) && Number(d.templateVersion) > 0 ? Number(d.templateVersion) : null,
       doc: d,
       engineVersions: engineVersions || {},
     };
@@ -1074,7 +1096,11 @@ export async function restoreResumeSnapshot({ userId, email, docId, index }) {
     const row = await ResumeDocument.findOne({ userId: uid, docId: String(docId) }).select('snapshots').lean();
     const snap = row?.snapshots?.[Number(index)];
     if (!snap?.doc) return { ok: false, reason: 'not_found' };
-    await ResumeDocument.updateOne({ userId: uid, docId: String(docId) }, { $set: { doc: snap.doc } });
+    await ResumeDocument.updateOne({ userId: uid, docId: String(docId) }, { $set: {
+      doc: snap.doc,
+      templateId: String(snap.doc.templateId || 'atlas').slice(0, 60),
+      templateVersion: Number.isInteger(Number(snap.doc.templateVersion)) && Number(snap.doc.templateVersion) > 0 ? Number(snap.doc.templateVersion) : null,
+    } });
     return { ok: true, doc: snap.doc };
   } catch (err) { console.error('[db] restoreResumeSnapshot failed:', err.message); return { ok: false, reason: 'db_error' }; }
 }
@@ -6619,3 +6645,89 @@ export async function demoTalentStatus() {
   };
 }
 
+
+
+/* ============================================================
+   Template OS persistence — versioned, never destructive:
+   saving an existing templateId writes a NEW version row.
+   ============================================================ */
+export async function saveTemplateDefinition({ templateId, definition, status = 'DRAFT', source = 'internal', certification = null, createdBy = '', baseVersion = null, changeNote = '' }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const latest = await TemplateDefinitionModel.findOne({ templateId }).sort({ version: -1 }).lean();
+    const version = latest ? latest.version + 1 : (Number(definition?.version) || 1);
+    const now = new Date().toISOString();
+    const lifecycle = {
+      history: [{ from: '', to: status, actor: String(createdBy || '').slice(0, 160), reason: String(changeNote || (baseVersion ? `forked_from_v${baseVersion}` : 'version_created')).slice(0, 240), at: now }],
+      createdAt: now,
+      lastTransitionAt: now,
+    };
+    await TemplateDefinitionModel.create({
+      templateId, version, status, source, definition: { ...definition, version }, certification,
+      parentTemplateId: definition?.parentTemplateId || '', baseVersion: baseVersion ? Number(baseVersion) : null,
+      changeNote: String(changeNote || '').slice(0, 240), lifecycle, createdBy,
+    });
+    return { ok: true, templateId, version };
+  } catch (err) { console.error('[db] saveTemplateDefinition failed:', err.message); return { ok: false, reason: 'db_error', error: err.message }; }
+}
+
+export async function listTemplateDefinitions({ status = null } = {}) {
+  if (!URI) return [];
+  try {
+    await connectDB();
+    const q = status ? { status } : {};
+    const rows = await TemplateDefinitionModel.find(q).sort({ templateId: 1, version: -1 }).lean();
+    const latest = new Map();
+    for (const r of rows) if (!latest.has(r.templateId)) latest.set(r.templateId, r);
+    return [...latest.values()].map((r) => ({ templateId: r.templateId, version: r.version, status: r.status, source: r.source, definition: r.definition, certification: r.certification, baseVersion: r.baseVersion || null, changeNote: r.changeNote || '', lifecycle: r.lifecycle || {}, createdBy: r.createdBy || '', updatedAt: r.updatedAt }));
+  } catch (err) { console.error('[db] listTemplateDefinitions failed:', err.message); return []; }
+}
+
+export async function listTemplateDefinitionVersions({ templateId }) {
+  if (!URI || !templateId) return [];
+  try {
+    await connectDB();
+    const rows = await TemplateDefinitionModel.find({ templateId }).sort({ version: -1 }).lean();
+    return rows.map((r) => ({
+      templateId: r.templateId, version: r.version, status: r.status, source: r.source,
+      definition: r.definition, certification: r.certification, baseVersion: r.baseVersion || null,
+      changeNote: r.changeNote || '', lifecycle: r.lifecycle || {}, createdBy: r.createdBy || '', updatedAt: r.updatedAt,
+    }));
+  } catch (err) { console.error('[db] listTemplateDefinitionVersions failed:', err.message); return []; }
+}
+
+export async function getTemplateDefinition({ templateId, version = null }) {
+  if (!URI) return null;
+  try {
+    await connectDB();
+    const q = version ? { templateId, version } : { templateId };
+    const row = await TemplateDefinitionModel.findOne(q).sort({ version: -1 }).lean();
+    return row ? { templateId: row.templateId, version: row.version, status: row.status, source: row.source, definition: row.definition, certification: row.certification, baseVersion: row.baseVersion || null, changeNote: row.changeNote || '', lifecycle: row.lifecycle || {}, createdBy: row.createdBy || '', updatedAt: row.updatedAt } : null;
+  } catch (err) { console.error('[db] getTemplateDefinition failed:', err.message); return null; }
+}
+
+
+export async function setTemplateDefinitionCertification({ templateId, version, certification }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const r = await TemplateDefinitionModel.updateOne({ templateId, version }, { $set: { certification } });
+    return { ok: r.matchedCount > 0 };
+  } catch (err) { console.error('[db] setTemplateDefinitionCertification failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}
+
+export async function setTemplateDefinitionStatus({ templateId, version, status, event = null }) {
+  if (!URI) return { ok: false, reason: 'db_disabled' };
+  try {
+    await connectDB();
+    const set = { status, 'lifecycle.lastTransitionAt': event?.at || new Date().toISOString() };
+    if (status === 'APPROVED') { set['lifecycle.approvedAt'] = event?.at || new Date().toISOString(); set['lifecycle.approvedBy'] = event?.actor || ''; }
+    if (status === 'PUBLISHED') { set['lifecycle.publishedAt'] = event?.at || new Date().toISOString(); set['lifecycle.publishedBy'] = event?.actor || ''; }
+    if (status === 'DISABLED') { set['lifecycle.disabledAt'] = event?.at || new Date().toISOString(); set['lifecycle.disabledBy'] = event?.actor || ''; }
+    const update = { $set: set };
+    if (event) update.$push = { 'lifecycle.history': { $each: [event], $slice: -50 } };
+    const r = await TemplateDefinitionModel.updateOne({ templateId, version }, update);
+    return { ok: r.matchedCount > 0 };
+  } catch (err) { console.error('[db] setTemplateDefinitionStatus failed:', err.message); return { ok: false, reason: 'db_error' }; }
+}

@@ -4,6 +4,7 @@ import { Modal, Badge, Button } from './ui/kit.jsx';
 import {
   TEMPLATES, getTemplate, renderResumeHTML, exportResumePDF, exportResumeDOCX,
 } from '../lib/resumeTemplates.js';
+import { cachedTemplatePreviewUrl } from '../lib/templateOs/previewAssets.js';
 
 /* A real, isolated A4 render of the resume in a given template, scaled to fit. */
 export function ResumePaper({ data, templateId, mode, width = 794, scale = 1, className = '', title = 'preview' }) {
@@ -26,6 +27,8 @@ export function ResumePaper({ data, templateId, mode, width = 794, scale = 1, cl
 
 /* One template card: thumbnail + name + ATS + page support + Preview / Use. */
 function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview }) {
+  const [cachedPreviewFailed, setCachedPreviewFailed] = useState(false);
+  const cachedPreview = cachedTemplatePreviewUrl(tpl.id, { surface: 'editor', templateVersion: 1 });
   return (
     <div
       className={`group flex flex-col overflow-hidden rounded-2xl border transition ${
@@ -33,16 +36,22 @@ function TemplateCard({ tpl, data, selected, recommended, onSelect, onPreview })
                   : 'border-subtle bg-surface-1 hover:border-strong'
       }`}
     >
-      {/* live thumbnail */}
+      {/* Cached image from the real renderer; live iframe is a safety fallback only. */}
       <button
         type="button"
         onClick={() => onPreview(tpl.id)}
         className="relative block h-[176px] w-full overflow-hidden border-b border-subtle bg-[#e9edf5]"
         title="Click to preview"
       >
-        <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2">
-          <ResumePaper data={data} templateId={tpl.id} mode={tpl.pages === 'multi' ? 'multi' : 'auto'} scale={0.205} />
-        </div>
+        {!cachedPreviewFailed ? (
+          <img src={cachedPreview} alt={`${tpl.name} resume template preview`} loading="lazy" decoding="async"
+            onError={() => setCachedPreviewFailed(true)}
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain object-top" />
+        ) : (
+          <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2">
+            <ResumePaper data={data} templateId={tpl.id} mode={tpl.pages === 'multi' ? 'multi' : 'auto'} scale={0.205} />
+          </div>
+        )}
         <span className="absolute inset-0 grid place-items-center bg-white/0 opacity-0 transition group-hover:bg-white/60 group-hover:opacity-100">
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-ink-950">
             <Eye size={13} /> Preview

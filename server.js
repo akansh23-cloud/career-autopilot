@@ -61,6 +61,7 @@ import { registerArchitectureRoutes } from './server/routes/architectureRoutes.j
 import { registerWorkspaceRoutes } from './server/routes/workspaceRoutes.js';
 import { registerCareerIntelligenceRoutes } from './server/routes/careerIntelligenceRoutes.js';
 import { registerResumeOsRoutes } from './server/routes/resumeOsRoutes.js';
+import { registerTemplateOsRoutes } from './server/routes/templateOsRoutes.js';
 import { registerProjectStoreRoutes } from './server/routes/projectStoreRoutes.js';
 import { registerOpsRoutes } from './server/routes/opsRoutes.js';
 import { registerCollegeRoutes } from './server/routes/collegeRoutes.js';
@@ -2895,6 +2896,7 @@ registerArchitectureRoutes(app, { requireAuth, currentUser, generationLimiter, d
 registerWorkspaceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerCareerIntelligenceRoutes(app, { requireAuth, currentUser, generationLimiter, db });
 registerResumeOsRoutes(app, { requireAuth, currentUser, generationLimiter, db, requireRole, requireCollegeScope, observe: (event, data) => logger.info?.(`[resume-os] ${event}`, data) });
+registerTemplateOsRoutes(app, { requireAuth, requireRole, currentUser, generationLimiter, db, observe: (event, data) => logger.info?.(`[template-os] ${event}`, data) });
 registerProjectStoreRoutes(app, { requireAuth, currentUser, db });
 registerOpsRoutes(app, { requireAuth, requireAdmin, currentUser, db, logger });
 

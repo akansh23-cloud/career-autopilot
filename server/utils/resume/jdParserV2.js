@@ -16,7 +16,7 @@
    Repetition can never inflate a term past its cap — keyword
    stuffing in the JD does not distort the match.
    ============================================================ */
-import { ROLE_DICTIONARIES } from './roleDictionaries.js';
+import { ROLE_DICTIONARIES, resolveDictionary } from './roleDictionaries.js';
 import { presentSkills, termsForSkill } from './skillMatcher.js';
 import { canonicalSkill } from './skillOntology.js';
 
@@ -126,6 +126,12 @@ export function parseJDv2({ jobDescription = '', targetRole = '' } = {}) {
     yearsOfExperience: extractYears(raw),
     education: extractEducation(raw),
     certifications: extractCertifications(raw),
+    detectedRole: (() => {
+      /* strip seniority prefixes so "Senior DevOps Engineer" resolves */
+      const stripped = jobTitle.replace(/^(senior|junior|lead|principal|staff|associate|sr\.?|jr\.?)\s+/i, '');
+      const hit = resolveDictionary(stripped);
+      return hit.known ? hit.name : (resolveDictionary(jobTitle).known ? resolveDictionary(jobTitle).name : '');
+    })(),
     sectionsDetected: [...new Set(sections.map((s) => s.kind))],
   };
 }

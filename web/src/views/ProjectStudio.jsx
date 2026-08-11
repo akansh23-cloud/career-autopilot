@@ -5,7 +5,7 @@ import {
   CheckCircle2, Circle, Plus, Trash2, Copy, Check, ListChecks, Layers,
   Target, Gauge, Clock, Boxes, AlertTriangle, X, Image as ImageIcon, BookOpen,
   GitBranch, ShieldCheck, Network, RefreshCw, ServerCog, Database, Workflow, ChevronDown,
-  Lightbulb, HelpCircle, Map as MapIcon,
+  Lightbulb, HelpCircle, Map as MapIcon, Hammer,
 } from 'lucide-react';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Modal, EmptyState, Input, Field, Skeleton } from '../components/ui/kit.jsx';
@@ -938,7 +938,7 @@ function WorkspaceCard({ p, onOpen, onDelete, onBuild, onGuided }) {
 }
 
 /* ---------------- Main view ---------------- */
-export default function ProjectStudio({ go, openProjectId }) {
+export default function ProjectStudio({ go, openProjectId, intent }) {
   const { user } = useAuth();
   const access = useMemo(() => getAccessForUser(user), [user]);
   const userName = user?.name || user?.displayName || 'You';
@@ -952,6 +952,19 @@ export default function ProjectStudio({ go, openProjectId }) {
   const [problemStatement, setProblemStatement] = useState(seed?.idea?.problem || '');
   const [useGaps, setUseGaps] = useState(Boolean(seed?.missingSkills?.length));
   const gaps = seed?.missingSkills || [];
+
+  /* RESUME OS → PROJECT OS gap loop: when Resume OS sends
+     { targetRole, targetSkill, reason: 'resume_gap' } we consume it —
+     prefill the generator so the produced project actually builds the
+     missing evidence, and say so explicitly in a banner. */
+  useEffect(() => {
+    if (!intent || intent.reason !== 'resume_gap') return;
+    if (intent.targetRole) setRole(intent.targetRole);
+    if (intent.targetSkill) {
+      setProblemStatement((prev) => prev || `Build a project that demonstrates real, verifiable ${intent.targetSkill} experience for a ${intent.targetRole || 'target'} role.`);
+      setJd((prev) => prev || `Key requirement: hands-on ${intent.targetSkill}.`);
+    }
+  }, [intent]);
 
   const [status, setStatus] = useState('idle');
   const [project, setProject] = useState(null);
@@ -1058,6 +1071,13 @@ export default function ProjectStudio({ go, openProjectId }) {
 
   return (
     <>
+      {intent?.reason === 'resume_gap' && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-aurora-violet/30 bg-aurora-violet/5 px-3 py-2 text-[13px]">
+          <Hammer size={14} className="text-aurora-violet" />
+          <span className="font-semibold text-ink-950">Building resume evidence{intent.targetSkill ? <> for <span className="text-aurora-violet">{intent.targetSkill}</span></> : null}</span>
+          <span className="text-muted">Resume OS flagged this as missing for {intent.targetRole ? `a ${intent.targetRole} role` : 'your target role'} — the generator below is pre-filled to build exactly that proof. Verify the project and it becomes citable resume evidence.</span>
+        </div>
+      )}
       <PageIntro
         title="Student Project OS"
         sub="Build verified proof-of-work projects for your target role. Create projects, follow roadmaps, submit proof, and earn verified skills."

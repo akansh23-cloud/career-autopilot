@@ -77,3 +77,18 @@ All tunable via `RATE_*` env vars. Normal dashboard reads are not throttled.
 ## Reporting
 Report suspected vulnerabilities privately to the maintainer; do not open public
 issues with exploit details.
+
+
+## Template OS admin boundary (Phase 23)
+
+Template Builder authority is server-controlled. `GET /api/template-os/admin/access` and every builder operation (`validate`, `save`, JSON/ZIP import, generation, certification, thumbnail generation and status changes) use the verified-admin middleware; a client-side role string is never sufficient authorization.
+
+The student/runtime read surface is deliberately narrower: `GET /api/template-os/templates?catalog=1&publishedOnly=1` exposes only templates that are `PUBLISHED`, have `productionEnabled:true`, and carry an explicitly cleared license state (`INTERNAL_ORIGINAL`, `OWNED`, `OPEN_SOURCE`, or `LICENSED`). Exact published-template reads return a public projection that omits internal creator/audit fields. Draft and generated definitions cannot be rendered/exported through the public stored-template endpoints.
+
+Publishing is fail-closed and exact-version bound. A stored template version must have a deep certification with `evidence: real-pdf-text-layer` and a cleared production license before status can become `PUBLISHED`. External imports cannot self-assert production rights: JSON and ZIP imports are forced to `LICENSE_PENDING` with production disabled. Admin audit events record bounded identifiers/status only and do not copy request bodies or template contents.
+
+## Template OS immutable release lifecycle (Phase 24)
+
+Template versions now follow a server-enforced immutable release path: `DRAFT → VALIDATING → CERTIFIED → APPROVED → PUBLISHED`. Deep certification is bound to the exact stored revision and owns the validating/certified transitions; publication requires explicit approval, deep `real-pdf-text-layer` evidence and an already-cleared production license. Direct draft-to-published transitions fail closed.
+
+Published and disabled revisions cannot be edited in place. Template Builder may load them as edit sources, but the next save creates a new `DRAFT` revision with `baseVersion` provenance. Version-history responses are admin-only and expose bounded release metadata rather than template bodies. Lifecycle events retain only version/status/action/actor/timestamp/reason-style metadata; request bodies and resume/template content are not copied into lifecycle history.

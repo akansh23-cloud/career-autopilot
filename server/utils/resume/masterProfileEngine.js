@@ -13,10 +13,66 @@
 import { normalizeResumeDocument, PROVENANCE, makeId } from './resumeDocument.js';
 import { canonicalSkill, toCanonicalSet } from './skillOntology.js';
 
-export const MASTER_PROFILE_VERSION = 'master-profile-v1';
+export const MASTER_PROFILE_VERSION = 'master-profile-v3-project-depth';
+export const PROJECT_BULLET_ENRICHMENT_VERSION = 'project-bullet-enrichment-v2-source-only-depth';
 
 const arr = (v) => (Array.isArray(v) ? v : []);
 const str = (v, m = 400) => String(v == null ? '' : v).slice(0, m);
+
+/* Turn richer Project OS source text into up to three resume bullets WITHOUT
+   inventing facts. We only reuse sentences the user/project record already
+   contains; outcome remains a separate candidate because it is usually the
+   strongest evidence-bearing statement. */
+const cleanProjectSentence = (value) => str(value, 800)
+  .replace(/^\s*[•*\-–—]+\s*/, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+function projectDescriptionSentences(description = '') {
+  const text = cleanProjectSentence(description);
+  if (!text) return [];
+  /* Sentence-boundary split with a conservative fallback for descriptions that
+     use semicolons/newlines instead of periods. No text is synthesized. */
+  let parts = text.split(/(?<=[.!?])\s+|\s*[\n;]+\s*/).map(cleanProjectSentence).filter(Boolean);
+  if (parts.length === 1 && parts[0].length > 260) {
+    parts = parts[0].split(/\s*,\s+(?=[A-Za-z])/).map(cleanProjectSentence).filter(Boolean);
+  }
+  return parts.filter((x) => x.length >= 24).slice(0, 4);
+}
+
+function normalizedComparable(text = '') {
+  return String(text).toLowerCase().replace(/[^a-z0-9%₹$]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function projectEvidenceBullets(project = {}, { maxBullets = 4 } = {}) {
+  const descriptionParts = projectDescriptionSentences(project.description);
+  const sources = [
+    ...(descriptionParts[0] ? [{ text: descriptionParts[0], kind: 'description' }] : []),
+    ...(project.outcome ? [{ text: cleanProjectSentence(project.outcome), kind: 'outcome' }] : []),
+    ...descriptionParts.slice(1).map((text) => ({ text, kind: 'description' })),
+  ].filter((x) => x.text);
+  const out = [];
+  const seen = [];
+  for (const source of sources) {
+    const norm = normalizedComparable(source.text);
+    if (!norm) continue;
+    const duplicate = seen.some((prev) => prev === norm || prev.includes(norm) || norm.includes(prev));
+    if (duplicate) continue;
+    seen.push(norm);
+    out.push({
+      text: source.text.slice(0, 260),
+      sourceType: 'project',
+      sourceId: str(project.sourceProjectId, 80),
+      evidenceIds: source.kind === 'description' ? arr(project.evidenceIds).slice(0, 2) : arr(project.evidenceIds).slice(0, 3),
+      verified: !!project.verified,
+      provenance: project.verified ? PROVENANCE.VERIFIED : PROVENANCE.PROFILE_CONFIRMED,
+      generatedByRule: PROJECT_BULLET_ENRICHMENT_VERSION,
+    });
+    if (out.length >= Math.max(1, Math.min(4, Number(maxBullets) || 4))) break;
+  }
+  return out;
+}
+
 
 export function assembleMasterProfile({
   profile = {}, user = {}, submissions = [], verifiedSkills = [], provenSkills = [], resumeSnapshot = null,
@@ -122,10 +178,7 @@ export function seedResumeDocument(master, { title = '', targetRole = '', templa
       startDate: p.startDate, endDate: p.endDate,
       sourceProjectId: p.sourceProjectId, verified: p.verified, evidenceIds: p.evidenceIds,
       provenance: p.verified ? PROVENANCE.VERIFIED : PROVENANCE.PROFILE_CONFIRMED,
-      bullets: [
-        ...(p.description ? [{ text: p.description.split(/(?<=\.)\s+/)[0].slice(0, 220), sourceType: 'project', sourceId: p.sourceProjectId, evidenceIds: p.evidenceIds.slice(0, 2), verified: p.verified, provenance: p.verified ? PROVENANCE.VERIFIED : PROVENANCE.PROFILE_CONFIRMED }] : []),
-        ...(p.outcome ? [{ text: p.outcome.slice(0, 220), sourceType: 'project', sourceId: p.sourceProjectId, verified: p.verified, provenance: p.verified ? PROVENANCE.VERIFIED : PROVENANCE.PROFILE_CONFIRMED }] : []),
-      ],
+      bullets: projectEvidenceBullets(p, { maxBullets: 4 }),
     })),
     education: arr(m.education),
     certifications: arr(m.certifications).map((t) => ({ text: t, provenance: PROVENANCE.PROFILE_CONFIRMED })),
@@ -163,4 +216,4 @@ export function detectEvidenceOpportunities(doc, master) {
   return out;
 }
 
-export default { MASTER_PROFILE_VERSION, assembleMasterProfile, seedResumeDocument, buildEvidenceIndex, detectEvidenceOpportunities };
+export default { MASTER_PROFILE_VERSION, PROJECT_BULLET_ENRICHMENT_VERSION, projectEvidenceBullets, assembleMasterProfile, seedResumeDocument, buildEvidenceIndex, detectEvidenceOpportunities };

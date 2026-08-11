@@ -201,22 +201,59 @@ export const GENERIC_DICTIONARY = {
   testing: [],
 };
 
+function normalizeRoleLookupText(role = '') {
+  return String(role || '').trim().toLowerCase()
+    .replace(/[()]/g, ' ')
+    .replace(/\b(sr\.?|senior|jr\.?|junior|staff|principal|lead|associate)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
 export function resolveDictionary(role = '') {
   const r = String(role || '').trim() || 'General';
   if (ROLE_DICTIONARIES[r]) return { name: r, dict: ROLE_DICTIONARIES[r], known: true };
-  const alias = ROLE_ALIASES[r.toLowerCase()];
-  if (alias && ROLE_DICTIONARIES[alias]) return { name: alias, dict: ROLE_DICTIONARIES[alias], known: true };
+  const lower = r.toLowerCase();
+  const directAlias = ROLE_ALIASES[lower];
+  if (directAlias && ROLE_DICTIONARIES[directAlias]) return { name: directAlias, dict: ROLE_DICTIONARIES[directAlias], known: true };
+
+  /* Seniority is presentation metadata, not a different skill ontology. A
+     target such as "Senior DevOps Engineer" should still receive the DevOps
+     dictionary instead of falling back to the generic vocabulary. */
+  const normalized = normalizeRoleLookupText(r);
+  const normalizedAlias = ROLE_ALIASES[normalized];
+  if (normalizedAlias && ROLE_DICTIONARIES[normalizedAlias]) return { name: normalizedAlias, dict: ROLE_DICTIONARIES[normalizedAlias], known: true };
+
+  /* Conservative role-family recognition for common leadership titles. Keep
+     the mapping specific enough that "platform product manager" does not get
+     treated as infrastructure engineering. */
+  const family = /product manager/.test(normalized) ? 'Product Manager'
+    : /data platform|data engineer|analytics engineer|etl/.test(normalized) ? 'Data Engineer'
+      : /devops|site reliability|\bsre\b|platform engineer|platform engineering/.test(normalized) ? 'DevOps Engineer'
+        : /cloud engineer|cloud infrastructure/.test(normalized) ? 'Cloud Engineer'
+          : /security|cyber/.test(normalized) ? 'DevOps Engineer'
+            : /frontend/.test(normalized) ? 'Frontend Developer'
+              : /backend/.test(normalized) ? 'Backend Developer'
+                : /full[ -]?stack/.test(normalized) ? 'Full Stack Developer'
+                  : /software engineer|software developer/.test(normalized) ? 'Software Engineer'
+                    : /data scientist|machine learning|\bml engineer/.test(normalized) ? 'Data Scientist'
+                      : /data analyst|business intelligence/.test(normalized) ? 'Data Analyst'
+                        : /qa|test engineer|quality assurance/.test(normalized) ? 'QA Engineer'
+                          : '';
+  if (family && ROLE_DICTIONARIES[family]) return { name: family, dict: ROLE_DICTIONARIES[family], known: true };
   return { name: r, dict: GENERIC_DICTIONARY, known: false };
 }
 
 /* Role-relevant action verbs (impact signal). */
-export const GENERIC_ACTION_VERBS = ['developed', 'built', 'designed', 'implemented', 'led', 'managed', 'created', 'delivered', 'improved', 'optimized', 'automated', 'reduced', 'increased', 'analyzed', 'collaborated', 'maintained', 'integrated', 'migrated', 'launched', 'streamlined'];
+export const GENERIC_ACTION_VERBS = ['developed', 'built', 'designed', 'implemented', 'engineered', 'architected', 'established', 'led', 'managed', 'coordinated', 'created', 'delivered', 'executed', 'improved', 'optimized', 'standardized', 'automated', 'orchestrated', 'reduced', 'increased', 'analyzed', 'evaluated', 'quantified', 'collaborated', 'aligned', 'maintained', 'stabilized', 'integrated', 'migrated', 'modernized', 'launched', 'streamlined', 'secured', 'validated', 'transformed', 'restructured', 'operationalized', 'reconciled', 'documented', 'articulated', 'influenced'];
 export const ROLE_ACTION_VERBS = {
-  'DevOps Engineer': ['deployed', 'automated', 'configured', 'monitored', 'containerized', 'migrated', 'optimized', 'secured', 'reduced', 'improved', 'integrated', 'maintained', 'troubleshot', 'orchestrated', 'provisioned'],
-  'Cloud Engineer': ['provisioned', 'deployed', 'migrated', 'automated', 'configured', 'scaled', 'secured', 'optimized', 'architected', 'monitored'],
-  'Data Analyst': ['analyzed', 'visualized', 'reported', 'modeled', 'forecasted', 'automated', 'cleaned', 'queried', 'identified', 'tracked'],
-  'Data Scientist': ['modeled', 'trained', 'analyzed', 'engineered', 'predicted', 'optimized', 'deployed', 'evaluated', 'experimented', 'forecasted'],
-  'QA Engineer': ['tested', 'automated', 'validated', 'verified', 'identified', 'reproduced', 'documented', 'executed', 'reduced', 'improved'],
+  'DevOps Engineer': ['deployed', 'automated', 'orchestrated', 'configured', 'standardized', 'instrumented', 'monitored', 'migrated', 'replatformed', 'optimized', 'rightsized', 'secured', 'hardened', 'stabilized', 'integrated', 'troubleshot', 'codified', 'governed', 'systematized', 'parameterized', 'baselined', 'smoke-tested', 'provisioned', 'operationalized', 'restored', 'recovered', 'patched', 'triaged', 'debugged', 'root-caused', 'debottlenecked', 'templatized', 'industrialized', 'containerized', 'pipelined', 'triggered', 'snapshotted', 'rolled back', 'rotated', 'attested', 'canary-tested'],
+  'Cloud Engineer': ['provisioned', 'architected', 'deployed', 'migrated', 'replatformed', 'automated', 'configured', 'scaled', 'rightsized', 'secured', 'fortified', 'isolated', 'optimized', 'standardized', 'monitored', 'baselined', 'contained', 'encrypted', 'restored', 'recovered', 'governed', 'root-caused', 'pinpointed', 'reconfigured', 'debottlenecked', 'containerized', 'federated', 'segregated', 'rotated', 'snapshotted', 'mitigated'],
+  'Software Engineer': ['engineered', 'developed', 'designed', 'architected', 'implemented', 'integrated', 'embedded', 'refactored', 'optimized', 'parallelized', 'shipped', 'launched', 'stabilized', 'validated', 'scaffolded', 'augmented', 'bootstrapped', 'prototyped', 'modularized', 'encapsulated', 'instrumented', 'debugged', 'root-caused', 'fine-tuned', 'reconfigured', 'packaged', 'containerized', 'decoupled', 'cached', 'memoized', 'serialized', 'contract-tested'],
+  'Data Engineer': ['engineered', 'modeled', 'orchestrated', 'integrated', 'transformed', 'optimized', 'parallelized', 'automated', 'standardized', 'validated', 'monitored', 'migrated', 'reconciled', 'backfilled', 'partitioned', 'ingested', 'materialized', 'replicated', 'profiled', 'surfaced', 'triangulated', 'parsed', 'debottlenecked', 'root-caused', 'normalized', 'denormalized', 'batched', 'pipelined', 'deduplicated', 'sharded', 'serialized', 'checkpointed'],
+  'Data Analyst': ['analyzed', 'evaluated', 'quantified', 'visualized', 'reported', 'modeled', 'forecasted', 'automated', 'queried', 'identified', 'tracked', 'interpreted', 'segmented', 'compared', 'derived', 'calculated', 'decomposed', 'reconciled', 'benchmarked', 'synthesized', 'surfaced', 'triangulated', 'interrogated', 'parsed', 'ranked', 'scored', 'aggregated', 'sampled'],
+  'Data Scientist': ['modeled', 'trained', 'analyzed', 'engineered', 'predicted', 'anticipated', 'inferred', 'classified', 'optimized', 'deployed', 'evaluated', 'benchmarked', 'experimented', 'forecasted', 'quantified', 'simulated', 'projected', 'triangulated', 'fine-tuned', 'hypothesized', 'calibrated', 'vectorized', 'tokenized', 'ensembled', 'scored'],
+  'QA Engineer': ['tested', 'regression-tested', 'automated', 'validated', 'verified', 'qualified', 'inspected', 'identified', 'reproduced', 'executed', 'stabilized', 'improved', 'smoke-tested', 'load-tested', 'stress-tested', 'probed', 'checked', 'triaged', 'root-caused', 'pinpointed', 'debugged', 'confirmed', 'fuzz-tested', 'contract-tested', 'canary-tested', 'chaos-tested'],
+  'Security Engineer': ['secured', 'hardened', 'remediated', 'enforced', 'audited', 'protected', 'fortified', 'isolated', 'restricted', 'encrypted', 'investigated', 'validated', 'monitored', 'contained', 'masked', 'detected', 'traced', 'triaged', 'shielded', 'root-caused', 'pinpointed', 'authenticated', 'authorized', 'sanitized', 'segregated', 'rotated', 'revoked', 'attested', 'quarantined', 'mitigated'],
+  'Product Manager': ['defined', 'prioritized', 'aligned', 'launched', 'validated', 'analyzed', 'coordinated', 'facilitated', 'delivered', 'measured', 'scoped', 'sequenced', 'demonstrated', 'scoped', 'synthesized', 'articulated', 'championed', 'framed', 'steered', 'sponsored', 'disseminated', 'hypothesized', 'ranked', 'scored', 'allocated', 'budgeted'],
 };
 
 export function actionVerbsFor(roleName) {
