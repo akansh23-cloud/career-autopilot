@@ -49,3 +49,20 @@
 - `skills: semantic normalisation` → asserts claimable-implication vs substrate.
 - `hardening` quota mapping → `/api/resume/tailor` maps to `tailoring`.
 Neither weakened a truth check; both tightened one.
+
+### Fixed — resume import (the reason deterministic output looked unformatted)
+- **PDF extraction collapsed each page into a single line.**
+  `extractResumeText()` joined every pdfjs text fragment with a space and
+  emitted one newline per page, so a two-page resume arrived as two lines.
+  `sliceSections()` splits on newlines and requires a section header alone on a
+  line, so **no section could ever be detected in a PDF import** — the document
+  reached the renderer with no structure and was laid out as one block of text.
+  Lines are now reconstructed from pdfjs baseline geometry, with spaces
+  inserted only at real horizontal gaps.
+- **Letter-spaced headings** ("A K A N S H  M O W A R") are collapsed, with a
+  run-length guard so "A B testing" and "J. R. R." survive.
+- **Blob recovery in `sectionDetector`.** When text still arrives as a wall
+  (paste, geometry-free PDF, odd producer), inline section headers are
+  re-broken onto their own lines instead of dumping everything into `preamble`.
+- **Compound headers.** "EDUCATION & CERTIFICATIONS" is treated as one header
+  whose body is shared, instead of splitting into an orphan "&".
