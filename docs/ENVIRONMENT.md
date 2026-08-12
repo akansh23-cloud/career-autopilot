@@ -29,6 +29,29 @@ missing. Everything else degrades gracefully. Full template: `.env.example`.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | Google OAuth. |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | Payments. |
 
+## Resume Narrative Intelligence (optional)
+All optional. With none of these set the narrative layer runs fully
+deterministically: no AI calls, no network access.
+| Var | Default | Purpose |
+|---|---|---|
+| `RESUME_NARRATIVE_AI` | `1` | `0` disables the AI layer for resume narrative generation only. |
+| `RESUME_NARRATIVE_MODEL` | `AI_MODEL` / `claude-sonnet-4-6` | Strong-tier model (final synthesis, hard reranks). |
+| `RESUME_NARRATIVE_SMALL_MODEL` | `claude-haiku-4-5-20251001` | Cheap-tier model (classification, extraction). |
+| `RESUME_RESEARCH_ENABLED` | `0` | Must be `1` before any external company/role research is possible. |
+| `RESUME_RESEARCH_ENDPOINT` | — | Vendor-neutral search endpoint (JSON). |
+| `RESUME_RESEARCH_API_KEY` | falls back to `SERPAPI_KEY` | Search credential. |
+| `RESUME_RESEARCH_PROVIDER` | `http` | Provider label reported in telemetry. |
+| `RESUME_RESEARCH_QUERY_PARAM` | `q` | Query parameter name. |
+| `RESUME_RESEARCH_RESULTS_PATH` | `organic_results` | Dotted path to the results array. |
+| `RESUME_RESEARCH_HEADER` | — | Header name for the API key (preferred over the query string). |
+| `RESUME_RESEARCH_TIMEOUT_MS` | `8000` | Per-search timeout. |
+
+All research fetches go through the existing SSRF-safe fetcher
+(`server/utils/workspace/ssrfGuard.js`) with a 512 KB response cap and a
+content-type allow-list. External research can influence vocabulary only — it
+can never become a candidate claim. See
+`docs/RESUME-NARRATIVE-INTELLIGENCE.md`.
+
 ## Jobs / contacts (optional)
 | Var | Purpose |
 |---|---|

@@ -22,21 +22,23 @@ const U = Infinity;
 
 /* Mirrors server/utils/quotaMiddleware.js → QUOTA_CONFIG (per UTC day). */
 export const BUCKET_LIMITS = {
-  free: { generation: 15, aiCalls: 10, syncs: 60, exports: 5 },
-  pro: { generation: 150, aiCalls: 100, syncs: 600, exports: 50 },
-  premium: { generation: U, aiCalls: 400, syncs: U, exports: U },
-  admin: { generation: U, aiCalls: U, syncs: U, exports: U },
+  free: { generation: 15, tailoring: 30, aiCalls: 10, syncs: 60, exports: 5 },
+  pro: { generation: 150, tailoring: 300, aiCalls: 100, syncs: 600, exports: 50 },
+  premium: { generation: U, tailoring: U, aiCalls: 400, syncs: U, exports: U },
+  admin: { generation: U, tailoring: U, aiCalls: U, syncs: U, exports: U },
 };
 
 export const BUCKET_LABELS = {
   generation: 'project & architecture generations',
-  aiCalls: 'AI calls (resume analysis, tailoring, drafting)',
+  tailoring: 'resume tailoring & enhancement',
+  aiCalls: 'AI calls (optional drafting features)',
   syncs: 'project syncs',
   exports: 'exports & starter packs',
 };
 
 export const BUCKET_SHORT = {
   generation: 'Generations',
+  tailoring: 'Tailoring',
   aiCalls: 'AI calls',
   syncs: 'Syncs',
   exports: 'Exports',

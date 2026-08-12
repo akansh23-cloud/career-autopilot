@@ -221,7 +221,7 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       // Never a raw error, but never a misleading one either. A plan limit is
       // NOT "temporarily unavailable" — that phrasing is what made students
       // retry forever instead of upgrading or waiting for the daily reset.
-      const d = describeApiError(e, 'AI tailoring');
+      const d = describeApiError(e, 'resume tailoring');
       if (d.kind === 'quota') {
         setUpgradeMsg(d.message);
         promptUpgrade(d.message, d.suggestPlan || 'pro');
@@ -229,9 +229,9 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       } else if (d.kind === 'rate') {
         degrade(`${d.message} Here's a deterministic starter kit you can use or edit right now.`);
       } else if (d.kind === 'config') {
-        degrade('AI tailoring is not enabled on this account, so this is the standard template version. The checklist and project gap analysis below still work.');
+        degrade('Tailoring is not enabled on this account, so this is the standard template version. The checklist and project gap analysis below still work.');
       } else {
-        degrade('AI tailoring could not run just now, so here’s a deterministic starter kit you can edit. You can still use the checklist and gap analysis.');
+        degrade('Tailoring could not run just now, so here’s a starter kit you can edit. You can still use the checklist and gap analysis.');
       }
     }
   };

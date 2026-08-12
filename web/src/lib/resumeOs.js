@@ -53,6 +53,10 @@ export const ResumeOsApi = {
   tailor: (payload) => api.post('/api/resume-os/tailor-v3', payload),
   /* V4 — canonical zero-AI job tailoring package */
   tailorForJob: (payload) => api.post('/api/resume-os/tailor-for-job', payload),
+  /* Narrative Intelligence — evidence-driven content generation */
+  enhance: (payload) => api.post('/api/resume-os/enhance', payload),
+  tailorNarrative: (payload) => api.post('/api/resume-os/tailor-narrative', payload),
+  narrativePreview: (payload) => api.post('/api/resume-os/narrative/preview', payload),
   compileSummary: (payload) => api.post('/api/resume-os/summary/compile', payload),
   recommendTemplates: (payload) => api.post('/api/resume-os/templates/recommend', payload),
   autofit: (payload) => api.post('/api/resume-os/autofit', payload),

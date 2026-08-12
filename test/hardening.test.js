@@ -156,7 +156,10 @@ test('EXPORT_SOURCES covers every critical user-keyed collection and powers the 
 test('quota route matcher maps generation/AI/sync/export families', () => {
   assert.equal(matchQuotaBucket('POST', '/api/workspace/generate'), 'generation');
   assert.equal(matchQuotaBucket('POST', '/api/projects/store/sync'), 'syncs');
-  assert.equal(matchQuotaBucket('POST', '/api/resume/tailor'), 'aiCalls');
+  /* CHANGED (P1.7): tailoring is deterministic and no longer bills as an AI call. */
+  assert.equal(matchQuotaBucket('POST', '/api/resume/tailor'), 'tailoring');
+  assert.equal(matchQuotaBucket('POST', '/api/resume-os/enhance'), 'tailoring');
+  assert.equal(matchQuotaBucket('POST', '/api/resume-os/tailor-narrative'), 'tailoring');
   assert.equal(matchQuotaBucket('POST', '/api/workspace/starter-pack'), 'exports');
   assert.equal(matchQuotaBucket('GET', '/api/workspace/generate'), null, 'reads are never metered');
   assert.equal(matchQuotaBucket('POST', '/api/user/state'), null);

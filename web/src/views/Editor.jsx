@@ -263,7 +263,7 @@ function CustomTemplatePanel({ data, customSpec, onBuilt, onClear, onSelectCusto
 }
 
 /* ------------------------------------------------------------------ */
-/* Persistence for the AI tailor output                                */
+/* Persistence for the deterministic tailoring output                  */
 /* ------------------------------------------------------------------ */
 const OUT_KEY = 'careerAutopilot.editor.lastTailor.v1';
 function safeRead() { try { return JSON.parse(localStorage.getItem(OUT_KEY) || '{}'); } catch { return {}; } }
@@ -442,7 +442,7 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
             <p className="mt-2 text-xs text-fg-muted">Single page fits everything cleanly on one A4. Multi page keeps sections intact across pages.</p>
             {err && <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
             <Button className="mt-3 w-full" onClick={tailor} disabled={status === 'loading'}>
-              <Wand2 size={16} /> {status === 'loading' ? 'Tailoring…' : 'Tailor with AI'}
+              <Wand2 size={16} /> {status === 'loading' ? 'Tailoring…' : 'Tailor for This Job'}
             </Button>
           </SectionCard>
         </div>

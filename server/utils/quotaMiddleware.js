@@ -22,11 +22,16 @@
 const U = Infinity;
 
 /* Per-plan daily caps per bucket. 'admin' is resolved server-side only. */
+/* 'tailoring' is deliberately its own bucket (P1.7). Resume tailoring makes
+   zero generative-LLM calls, so metering it as an "AI call" would charge the
+   user for something the product does not do and would tell them something
+   untrue about how their resume was written. It is also cheaper to run than
+   an AI call, so it gets a more generous allowance. */
 export const QUOTA_CONFIG = {
-  free:    { generation: 15, aiCalls: 10, syncs: 60,  exports: 5 },
-  pro:     { generation: 150, aiCalls: 100, syncs: 600, exports: 50 },
-  premium: { generation: U,   aiCalls: 400, syncs: U,   exports: U },
-  admin:   { generation: U,   aiCalls: U,   syncs: U,   exports: U },
+  free:    { generation: 15,  tailoring: 30,  aiCalls: 10,  syncs: 60,  exports: 5 },
+  pro:     { generation: 150, tailoring: 300, aiCalls: 100, syncs: 600, exports: 50 },
+  premium: { generation: U,   tailoring: U,   aiCalls: 400, syncs: U,   exports: U },
+  admin:   { generation: U,   tailoring: U,   aiCalls: U,   syncs: U,   exports: U },
 };
 
 /* Route-family → bucket map. Prefix match on (method + path). Order
@@ -34,8 +39,15 @@ export const QUOTA_CONFIG = {
    plain GET reads are never metered. */
 export const QUOTA_ROUTES = [
   { method: 'POST', prefix: '/api/projects/store/sync', bucket: 'syncs' },
-  { method: 'POST', prefix: '/api/resume/analyze', bucket: 'aiCalls' },
-  { method: 'POST', prefix: '/api/resume/tailor', bucket: 'aiCalls' },
+  /* Deterministic resume work → 'tailoring'. Longest prefixes first. */
+  { method: 'POST', prefix: '/api/resume-os/tailor-narrative', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume-os/tailor-for-job', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume-os/narrative/preview', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume-os/tailor-v3', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume-os/enhance', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume-os/assist', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume/tailor', bucket: 'tailoring' },
+  { method: 'POST', prefix: '/api/resume/analyze', bucket: 'generation' },
   { method: 'POST', prefix: '/api/resume/export', bucket: 'exports' },
   { method: 'POST', prefix: '/api/workspace/starter-pack', bucket: 'exports' },
   { method: 'POST', prefix: '/api/workspace/generate', bucket: 'generation' },

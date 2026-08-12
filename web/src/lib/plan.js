@@ -49,7 +49,8 @@ export const METER_LABELS = {
    real daily allowance next to the monthly entitlement, so the two numbers on
    screen always agree with what the backend will actually do. */
 export const METER_TO_BUCKET = {
-  tailoring: 'aiCalls',
+  /* P1.7 — tailoring is deterministic; it does not spend an AI call. */
+  tailoring: 'tailoring',
   outreach: 'aiCalls',
   contacts: 'aiCalls',
   aiGen: 'generation',

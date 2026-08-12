@@ -97,6 +97,49 @@ each carrying provenance or a Build-Evidence CTA into the canonical
 recommender. AI never invents metrics; TYPE 2 rewrites draw only from known
 evidence.
 
+### 7.1 Resume OS layers (canonical — there is ONE resume engine)
+
+| Layer | Location | Role |
+| --- | --- | --- |
+| L0 canonical document | `utils/resume/resumeDocument.js` | The one schema. Every layer reads and writes it. |
+| L0 trust boundary | `utils/resume/trustBoundary.js` | Re-stamps trust from server context before anything is scored, written or exported. Runs first in every entry point. |
+| L1 evidence aggregate | `utils/resume/masterProfileEngine.js` | Profile + verified submissions + verified skills + GitHub-proven skills. |
+| L2 deterministic engines | `truthEngine` · `atsEngineV3` · `jdParserV2` · `jobMatchEngineV3` · `contentBudget` · `templateRecommender` · `summaryCompiler` · `bulletCompiler` | **Authoritative verdicts.** Selection, ranking, budgeting, scoring, auditing. Zero AI. |
+| **L3 Narrative Intelligence** | **`utils/resume/narrative/*`** | **NEW. Writes the sentences.** Consumes L0–L2, returns a `ResumeDocument`. Never overrides an L2 verdict. |
+| L4 optional AI assist | `utils/resume/writingProviders.js` | Per-string reword, truth-gated. Kept — Resume Studio's side-by-side comparison depends on it. |
+| L5 presentation | Template OS · `docxWriter` · PDF | Unchanged. Templates decide **how**; the content engine decides **what**. |
+
+**L3 is a layer, not a seventh engine.** It adds no schema, owns no verdict, and
+removes no route. It reuses `resumeDocument`, `trustBoundary`,
+`masterProfileEngine`, `truthEngine`, `atsEngineV3`, `jdParserV2`,
+`jobMatchEngineV3`, `skillOntology`, `skillMatcher`, `roleDictionaries`,
+`grammarLibrary`, `bulletCompiler`, `contentBudget`, `templateRecommender`,
+`textQualityEngines`, `writingProviders.validateRewrite` and
+`workspace/ssrfGuard` — and adds only the stages that did not exist:
+
+`evidenceGraph → candidateIntelligence → voiceFingerprint → jobIntelligence →
+externalContext → domainVocabulary → skillIntelligence → contentStrategy →
+bulletComposer → bulletScoring → resumeConsistency → truthValidator →
+summaryComposer → narrativeEngine`
+
+Two canonical write paths, both non-destructive:
+
+| Mode | Route | Contract |
+| --- | --- | --- |
+| ENHANCE | `POST /api/resume-os/enhance` | Strongest general-market version. No JD, no company research. Returns a `ResumeDocument` + change ledger + gaps + telemetry. |
+| TAILOR | `POST /api/resume-os/tailor-narrative` | One opportunity. Returns the **same `package` + `variant` shape as `tailor-for-job`**, so existing UI reads it unchanged. The master is never mutated. |
+
+`POST /api/resume-os/tailor-for-job` (the zero-AI V4 package) is **unchanged and
+still canonical** for callers that want selection-only tailoring. The narrative
+route is the superset: same package semantics, plus rewritten content.
+
+Invariants carried over and enforced by tests: no AI in any verdict path; all
+scoring deterministic and backend-owned; nothing enters the resume without a
+traceable `EvidenceRecord`; unsupported JD requirements surface as gaps, never
+as content; external research can change vocabulary but never claims.
+
+Full detail: `docs/RESUME-NARRATIVE-INTELLIGENCE.md`.
+
 ## 8. Patent / Innovation convergence (Phase G — plan only, per directive)
 
 Overlap found: `services/problemIntelligence/*` (problem clusters, IP

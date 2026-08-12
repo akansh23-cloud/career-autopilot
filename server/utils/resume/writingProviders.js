@@ -25,6 +25,8 @@ import { compileBullet } from './bulletCompiler.js';
 import { allKnownSkills, canonicalSkill } from './skillOntology.js';
 import { skillPresent } from './skillMatcher.js';
 
+import { assertNoAiInsideBoundary } from '../../services/resumeTailoring/aiBoundary.js';
+
 export const WRITING_PROVIDERS_VERSION = 'writing-providers-v2-vocabulary';
 
 /* ------------------------------------------------------------------ */
@@ -150,6 +152,8 @@ export function makeAnthropicWritingProvider({ apiKey, model, fetchImpl = fetch,
     label: 'AI Assist (optional)',
     available: () => !!apiKey,
     async rewrite({ kind = 'bullet', text = '', facts = null, jdSkills = [] }) {
+      /* P1.1 — hard deny inside the canonical tailoring transaction. */
+      assertNoAiInsideBoundary('anthropic', 'writing.rewrite');
       if (!apiKey) return { provider: 'anthropic', candidates: [], unavailable: true };
       /* Token/cost control: ONLY the source text, approved facts, and target
          intent are sent — never the whole profile or conversation. */
