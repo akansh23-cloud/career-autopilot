@@ -5,7 +5,7 @@ import {
   Trophy, TrendingUp, Settings, Zap, Menu, X, LogOut, ChevronDown, Search,
   Rocket, Globe2, Users, UserSearch, ShieldCheck, User, BadgeCheck, Medal, Handshake, Wand2,
   LifeBuoy, Award, Store, Lightbulb, Boxes, ScrollText, FileStack, Gauge, Sparkles, GraduationCap,
-  PanelLeftClose, PanelLeftOpen, LayoutTemplate,
+  PanelLeftClose, PanelLeftOpen, LayoutTemplate, Database,
 } from 'lucide-react';
 import { Avatar, Dropdown, MenuItem } from '../ui/kit.jsx';
 import { useSupport } from '../../support/SupportProvider.jsx';
@@ -76,6 +76,7 @@ export const NAV = [
   { id: 'growth', label: 'Growth', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'adminusers', label: 'User Directory', icon: ShieldCheck, adminOnly: true },
+  { id: 'jobdiscoveryadmin', label: 'Job Discovery', icon: Database, adminOnly: true },
   { id: 'templatebuilder', label: 'Template Builder', icon: LayoutTemplate, adminOnly: true },
 ];
 

@@ -47,6 +47,7 @@ import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
 import ProjectCreator from './views/ProjectCreator.jsx';
 import AdminUsers from './views/AdminUsers.jsx';
+import AdminJobDiscovery from './views/AdminJobDiscovery.jsx';
 import SkillsXp from './views/SkillsXp.jsx';
 import MarketplaceView from './views/Marketplace.jsx';
 import InspirationsView from './views/Inspirations.jsx';
@@ -86,6 +87,7 @@ const VIEWS = {
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
+  jobdiscoveryadmin: AdminJobDiscovery,
   templatebuilder: TemplateBuilder,
   skillsxp: SkillsXp,
   marketplace: MarketplaceView,
@@ -163,6 +165,11 @@ function isAdminUsersHash() {
   return /^#\/admin\/users\b/.test(window.location.hash || '');
 }
 
+function isAdminJobDiscoveryHash() {
+  if (typeof window === 'undefined') return false;
+  return /^#\/admin\/job-discovery\b/.test(window.location.hash || '');
+}
+
 export default function App() {
   const { user, loading } = useAuth();
   const [signIn, setSignIn] = useState(false);
@@ -205,15 +212,20 @@ export default function App() {
     return () => window.removeEventListener('hashchange', f);
   }, []);
 
-  // Honor a #/admin/users deep link: route to the admin view on load + on change
-  // — but ONLY if the effective role may see it. Non-admins are redirected to
-  // their default landing (the deep link is a convenience, never a bypass).
+  // Honor admin deep links on load + hash changes. Capability checks remain
+  // centralized; the backend is still the authority for every admin API call.
   useEffect(() => {
     const f = () => {
-      if (!isAdminUsersHash()) return;
       const role = getEffectiveRole(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() });
-      if (canSeeScreen(role, 'adminusers')) setActive('adminusers');
-      else setActive(defaultScreenForUser(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() }));
+      if (isAdminJobDiscoveryHash()) {
+        if (canSeeScreen(role, 'jobdiscoveryadmin')) setActive('jobdiscoveryadmin');
+        else setActive(defaultScreenForUser(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() }));
+        return;
+      }
+      if (isAdminUsersHash()) {
+        if (canSeeScreen(role, 'adminusers')) setActive('adminusers');
+        else setActive(defaultScreenForUser(getProfile(), { isAdmin: getPlan().isAdmin, accessContext: getAccessContext() }));
+      }
     };
     f();
     window.addEventListener('hashchange', f);

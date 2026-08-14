@@ -188,6 +188,8 @@ const SPEC_SCREEN_ALIASES = {
   // Admin
   'admin-dashboard': 'adminusers',
   'user-directory': 'adminusers',
+  'job-discovery': 'jobdiscoveryadmin',
+  'admin-job-discovery': 'jobdiscoveryadmin',
 };
 
 export function resolveScreenId(screenId) {
