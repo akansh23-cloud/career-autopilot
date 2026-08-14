@@ -393,12 +393,35 @@ test('§61 — every ingest command is admin-gated', async () => {
     assert.ok(names.includes('requireAdmin'), `${path} must require admin`);
   }
 
-  /* And no public route can trigger ingestion. */
+  /* Vercel Cron is machine-to-machine rather than session-admin traffic. Cron
+     routes are allowed only under the dedicated namespace and must reject a
+     request that does not carry CRON_SECRET. This preserves the §61 property:
+     there is still no unauthenticated crawl trigger. */
   const publicRoutes = registered.filter((r) => !r.path.startsWith('/api/admin/'));
-  for (const r of publicRoutes) {
-    assert.ok(
-      !/crawl|tick|discover|reprocess|verify/.test(r.path),
-      `public route ${r.path} must not expose a crawl trigger`,
-    );
+  const oldSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'test-cron-secret';
+  try {
+    for (const r of publicRoutes) {
+      if (/^\/api\/cron\/job-discovery\//.test(r.path)) {
+        const handler = r.handlers.at(-1);
+        let statusCode = 200;
+        let body = null;
+        const res = {
+          status(code) { statusCode = code; return this; },
+          json(value) { body = value; return value; },
+        };
+        await handler({ headers: {} }, res);
+        assert.equal(statusCode, 401, `${r.path} must reject a request without the cron bearer secret`);
+        assert.equal(body?.error, 'cron_unauthorized');
+        continue;
+      }
+      assert.ok(
+        !/crawl|tick|discover|reprocess|verify/.test(r.path),
+        `public route ${r.path} must not expose an unprotected crawl trigger`,
+      );
+    }
+  } finally {
+    if (oldSecret == null) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = oldSecret;
   }
 });

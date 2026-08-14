@@ -179,6 +179,22 @@ export class DiscoveryQueue {
     return tasks;
   }
 
+  /** Release a healthy leased task for immediate continuation later. */
+  async defer(task, { delayMs = 0, reason = 'execution deadline' } = {}) {
+    const at = this.nowIso();
+    const next = {
+      ...task,
+      state: DISCOVERY_STATE.RETRY,
+      nextAttemptAt: new Date(this.now().getTime() + Math.max(0, Number(delayMs) || 0)).toISOString(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastReason: reason,
+      updatedAt: at,
+    };
+    await this.store.putDiscoveryTask(next);
+    return next;
+  }
+
   /** A source was found (or already known). */
   async resolve(task, { sourceId = null, companyId = null, reason = null } = {}) {
     this.metrics.resolved += 1;

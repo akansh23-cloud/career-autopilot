@@ -14,7 +14,7 @@ index immediately — there is no separate collection and no second read path.
 - **`scripts/job-discovery-fetch.mjs`** — the terminal equivalent, with
   `--file targets.txt` (comments and blank lines allowed), `--dry-run`,
   `--queue`, `--runs`, `--json`.
-- **Ingest-run receipts** — a seventh store collection across all three backends.
+- **Ingest-run receipts** — a seventh   store collection across all three backends.
   Every non-dry run records who triggered it, why, what was attempted and what
   landed, so "what did last night's fetch do?" survives the browser tab.
 - **`AdminJobIngestPanel.jsx`** — admin UI showing per-target outcomes including

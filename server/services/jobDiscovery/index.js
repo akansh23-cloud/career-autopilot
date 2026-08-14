@@ -23,6 +23,7 @@ import { CrawlScheduler, VerificationWorker, Metrics } from './scheduler.js';
 import { DiscoveryQueue } from './discoveryQueue.js';
 import { CrawlQueue } from './crawlQueue.js';
 import { CompanyRegistry } from './companyRegistry.js';
+import { CompanySeedCatalog } from './companySeedCatalog.js';
 import { ManualIngestService } from './manualIngest.js';
 import { computeCoverage, NAMESPACE, coverageDisclaimer } from './coverageMetrics.js';
 import { summarizeSourceHealth } from './sourceHealth.js';
@@ -40,13 +41,14 @@ export class JobDiscoveryService {
   constructor({
     store, registry, adapters, ingest, search, scheduler, verifier, discovery,
     http, browserPool, robots, metrics, logger = console,
-    crawlQueue = null, discoveryQueue = null, companies = null, manualIngest = null,
+    crawlQueue = null, discoveryQueue = null, companies = null, companySeeds = null, manualIngest = null,
   }) {
     this.store = store;
     this.registry = registry;
     this.crawlQueue = crawlQueue;
     this.discoveryQueue = discoveryQueue;
     this.companies = companies;
+    this.companySeeds = companySeeds;
     /* Operator-triggered ingestion. Same store, same guards, same canonical
        jobs — it only changes WHEN work happens and WHO asked for it. */
     this.manualIngest = manualIngest || new ManualIngestService({ service: this, logger });
@@ -130,22 +132,26 @@ export class JobDiscoveryService {
    * says what we think happened, this says what is there.
    */
   async browseJobs(filter = {}) {
-    const limit = Math.max(1, Math.min(200, Number(filter.limit) || 50));
-    const jobs = await this.store.listJobs({ limit: 100000 });
-    let out = jobs;
-    if (filter.sourceId) out = out.filter((j) => (j.sourceInstances || []).some((s) => s.sourceId === filter.sourceId));
-    if (filter.companyDomain) out = out.filter((j) => j.company?.domain === filter.companyDomain);
-    if (filter.status) out = out.filter((j) => j.status === filter.status);
-    if (filter.provider) out = out.filter((j) => (j.sourceInstances || []).some((s) => s.provider === filter.provider));
-    if (filter.since) out = out.filter((j) => String(j.firstSeenAt || '') >= filter.since);
-    const total = out.length;
-    out.sort((a, b) => String(b.firstSeenAt || '').localeCompare(String(a.firstSeenAt || '')));
-    const offset = Math.max(0, Number(filter.offset) || 0);
+    const page = Math.max(1, Number(filter.page) || 1);
+    const pageSize = 20;
+    const result = await this.store.pageJobs({
+      page,
+      pageSize,
+      q: filter.q ? String(filter.q) : '',
+      sourceId: filter.sourceId || null,
+      companyDomain: filter.companyDomain || null,
+      provider: filter.provider || null,
+      status: filter.status || null,
+      since: filter.since || null,
+    });
     return {
-      total,
-      offset,
-      limit,
-      jobs: out.slice(offset, offset + limit).map((j) => ({
+      total: result.total,
+      page: result.page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+      hasPrev: result.page > 1,
+      hasNext: result.page < Math.max(1, Math.ceil(result.total / pageSize)),
+      jobs: result.docs.map((j) => ({
         id: j.id,
         title: j.title,
         company: j.company?.name ?? null,
@@ -157,12 +163,65 @@ export class JobDiscoveryService {
         lastSeenAt: j.lastSeenAt,
         lastVerifiedAt: j.lastVerifiedAt,
         applyUrl: j.canonicalApplyUrl,
-        providers: [...new Set((j.sourceInstances || []).map((s) => s.provider))],
-        sourceIds: (j.sourceInstances || []).map((s) => s.sourceId),
+        providers: [...new Set((j.sourceInstances || []).map((x) => x.provider))],
+        sourceIds: (j.sourceInstances || []).map((x) => x.sourceId),
         directApply: j.directApply,
         completeness: j.completeness,
       })),
     };
+  }
+
+  /** Searchable, server-paginated direct-employer company registry. */
+  async browseCompanies(filter = {}) {
+    const page = Math.max(1, Number(filter.page) || 1);
+    const pageSize = 20;
+    const result = await this.store.pageCompanies({
+      page,
+      pageSize,
+      q: filter.q ? String(filter.q) : '',
+      hasSource: filter.hasSource == null ? null : !!filter.hasSource,
+      provider: filter.provider || null,
+      seedSource: filter.seedSource || null,
+    });
+    return {
+      total: result.total,
+      page: result.page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+      hasPrev: result.page > 1,
+      hasNext: result.page < Math.max(1, Math.ceil(result.total / pageSize)),
+      companies: result.docs.map((c) => ({
+        id: c.id,
+        name: c.name,
+        domain: c.domain ?? null,
+        website: c.website ?? null,
+        careersUrl: c.careersUrl ?? null,
+        atsProvider: c.atsProvider ?? null,
+        atsTenant: c.atsTenant ?? null,
+        industry: c.industry ?? null,
+        region: c.region ?? null,
+        hiringCountries: c.hiringCountries || [],
+        indiaRelevance: c.indiaRelevance ?? null,
+        careerUrlStatus: c.careerUrlStatus ?? null,
+        seedSource: c.seedSource ?? null,
+        sourceIds: c.sourceIds || [],
+        sourceConfidence: c.sourceConfidence ?? null,
+        updatedAt: c.updatedAt ?? null,
+      })),
+    };
+  }
+
+  async ensureCompanySeeds({ minimum = 1000, includeRemote = true } = {}) {
+    if (!this.companySeeds) return { ok: false, reason: 'company seed catalog is not configured' };
+    return this.companySeeds.ensure({ minimum, includeRemote });
+  }
+
+  async companySeedStatus() {
+    return this.companySeeds ? this.companySeeds.status() : null;
+  }
+
+  async runCronPhase(phase, opts = {}) {
+    return this.scheduler.runPhaseUntilDeadline(phase, opts);
   }
 
   async crawlSource(sourceId, opts = {}) {
@@ -227,51 +286,132 @@ export class JobDiscoveryService {
    * be summed or shown under the same label.
    */
   async coverageReport({ namespace = NAMESPACE.PRODUCTION, windowHours = 24 } = {}) {
+    const aggregate = await this.store.coverageAggregate?.({ now: Date.now(), windowHours });
+
+    if (aggregate) {
+      const [sources, registrySummary, companySummary, discoveryStats, crawlStats] = await Promise.all([
+        this.registry.list({}),
+        this.registry.summary(),
+        this.companies ? this.companies.summary() : Promise.resolve({ total: 0, withSource: 0 }),
+        this.discoveryQueue ? this.discoveryQueue.stats() : Promise.resolve(null),
+        this.crawlQueue ? this.crawlQueue.stats() : Promise.resolve(null),
+      ]);
+      const pct = (n, total) => total ? Math.round((n / total) * 1000) / 10 : 0;
+      const active = aggregate.active;
+      const supplementalOnly = aggregate.total - aggregate.directSourceCount;
+      const snapshot = {
+        namespace,
+        generatedAt: new Date().toISOString(),
+        windowHours,
+        jobs: {
+          activeCanonicalJobs: active,
+          total: aggregate.total,
+          byStatus: aggregate.byStatus,
+          byProvider: aggregate.byProvider,
+          bySourceClass: aggregate.bySourceClass,
+          new: aggregate.byStatus?.NEW || 0,
+          stale: aggregate.byStatus?.STALE || 0,
+          removed: aggregate.byStatus?.REMOVED || 0,
+        },
+        sources: {
+          registered: registrySummary.total ?? sources.length,
+          healthy: sources.filter((x) => x.status === SOURCE_STATUS.ACTIVE && (x.health?.successRate == null || x.health.successRate >= 0.8)).length,
+          degraded: sources.filter((x) => x.status === SOURCE_STATUS.DEGRADED).length,
+          failing: sources.filter((x) => typeof x.health?.successRate === 'number' && x.health.successRate < 0.5).length,
+          byStatus: registrySummary.byStatus || {},
+          sourceFailureRatePct: pct(sources.filter((x) => typeof x.health?.successRate === 'number' && x.health.successRate < 0.5).length, sources.length),
+        },
+        companies: {
+          known: companySummary.total || 0,
+          covered: companySummary.withRegisteredSource || 0,
+          coveragePct: pct(companySummary.withRegisteredSource || 0, companySummary.total || 0),
+          seeded: companySummary.seeded || 0,
+        },
+        discovery: {
+          jobsDiscoveredPerDay: windowHours ? Math.round((aggregate.discoveredInWindow / windowHours) * 24) : 0,
+          jobsDiscoveredInWindow: aggregate.discoveredInWindow,
+          newJobsLastHour: aggregate.newJobsLastHour,
+          medianDiscoveryAgeDays: aggregate.medianDiscoveryAgeDays,
+          datedSampleSize: aggregate.datedSampleSize,
+          queue: discoveryStats,
+        },
+        quality: {
+          directSourceCount: aggregate.directSourceCount,
+          directSourcePct: pct(aggregate.directSourceCount, aggregate.total),
+          directApplyCount: aggregate.directApplyCount,
+          directApplyPct: pct(aggregate.directApplyCount, aggregate.total),
+          applyUrlCoveragePct: pct(aggregate.applyUrlCount, aggregate.total),
+          withPublishedDatePct: pct(aggregate.publishedCount, aggregate.total),
+          withSalaryPct: pct(aggregate.salaryCount, aggregate.total),
+          verificationCoveragePct: pct(aggregate.verifiedCount, aggregate.total),
+          multiSourcedCount: aggregate.multiSourcedCount,
+          duplicateRatio: aggregate.total ? Math.round((aggregate.totalInstances / aggregate.total) * 100) / 100 : 0,
+          duplicatesCollapsed: Math.max(0, aggregate.totalInstances - aggregate.total),
+          changedInWindow: aggregate.changedInWindow,
+        },
+        machine: {
+          crawlQueue: crawlStats,
+          browserFallbackPct: this.metrics?.snapshot?.()?.browserFallbackPct ?? null,
+          fetchSuccessRate: this.metrics?.snapshot?.()?.fetchSuccessRate ?? null,
+          searchP50Ms: this.metrics?.snapshot?.()?.latency?.searchP50 ?? null,
+          searchP95Ms: this.metrics?.snapshot?.()?.latency?.searchP95 ?? null,
+        },
+      };
+
+      return {
+        ...snapshot,
+        disclaimer: coverageDisclaimer(snapshot),
+        providers: this.adapters.coverageMatrix(),
+        adapterStatus: this.adapters.statusReport(),
+        registry: { ...registrySummary, health: summarizeSourceHealth(sources) },
+        changes: { aggregate: true, changedInWindow: aggregate.changedInWindow, windowHours },
+        providersImplemented: this.adapters.supportedProviders(),
+        sources: { ...snapshot.sources, ...registrySummary },
+        coverage: {
+          originalSourceCount: snapshot.quality.directSourceCount,
+          originalSourcePct: snapshot.quality.directSourcePct,
+          supplementalOnlyCount: supplementalOnly,
+          supplementalOnlyPct: pct(supplementalOnly, aggregate.total),
+          directApplyCount: snapshot.quality.directApplyCount,
+          directApplyPct: snapshot.quality.directApplyPct,
+          withPublishedDatePct: snapshot.quality.withPublishedDatePct,
+          withSalaryPct: snapshot.quality.withSalaryPct,
+          verificationCoveragePct: snapshot.quality.verificationCoveragePct,
+          dedupeRatio: snapshot.quality.duplicateRatio,
+        },
+        runtime: this.metrics?.snapshot?.() ?? null,
+      };
+    }
+
+    /* Memory/file stores are primarily deterministic fixture/dev backends; keep
+       their exact full-corpus metrics path for test compatibility. */
     const [sources, jobs, registrySummary, companies] = await Promise.all([
       this.registry.list({}),
       this.store.listJobs({ limit: 200000 }),
       this.registry.summary(),
       this.companies ? this.store.listCompanies({ limit: 100000 }) : Promise.resolve([]),
     ]);
-
     const snapshot = computeCoverage({
-      jobs,
-      sources,
-      companies,
-      namespace,
-      windowHours,
+      jobs, sources, companies, namespace, windowHours,
       discoveryStats: this.discoveryQueue ? await this.discoveryQueue.stats() : null,
       crawlStats: this.crawlQueue ? await this.crawlQueue.stats() : null,
       runtime: this.metrics?.snapshot?.() ?? null,
     });
-
     const supplementalOnly = snapshot.jobs.total - snapshot.quality.directSourceCount;
-
     return {
       ...snapshot,
       disclaimer: coverageDisclaimer(snapshot),
       providers: this.adapters.coverageMatrix(),
       adapterStatus: this.adapters.statusReport(),
       registry: { ...registrySummary, health: summarizeSourceHealth(sources) },
-      changes: summarizeChanges(jobs, {
-        since: new Date(Date.now() - windowHours * 3600000).toISOString(),
-      }),
-
-      /* Stable surface retained for the admin route, the demo report and the
-         phase-1 integration contract. Same numbers, previous field names —
-         renaming a metric is not a reason to break every consumer of it. */
+      changes: summarizeChanges(jobs, { since: new Date(Date.now() - windowHours * 3600000).toISOString() }),
       providersImplemented: this.adapters.supportedProviders(),
-      sources: {
-        ...snapshot.sources,
-        ...registrySummary,
-      },
+      sources: { ...snapshot.sources, ...registrySummary },
       coverage: {
         originalSourceCount: snapshot.quality.directSourceCount,
         originalSourcePct: snapshot.quality.directSourcePct,
         supplementalOnlyCount: supplementalOnly,
-        supplementalOnlyPct: snapshot.jobs.total
-          ? Math.round((supplementalOnly / snapshot.jobs.total) * 1000) / 10
-          : 0,
+        supplementalOnlyPct: snapshot.jobs.total ? Math.round((supplementalOnly / snapshot.jobs.total) * 1000) / 10 : 0,
         directApplyCount: snapshot.quality.directApplyCount,
         directApplyPct: snapshot.quality.directApplyPct,
         withPublishedDatePct: snapshot.quality.withPublishedDatePct,
@@ -293,6 +433,7 @@ export class JobDiscoveryService {
       discoveryQueue: this.discoveryQueue ? await this.discoveryQueue.stats() : null,
       crawlQueue: this.crawlQueue ? await this.crawlQueue.stats() : null,
       companies: this.companies ? await this.companies.summary() : null,
+      companySeeds: this.companySeeds ? await this.companySeeds.status() : null,
       metrics: this.metrics?.snapshot?.() ?? null,
       adapters: this.adapters.statusReport(),
     };
@@ -344,6 +485,7 @@ export async function createJobDiscoveryService({
 
   const registry = new SourceRegistry({ store: resolvedStore, logger, now });
   const companies = new CompanyRegistry({ store: resolvedStore, logger, now });
+  const companySeeds = new CompanySeedCatalog({ store: resolvedStore, companies, fetchImpl, logger });
   const discoveryQueue = new DiscoveryQueue({ store: resolvedStore, logger, now });
   const crawlQueue = new CrawlQueue({ store: resolvedStore, logger, now });
   const ingest = new IngestPipeline({ store: resolvedStore, registry, adapters, logger, metrics, now });
@@ -360,7 +502,7 @@ export async function createJobDiscoveryService({
   const service = new JobDiscoveryService({
     store: resolvedStore, registry, adapters, ingest, search, scheduler,
     verifier, discovery, http, browserPool, robots, metrics, logger,
-    crawlQueue, discoveryQueue, companies,
+    crawlQueue, discoveryQueue, companies, companySeeds,
   });
 
   /* Bootstrap the legacy aggregators as SUPPLEMENTAL sources (§25). They are

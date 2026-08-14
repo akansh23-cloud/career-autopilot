@@ -13,8 +13,9 @@
      - re-running the same fetch UPDATES and never duplicates
      - an admin trigger does NOT bypass access policy, robots,
        adapter configuration, or the source-health credibility guard
-     - a run is bounded: target count and page budget are enforced
-       and the response says so
+     - there is NO artificial target/page-count ceiling for stress testing;
+       serverless wall-clock deadlines defer/queue continuation instead of
+       truncating the requested batch
      - a dry run touches nothing and leaves no receipt
      - receipts persist, so "what did last night's fetch do?" is
        answerable after the tab is closed
@@ -221,14 +222,26 @@ test('MANUAL_INGEST_GATE — a manual fetch cannot close jobs it failed to see',
 
 /* ==================== bounds, dry runs, receipts ==================== */
 
-test('MANUAL_INGEST_GATE — a run is bounded and says when a cap was hit', async () => {
+test('MANUAL_INGEST_GATE — no artificial target cap; execution remains bounded by durable continuation', async () => {
   const service = await manualService();
-  const many = Array.from({ length: LIMITS.maxTargetsPerRun + 5 }, (_, i) => `https://boards.greenhouse.io/tenant${i}`);
+  const many = Array.from({ length: 75 }, (_, i) => `https://boards.greenhouse.io/tenant${i}`);
 
   const result = await service.fetchNow(many, { dryRun: true });
-  assert.equal(result.truncated, true);
-  assert.equal(result.results.length, LIMITS.maxTargetsPerRun, 'one click cannot start an unbounded crawl');
-  assert.match(result.truncatedReason, /second run/, 'the operator is told how to continue');
+  assert.equal(LIMITS.maxTargetsPerRun, null);
+  assert.equal(LIMITS.maxPagesPerSource, null);
+  assert.equal(result.truncated, false);
+  assert.equal(result.results.length, many.length, 'the operator batch is not silently cut to an arbitrary target count');
+
+  /* A request that has consumed its serverless wall-clock budget does not lose
+     the remainder. It converts every unstarted target into durable queue work. */
+  const queued = await service.fetchNow(many.slice(0, 12), {
+    deadlineAt: Date.now() - 1,
+    triggeredBy: 'stress-test@example.com',
+  });
+  assert.equal(queued.deadlineReached, true);
+  assert.equal(queued.truncated, false);
+  assert.equal(queued.results.length, 12);
+  assert.ok(queued.results.every((r) => r.stage === 'QUEUED'), 'all unstarted work is persisted for continuation');
 });
 
 test('MANUAL_INGEST_GATE — a dry run touches nothing and leaves no receipt', async () => {
@@ -318,7 +331,50 @@ test('MANUAL_INGEST_GATE — the browse view filters what is actually stored', a
   const active = await service.browseJobs({ status: JOB_STATUS.NEW, limit: 100 });
   assert.equal(active.total, all.total, 'everything just fetched is NEW');
 
-  const paged = await service.browseJobs({ limit: 1, offset: 0 });
-  assert.equal(paged.jobs.length, 1);
+  /* Admin browsing is deliberately page-based instead of one long vertical
+     list. The API owns a fixed 20-row page size so the UI cannot accidentally
+     ask Mongo to materialize the entire corpus. */
+  const paged = await service.browseJobs({ page: 1 });
+  assert.equal(paged.pageSize, 20);
+  assert.equal(paged.jobs.length, Math.min(20, all.total));
   assert.equal(paged.total, all.total, 'total reflects the whole match, not the page');
+  assert.equal(paged.totalPages, Math.max(1, Math.ceil(all.total / 20)));
+});
+
+test('MANUAL_INGEST_GATE — an unlimited inline source checkpoints page continuation instead of truncating it', async () => {
+  const store = new MemoryJobStore();
+  let checkpoint = null;
+  const source = makeSource({
+    provider: PROVIDER.GREENHOUSE,
+    sourceType: 'ATS',
+    sourceClass: SOURCE_CLASS.ORIGINAL_ATS,
+    tenant: 'largeboard',
+    accessPolicy: 'ALLOW',
+  });
+  const service = {
+    store,
+    registry: { async get(id) { return id === source.id ? source : null; } },
+    adapters: { forSource() { return { configurationStatus() { return { configured: true }; } }; } },
+    ingest: {
+      async runSource() {
+        return {
+          ok: true, fetched: 100, created: 100, merged: 0, changed: 0, rejected: 0,
+          pagesFetched: 8, notModified: false, health: { credible: true, anomalies: [] },
+          reconciliation: { allowed: false }, changeEvents: [], errors: [], partial: true,
+          deadlineReached: true, nextCursor: 'page-9',
+        };
+      },
+    },
+    crawlQueue: {
+      async enqueue() { return { ok: true, created: true, task: { id: 'cq_largeboard' } }; },
+      async checkpoint(task, cp) { checkpoint = { task, cp }; return { ...task, checkpoint: cp }; },
+    },
+  };
+  service.manualIngest = new ManualIngestService({ service, now: NOW, logger: { warn() {} } });
+
+  const result = await service.manualIngest.fetch([source.id]);
+  assert.equal(result.truncated, false);
+  assert.equal(result.results[0].partial, true);
+  assert.equal(result.results[0].continuationQueued, true);
+  assert.equal(checkpoint.cp.cursor, 'page-9');
 });

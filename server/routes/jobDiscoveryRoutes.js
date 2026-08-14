@@ -26,18 +26,19 @@
      GET  /api/admin/job-discovery/runs/:id   one receipt
      GET  /api/admin/job-discovery/jobs       browse what is in the store
 
-   There is NO unauthenticated crawl trigger. Every ingest command
-   is admin-gated, and the crawl target is validated by the same
-   SSRF guards as any other URL (§47/§61). An admin trigger changes
-   WHEN work happens and WHO asked for it — it is never an
-   authorisation bypass: robots policy, access policy, adapter
-   configuration and the source-health credibility guard all apply
-   to a manual fetch exactly as they do to a scheduled one.
+   There is NO unauthenticated crawl trigger. Human ingest commands
+   are requireAuth + requireAdmin; Vercel Cron commands live under
+   /api/cron/job-discovery/* and require Authorization: Bearer
+   CRON_SECRET. Every crawl target still passes the same SSRF/access
+   guards (§47/§61). Neither an admin click nor a cron invocation is
+   an authorization bypass: robots policy, source access policy,
+   adapter configuration and source-health credibility all apply.
 
    The service is created LAZILY on first use so importing this
    module never opens a store or a socket.
    ============================================================ */
 
+import crypto from 'node:crypto';
 import { createJobDiscoveryService } from '../services/jobDiscovery/index.js';
 import { RUN_MODE, LIMITS as MANUAL_LIMITS } from '../services/jobDiscovery/manualIngest.js';
 import { SOURCE_CLASS, SOURCE_TYPE, JOB_STATUS, PROVIDER, EMPLOYMENT_TYPE } from '../services/jobDiscovery/schema.js';
@@ -85,6 +86,25 @@ export function parseSearchQuery(query = {}) {
     limit: Math.max(1, Math.min(50, Number(query.limit) || 20)),
     cursor: query.cursor ? String(query.cursor).slice(0, 256) : null,
   };
+}
+
+function cronSecretMatches(req) {
+  const expected = String(process.env.CRON_SECRET || '');
+  const auth = String(req.headers?.authorization || '');
+  const actual = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!expected || !actual) return false;
+  const a = Buffer.from(actual);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function executionBudgetMs(kind = 'cron') {
+  const envName = kind === 'manual' ? 'JOB_DISCOVERY_MANUAL_BUDGET_MS' : 'JOB_DISCOVERY_CRON_BUDGET_MS';
+  const configured = Number(process.env[envName]);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  /* Current deployment is serverless. Leave margin for serialisation and the
+     platform response after checkpointing the last unit of work. */
+  return process.env.VERCEL ? 45_000 : 0;
 }
 
 export function registerJobDiscoveryRoutes(app, deps = {}) {
@@ -158,6 +178,28 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       res.status(500).json({ error: 'job_fetch_failed' });
     }
   });
+
+  /* ----------------------- serverless cron workers ----------------------- */
+
+  const cronHandler = (phase) => async (req, res) => {
+    if (!cronSecretMatches(req)) return res.status(401).json({ error: 'cron_unauthorized' });
+    try {
+      const service = await getService();
+      if (phase === 'bootstrap') {
+        return res.json(await service.ensureCompanySeeds({ minimum: 1000, includeRemote: true }));
+      }
+      const budgetMs = executionBudgetMs('cron') || 45_000;
+      return res.json(await service.runCronPhase(phase, { budgetMs }));
+    } catch (e) {
+      logger.error?.('job discovery cron failed', { phase, message: e?.message });
+      return res.status(500).json({ error: 'cron_failed', phase, message: e?.message });
+    }
+  };
+
+  app.get('/api/cron/job-discovery/bootstrap', cronHandler('bootstrap'));
+  app.get('/api/cron/job-discovery/crawl', cronHandler('crawl'));
+  app.get('/api/cron/job-discovery/discover', cronHandler('discover'));
+  app.get('/api/cron/job-discovery/verify', cronHandler('verify'));
 
   /* ------------------------------ admin ------------------------------ */
 
@@ -307,10 +349,14 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       const result = await service.fetchNow(targets, {
         mode,
         dryRun: body.dryRun === true,
-        maxPagesPerSource: Math.max(1, Math.min(
-          MANUAL_LIMITS.maxPagesPerSource,
-          Number(body.maxPages) || MANUAL_LIMITS.maxPagesPerSource,
-        )),
+        /* Deliberately no artificial page/target cap: stress tests can run
+           the full batch. On serverless, the execution deadline checkpoints
+           and queues continuation instead of truncating work. */
+        maxPagesPerSource: Number(body.maxPages) > 0 ? Number(body.maxPages) : null,
+        deadlineAt: (() => {
+          const budget = Number(body.executionBudgetMs) > 0 ? Number(body.executionBudgetMs) : executionBudgetMs('manual');
+          return budget > 0 ? Date.now() + budget : null;
+        })(),
         /* Recorded on the receipt so a fetch is attributable months later. */
         triggeredBy: req.user?.email || req.user?.id || 'admin',
         reason: body.reason ? String(body.reason).slice(0, 300) : null,
@@ -356,8 +402,8 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
     try {
       const service = await getService();
       return res.json(await service.browseJobs({
-        limit: Number(req.query?.limit) || 50,
-        offset: Number(req.query?.offset) || 0,
+        page: Number(req.query?.page) || 1,
+        q: req.query?.q ? String(req.query.q).slice(0, 160) : '',
         sourceId: req.query?.sourceId ? String(req.query.sourceId) : null,
         companyDomain: req.query?.companyDomain ? String(req.query.companyDomain) : null,
         provider: req.query?.provider ? String(req.query.provider) : null,
@@ -366,6 +412,53 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       }));
     } catch (e) {
       return res.status(500).json({ error: 'browse_failed', message: e?.message });
+    }
+  });
+
+  /** Searchable persisted employer-career registry, 20 companies per page. */
+  app.get('/api/admin/job-discovery/companies', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const hasSource = req.query?.hasSource == null || req.query?.hasSource === ''
+        ? null
+        : ['1', 'true', 'yes'].includes(String(req.query.hasSource).toLowerCase());
+      return res.json(await service.browseCompanies({
+        page: Number(req.query?.page) || 1,
+        q: req.query?.q ? String(req.query.q).slice(0, 160) : '',
+        provider: req.query?.provider ? String(req.query.provider) : null,
+        seedSource: req.query?.seedSource ? String(req.query.seedSource) : null,
+        hasSource,
+      }));
+    } catch (e) {
+      return res.status(500).json({ error: 'company_browse_failed', message: e?.message });
+    }
+  });
+
+  /** Seed/refresh the direct-company catalog. Target defaults to 1,000. */
+  app.post('/api/admin/job-discovery/company-seeds', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const minimum = Math.max(1, Number(req.body?.minimum) || 1000);
+      return res.json(await service.ensureCompanySeeds({ minimum, includeRemote: req.body?.includeRemote !== false }));
+    } catch (e) {
+      return res.status(500).json({ error: 'company_seed_failed', message: e?.message });
+    }
+  });
+
+  /** Admin stress runner for the durable queues; no count ceiling, deadline only. */
+  app.post('/api/admin/job-discovery/process-queue', ...admin, async (req, res) => {
+    try {
+      const phase = String(req.body?.phase || 'crawl').toLowerCase();
+      if (!['crawl', 'discover', 'verify'].includes(phase)) {
+        return res.status(400).json({ error: 'bad_request', message: 'phase must be crawl, discover or verify' });
+      }
+      const service = await getService();
+      const budgetMs = Number(req.body?.executionBudgetMs) > 0
+        ? Number(req.body.executionBudgetMs)
+        : (executionBudgetMs('manual') || 45_000);
+      return res.json(await service.runCronPhase(phase, { budgetMs }));
+    } catch (e) {
+      return res.status(500).json({ error: 'queue_process_failed', message: e?.message });
     }
   });
 

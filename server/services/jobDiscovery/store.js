@@ -28,7 +28,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { JOB_STATUS, RAW_SNAPSHOT_SCHEMA_VERSION, REMOTE_SCOPE, WORKPLACE_TYPE } from './schema.js';
+import { JOB_STATUS, RAW_SNAPSHOT_SCHEMA_VERSION, REMOTE_SCOPE, WORKPLACE_TYPE, SOURCE_CLASS } from './schema.js';
 import { parseLocation, detectCountry, detectRegion, locationCompatibility } from './normalize/location.js';
 import { salaryCompatibility } from './normalize/compensation.js';
 import { blockingKeys } from './dedupe.js';
@@ -81,6 +81,57 @@ export class BaseJobStore {
   async putCompany() { return null; }
   async getCompany() { return null; }
   async listCompanies() { return []; }
+  async listCompanyDiscoveryCandidates() { return []; }
+  async seedCompanies(companies = []) {
+    let inserted = 0;
+    let matched = 0;
+    for (const company of companies) {
+      // eslint-disable-next-line no-await-in-loop
+      const existing = await this.getCompany(company.id);
+      if (existing) { matched += 1; continue; }
+      // eslint-disable-next-line no-await-in-loop
+      await this.putCompany(company);
+      inserted += 1;
+    }
+    return { inserted, matched, totalProcessed: companies.length };
+  }
+  async pageJobs({ page = 1, pageSize = 20, ...filter } = {}) {
+    const all = await this.listJobs({ ...filter, limit: 100000 });
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.max(1, Number(pageSize) || 20);
+    const offset = (p - 1) * size;
+    return { docs: all.slice(offset, offset + size), total: all.length, page: p, pageSize: size };
+  }
+  async pageCompanies({ page = 1, pageSize = 20, ...filter } = {}) {
+    const all = await this.listCompanies({ ...filter, limit: 100000 });
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.max(1, Number(pageSize) || 20);
+    const offset = (p - 1) * size;
+    return { docs: all.slice(offset, offset + size), total: all.length, page: p, pageSize: size };
+  }
+  async companySummary() {
+    const all = await this.listCompanies({ limit: 100000 });
+    const byProvider = {};
+    let withDomain = 0; let withSource = 0; let withAts = 0; let seeded = 0;
+    for (const c of all) {
+      if (c.domain) withDomain += 1;
+      if ((c.sourceIds || []).length) withSource += 1;
+      if (c.atsProvider) { withAts += 1; byProvider[c.atsProvider] = (byProvider[c.atsProvider] || 0) + 1; }
+      if (c.seedSource) seeded += 1;
+    }
+    return { total: all.length, seeded, withDomain, withRegisteredSource: withSource, withKnownAts: withAts, byProvider };
+  }
+  async sourceSummary() {
+    const all = await this.listSources({});
+    const byProvider = {}; const byStatus = {}; const byClass = {};
+    for (const s of all) {
+      byProvider[s.provider] = (byProvider[s.provider] || 0) + 1;
+      byStatus[s.status] = (byStatus[s.status] || 0) + 1;
+      byClass[s.sourceClass] = (byClass[s.sourceClass] || 0) + 1;
+    }
+    return { total: all.length, byProvider, byStatus, byClass };
+  }
+  async coverageAggregate() { return null; }
   async putDiscoveryTask() { return null; }
   async getDiscoveryTask() { return null; }
   async listDiscoveryTasks() { return []; }
@@ -336,7 +387,63 @@ export class MemoryJobStore extends BaseJobStore {
     if (filter.normalizedName) out = out.filter((c) => c.normalizedName === filter.normalizedName);
     if (filter.hasSource === true) out = out.filter((c) => (c.sourceIds || []).length > 0);
     if (filter.hasSource === false) out = out.filter((c) => !(c.sourceIds || []).length);
+    if (filter.provider) out = out.filter((c) => c.atsProvider === filter.provider);
+    if (filter.seedSource) out = out.filter((c) => c.seedSource === filter.seedSource);
     return filter.limit ? out.slice(0, filter.limit) : out;
+  }
+
+  async listCompanyDiscoveryCandidates({ limit = 50 } = {}) {
+    return [...this.companies.values()]
+      .filter((c) => c.careersUrl && !(c.sourceIds || []).length && Number(c.discoveryAttempts || 0) < 5)
+      .sort((a, b) => (Number(a.discoveryQueueCount || 0) - Number(b.discoveryQueueCount || 0))
+        || String(a.lastDiscoveryAt || '').localeCompare(String(b.lastDiscoveryAt || ''))
+        || (Number(a.seedRank || Number.MAX_SAFE_INTEGER) - Number(b.seedRank || Number.MAX_SAFE_INTEGER))
+        || String(a.name || '').localeCompare(String(b.name || '')))
+      .slice(0, Math.max(1, Number(limit) || 50));
+  }
+
+  async pageJobs({ page = 1, pageSize = 20, q = '', sourceId = null, companyDomain = null, provider = null, status = null, since = null } = {}) {
+    const needle = String(q || '').trim().toLowerCase();
+    let out = [...this.jobs.values()].filter((j) => {
+      if (sourceId && !(j.sourceInstances || []).some((s) => s.sourceId === sourceId)) return false;
+      if (companyDomain && j.company?.domain !== companyDomain) return false;
+      if (provider && !(j.sourceInstances || []).some((s) => s.provider === provider)) return false;
+      if (status && j.status !== status) return false;
+      if (since && String(j.firstSeenAt || '') < since) return false;
+      if (needle) {
+        const hay = [j.title, j.company?.name, j.company?.domain, j.searchText].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+    out.sort((a, b) => String(b.firstSeenAt || '').localeCompare(String(a.firstSeenAt || '')));
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.max(1, Number(pageSize) || 20);
+    const offset = (p - 1) * size;
+    return { docs: out.slice(offset, offset + size), total: out.length, page: p, pageSize: size };
+  }
+
+  async pageCompanies({ page = 1, pageSize = 20, q = '', hasSource = null, provider = null, seedSource = null } = {}) {
+    const needle = String(q || '').trim().toLowerCase();
+    let out = [...this.companies.values()].filter((c) => {
+      if (hasSource === true && !(c.sourceIds || []).length) return false;
+      if (hasSource === false && (c.sourceIds || []).length) return false;
+      if (provider && c.atsProvider !== provider) return false;
+      if (seedSource && c.seedSource !== seedSource) return false;
+      if (needle) {
+        const hay = [c.name, c.normalizedName, c.domain, c.careersUrl, c.industry, c.region, ...(c.hiringCountries || [])]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+    out.sort((a, b) => (Number(a.seedRank || Number.MAX_SAFE_INTEGER) - Number(b.seedRank || Number.MAX_SAFE_INTEGER))
+      || (Number(b.jobCount || 0) - Number(a.jobCount || 0))
+      || String(a.name || '').localeCompare(String(b.name || '')));
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.max(1, Number(pageSize) || 20);
+    const offset = (p - 1) * size;
+    return { docs: out.slice(offset, offset + size), total: out.length, page: p, pageSize: size };
   }
 
   /* --------------------------- discovery queue --------------------------- */
@@ -657,16 +764,30 @@ async function buildModels(mongoose) {
     atsProvider: { type: String, default: null, index: true },
     atsTenant: { type: String, default: null },
     country: { type: String, default: null },
+    region: { type: String, default: null },
     industry: { type: String, default: null },
+    hiringCountries: { type: [String], default: [] },
+    indiaRelevance: { type: String, default: null },
+    careerUrlStatus: { type: String, default: null, index: true },
+    seedSource: { type: String, default: null, index: true },
+    seedRank: { type: Number, default: null, index: true },
     sourceIds: { type: [String], default: [] },
     sourceConfidence: { type: Number, default: 0 },
     lastDiscoveryAt: { type: Date, default: null },
     lastDiscoveryOutcome: { type: String, default: null },
     discoveryAttempts: { type: Number, default: 0 },
+    discoveryQueueCount: { type: Number, default: 0 },
     sourceHealth: { type: String, default: null },
     jobCount: { type: Number, default: 0 },
     provenance: { type: Mixed, default: {} },
   }, { _id: false, timestamps: true, collection: 'jobdiscovery_companies' });
+  companySchema.index(
+    { name: 'text', normalizedName: 'text', domain: 'text', careersUrl: 'text', industry: 'text', region: 'text' },
+    { name: 'jobdiscovery_company_text', weights: { name: 10, normalizedName: 8, domain: 8, careersUrl: 4, industry: 2, region: 1 } },
+  );
+  companySchema.index({ seedSource: 1, seedRank: 1 });
+  companySchema.index({ atsProvider: 1, seedRank: 1 });
+  companySchema.index({ discoveryQueueCount: 1, seedRank: 1, discoveryAttempts: 1 });
 
   const discoverySchema = new Schema({
     _id: { type: String },
@@ -711,7 +832,7 @@ async function buildModels(mongoose) {
     schemaVersion: { type: Number, default: RAW_SNAPSHOT_SCHEMA_VERSION },
     sourceId: { type: String, index: true },
     sourceJobId: { type: String, default: null },
-    fetchedAt: { type: Date, index: true },
+    fetchedAt: { type: Date },
     http: { type: Mixed, default: {} },
     contentHash: { type: String, index: true },
     normalizerVersion: Number,
@@ -725,7 +846,7 @@ async function buildModels(mongoose) {
     triggeredBy: { type: String, default: null, index: true },
     reason: { type: String, default: null },
     dryRun: { type: Boolean, default: false },
-    startedAt: { type: Date, index: true },
+    startedAt: { type: Date },
     finishedAt: { type: Date, default: null },
     durationMs: { type: Number, default: null },
     targets: { type: [Mixed], default: [] },
@@ -1097,8 +1218,221 @@ export class MongoJobStore extends BaseJobStore {
     if (filter.normalizedName) q.normalizedName = filter.normalizedName;
     if (filter.hasSource === true) q['sourceIds.0'] = { $exists: true };
     if (filter.hasSource === false) q['sourceIds.0'] = { $exists: false };
+    if (filter.provider) q.atsProvider = filter.provider;
+    if (filter.seedSource) q.seedSource = filter.seedSource;
     const docs = await this.models.Company.find(q).limit(filter.limit || 5000).lean();
     return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
+  }
+
+  async listCompanyDiscoveryCandidates({ limit = 50 } = {}) {
+    const docs = await this.models.Company.find({
+      careersUrl: { $exists: true, $nin: [null, ''] },
+      'sourceIds.0': { $exists: false },
+      $or: [
+        { discoveryAttempts: { $exists: false } },
+        { discoveryAttempts: { $lt: 5 } },
+      ],
+    })
+      .sort({ discoveryQueueCount: 1, lastDiscoveryAt: 1, seedRank: 1, name: 1 })
+      .limit(Math.max(1, Number(limit) || 50))
+      .lean();
+    return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
+  }
+
+  async seedCompanies(companies = [], { seedSource = null } = {}) {
+    const rows = (companies || []).filter((c) => c?.id);
+    if (!rows.length) return { inserted: 0, matched: 0, totalProcessed: 0 };
+    const operations = rows.map((company) => {
+      const { id, _id, ...doc } = company;
+      const seedMeta = {
+        ...(seedSource ? { seedSource } : {}),
+        ...(company.seedRank != null ? { seedRank: company.seedRank } : {}),
+        ...(company.careerUrlStatus ? { careerUrlStatus: company.careerUrlStatus } : {}),
+        ...(company.indiaRelevance ? { indiaRelevance: company.indiaRelevance } : {}),
+      };
+      return {
+        updateOne: {
+          filter: { _id: id || _id },
+          update: { $setOnInsert: doc, $set: seedMeta },
+          upsert: true,
+        },
+      };
+    });
+    const r = await this.models.Company.bulkWrite(operations, { ordered: false });
+    return {
+      inserted: r.upsertedCount || 0,
+      matched: r.matchedCount || 0,
+      modified: r.modifiedCount || 0,
+      totalProcessed: rows.length,
+    };
+  }
+
+  async pageJobs({
+    page = 1, pageSize = 20, q: search = '', sourceId = null,
+    companyDomain = null, provider = null, status = null, since = null,
+  } = {}) {
+    const query = {};
+    if (sourceId) query['sourceInstances.sourceId'] = sourceId;
+    if (companyDomain) query['company.domain'] = companyDomain;
+    if (provider) query['sourceInstances.provider'] = provider;
+    if (status) query.status = status;
+    if (since) query.firstSeenAt = { $gte: new Date(since) };
+    const term = String(search || '').trim();
+    if (term) query.$text = { $search: term };
+
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.max(1, Number(pageSize) || 20);
+    const offset = (p - 1) * size;
+    const countPromise = this.models.Job.countDocuments(query);
+    let find = this.models.Job.find(query);
+    if (term) {
+      find = find.select({ score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, firstSeenAt: -1 });
+    } else {
+      find = find.sort({ firstSeenAt: -1, _id: 1 });
+    }
+    const [total, docs] = await Promise.all([
+      countPromise,
+      find.skip(offset).limit(size).lean(),
+    ]);
+    return { docs: docs.map((d) => this.fromDoc(d)), total, page: p, pageSize: size };
+  }
+
+  async pageCompanies({
+    page = 1, pageSize = 20, q: search = '', hasSource = null,
+    provider = null, seedSource = null, careerUrlStatus = null,
+  } = {}) {
+    const query = {};
+    if (hasSource === true) query['sourceIds.0'] = { $exists: true };
+    if (hasSource === false) query['sourceIds.0'] = { $exists: false };
+    if (provider) query.atsProvider = provider;
+    if (seedSource) query.seedSource = seedSource;
+    if (careerUrlStatus) query.careerUrlStatus = careerUrlStatus;
+    const term = String(search || '').trim();
+    if (term) query.$text = { $search: term };
+
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.max(1, Number(pageSize) || 20);
+    const offset = (p - 1) * size;
+    const countPromise = this.models.Company.countDocuments(query);
+    let find = this.models.Company.find(query);
+    if (term) {
+      find = find.select({ score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, seedRank: 1, name: 1 });
+    } else {
+      find = find.sort({ seedRank: 1, jobCount: -1, name: 1 });
+    }
+    const [total, docs] = await Promise.all([
+      countPromise,
+      find.skip(offset).limit(size).lean(),
+    ]);
+    return {
+      docs: docs.map(({ _id, __v, score, ...rest }) => ({ ...rest, id: _id })),
+      total, page: p, pageSize: size,
+    };
+  }
+
+  async companySummary() {
+    const [total, seeded, withDomain, withSource, withAts, byProvider] = await Promise.all([
+      this.models.Company.countDocuments(),
+      this.models.Company.countDocuments({ seedSource: { $exists: true, $nin: [null, ''] } }),
+      this.models.Company.countDocuments({ domain: { $exists: true, $nin: [null, ''] } }),
+      this.models.Company.countDocuments({ 'sourceIds.0': { $exists: true } }),
+      this.models.Company.countDocuments({ atsProvider: { $exists: true, $nin: [null, ''] } }),
+      this.models.Company.aggregate([
+        { $match: { atsProvider: { $exists: true, $nin: [null, ''] } } },
+        { $group: { _id: '$atsProvider', n: { $sum: 1 } } },
+      ]),
+    ]);
+    return {
+      total, seeded, withDomain, withRegisteredSource: withSource, withKnownAts: withAts,
+      byProvider: Object.fromEntries(byProvider.map((x) => [x._id, x.n])),
+    };
+  }
+
+  async sourceSummary() {
+    const [total, providers, statuses, classes] = await Promise.all([
+      this.models.Source.countDocuments(),
+      this.models.Source.aggregate([{ $group: { _id: '$provider', n: { $sum: 1 } } }]),
+      this.models.Source.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+      this.models.Source.aggregate([{ $group: { _id: '$sourceClass', n: { $sum: 1 } } }]),
+    ]);
+    return {
+      total,
+      byProvider: Object.fromEntries(providers.map((x) => [x._id, x.n])),
+      byStatus: Object.fromEntries(statuses.map((x) => [x._id, x.n])),
+      byClass: Object.fromEntries(classes.map((x) => [x._id, x.n])),
+    };
+  }
+
+  async coverageAggregate({ now = Date.now(), windowHours = 24 } = {}) {
+    const windowStart = new Date(now - windowHours * 3600000);
+    const hourStart = new Date(now - 3600000);
+    const activeStatuses = [JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE];
+    const directClasses = [SOURCE_CLASS.ORIGINAL_ATS, SOURCE_CLASS.ORIGINAL_CAREER_SITE];
+    const nonEmpty = { $exists: true, $nin: [null, ''] };
+    const salaryPresent = {
+      $or: [
+        { 'compensation.min': { $exists: true, $ne: null } },
+        { 'compensation.max': { $exists: true, $ne: null } },
+      ],
+    };
+
+    const [
+      total, active, directSourceCount, directApplyCount, applyUrlCount,
+      publishedCount, salaryCount, verifiedCount, changedInWindow,
+      discoveredInWindow, newJobsLastHour, multiSourcedCount,
+      byStatusRows, providerRows, classRows, instanceRows, datedSampleSize,
+    ] = await Promise.all([
+      this.models.Job.countDocuments(),
+      this.models.Job.countDocuments({ status: { $in: activeStatuses } }),
+      this.models.Job.countDocuments({ 'sourceInstances.sourceClass': { $in: directClasses } }),
+      this.models.Job.countDocuments({ directApply: true }),
+      this.models.Job.countDocuments({ canonicalApplyUrl: nonEmpty }),
+      this.models.Job.countDocuments({ sourcePublishedAt: { $ne: null } }),
+      this.models.Job.countDocuments(salaryPresent),
+      this.models.Job.countDocuments({ lastVerifiedAt: { $ne: null } }),
+      this.models.Job.countDocuments({ lastChangedAt: { $gte: windowStart } }),
+      this.models.Job.countDocuments({ firstSeenAt: { $gte: windowStart } }),
+      this.models.Job.countDocuments({ firstSeenAt: { $gte: hourStart } }),
+      this.models.Job.countDocuments({ $expr: { $gt: [{ $size: { $ifNull: ['$sourceInstances', []] } }, 1] } }),
+      this.models.Job.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+      this.models.Job.aggregate([
+        { $unwind: '$sourceInstances' },
+        { $group: { _id: { job: '$_id', provider: '$sourceInstances.provider' } } },
+        { $group: { _id: '$_id.provider', n: { $sum: 1 } } },
+      ]),
+      this.models.Job.aggregate([
+        { $unwind: '$sourceInstances' },
+        { $group: { _id: { job: '$_id', klass: '$sourceInstances.sourceClass' } } },
+        { $group: { _id: '$_id.klass', n: { $sum: 1 } } },
+      ]),
+      this.models.Job.aggregate([
+        { $project: { n: { $size: { $ifNull: ['$sourceInstances', []] } } } },
+        { $group: { _id: null, n: { $sum: '$n' } } },
+      ]),
+      this.models.Job.countDocuments({ sourcePublishedAt: { $ne: null }, firstSeenAt: { $ne: null } }),
+    ]);
+
+    return {
+      total,
+      active,
+      directSourceCount,
+      directApplyCount,
+      applyUrlCount,
+      publishedCount,
+      salaryCount,
+      verifiedCount,
+      changedInWindow,
+      discoveredInWindow,
+      newJobsLastHour,
+      multiSourcedCount,
+      totalInstances: instanceRows[0]?.n || 0,
+      datedSampleSize,
+      byStatus: Object.fromEntries(byStatusRows.map((x) => [x._id, x.n])),
+      byProvider: Object.fromEntries(providerRows.filter((x) => x._id).map((x) => [x._id, x.n])),
+      bySourceClass: Object.fromEntries(classRows.filter((x) => x._id).map((x) => [x._id, x.n])),
+      medianDiscoveryAgeDays: null,
+      aggregateStrategy: 'mongo-count-and-aggregate',
+    };
   }
 
   /* --------------------------- discovery queue --------------------------- */

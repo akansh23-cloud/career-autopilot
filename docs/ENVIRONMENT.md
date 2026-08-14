@@ -73,15 +73,25 @@ renderer never silently sends Unicode-heavy resumes through the Base-14 vector
 writer; if no Unicode-capable provider exists, export fails explicitly instead
 of dropping glyphs.
 
-## Jobs / contacts (optional)
-| Var | Purpose |
-|---|---|
-| `RAPIDAPI_KEY` / `RAPIDAPI_HOST` | JSearch job discovery. |
-| `SERPAPI_KEY` | Opportunity/job discovery fallback. |
-| `JOB_FETCH_TIMEOUT` / `JOB_VERIFY_TIMEOUT` / `JOB_SEARCH_BUDGET` / `JOB_CACHE_TTL_MS` | Job perf tuning (ms). |
-| `STRICT_JOB_VERIFICATION` | `1` to require a known posted date. |
-| `HUNTER_API_KEY` / `APOLLO_API_KEY` / `PDL_API_KEY` | Verified contact providers. |
-| `LINKEDIN_*` / `INDEED_*` | Optional connector OAuth. |
+## Job Discovery OS / contacts
+| Var | Required | Purpose |
+|---|---|---|
+| `JOB_DISCOVERY_STORE` | recommended prod | Set `mongo` so API, cron workers and admin tools share the canonical Mongo index. |
+| `CRON_SECRET` | **for Vercel cron** | Strong random bearer secret protecting `/api/cron/job-discovery/*`. Vercel sends it as `Authorization: Bearer ...` when configured. |
+| `JOB_DISCOVERY_CRON_BUDGET_MS` | no | Wall-clock budget per cron invocation. It is not a job/source count cap; work checkpoints and continues. |
+| `JOB_DISCOVERY_MANUAL_BUDGET_MS` | no | Wall-clock budget for a manual inline stress run on serverless. No artificial target/page count ceiling is applied. |
+| `JOB_DISCOVERY_ATLAS_SEARCH_INDEX` | no | MongoDB Atlas Search index name. Falls back to indexed Mongo retrieval when absent. |
+| `JOB_DISCOVERY_BROWSER` | no | `1` enables bounded Playwright fallback for JS-heavy generic career sites; keep `0` until Chromium is installed. |
+| `MUSE_API_KEY` | no | The Muse authenticated API key; passed as `api_key`. Public no-key fallback remains available. |
+| `RAPIDAPI_KEY` / `RAPIDAPI_HOST` | no | JSearch supplemental/bootstrap discovery. |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | no | Adzuna supplemental/bootstrap discovery. |
+| `SERPAPI_KEY` | no | Opportunity/job discovery fallback where configured. |
+| `JOB_FETCH_TIMEOUT` / `JOB_VERIFY_TIMEOUT` / `JOB_SEARCH_BUDGET` / `JOB_CACHE_TTL_MS` | no | Legacy/supplemental job performance tuning (ms). |
+| `STRICT_JOB_VERIFICATION` | no | `1` to require a known posted date in legacy paths. |
+| `HUNTER_API_KEY` / `APOLLO_API_KEY` / `PDL_API_KEY` | no | Verified contact providers. |
+| `LINKEDIN_*` / `INDEED_*` | no | Optional connector OAuth where explicitly configured. |
+
+The Phase 2.1 company seed bootstrap stores an internally curated direct-employer list first, then can expand the persistent CompanyRegistry to at least 1,000 records from a public company/ATS seed dataset. External seed records are labelled unverified until normal discovery/verification validates them.
 
 ## Rate limits (optional overrides)
 `RATE_AI_PER_HOUR`, `RATE_JOBS_PER_HOUR`, `RATE_CONTACTS_PER_HOUR`,

@@ -21,6 +21,7 @@ import { needsVerification, applyVerification, sweepStaleness, VERIFY_AFTER_DAYS
 import { JOB_STATUS, SOURCE_STATUS, ACCESS_POLICY, SOURCE_CLASS } from './schema.js';
 import { allocateVerificationBudget, applyVerificationSchedule, isVerificationDue } from './verificationPolicy.js';
 import { CRAWL_STATE, interleaveByHost } from './crawlQueue.js';
+import { DISCOVERY_KIND } from './discoveryQueue.js';
 
 /* ------------------------------ metrics ------------------------------ */
 
@@ -118,7 +119,7 @@ export class VerificationWorker {
    * never closes a job; only proven closure (404/410 or an explicit closed
    * state) from the highest-authority instance does.
    */
-  async run({ limit = 25, ctx = {} } = {}) {
+  async run({ limit = 25, ctx = {}, deadlineAt = null } = {}) {
     const nowMs = this.now().getTime();
     const before = new Date(nowMs).toISOString();
     /* Over-fetch, then let the ADAPTIVE POLICY spend the budget. A fresh
@@ -141,6 +142,7 @@ export class VerificationWorker {
     };
 
     for (const job of due) {
+      if (deadlineAt != null && Date.now() >= Number(deadlineAt)) break;
       /* Verify against the most authoritative instance available. */
       const instance = (job.sourceInstances || [])
         .filter((s) => s.jobUrl || s.applyUrl)
@@ -237,7 +239,7 @@ export class CrawlScheduler {
    * triggers in one window produce one task), then leased and executed. The
    * atomicity lives in the store, so this is safe to run on several machines.
    */
-  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick } = {}) {
+  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick, deadlineAt = null } = {}) {
     const out = { enqueued: 0, deduped: 0, leased: 0, crawled: [], deadLettered: 0 };
 
     /* A source with work already in flight — typically an operator's "fetch
@@ -247,6 +249,7 @@ export class CrawlScheduler {
 
     const due = await this.registry.due({ limit: limit * 3 });
     for (const source of due) {
+      if (deadlineAt != null && Date.now() >= Number(deadlineAt)) break;
       if (source.accessPolicy !== ACCESS_POLICY.ALLOW) continue;
       if (source.status === SOURCE_STATUS.DISABLED || source.status === SOURCE_STATUS.NOT_CONFIGURED) continue;
       if (active.has(source.id)) { out.deduped += 1; continue; }
@@ -259,6 +262,11 @@ export class CrawlScheduler {
     out.leased = leased.length;
 
     for (const task of leased) {
+      if (deadlineAt != null && Date.now() >= Number(deadlineAt)) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.crawlQueue.defer(task, { checkpoint: task.checkpoint, reason: 'scheduler execution deadline' });
+        continue;
+      }
       // eslint-disable-next-line no-await-in-loop
       const source = await this.registry.get(task.sourceId);
       if (!source) {
@@ -273,9 +281,16 @@ export class CrawlScheduler {
         ctx,
         resumeCursor: task.checkpoint?.cursor || null,
         checkpoint: (cp) => this.crawlQueue.checkpoint(task, cp),
+        deadlineAt,
       });
 
-      if (r.ok) {
+      if (r.ok && r.partial) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.crawlQueue.defer(task, {
+          checkpoint: { cursor: r.nextCursor, pagesFetched: r.pagesFetched, created: r.created, merged: r.merged },
+          reason: r.deadlineReached ? 'execution deadline continuation' : 'page continuation',
+        });
+      } else if (r.ok) {
         // eslint-disable-next-line no-await-in-loop
         await this.crawlQueue.complete(task, r);
       } else {
@@ -294,6 +309,8 @@ export class CrawlScheduler {
         credible: r.health?.credible ?? true,
         reconciliation: r.reconciliation?.allowed ?? null,
         changeEvents: r.changeEvents,
+        partial: !!r.partial,
+        deadlineReached: !!r.deadlineReached,
         errors: r.errors.map((e) => e.errorClass),
       });
     }
@@ -301,13 +318,57 @@ export class CrawlScheduler {
   }
 
   /** Queue-driven discovery slice. */
-  async discoverySlice({ limit = this.discoverPerTick } = {}) {
-    const out = { seeded: 0, leased: 0, resolved: 0, failed: 0, results: [] };
+  async discoverySlice({ limit = this.discoverPerTick, deadlineAt = null } = {}) {
+    const out = { seeded: 0, seededCompanies: 0, leased: 0, resolved: 0, failed: 0, results: [] };
     if (!this.discoveryQueue || !this.discovery) return out;
+
+    /* The persistent company seed catalog is actionable input, not a decorative
+       list. Feed unsourced career entries into the SAME durable discovery queue
+       used by job-derived leads. Idempotency is owned by DiscoveryQueue, so
+       repeatedly scanning a 1,000-company registry does not duplicate work. */
+    const companyCandidates = await this.ingest.store.listCompanyDiscoveryCandidates?.({ limit }) || [];
+    for (const company of companyCandidates) {
+      if (deadlineAt != null && Date.now() >= Number(deadlineAt)) break;
+      const hasAts = company.atsProvider && company.atsTenant;
+      const lead = hasAts
+        ? {
+            kind: DISCOVERY_KIND.ATS_LINK,
+            value: `${company.atsProvider}:${company.atsTenant}`,
+            payload: {
+              provider: company.atsProvider, tenant: company.atsTenant, careersUrl: company.careersUrl,
+              companyName: company.name || null, companyDomain: company.domain || null, companyId: company.id || null,
+            },
+            confidence: company.sourceConfidence ?? 0.75,
+            priority: 100,
+            discoveredFrom: `company-seed:${company.seedSource || 'registry'}`,
+          }
+        : {
+            kind: DISCOVERY_KIND.CAREERS_URL,
+            value: company.careersUrl,
+            payload: {
+              careersUrl: company.careersUrl, companyName: company.name || null,
+              companyDomain: company.domain || null, companyId: company.id || null,
+            },
+            confidence: company.sourceConfidence ?? 0.65,
+            priority: 80,
+            discoveredFrom: `company-seed:${company.seedSource || 'registry'}`,
+          };
+      // eslint-disable-next-line no-await-in-loop
+      const seeded = await this.discoveryQueue.enqueue(lead);
+      /* Even a deduped/backing-off task counts as this company's turn in the
+         seed scheduler. Persisting the queue timestamp prevents the first few
+         difficult employers from starving the remaining 1,000-company list. */
+      // eslint-disable-next-line no-await-in-loop
+      await this.discovery.companies?.markDiscoveryQueued?.(company, {
+        outcome: seeded?.created ? 'QUEUED' : 'ALREADY_QUEUED',
+      });
+      if (seeded?.created) { out.seeded += 1; out.seededCompanies += 1; }
+    }
 
     /* Seed from jobs that still have no direct-source provenance. */
     const jobs = await this.ingest.store.listDiscoveryCandidates({ at: this.now().toISOString(), limit });
     for (const job of jobs) {
+      if (deadlineAt != null && Date.now() >= Number(deadlineAt)) break;
       // eslint-disable-next-line no-await-in-loop
       const seeded = await this.discovery.seedFromJob(job);
       out.seeded += seeded.created;
@@ -316,6 +377,11 @@ export class CrawlScheduler {
     const tasks = await this.discoveryQueue.lease({ limit, owner: this.workerId });
     out.leased = tasks.length;
     for (const task of tasks) {
+      if (deadlineAt != null && Date.now() >= Number(deadlineAt)) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.discoveryQueue.defer(task, { reason: 'scheduler execution deadline' });
+        continue;
+      }
       // eslint-disable-next-line no-await-in-loop
       const r = await this.discovery.processTask(task);
       if (r.ok) out.resolved += 1; else out.failed += 1;
@@ -405,6 +471,45 @@ export class CrawlScheduler {
       this.lastTick = this.now().toISOString();
       out.durationMs = Date.now() - started;
     }
+    return out;
+  }
+
+  /**
+   * Drain one work phase until an execution deadline rather than until a count
+   * ceiling. Chunk sizes only control lease/query granularity; the loop keeps
+   * going while time and due work remain. This is the serverless-safe way to
+   * stress large queues without silently truncating them.
+   */
+  async runPhaseUntilDeadline(phase, { budgetMs = 45_000, ctx = {} } = {}) {
+    const started = Date.now();
+    const deadlineAt = started + Math.max(1_000, Number(budgetMs) || 45_000);
+    const out = { phase, startedAt: new Date(started).toISOString(), deadlineAt: new Date(deadlineAt).toISOString(), cycles: 0, results: [] };
+
+    while (Date.now() < deadlineAt) {
+      let r;
+      if (phase === 'crawl') {
+        r = await this.crawlSlice({ ctx, limit: this.sourcesPerTick, deadlineAt });
+        out.results.push(r);
+        out.cycles += 1;
+        if (!r.leased && !r.enqueued) break;
+      } else if (phase === 'discover') {
+        r = await this.discoverySlice({ limit: this.discoverPerTick, deadlineAt });
+        out.results.push(r);
+        out.cycles += 1;
+        if (!r.leased && !r.seeded) break;
+      } else if (phase === 'verify') {
+        r = await this.verifier.run({ limit: this.verifyPerTick, ctx, deadlineAt });
+        out.results.push(r);
+        out.cycles += 1;
+        if (!r.checked) break;
+      } else {
+        throw new Error(`unknown job-discovery phase: ${phase}`);
+      }
+    }
+
+    out.finishedAt = this.now().toISOString();
+    out.durationMs = Date.now() - started;
+    out.deadlineReached = Date.now() >= deadlineAt;
     return out;
   }
 

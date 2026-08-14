@@ -53,7 +53,7 @@ export class IngestPipeline {
    * Run one source end to end. NEVER throws: every failure is classified and
    * returned so one bad ATS cannot stop ingestion.
    */
-  async runSource(source, { ctx = {}, followCursor = true, maxPages = 20, checkpoint = null, resumeCursor = null } = {}) {
+  async runSource(source, { ctx = {}, followCursor = true, maxPages = 20, checkpoint = null, resumeCursor = null, deadlineAt = null } = {}) {
     const started = Date.now();
     const adapter = this.adapters.forSource(source);
     const result = {
@@ -62,7 +62,7 @@ export class IngestPipeline {
       duplicates: 0, rejected: 0, errors: [], stages: {}, notModified: false,
       notConfigured: false, nextCursor: null, http: null, seenJobIds: [],
       titlelessRows: 0, changeEvents: {}, pagesFetched: 0,
-      reconciliation: null, health: null,
+      reconciliation: null, health: null, partial: false, deadlineReached: false,
     };
 
     /* A resumed crawl continues from the queue's checkpoint, not from page one:
@@ -71,9 +71,20 @@ export class IngestPipeline {
     let cursor = resumeCursor || source.cursor || null;
     let pages = 0;
     let anyAuthoritative = false;
+    const pageLimit = (maxPages == null || maxPages === Infinity || Number(maxPages) <= 0)
+      ? Infinity
+      : Math.max(1, Number(maxPages));
+    const deadlineMs = deadlineAt == null
+      ? null
+      : (deadlineAt instanceof Date ? deadlineAt.getTime() : Number(deadlineAt));
 
     try {
       for (;;) {
+        if (pages > 0 && Number.isFinite(deadlineMs) && Date.now() >= deadlineMs) {
+          result.deadlineReached = true;
+          result.partial = !!cursor;
+          break;
+        }
         pages += 1;
         // eslint-disable-next-line no-await-in-loop
         const batch = await adapter.fetchJobs(source, cursor, ctx);
@@ -114,7 +125,11 @@ export class IngestPipeline {
           // eslint-disable-next-line no-await-in-loop
           await checkpoint({ cursor, pagesFetched: pages, created: result.created, merged: result.merged });
         }
-        if (!followCursor || !cursor || pages >= maxPages) break;
+        const hitPageLimit = Number.isFinite(pageLimit) && pages >= pageLimit;
+        const hitDeadline = Number.isFinite(deadlineMs) && Date.now() >= deadlineMs;
+        if (hitDeadline) result.deadlineReached = true;
+        if ((hitPageLimit || hitDeadline) && cursor) result.partial = true;
+        if (!followCursor || !cursor || hitPageLimit || hitDeadline) break;
       }
 
       /* Absence is evidence ONLY when the source returned a complete listing AND
@@ -123,7 +138,7 @@ export class IngestPipeline {
          397 live postings. */
       const assessment = assessRun(source, result);
       result.health = assessment;
-      const gate = mayReconcileMissing({ authoritative: anyAuthoritative && !result.notModified, assessment });
+      const gate = mayReconcileMissing({ authoritative: anyAuthoritative && !result.notModified && !result.partial, assessment });
       result.reconciliation = { ...gate, flagged: 0 };
       if (gate.allowed) {
         // eslint-disable-next-line no-await-in-loop

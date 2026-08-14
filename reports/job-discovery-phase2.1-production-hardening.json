@@ -1,0 +1,71 @@
+{
+  "phase": "2.1-production-hardening",
+  "generatedAt": "2026-08-14T22:14:08.132697+00:00",
+  "status": "PASS",
+  "jobDiscoveryAssertions": 220,
+  "jobDiscoveryFailures": 0,
+  "resumeTemplateRegressionChecks": 247,
+  "newResumeRegressionFailures": 0,
+  "inheritedResumeFailures": 2,
+  "syntax": {
+    "jsMjsChecked": 602,
+    "failures": 0
+  },
+  "jsxParse": {
+    "AdminJobIngestPanel.jsx": "PASS",
+    "Jobs.jsx": "PASS"
+  },
+  "companyCareerCatalog": {
+    "target": 1000,
+    "bundledCurated": 268,
+    "externalExpansion": "Outscal/OpenJobs runtime import",
+    "externalRowsMarked": "SEEDED_UNVERIFIED",
+    "persistence": "CompanyRegistry / Mongo jobdiscovery_companies",
+    "searchable": true,
+    "pageSize": 20,
+    "fairSeedScheduling": "discoveryQueueCount"
+  },
+  "pagination": {
+    "userJobsPerPage": 20,
+    "adminJobsPerPage": 20,
+    "adminCompaniesPerPage": 20
+  },
+  "manualIngestion": {
+    "artificialTargetCap": null,
+    "artificialPagesPerSourceCap": null,
+    "artificialTotalPagesCap": null,
+    "serverlessProtection": "wall-clock deadline + durable queue/checkpoint continuation"
+  },
+  "vercelRuntime": {
+    "cronSecretRequired": true,
+    "routes": [
+      "/api/cron/job-discovery/bootstrap",
+      "/api/cron/job-discovery/crawl",
+      "/api/cron/job-discovery/discover",
+      "/api/cron/job-discovery/verify"
+    ],
+    "functionMaxDurationSeconds": 60
+  },
+  "museApiKeyWired": true,
+  "duplicateMongoIndexWarningsFixed": [
+    "raw.fetchedAt",
+    "ingestRun.startedAt"
+  ],
+  "scaleQuick": {
+    "fixtureJobs": 20000,
+    "normalizationJobsPerSec": 10914,
+    "indexJobsPerSec": 33376,
+    "searchP50Ms": 10.92,
+    "searchP95Ms": 42.15,
+    "searchP99Ms": 47.45,
+    "rareTitleRecall": "PASS",
+    "closedJobLeak": "PASS",
+    "schedulerFairness": "PASS"
+  },
+  "resumeOsFrozen": "critical Resume OS / renderer files byte-identical to uploaded Phase 2 base",
+  "limitations": [
+    "The ZIP bundles 268 curated direct-employer career entries; the remainder up to 1,000 is fetched and persisted at runtime from a public external seed dataset when outbound network is available.",
+    "External seed entries are discovery leads, not claims that the career URL is currently live; they remain SEEDED_UNVERIFIED until discovery/verification processes them.",
+    "Live internet contract coverage for every provider was not proven in the offline audit runtime."
+  ]
+}
