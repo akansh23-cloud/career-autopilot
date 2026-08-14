@@ -76,6 +76,11 @@ export class StoreBackedSearchIndex extends JobSearchIndex {
     this.store = store;
     /* Freshness-sensitive: a 60s TTL cannot serve a stale status for long. */
     this.cache = cache === false ? null : (cache === null ? new QueryCache({ ttlMs: 60_000 }) : cache);
+    /* The corpus generation the cache was last valid for. A cached "no results"
+       that outlives the ingest which would have answered it is worse than no
+       cache at all — it is exactly what an operator sees right after they click
+       "fetch now". */
+    this.cachedGeneration = null;
     this.now = now;
     this.defaultLimit = defaultLimit;
     this.metrics = { searches: 0, cacheHits: 0, totalLatencyMs: 0, latencies: [] };
@@ -91,6 +96,17 @@ export class StoreBackedSearchIndex extends JobSearchIndex {
    */
   async search(criteria = {}) {
     const started = Date.now();
+    /* Invalidate on any write to the job corpus, so a fetch — scheduled or
+       operator-triggered — is visible to search immediately rather than after
+       the TTL expires. */
+    if (this.cache) {
+      const generation = this.store.generation?.() ?? null;
+      if (generation !== this.cachedGeneration) {
+        this.cache.clear();
+        this.cachedGeneration = generation;
+      }
+    }
+
     const cached = this.cache?.get(criteria);
     if (cached) {
       this.metrics.cacheHits += 1;

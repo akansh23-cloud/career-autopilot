@@ -268,16 +268,6 @@ export const Readiness = {
 // Admin-only User Directory / Talent Intelligence. Every call is gated by
 // requireAuth + requireAdmin on the backend; the UI also hides these surfaces
 // from non-admins, but the server is the source of truth.
-export const AdminJobDiscovery = {
-  stats: () => api.get('/api/admin/job-discovery/stats'),
-  health: () => api.get('/api/admin/job-discovery/health'),
-  coverage: () => api.get('/api/admin/job-discovery/coverage'),
-  manualFetch: (body = {}) => api.post('/api/admin/job-discovery/manual-fetch', body),
-  registerSource: (body = {}) => api.post('/api/admin/job-discovery/sources', body),
-  crawlSource: (sourceId) => api.post('/api/admin/job-discovery/crawl', { sourceId }),
-  discover: (body = {}) => api.post('/api/admin/job-discovery/discover', body),
-};
-
 export const Admin = {
   listUsers: (params = {}) => {
     const clean = Object.fromEntries(
@@ -402,6 +392,31 @@ export const My = {
 };
 
 /* Platform-admin college registry. */
+/* Job Discovery OS — admin ingestion controls. Every route behind these calls
+   is requireAuth + requireAdmin server-side; this client is a convenience, not
+   the access boundary. */
+export const AdminJobDiscovery = {
+  health: () => api.get('/api/admin/job-discovery/health'),
+  coverage: () => api.get('/api/admin/job-discovery/coverage'),
+  stats: () => api.get('/api/admin/job-discovery/stats'),
+  /* targets: board URLs, careers pages, company domains or source ids. */
+  fetch: (targets, opts = {}) => api.post('/api/admin/job-discovery/fetch', { targets, ...opts }),
+  runs: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    ).toString();
+    return api.get('/api/admin/job-discovery/runs' + (qs ? `?${qs}` : ''));
+  },
+  run: (id) => api.get(`/api/admin/job-discovery/runs/${encodeURIComponent(id)}`),
+  jobs: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    ).toString();
+    return api.get('/api/admin/job-discovery/jobs' + (qs ? `?${qs}` : ''));
+  },
+  tick: (body = {}) => api.post('/api/admin/job-discovery/tick', body),
+};
+
 export const AdminColleges = {
   list: (status = '') => api.get('/api/admin/colleges' + (status ? `?status=${encodeURIComponent(status)}` : '')),
   approve: (key, body = {}) => api.post(`/api/admin/colleges/${encodeURIComponent(key)}/approve`, body),

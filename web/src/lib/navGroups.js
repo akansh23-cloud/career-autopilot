@@ -30,7 +30,7 @@ export const NAV_GROUPS = [
   { label: 'Community', short: 'Community', ids: ['leaderboards', 'opportunities'] },
   { label: 'Recruiting', short: 'Recruiting', ids: ['recruiter'] },
   { label: 'Placement Cell', short: 'College', ids: ['college'] },
-  { label: 'Admin', short: 'Admin', ids: ['adminusers', 'adminjobs', 'templatebuilder'] },
+  { label: 'Admin', short: 'Admin', ids: ['adminusers', 'templatebuilder'] },
 ];
 
 // Utility surfaces that never belong to a journey group.

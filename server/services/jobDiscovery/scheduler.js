@@ -237,13 +237,19 @@ export class CrawlScheduler {
    * triggers in one window produce one task), then leased and executed. The
    * atomicity lives in the store, so this is safe to run on several machines.
    */
-  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick, maxPagesPerSource = 20 } = {}) {
+  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick } = {}) {
     const out = { enqueued: 0, deduped: 0, leased: 0, crawled: [], deadLettered: 0 };
+
+    /* A source with work already in flight — typically an operator's "fetch
+       now" — is not enqueued again for its routine window. Two tasks for one
+       board in one tick would crawl someone else's server twice for nothing. */
+    const active = await this.crawlQueue.activeSourceIds();
 
     const due = await this.registry.due({ limit: limit * 3 });
     for (const source of due) {
       if (source.accessPolicy !== ACCESS_POLICY.ALLOW) continue;
       if (source.status === SOURCE_STATUS.DISABLED || source.status === SOURCE_STATUS.NOT_CONFIGURED) continue;
+      if (active.has(source.id)) { out.deduped += 1; continue; }
       // eslint-disable-next-line no-await-in-loop
       const r = await this.crawlQueue.enqueue(source);
       if (r.created) out.enqueued += 1; else out.deduped += 1;
@@ -267,7 +273,6 @@ export class CrawlScheduler {
         ctx,
         resumeCursor: task.checkpoint?.cursor || null,
         checkpoint: (cp) => this.crawlQueue.checkpoint(task, cp),
-        maxPages: Math.max(1, Math.min(20, Number(maxPagesPerSource) || 20)),
       });
 
       if (r.ok) {

@@ -21,6 +21,9 @@
      SEARCH_RELEVANCE_GATE    graded nDCG benchmarks + query parsing
      SEARCH_SCALE_GATE        large-corpus retrieval correctness
      SECURITY_GATE            SSRF, redirects, robots, rate limits
+     MANUAL_INGEST_GATE       operator-triggered fetch: canonical
+                              storage, idempotency, and the guards a
+                              human trigger does not bypass
      INTEGRATION_GATE         UI wiring, no fan-out, OS boundary
      RESUME_OS_REGRESSION_GATE  Resume OS and Template OS compared
                               against a baseline recorded from the
@@ -54,8 +57,7 @@ const TEST_FILES = [
   'test/jobDiscoveryQueues.test.js',
   'test/jobDiscoveryRelevance.test.js',
   'test/jobDiscoveryScale.test.js',
-  'test/jobDiscoveryManualFetch.test.js',
-  'test/jobDiscoveryAdminUi.test.js',
+  'test/jobDiscoveryManualIngest.test.js',
 ];
 
 const BASELINE_PATH = 'test/fixtures/resumeOsBaseline.json';
@@ -115,6 +117,13 @@ const GATES = {
   SECURITY_GATE: {
     label: 'Crawler safety',
     match: (name, file) => /^SECURITY_GATE/.test(name) || file.includes('Security'),
+  },
+  MANUAL_INGEST_GATE: {
+    label: 'Operator-triggered ingestion',
+    match: (name, file) => /^MANUAL_INGEST_GATE/.test(name) || file.includes('ManualIngest'),
+    /* A manual fetch is the one path with a human in the loop, so the gate
+       insists on covering the powers it must NOT have. */
+    requires: ['canonical store', 'never duplicates', 'does not bypass', 'cannot close jobs', 'bounded', 'dry run'],
   },
   INTEGRATION_GATE: {
     label: 'Product integration',

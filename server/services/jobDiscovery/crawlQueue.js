@@ -262,6 +262,26 @@ export class CrawlQueue {
     return next;
   }
 
+  /**
+   * Source ids that already have work in flight.
+   *
+   * Window-based idempotency stops the SAME window being queued twice, but a
+   * source can legitimately have two different windows queued at once — an
+   * operator's "fetch now" and the source's ordinary schedule. Crawling the
+   * same board twice in one tick is wasteful for us and rude to the host, so
+   * the scheduler consults this before enqueueing routine work.
+   */
+  async activeSourceIds() {
+    const active = new Set();
+    for (const state of [CRAWL_STATE.PENDING, CRAWL_STATE.LEASED, CRAWL_STATE.RETRY]) {
+      // eslint-disable-next-line no-await-in-loop
+      for (const t of await this.store.listCrawlTasks({ state, limit: 100000 })) {
+        if (t.sourceId) active.add(t.sourceId);
+      }
+    }
+    return active;
+  }
+
   /** Operator action: put a dead-lettered task back in circulation. */
   async requeueDeadLetter(taskId, { resetAttempts = true } = {}) {
     const task = await this.store.getCrawlTask(taskId);

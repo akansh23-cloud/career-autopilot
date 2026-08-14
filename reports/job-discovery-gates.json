@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-14T15:51:18.604Z",
+  "generatedAt": "2026-08-14T20:33:30.106Z",
   "overall": "PASS",
-  "jobDiscoveryAssertions": 207,
+  "jobDiscoveryAssertions": 212,
   "resumeRegressionAssertions": 247,
   "totalFailures": 0,
-  "durationMs": 15231,
+  "durationMs": 20419,
   "gates": {
     "SOURCE_GATE": {
       "label": "Source adapters (phase 1)",
@@ -37,7 +37,7 @@
     "DEDUPE_GATE": {
       "label": "Deduplication",
       "status": "PASS",
-      "assertions": 10,
+      "assertions": 11,
       "failures": [],
       "missingRequirements": []
     },
@@ -72,14 +72,21 @@
     "SECURITY_GATE": {
       "label": "Crawler safety",
       "status": "PASS",
-      "assertions": 57,
+      "assertions": 55,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "MANUAL_INGEST_GATE": {
+      "label": "Operator-triggered ingestion",
+      "status": "PASS",
+      "assertions": 12,
       "failures": [],
       "missingRequirements": []
     },
     "INTEGRATION_GATE": {
       "label": "Product integration",
       "status": "PASS",
-      "assertions": 28,
+      "assertions": 23,
       "failures": [],
       "missingRequirements": []
     },
@@ -169,16 +176,9 @@
       "exitCode": 0
     },
     {
-      "file": "test/jobDiscoveryManualFetch.test.js",
+      "file": "test/jobDiscoveryManualIngest.test.js",
       "missing": false,
-      "assertions": 4,
-      "failures": 0,
-      "exitCode": 0
-    },
-    {
-      "file": "test/jobDiscoveryAdminUi.test.js",
-      "missing": false,
-      "assertions": 3,
+      "assertions": 12,
       "failures": 0,
       "exitCode": 0
     }

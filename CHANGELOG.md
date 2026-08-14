@@ -1,12 +1,58 @@
-# Job Discovery Phase 2 — Admin Manual Fetch Patch
+## Job Discovery OS — Manual ingestion
 
-- Added dedicated admin-only **Job Discovery** control surface.
-- Added `POST /api/admin/job-discovery/manual-fetch`.
-- Manual fetch supports next due batch, selected registered source, or public ATS/careers URL registration + fetch.
-- Server hard-caps operator work to 3 sources and 3 pages/source to reduce serverless timeout risk.
-- Optional bounded source-discovery and verification slices can run after a manual fetch.
-- Manual fetch cannot override `ALLOW/REVIEW/DENY`, SSRF, robots, rate limits, dedupe, freshness or provenance rules.
-- Added manual-fetch and admin-UI regression tests.
+An operator-triggered fetch path, so the index can be seeded and topped up on
+demand rather than only by the scheduler. Fetched jobs land in the SAME canonical
+store the autonomous pipeline writes to and are searchable through the ordinary
+index immediately — there is no separate collection and no second read path.
+
+### Added
+- **`manualIngest.js`** — one-shot orchestrator. Accepts board URLs, careers
+  pages, company domains or source ids, classifies each, registers what is new,
+  crawls it, and reports per-target outcomes.
+- **Admin routes**: `POST /api/admin/job-discovery/fetch`,
+  `GET /runs`, `GET /runs/:id`, `GET /jobs` (browse the canonical store).
+- **`scripts/job-discovery-fetch.mjs`** — the terminal equivalent, with
+  `--file targets.txt` (comments and blank lines allowed), `--dry-run`,
+  `--queue`, `--runs`, `--json`.
+- **Ingest-run receipts** — a seventh store collection across all three backends.
+  Every non-dry run records who triggered it, why, what was attempted and what
+  landed, so "what did last night's fetch do?" survives the browser tab.
+- **`AdminJobIngestPanel.jsx`** — admin UI showing per-target outcomes including
+  the actionable failures, plus a store-backed verification list.
+- **Two run modes** — INLINE (crawl now) and QUEUE (enqueue at high priority with
+  a 5-minute idempotency window, so an operator request is not swallowed by the
+  source's ordinary 6-hour window).
+- **`MANUAL_INGEST_GATE`** — 12 assertions covering canonical storage,
+  idempotency, bounds, dry-run inertness, receipt persistence, and each guard a
+  human trigger must not bypass.
+
+### Fixed
+- **Search served stale results after an ingest.** A cached "no results" outlived
+  the fetch that would have answered it, so a manual fetch appeared to do nothing
+  until the 60-second TTL expired. The store now carries a monotonic write
+  generation and the search layer invalidates its cache on any corpus change.
+- **A source could have two crawl tasks in flight at once.** An operator's "fetch
+  now" plus the source's routine window meant one tick crawled the same board
+  twice — wasteful for us and rude to the host. The scheduler now skips routine
+  enqueues for sources with work already in flight.
+- **`registrableDomain()` was used as a validator.** It is a normalizer and will
+  return `"not a target"` unchanged, which would have turned an operator's typo
+  into a discovery lead probing a nonsense host. Targets are now hostname-checked
+  before being accepted as domains.
+
+### Guarantees
+- An admin trigger is not an authorisation bypass: SSRF guards, robots and source
+  access policy, adapter configuration honesty and the source-health credibility
+  guard all apply exactly as they do to a scheduled crawl. A manual fetch of a
+  board whose parser just broke **cannot close the jobs it failed to see**.
+- Bounded by construction: 50 targets per run, 20 pages per source, 400 pages per
+  run, with the cap reported rather than silently applied.
+- Idempotent: re-running the same fetch updates the canonical records and never
+  creates duplicates.
+
+### Validation
+- 13 gates PASS: 212 job-discovery assertions + 247 Resume/Template OS regression
+  checks, 0 failures, 0 unattributed.
 
 ## Job Discovery OS — Phase 2: Scale Foundation
 

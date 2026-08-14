@@ -428,14 +428,21 @@ Docs:
 - [`JOB-DISCOVERY-PHASE2-SCALE.md`](JOB-DISCOVERY-PHASE2-SCALE.md) — **scale foundation, benchmarks, gates and limitations**
 
 ```bash
-npm run jobs:gates          # all 12 quality gates
+npm run jobs:gates          # all 13 quality gates
 npm run jobs:gates:quick    # skip the Resume OS regression sweep
 npm run jobs:scale          # deterministic 100,000-job benchmark
 npm run jobs:relevance      # graded nDCG relevance evaluation
+npm run jobs:fetch -- <url|domain|source-id…>   # operator-triggered fetch
+npm run jobs:runs           # receipts for past manual fetches
 npm run test:jobs           # job-discovery test suite only
 npm run jobs:worker         # queue-driven crawl/discovery worker
 npm run jobs:tick           # a single scheduler tick
 ```
+
+**Admins can fetch on demand.** `POST /api/admin/job-discovery/fetch` (or the
+CLI, or the admin panel) registers and crawls a batch of boards immediately,
+storing the jobs in the same canonical index the workers write to. It is bounded,
+idempotent, receipted — and it bypasses none of the crawl guards.
 
 **Search never fans out to external providers.** User queries read the canonical
 index only; ingestion is asynchronous and queue-driven.

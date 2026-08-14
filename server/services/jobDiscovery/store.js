@@ -39,6 +39,17 @@ import { InvertedIndex } from './invertedIndex.js';
    ------------------------------------------------------------------ */
 
 export class BaseJobStore {
+  /* A monotonically-increasing counter bumped on every write that changes the
+     job corpus. The search layer keys its cache on it, so an ingest — scheduled
+     or operator-triggered — invalidates stale query results immediately instead
+     of leaving them to expire. Without this, an admin fetches jobs and the app
+     keeps serving "no results" for the remainder of the cache TTL. */
+  writeGeneration = 0;
+
+  bumpGeneration() { this.writeGeneration += 1; return this.writeGeneration; }
+
+  generation() { return this.writeGeneration; }
+
   async init() { return this; }
 
   /* eslint-disable no-unused-vars */
@@ -78,6 +89,9 @@ export class BaseJobStore {
   async getCrawlTask() { return null; }
   async listCrawlTasks() { return []; }
   async leaseCrawlTasks() { return []; }
+  async putIngestRun() { return null; }
+  async getIngestRun() { return null; }
+  async listIngestRuns() { return []; }
 }
 
 function matchesJobFilter(job, filter = {}) {
@@ -136,6 +150,10 @@ export class MemoryJobStore extends BaseJobStore {
     this.companies = new Map();
     this.discoveryTasks = new Map();
     this.crawlTasks = new Map();
+    /* Receipts for operator-triggered ingestion. A manual fetch that leaves no
+       record is unauditable: "did last night's fetch actually land anything?"
+       has to be answerable after the browser tab is closed. */
+    this.ingestRuns = new Map();
     this.raw = [];
     this.blocking = new Map(); // key -> Set(jobId)
     this.index = new InvertedIndex();
@@ -162,6 +180,7 @@ export class MemoryJobStore extends BaseJobStore {
     this.jobs.set(job.id, job);
     this.indexBlocking(job);
     this.index.add(job);
+    this.bumpGeneration();
     return job;
   }
 
@@ -175,7 +194,7 @@ export class MemoryJobStore extends BaseJobStore {
 
   async deleteJob(id) {
     const j = this.jobs.get(id);
-    if (j) { this.deindex(j); this.jobs.delete(id); this.index.remove(id); }
+    if (j) { this.deindex(j); this.jobs.delete(id); this.index.remove(id); this.bumpGeneration(); }
     return !!j;
   }
 
@@ -297,6 +316,16 @@ export class MemoryJobStore extends BaseJobStore {
   }
 
   /* ------------------------------ companies ------------------------------ */
+
+  async putIngestRun(run) { this.ingestRuns.set(run.id, run); return run; }
+  async getIngestRun(id) { return this.ingestRuns.get(id) || null; }
+
+  async listIngestRuns({ limit = 50, triggeredBy = null } = {}) {
+    let out = [...this.ingestRuns.values()];
+    if (triggeredBy) out = out.filter((r) => r.triggeredBy === triggeredBy);
+    out.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+    return out.slice(0, limit);
+  }
 
   async putCompany(company) { this.companies.set(company.id, company); return company; }
   async getCompany(id) { return this.companies.get(id) || null; }
@@ -434,6 +463,7 @@ export class FileJobStore extends MemoryJobStore {
       companies: path.join(this.dir, 'companies.json'),
       discovery: path.join(this.dir, 'discovery-queue.json'),
       crawl: path.join(this.dir, 'crawl-queue.json'),
+      ingestRuns: path.join(this.dir, 'ingest-runs.json'),
     };
   }
 
@@ -448,6 +478,7 @@ export class FileJobStore extends MemoryJobStore {
     for (const c of read(p.companies, [])) this.companies.set(c.id, c);
     for (const t of read(p.discovery, [])) this.discoveryTasks.set(t.id, t);
     for (const t of read(p.crawl, [])) this.crawlTasks.set(t.id, t);
+    for (const r of read(p.ingestRuns, [])) this.ingestRuns.set(r.id, r);
     this.raw = read(p.raw, []);
     return this;
   }
@@ -474,6 +505,7 @@ export class FileJobStore extends MemoryJobStore {
     write(p.companies, [...this.companies.values()]);
     write(p.discovery, [...this.discoveryTasks.values()]);
     write(p.crawl, [...this.crawlTasks.values()]);
+    write(p.ingestRuns, [...this.ingestRuns.values()]);
     this.dirty = false;
     return true;
   }
@@ -485,6 +517,7 @@ export class FileJobStore extends MemoryJobStore {
   async putCompany(c) { const r = await super.putCompany(c); this.scheduleFlush(); return r; }
   async putDiscoveryTask(t) { const r = await super.putDiscoveryTask(t); this.scheduleFlush(); return r; }
   async putCrawlTask(t) { const r = await super.putCrawlTask(t); this.scheduleFlush(); return r; }
+  async putIngestRun(x) { const r = await super.putIngestRun(x); this.scheduleFlush(); return r; }
   async pruneRaw(o) { const r = await super.pruneRaw(o); this.scheduleFlush(); return r; }
   async stats() { return { ...(await super.stats()), backend: 'file', dir: this.dir }; }
 }
@@ -686,7 +719,23 @@ async function buildModels(mongoose) {
   }, { collection: 'jobdiscovery_raw' });
   rawSchema.index({ fetchedAt: 1 }, { expireAfterSeconds: 30 * 86400 });
 
+  const ingestRunSchema = new Schema({
+    _id: { type: String },
+    mode: { type: String, default: 'INLINE' },
+    triggeredBy: { type: String, default: null, index: true },
+    reason: { type: String, default: null },
+    dryRun: { type: Boolean, default: false },
+    startedAt: { type: Date, index: true },
+    finishedAt: { type: Date, default: null },
+    durationMs: { type: Number, default: null },
+    targets: { type: [Mixed], default: [] },
+    totals: { type: Mixed, default: {} },
+    ok: { type: Boolean, default: false },
+  }, { _id: false, timestamps: true, collection: 'jobdiscovery_ingest_runs' });
+  ingestRunSchema.index({ startedAt: -1 });
+
   mongooseModels = {
+    IngestRun: mongoose.models.JobDiscoveryIngestRun || mongoose.model('JobDiscoveryIngestRun', ingestRunSchema),
     Job: mongoose.models.JobDiscoveryJob || mongoose.model('JobDiscoveryJob', jobSchema),
     Source: mongoose.models.JobDiscoverySource || mongoose.model('JobDiscoverySource', sourceSchema),
     Raw: mongoose.models.JobDiscoveryRaw || mongoose.model('JobDiscoveryRaw', rawSchema),
@@ -769,6 +818,7 @@ export class MongoJobStore extends BaseJobStore {
   async putJob(job) {
     const { _id, ...doc } = this.toDoc(job);
     await this.models.Job.updateOne({ _id: job.id }, { $set: doc }, { upsert: true });
+    this.bumpGeneration();
     return job;
   }
 
@@ -776,6 +826,7 @@ export class MongoJobStore extends BaseJobStore {
 
   async deleteJob(id) {
     const r = await this.models.Job.deleteOne({ _id: id });
+    if (r.deletedCount > 0) this.bumpGeneration();
     return r.deletedCount > 0;
   }
 
@@ -997,6 +1048,31 @@ export class MongoJobStore extends BaseJobStore {
       accessPolicy: 'ALLOW',
       $or: [{ nextCrawlAt: null }, { nextCrawlAt: { $lte: now } }],
     }).sort({ crawlPriority: -1, nextCrawlAt: 1 }).limit(Math.max(1, limit)).lean();
+    return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
+  }
+
+  /* --------------------------- ingest runs --------------------------- */
+
+  async putIngestRun(run) {
+    const { id, _id, ...doc } = run;
+    await this.models.IngestRun.updateOne({ _id: id || _id }, { $set: doc }, { upsert: true });
+    return run;
+  }
+
+  async getIngestRun(id) {
+    const d = await this.models.IngestRun.findById(id).lean();
+    if (!d) return null;
+    const { _id, __v, ...rest } = d;
+    return { ...rest, id: _id };
+  }
+
+  async listIngestRuns({ limit = 50, triggeredBy = null } = {}) {
+    const q = {};
+    if (triggeredBy) q.triggeredBy = triggeredBy;
+    const docs = await this.models.IngestRun.find(q)
+      .sort({ startedAt: -1 })
+      .limit(Math.max(1, Math.min(500, limit)))
+      .lean();
     return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
   }
 

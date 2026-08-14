@@ -40,6 +40,8 @@
     "jobs:scale": "node --expose-gc --max-old-space-size=4096 scripts/job-discovery-scale.mjs",
     "jobs:scale:quick": "node --expose-gc scripts/job-discovery-scale.mjs --jobs 20000",
     "jobs:relevance": "node scripts/job-discovery-relevance.mjs",
+    "jobs:fetch": "node scripts/job-discovery-fetch.mjs",
+    "jobs:runs": "node scripts/job-discovery-fetch.mjs --runs",
     "jobs:gates:quick": "node scripts/job-discovery-gates.mjs --skip-resume",
     "test:jobs": "NODE_ENV=test node --test --test-concurrency=1 test/jobDiscovery*.test.js"
   },

@@ -16,19 +16,30 @@
      POST /api/admin/job-discovery/crawl      crawl one source
      POST /api/admin/job-discovery/verify     verify one source
      POST /api/admin/job-discovery/reprocess  re-normalize from raw
-     POST /api/admin/job-discovery/manual-fetch bounded operator-triggered fetch
      POST /api/admin/job-discovery/tick       run one scheduler slice
      POST /api/admin/job-discovery/discover   probe a domain/url
 
+   MANUAL INGESTION (admin):
+
+     POST /api/admin/job-discovery/fetch      fetch a batch of targets NOW
+     GET  /api/admin/job-discovery/runs       past manual-fetch receipts
+     GET  /api/admin/job-discovery/runs/:id   one receipt
+     GET  /api/admin/job-discovery/jobs       browse what is in the store
+
    There is NO unauthenticated crawl trigger. Every ingest command
    is admin-gated, and the crawl target is validated by the same
-   SSRF guards as any other URL (§47/§61).
+   SSRF guards as any other URL (§47/§61). An admin trigger changes
+   WHEN work happens and WHO asked for it — it is never an
+   authorisation bypass: robots policy, access policy, adapter
+   configuration and the source-health credibility guard all apply
+   to a manual fetch exactly as they do to a scheduled one.
 
    The service is created LAZILY on first use so importing this
    module never opens a store or a socket.
    ============================================================ */
 
 import { createJobDiscoveryService } from '../services/jobDiscovery/index.js';
+import { RUN_MODE, LIMITS as MANUAL_LIMITS } from '../services/jobDiscovery/manualIngest.js';
 import { SOURCE_CLASS, SOURCE_TYPE, JOB_STATUS, PROVIDER, EMPLOYMENT_TYPE } from '../services/jobDiscovery/schema.js';
 import { FRESHNESS_WINDOWS } from '../services/jobDiscovery/searchIndex.js';
 import { ROLE_FAMILIES } from '../services/jobDiscovery/normalize/taxonomy.js';
@@ -228,38 +239,6 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
     }
   });
 
-  app.post('/api/admin/job-discovery/manual-fetch', ...admin, async (req, res) => {
-    try {
-      const service = await getService();
-      const body = req.body || {};
-      const sourceLimit = Math.max(1, Math.min(3, Number(body.sourceLimit) || 1));
-      const maxPagesPerSource = Math.max(1, Math.min(3, Number(body.maxPagesPerSource) || 2));
-      const discoveryLimit = Math.max(1, Math.min(5, Number(body.discoveryLimit) || 2));
-      const verificationLimit = Math.max(1, Math.min(25, Number(body.verificationLimit) || 10));
-      const sourceId = body.sourceId ? String(body.sourceId).slice(0, 180) : null;
-      const sourceUrl = body.sourceUrl ? String(body.sourceUrl).slice(0, 1000) : null;
-      const companyName = body.companyName ? String(body.companyName).slice(0, 180) : null;
-      const companyDomain = body.companyDomain ? String(body.companyDomain).slice(0, 255) : null;
-
-      const result = await service.manualFetch({
-        sourceId,
-        sourceUrl,
-        companyName,
-        companyDomain,
-        sourceLimit,
-        maxPagesPerSource,
-        runDiscovery: body.runDiscovery === true,
-        discoveryLimit,
-        runVerification: body.runVerification === true,
-        verificationLimit,
-      });
-      return res.status(result.ok ? 200 : 207).json(result);
-    } catch (e) {
-      logger.error?.('manual job fetch failed', { message: e?.message });
-      return res.status(500).json({ error: 'manual_fetch_failed', message: e?.message || 'Manual job fetch failed.' });
-    }
-  });
-
   app.post('/api/admin/job-discovery/tick', ...admin, async (req, res) => {
     try {
       const service = await getService();
@@ -286,6 +265,107 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       return res.json(r);
     } catch (e) {
       return res.status(500).json({ error: 'discover_failed', message: e?.message });
+    }
+  });
+
+  /* ---------------------- manual ingestion ---------------------- */
+
+  /**
+   * Fetch a batch of targets on demand.
+   *
+   * Body:
+   *   targets   string | string[]  board URLs, careers pages, domains, source ids
+   *   mode      "INLINE" (default, crawl now) | "QUEUE" (hand to the workers)
+   *   dryRun    boolean            resolve and report; touch nothing
+   *   maxPages  number             page cap per source
+   *   reason    string             free-text note kept on the receipt
+   *
+   * The jobs land in the canonical store, so they are searchable through the
+   * ordinary /jobs/search-v2 path immediately — there is no separate "manually
+   * fetched" collection and no second read path.
+   */
+  app.post('/api/admin/job-discovery/fetch', ...admin, async (req, res) => {
+    try {
+      const body = req.body || {};
+      const raw = body.targets ?? body.target ?? body.url ?? body.urls;
+      const targets = (Array.isArray(raw) ? raw : String(raw ?? '').split(/[\s,]+/))
+        .map((t) => String(t ?? '').trim())
+        .filter(Boolean);
+
+      if (!targets.length) {
+        return res.status(400).json({
+          error: 'bad_request',
+          message: 'Provide targets: a board URL, careers URL, company domain or source id (or a list of them).',
+        });
+      }
+
+      const mode = String(body.mode || RUN_MODE.INLINE).toUpperCase() === RUN_MODE.QUEUE
+        ? RUN_MODE.QUEUE
+        : RUN_MODE.INLINE;
+
+      const service = await getService();
+      const result = await service.fetchNow(targets, {
+        mode,
+        dryRun: body.dryRun === true,
+        maxPagesPerSource: Math.max(1, Math.min(
+          MANUAL_LIMITS.maxPagesPerSource,
+          Number(body.maxPages) || MANUAL_LIMITS.maxPagesPerSource,
+        )),
+        /* Recorded on the receipt so a fetch is attributable months later. */
+        triggeredBy: req.user?.email || req.user?.id || 'admin',
+        reason: body.reason ? String(body.reason).slice(0, 300) : null,
+      });
+
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ error: 'fetch_failed', message: e?.message });
+    }
+  });
+
+  app.get('/api/admin/job-discovery/runs', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const runs = await service.ingestRuns({
+        limit: Number(req.query?.limit) || 25,
+        triggeredBy: req.query?.triggeredBy ? String(req.query.triggeredBy) : null,
+      });
+      return res.json({ runs, limits: MANUAL_LIMITS });
+    } catch (e) {
+      return res.status(500).json({ error: 'runs_failed', message: e?.message });
+    }
+  });
+
+  app.get('/api/admin/job-discovery/runs/:id', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const run = await service.ingestRun(String(req.params.id));
+      if (!run) return res.status(404).json({ error: 'not_found' });
+      return res.json(run);
+    } catch (e) {
+      return res.status(500).json({ error: 'run_failed', message: e?.message });
+    }
+  });
+
+  /**
+   * Browse the canonical store directly. The run receipt says what we think
+   * happened; this says what is actually there — which is the check an operator
+   * wants after a manual fetch.
+   */
+  app.get('/api/admin/job-discovery/jobs', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      return res.json(await service.browseJobs({
+        limit: Number(req.query?.limit) || 50,
+        offset: Number(req.query?.offset) || 0,
+        sourceId: req.query?.sourceId ? String(req.query.sourceId) : null,
+        companyDomain: req.query?.companyDomain ? String(req.query.companyDomain) : null,
+        provider: req.query?.provider ? String(req.query.provider) : null,
+        status: req.query?.status ? String(req.query.status) : null,
+        since: req.query?.since ? String(req.query.since) : null,
+      }));
+    } catch (e) {
+      return res.status(500).json({ error: 'browse_failed', message: e?.message });
     }
   });
 

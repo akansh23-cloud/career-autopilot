@@ -364,10 +364,11 @@ occupy genuinely different relation classes.
 ✓ SEARCH_RELEVANCE_GATE         6   Graded relevance
 ✓ SEARCH_SCALE_GATE            10   Retrieval at scale
 ✓ SECURITY_GATE                55   Crawler safety
+✓ MANUAL_INGEST_GATE           12   Operator-triggered ingestion
 ✓ INTEGRATION_GATE             23   Product integration
 ✓ RESUME_OS_REGRESSION_GATE   247   Resume OS / Template OS regression
 
-200 job-discovery assertions + 247 regression checks, 0 failures
+212 job-discovery assertions + 247 regression checks, 0 failures
 unattributed assertions: 0
 ```
 
@@ -381,6 +382,111 @@ while testing nothing that matters.
 than "does everything pass in this environment?". Two suites fail identically
 before and after (a missing optional dependency); they are reported as
 **inherited**, not as new damage.
+
+---
+
+## 11a. Manual ingestion (operator-triggered fetch)
+
+Everything above is autonomous, which is right for steady state and useless for
+the two moments an operator actually has: *"seed the index with these 40
+employers, now"* and *"this company just posted — pull it before tonight's
+tick."*
+
+So there is a one-shot path. Give it targets, it registers them, crawls them,
+and persists the jobs into **the same canonical store the workers write to** —
+searchable through the ordinary index immediately. There is no separate
+"manually fetched" collection and no second read path.
+
+### Targets
+
+An operator pastes whatever they have; the classifier works out what it is:
+
+| Input | Understood as |
+|---|---|
+| `https://boards.greenhouse.io/acme` | ATS board → provider + tenant |
+| `https://acme.wd3.myworkdayjobs.com/en-US/External` | ATS board → `acme/wd3/External` |
+| `https://acme.com/careers` | careers page → classify, then register |
+| `acme.com` | company domain → probe for a careers surface |
+| `src_a1b2c3` | an already-registered source |
+
+Hostnames are validated, not just normalized: `not a target` is **rejected**
+rather than becoming a discovery lead that probes a nonsense host.
+
+### What an admin trigger does NOT get
+
+A human in the loop is the path most likely to be handed powers it should not
+have, so the guards are explicit and tested:
+
+| Guard | Still applies |
+|---|---|
+| SSRF-guarded HTTP client | yes, unchanged |
+| robots + source access policy | yes — a `REVIEW` source is **not** crawled because someone clicked |
+| adapter configuration | yes — `NOT_CONFIGURED` is reported, never treated as an empty board |
+| source-health credibility | yes — a manual fetch of a broken board **cannot close jobs it failed to see** |
+
+The only things a manual run changes are **when** work happens and **who** asked
+for it. Both are recorded.
+
+### Bounded and idempotent
+
+One click cannot start an unbounded crawl: 50 targets per run, 20 pages per
+source, 400 pages per run — and the response says when a cap was hit rather than
+quietly stopping. Re-running the same fetch is safe and expected: the second run
+registers nothing new, re-crawls the board, and dedupe folds the results onto the
+same canonical jobs. It updates; it never duplicates.
+
+### Modes
+
+- **INLINE** — crawl now, return what landed. For a handful of boards.
+- **QUEUE** — register and enqueue at high priority with a 5-minute idempotency
+  window, so an operator request is not swallowed by the source's ordinary
+  6-hour window. For large batches, where holding an HTTP request open for 200
+  boards would be a bad idea.
+
+### Receipts
+
+Every non-dry run writes a receipt: who triggered it, why, what was attempted and
+what landed. A dry run is a question, not an event, and deliberately leaves no
+receipt.
+
+### Surfaces
+
+```
+POST /api/admin/job-discovery/fetch      { targets, mode, dryRun, maxPages, reason }
+GET  /api/admin/job-discovery/runs       past receipts
+GET  /api/admin/job-discovery/runs/:id   one receipt
+GET  /api/admin/job-discovery/jobs       browse the canonical store
+```
+
+```bash
+npm run jobs:fetch -- https://boards.greenhouse.io/acme acme.com
+npm run jobs:fetch -- --file targets.txt --dry-run
+npm run jobs:fetch -- --file targets.txt --queue
+npm run jobs:runs
+```
+
+Plus an admin panel (`web/src/views/AdminJobIngestPanel.jsx`) that shows the
+per-target outcome including the boring failures — *"source access policy is
+REVIEW; approve the source first"* is the most useful thing an operator can be
+told, because it names the next action.
+
+The panel's "In the store" list reads the **store**, not the receipt. The receipt
+says what we think happened; that list says what is actually there. If they ever
+disagree, the operator sees it.
+
+### Two bugs this work surfaced
+
+1. **Stale search cache after ingestion.** A cached "no results" outlived the
+   fetch that would have answered it — so an admin clicked *fetch now*, the jobs
+   landed, and search kept saying "nothing found" for the rest of the 60-second
+   TTL. The store now carries a write generation and the search layer invalidates
+   on any corpus change.
+
+2. **Duplicate in-flight crawls per source.** An operator's "fetch now" and the
+   source's routine window could both be queued, so one tick crawled the same
+   board twice. Window idempotency alone could not catch it — the scheduler now
+   skips routine enqueues for sources that already have work in flight.
+
 
 ---
 
@@ -416,11 +522,13 @@ specified.
 ## 13. Commands
 
 ```bash
-npm run jobs:gates          # all 12 gates
+npm run jobs:gates          # all 13 gates
 npm run jobs:gates:quick    # skip the Resume OS regression sweep
 npm run jobs:scale          # 100k benchmark
 npm run jobs:scale:quick    # 20k benchmark
 npm run jobs:relevance      # graded relevance evaluation
+npm run jobs:fetch -- <targets…>   # operator-triggered fetch
+npm run jobs:runs           # past manual-fetch receipts
 npm run test:jobs           # job-discovery tests only
 npm run jobs:worker         # run the queue-driven worker
 npm run jobs:tick           # one scheduler tick
