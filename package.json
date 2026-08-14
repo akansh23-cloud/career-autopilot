@@ -37,6 +37,10 @@
     "jobs:smoke": "node scripts/job-discovery-live-smoke.mjs",
     "jobs:worker": "node scripts/job-discovery-worker.mjs --forever",
     "jobs:tick": "node scripts/job-discovery-worker.mjs --once",
+    "jobs:scale": "node --expose-gc --max-old-space-size=4096 scripts/job-discovery-scale.mjs",
+    "jobs:scale:quick": "node --expose-gc scripts/job-discovery-scale.mjs --jobs 20000",
+    "jobs:relevance": "node scripts/job-discovery-relevance.mjs",
+    "jobs:gates:quick": "node scripts/job-discovery-gates.mjs --skip-resume",
     "test:jobs": "NODE_ENV=test node --test --test-concurrency=1 test/jobDiscovery*.test.js"
   },
   "dependencies": {

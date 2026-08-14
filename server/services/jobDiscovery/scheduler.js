@@ -19,6 +19,8 @@
 
 import { needsVerification, applyVerification, sweepStaleness, VERIFY_AFTER_DAYS } from './freshness.js';
 import { JOB_STATUS, SOURCE_STATUS, ACCESS_POLICY, SOURCE_CLASS } from './schema.js';
+import { allocateVerificationBudget, applyVerificationSchedule, isVerificationDue } from './verificationPolicy.js';
+import { CRAWL_STATE, interleaveByHost } from './crawlQueue.js';
 
 /* ------------------------------ metrics ------------------------------ */
 
@@ -118,11 +120,25 @@ export class VerificationWorker {
    */
   async run({ limit = 25, ctx = {} } = {}) {
     const nowMs = this.now().getTime();
-    const before = new Date(nowMs - VERIFY_AFTER_DAYS * 86400000).toISOString();
-    const candidates = await this.store.listVerificationCandidates({ before, limit: Math.max(limit * 2, limit) });
-    const due = candidates.filter((j) => needsVerification(j, { now: nowMs })).slice(0, limit);
+    const before = new Date(nowMs).toISOString();
+    /* Over-fetch, then let the ADAPTIVE POLICY spend the budget. A fresh
+       direct-ATS posting is worth far more re-checks than a four-month-old
+       aggregator record, and taking candidates in id order wastes the budget on
+       whatever happens to sort first. */
+    const candidates = await this.store.listVerificationCandidates({ before, limit: Math.max(limit * 4, limit) });
+    const allocated = allocateVerificationBudget(candidates, {
+      limit,
+      now: nowMs,
+      sourceHealth: () => null,
+    });
+    const due = allocated.length
+      ? allocated.map((a) => a.job)
+      : candidates.filter((j) => needsVerification(j, { now: nowMs }) || isVerificationDue(j, { now: nowMs })).slice(0, limit);
 
-    const summary = { checked: 0, alive: 0, closed: 0, inconclusive: 0, details: [] };
+    const summary = {
+      checked: 0, alive: 0, closed: 0, inconclusive: 0, details: [],
+      byTier: allocated.reduce((acc, a) => { acc[a.tier] = (acc[a.tier] || 0) + 1; return acc; }, {}),
+    };
 
     for (const job of due) {
       /* Verify against the most authoritative instance available. */
@@ -157,7 +173,10 @@ export class VerificationWorker {
       }
 
       const at = this.now().toISOString();
-      const updated = applyVerification(job, result, { sourceId: instance.sourceId, at });
+      let updated = applyVerification(job, result, { sourceId: instance.sourceId, at });
+      /* Re-tier after every check: a job that just changed, or that just failed
+         a check, earns a different cadence than it had a moment ago. */
+      updated = applyVerificationSchedule(updated, { now: this.now().getTime(), from: at });
       await this.store.putJob(updated);
 
       if (result.ok) { summary.alive += 1; this.metrics?.recordVerification('ok'); }
@@ -189,21 +208,114 @@ export class VerificationWorker {
 export class CrawlScheduler {
   constructor({
     registry, ingest, verifier, discovery = null, metrics = null,
+    crawlQueue = null, discoveryQueue = null,
     logger = console, now = () => new Date(),
     sourcesPerTick = 5, verifyPerTick = 20, discoverPerTick = 5,
+    workerId = `${process.env.JOB_DISCOVERY_WORKER_ID || 'worker'}-${Math.random().toString(36).slice(2, 8)}`,
   }) {
     this.registry = registry;
     this.ingest = ingest;
     this.verifier = verifier;
     this.discovery = discovery;
+    this.crawlQueue = crawlQueue;
+    this.discoveryQueue = discoveryQueue;
     this.metrics = metrics;
     this.logger = logger;
     this.now = now;
     this.sourcesPerTick = sourcesPerTick;
     this.verifyPerTick = verifyPerTick;
     this.discoverPerTick = discoverPerTick;
+    /* Identity matters once there is more than one worker: leases are held
+       against this id, and an expired lease is reclaimable by anyone. */
+    this.workerId = workerId;
     this.running = false;
     this.lastTick = null;
+  }
+
+  /**
+   * Queue-driven crawl slice. Due sources are ENQUEUED (idempotently, so two
+   * triggers in one window produce one task), then leased and executed. The
+   * atomicity lives in the store, so this is safe to run on several machines.
+   */
+  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick } = {}) {
+    const out = { enqueued: 0, deduped: 0, leased: 0, crawled: [], deadLettered: 0 };
+
+    const due = await this.registry.due({ limit: limit * 3 });
+    for (const source of due) {
+      if (source.accessPolicy !== ACCESS_POLICY.ALLOW) continue;
+      if (source.status === SOURCE_STATUS.DISABLED || source.status === SOURCE_STATUS.NOT_CONFIGURED) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const r = await this.crawlQueue.enqueue(source);
+      if (r.created) out.enqueued += 1; else out.deduped += 1;
+    }
+
+    const leased = interleaveByHost(await this.crawlQueue.lease({ limit, owner: this.workerId }));
+    out.leased = leased.length;
+
+    for (const task of leased) {
+      // eslint-disable-next-line no-await-in-loop
+      const source = await this.registry.get(task.sourceId);
+      if (!source) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.crawlQueue.fail(task, { errorClass: 'UNKNOWN', message: 'source no longer registered' });
+        out.deadLettered += 1;
+        continue;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const r = await this.ingest.runSource(source, {
+        ctx,
+        resumeCursor: task.checkpoint?.cursor || null,
+        checkpoint: (cp) => this.crawlQueue.checkpoint(task, cp),
+      });
+
+      if (r.ok) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.crawlQueue.complete(task, r);
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        const failed = await this.crawlQueue.fail(task, {
+          errorClass: r.errors[0]?.errorClass,
+          message: r.errors[0]?.message,
+        });
+        if (failed.state === CRAWL_STATE.DEAD) out.deadLettered += 1;
+      }
+
+      out.crawled.push({
+        sourceId: source.id, provider: source.provider, tenant: source.tenant,
+        ok: r.ok, fetched: r.fetched, created: r.created, merged: r.merged,
+        notModified: r.notModified, notConfigured: r.notConfigured,
+        credible: r.health?.credible ?? true,
+        reconciliation: r.reconciliation?.allowed ?? null,
+        changeEvents: r.changeEvents,
+        errors: r.errors.map((e) => e.errorClass),
+      });
+    }
+    return out;
+  }
+
+  /** Queue-driven discovery slice. */
+  async discoverySlice({ limit = this.discoverPerTick } = {}) {
+    const out = { seeded: 0, leased: 0, resolved: 0, failed: 0, results: [] };
+    if (!this.discoveryQueue || !this.discovery) return out;
+
+    /* Seed from jobs that still have no direct-source provenance. */
+    const jobs = await this.ingest.store.listDiscoveryCandidates({ at: this.now().toISOString(), limit });
+    for (const job of jobs) {
+      // eslint-disable-next-line no-await-in-loop
+      const seeded = await this.discovery.seedFromJob(job);
+      out.seeded += seeded.created;
+    }
+
+    const tasks = await this.discoveryQueue.lease({ limit, owner: this.workerId });
+    out.leased = tasks.length;
+    for (const task of tasks) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await this.discovery.processTask(task);
+      if (r.ok) out.resolved += 1; else out.failed += 1;
+      out.results.push(r);
+    }
+    return out;
   }
 
   /**
@@ -218,18 +330,27 @@ export class CrawlScheduler {
 
     try {
       if (crawl) {
-        const due = await this.registry.due({ limit: this.sourcesPerTick });
-        for (const source of due) {
-          if (source.accessPolicy !== ACCESS_POLICY.ALLOW) continue;
-          if (source.status === SOURCE_STATUS.DISABLED || source.status === SOURCE_STATUS.NOT_CONFIGURED) continue;
-          // eslint-disable-next-line no-await-in-loop
-          const r = await this.ingest.runSource(source, { ctx });
-          out.crawled.push({
-            sourceId: source.id, provider: source.provider, tenant: source.tenant,
-            ok: r.ok, fetched: r.fetched, created: r.created, merged: r.merged,
-            notModified: r.notModified, notConfigured: r.notConfigured,
-            errors: r.errors.map((e) => e.errorClass),
-          });
+        if (this.crawlQueue) {
+          const slice = await this.crawlSlice({ ctx });
+          out.crawled = slice.crawled;
+          out.queue = { enqueued: slice.enqueued, deduped: slice.deduped, leased: slice.leased, deadLettered: slice.deadLettered };
+        } else {
+          /* Direct execution path, retained for single-process fixtures and
+             tests that inject no queue. */
+          const due = await this.registry.due({ limit: this.sourcesPerTick });
+          for (const source of due) {
+            if (source.accessPolicy !== ACCESS_POLICY.ALLOW) continue;
+            if (source.status === SOURCE_STATUS.DISABLED || source.status === SOURCE_STATUS.NOT_CONFIGURED) continue;
+            // eslint-disable-next-line no-await-in-loop
+            const r = await this.ingest.runSource(source, { ctx });
+            out.crawled.push({
+              sourceId: source.id, provider: source.provider, tenant: source.tenant,
+              ok: r.ok, fetched: r.fetched, created: r.created, merged: r.merged,
+              notModified: r.notModified, notConfigured: r.notConfigured,
+              credible: r.health?.credible ?? true,
+              errors: r.errors.map((e) => e.errorClass),
+            });
+          }
         }
       }
 
@@ -237,7 +358,10 @@ export class CrawlScheduler {
         out.verification = await this.verifier.run({ limit: this.verifyPerTick, ctx });
       }
 
-      if (discover && this.discovery) {
+      if (discover && this.discoveryQueue && this.discovery?.processTask) {
+        out.discovery = await this.discoverySlice({ limit: this.discoverPerTick });
+        out.discovery.durableQueue = true;
+      } else if (discover && this.discovery) {
         /* Durable self-expansion queue. The STORE selects only jobs whose
            source-discovery attempt is due; no arbitrary first-500 scan and no
            process-local negative cache is relied on for fairness. */

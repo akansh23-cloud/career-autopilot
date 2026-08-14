@@ -410,3 +410,36 @@ npx playwright install --with-deps chromium
 ```
 
 Alternatively provide `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` / `CHROMIUM_EXECUTABLE_PATH`. WeasyPrint remains an optional fail-safe Unicode HTML provider rather than the preferred production renderer.
+
+
+## Job Discovery OS
+
+An autonomous job-discovery network: an inverted-index search layer, durable
+crawl and discovery queues, 20 ingest-ready ATS connectors, evidence-based
+freshness, and coverage metrics that refuse to be reported without a namespace.
+
+The system optimises for jobs that are **real, direct, fresh, deduplicated and
+findable**. It deliberately does not optimise for job count.
+
+Docs:
+
+- [`JOB-DISCOVERY-OS.md`](JOB-DISCOVERY-OS.md) — original architecture
+- [`JOB-DISCOVERY-PHASE1.1-HARDENING.md`](JOB-DISCOVERY-PHASE1.1-HARDENING.md) — hardening pass
+- [`JOB-DISCOVERY-PHASE2-SCALE.md`](JOB-DISCOVERY-PHASE2-SCALE.md) — **scale foundation, benchmarks, gates and limitations**
+
+```bash
+npm run jobs:gates          # all 12 quality gates
+npm run jobs:gates:quick    # skip the Resume OS regression sweep
+npm run jobs:scale          # deterministic 100,000-job benchmark
+npm run jobs:relevance      # graded nDCG relevance evaluation
+npm run test:jobs           # job-discovery test suite only
+npm run jobs:worker         # queue-driven crawl/discovery worker
+npm run jobs:tick           # a single scheduler tick
+```
+
+**Search never fans out to external providers.** User queries read the canonical
+index only; ingestion is asynchronous and queue-driven.
+
+**Every published metric is namespaced.** Benchmark figures are `FIXTURE` data
+measuring the engine. Real-world live coverage is not yet measured, and the code
+will not let fixture numbers be presented as if it were.

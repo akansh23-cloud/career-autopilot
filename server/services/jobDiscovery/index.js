@@ -20,6 +20,12 @@ import { IngestPipeline } from './ingest.js';
 import { SourceDiscoveryEngine } from './sourceDiscovery.js';
 import { StoreBackedSearchIndex, publicJobView } from './searchIndex.js';
 import { CrawlScheduler, VerificationWorker, Metrics } from './scheduler.js';
+import { DiscoveryQueue } from './discoveryQueue.js';
+import { CrawlQueue } from './crawlQueue.js';
+import { CompanyRegistry } from './companyRegistry.js';
+import { computeCoverage, NAMESPACE, coverageDisclaimer } from './coverageMetrics.js';
+import { summarizeSourceHealth } from './sourceHealth.js';
+import { summarizeChanges } from './changeIntelligence.js';
 import { SafeHttpClient } from './crawler/httpClient.js';
 import { RateController } from './crawler/rateControl.js';
 import { RobotsPolicy } from './crawler/robots.js';
@@ -33,9 +39,13 @@ export class JobDiscoveryService {
   constructor({
     store, registry, adapters, ingest, search, scheduler, verifier, discovery,
     http, browserPool, robots, metrics, logger = console,
+    crawlQueue = null, discoveryQueue = null, companies = null,
   }) {
     this.store = store;
     this.registry = registry;
+    this.crawlQueue = crawlQueue;
+    this.discoveryQueue = discoveryQueue;
+    this.companies = companies;
     this.adapters = adapters;
     this.ingest = ingest;
     this.searchIndex = search;
@@ -151,70 +161,63 @@ export class JobDiscoveryService {
     }));
   }
 
-  /** §63 — coverage report data. Fixture runs are labelled by the caller. */
-  async coverageReport() {
-    const [sources, jobs, registrySummary] = await Promise.all([
+  /**
+   * Coverage report. The namespace is REQUIRED and travels with the numbers —
+   * a fixture benchmark and live coverage are different claims and must never
+   * be summed or shown under the same label.
+   */
+  async coverageReport({ namespace = NAMESPACE.PRODUCTION, windowHours = 24 } = {}) {
+    const [sources, jobs, registrySummary, companies] = await Promise.all([
       this.registry.list({}),
-      this.store.listJobs({ limit: 100000 }),
+      this.store.listJobs({ limit: 200000 }),
       this.registry.summary(),
+      this.companies ? this.store.listCompanies({ limit: 100000 }) : Promise.resolve([]),
     ]);
 
-    const byProvider = {};
-    const byStatus = {};
-    let originalSourced = 0;
-    let aggregatorOnly = 0;
-    let directApply = 0;
-    let withPublishedDate = 0;
-    let withSalary = 0;
-    let verified = 0;
-    let totalInstances = 0;
+    const snapshot = computeCoverage({
+      jobs,
+      sources,
+      companies,
+      namespace,
+      windowHours,
+      discoveryStats: this.discoveryQueue ? await this.discoveryQueue.stats() : null,
+      crawlStats: this.crawlQueue ? await this.crawlQueue.stats() : null,
+      runtime: this.metrics?.snapshot?.() ?? null,
+    });
 
-    for (const job of jobs) {
-      byStatus[job.status] = (byStatus[job.status] || 0) + 1;
-      const instances = job.sourceInstances || [];
-      totalInstances += instances.length;
-      const hasOriginal = instances.some((s) => s.sourceClass === SOURCE_CLASS.ORIGINAL_ATS || s.sourceClass === SOURCE_CLASS.ORIGINAL_CAREER_SITE);
-      if (hasOriginal) originalSourced += 1; else aggregatorOnly += 1;
-      for (const p of new Set(instances.map((s) => s.provider))) byProvider[p] = (byProvider[p] || 0) + 1;
-      const applyInstance = instances.find((s) => s.applyUrl === job.canonicalApplyUrl);
-      if (applyInstance && (applyInstance.sourceClass === SOURCE_CLASS.ORIGINAL_ATS || applyInstance.sourceClass === SOURCE_CLASS.ORIGINAL_CAREER_SITE)) directApply += 1;
-      if (job.sourcePublishedAt) withPublishedDate += 1;
-      if (job.compensation?.min != null || job.compensation?.max != null) withSalary += 1;
-      if (job.lastVerifiedAt) verified += 1;
-    }
-
-    const total = jobs.length || 0;
-    const pct = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
+    const supplementalOnly = snapshot.jobs.total - snapshot.quality.directSourceCount;
 
     return {
-      generatedAt: new Date().toISOString(),
-      providersImplemented: this.adapters.supportedProviders(),
+      ...snapshot,
+      disclaimer: coverageDisclaimer(snapshot),
+      providers: this.adapters.coverageMatrix(),
       adapterStatus: this.adapters.statusReport(),
+      registry: { ...registrySummary, health: summarizeSourceHealth(sources) },
+      changes: summarizeChanges(jobs, {
+        since: new Date(Date.now() - windowHours * 3600000).toISOString(),
+      }),
+
+      /* Stable surface retained for the admin route, the demo report and the
+         phase-1 integration contract. Same numbers, previous field names —
+         renaming a metric is not a reason to break every consumer of it. */
+      providersImplemented: this.adapters.supportedProviders(),
       sources: {
-        registered: sources.length,
+        ...snapshot.sources,
         ...registrySummary,
       },
-      jobs: {
-        total,
-        byStatus,
-        byProvider,
-        active: (byStatus[JOB_STATUS.ACTIVE] || 0) + (byStatus[JOB_STATUS.NEW] || 0) + (byStatus[JOB_STATUS.LIKELY_ACTIVE] || 0),
-        new: byStatus[JOB_STATUS.NEW] || 0,
-        removed: byStatus[JOB_STATUS.REMOVED] || 0,
-        stale: byStatus[JOB_STATUS.STALE] || 0,
-      },
       coverage: {
-        originalSourceCount: originalSourced,
-        originalSourcePct: pct(originalSourced),
-        supplementalOnlyCount: aggregatorOnly,
-        supplementalOnlyPct: pct(aggregatorOnly),
-        directApplyCount: directApply,
-        directApplyPct: pct(directApply),
-        withPublishedDatePct: pct(withPublishedDate),
-        withSalaryPct: pct(withSalary),
-        verificationCoveragePct: pct(verified),
-        /* >1.0 means multiple sources collapsed onto one canonical job. */
-        dedupeRatio: total ? Math.round((totalInstances / total) * 100) / 100 : 0,
+        originalSourceCount: snapshot.quality.directSourceCount,
+        originalSourcePct: snapshot.quality.directSourcePct,
+        supplementalOnlyCount: supplementalOnly,
+        supplementalOnlyPct: snapshot.jobs.total
+          ? Math.round((supplementalOnly / snapshot.jobs.total) * 1000) / 10
+          : 0,
+        directApplyCount: snapshot.quality.directApplyCount,
+        directApplyPct: snapshot.quality.directApplyPct,
+        withPublishedDatePct: snapshot.quality.withPublishedDatePct,
+        withSalaryPct: snapshot.quality.withSalaryPct,
+        verificationCoveragePct: snapshot.quality.verificationCoveragePct,
+        dedupeRatio: snapshot.quality.duplicateRatio,
       },
       runtime: this.metrics?.snapshot?.() ?? null,
     };
@@ -227,6 +230,9 @@ export class JobDiscoveryService {
       http: this.http?.stats?.() ?? null,
       browser: this.browserPool?.stats?.() ?? null,
       discovery: this.discovery?.stats?.() ?? null,
+      discoveryQueue: this.discoveryQueue ? await this.discoveryQueue.stats() : null,
+      crawlQueue: this.crawlQueue ? await this.crawlQueue.stats() : null,
+      companies: this.companies ? await this.companies.summary() : null,
       metrics: this.metrics?.snapshot?.() ?? null,
       adapters: this.adapters.statusReport(),
     };
@@ -277,15 +283,24 @@ export async function createJobDiscoveryService({
   });
 
   const registry = new SourceRegistry({ store: resolvedStore, logger, now });
+  const companies = new CompanyRegistry({ store: resolvedStore, logger, now });
+  const discoveryQueue = new DiscoveryQueue({ store: resolvedStore, logger, now });
+  const crawlQueue = new CrawlQueue({ store: resolvedStore, logger, now });
   const ingest = new IngestPipeline({ store: resolvedStore, registry, adapters, logger, metrics, now });
-  const discovery = new SourceDiscoveryEngine({ http, registry, adapters, robots, logger });
+  const discovery = new SourceDiscoveryEngine({
+    http, registry, adapters, robots, logger, queue: discoveryQueue, companies,
+  });
   const verifier = new VerificationWorker({ store: resolvedStore, registry, adapters, metrics, logger, now });
   const search = new StoreBackedSearchIndex({ store: resolvedStore });
-  const scheduler = new CrawlScheduler({ registry, ingest, verifier, discovery, metrics, logger, now });
+  const scheduler = new CrawlScheduler({
+    registry, ingest, verifier, discovery, metrics, logger, now,
+    crawlQueue, discoveryQueue,
+  });
 
   const service = new JobDiscoveryService({
-    store: resolvedStore, registry, adapters, ingest, search: search, scheduler,
+    store: resolvedStore, registry, adapters, ingest, search, scheduler,
     verifier, discovery, http, browserPool, robots, metrics, logger,
+    crawlQueue, discoveryQueue, companies,
   });
 
   /* Bootstrap the legacy aggregators as SUPPLEMENTAL sources (§25). They are

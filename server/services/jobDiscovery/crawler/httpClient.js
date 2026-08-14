@@ -115,7 +115,7 @@ export class SafeHttpClient {
     method = 'GET', headers = {}, etag = null, lastModified = null,
     timeoutMs = this.opts.timeoutMs, maxBytes = this.opts.maxBytes,
     maxRedirects = this.opts.maxRedirects, allowedContentTypes = this.opts.allowedContentTypes,
-    retries = this.opts.maxRetries, accept = null,
+    retries = this.opts.maxRetries, accept = null, body = null,
   } = {}) {
     let currentUrl = String(rawUrl);
     let hops = 0;
@@ -130,7 +130,7 @@ export class SafeHttpClient {
       try {
         // eslint-disable-next-line no-await-in-loop
         response = await this.rate.schedule(host, () => this.rawFetch(currentUrl, {
-          method, headers, etag, lastModified, timeoutMs, accept,
+          method, headers, etag, lastModified, timeoutMs, accept, body,
         }));
       } catch (e) {
         this.metrics.failures += 1;
@@ -235,7 +235,7 @@ export class SafeHttpClient {
     }
   }
 
-  async rawFetch(url, { method, headers, etag, lastModified, timeoutMs, accept }) {
+  async rawFetch(url, { method, headers, etag, lastModified, timeoutMs, accept, body = null }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const h = {
@@ -246,8 +246,20 @@ export class SafeHttpClient {
     };
     if (etag) h['If-None-Match'] = etag;
     if (lastModified) h['If-Modified-Since'] = lastModified;
+    /* A POST body is only ever a SEARCH payload for a public board endpoint
+       (Workday's cxs/jobs is POST-only). Every SSRF, redirect, size, content-type
+       and rate guard above applies identically — a body changes nothing about
+       what this client is allowed to reach. */
+    let payload;
+    if (body != null) {
+      payload = typeof body === 'string' ? body : JSON.stringify(body);
+      if (!h['Content-Type']) h['Content-Type'] = 'application/json';
+    }
     try {
-      return await this.fetchImpl(url, { method, headers: h, redirect: 'manual', signal: controller.signal });
+      return await this.fetchImpl(url, {
+        method, headers: h, redirect: 'manual', signal: controller.signal,
+        ...(payload != null ? { body: payload } : {}),
+      });
     } finally {
       clearTimeout(timer);
     }

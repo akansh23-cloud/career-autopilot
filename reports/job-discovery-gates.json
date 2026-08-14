@@ -1,42 +1,71 @@
 {
-  "generatedAt": "2026-08-14T07:47:20.651Z",
+  "generatedAt": "2026-08-14T15:13:54.516Z",
   "overall": "PASS",
-  "totalAssertions": 148,
+  "jobDiscoveryAssertions": 200,
+  "resumeRegressionAssertions": 247,
   "totalFailures": 0,
-  "durationMs": 5863,
+  "durationMs": 18353,
   "gates": {
     "SOURCE_GATE": {
-      "label": "Source adapters",
+      "label": "Source adapters (phase 1)",
+      "status": "PASS",
+      "assertions": 10,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "SOURCE_EXPANSION_GATE": {
+      "label": "Provider expansion",
+      "status": "PASS",
+      "assertions": 15,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "DISCOVERY_GATE": {
+      "label": "Autonomous source discovery",
       "status": "PASS",
       "assertions": 10,
       "failures": [],
       "missingRequirements": []
     },
     "INGEST_GATE": {
-      "label": "Raw → normalized ingestion",
+      "label": "Ingestion & crawl queue",
       "status": "PASS",
-      "assertions": 21,
+      "assertions": 32,
       "failures": [],
       "missingRequirements": []
     },
     "DEDUPE_GATE": {
       "label": "Deduplication",
       "status": "PASS",
-      "assertions": 9,
+      "assertions": 10,
       "failures": [],
       "missingRequirements": []
     },
     "FRESHNESS_GATE": {
       "label": "Freshness & lifecycle",
       "status": "PASS",
-      "assertions": 8,
+      "assertions": 11,
       "failures": [],
       "missingRequirements": []
     },
     "SEARCH_GATE": {
-      "label": "Search & ranking",
+      "label": "Search & ranking (phase 1)",
       "status": "PASS",
       "assertions": 24,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "SEARCH_RELEVANCE_GATE": {
+      "label": "Graded relevance",
+      "status": "PASS",
+      "assertions": 6,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "SEARCH_SCALE_GATE": {
+      "label": "Retrieval at scale",
+      "status": "PASS",
+      "assertions": 10,
       "failures": [],
       "missingRequirements": []
     },
@@ -53,6 +82,19 @@
       "assertions": 23,
       "failures": [],
       "missingRequirements": []
+    },
+    "RESUME_OS_REGRESSION_GATE": {
+      "label": "Resume OS / Template OS regression",
+      "status": "PASS",
+      "assertions": 247,
+      "failures": [],
+      "missingRequirements": [],
+      "inheritedFailures": [
+        "test/resumeRenderService.test.js :: auto renderer uses an HTML Unicode provider and preserves Devanagari text",
+        "test/templateContentBudgetPropagation.test.js :: Tailor for Job passes selected template summary capacity into deterministic compiler"
+      ],
+      "baselineRecordedAt": "2026-08-14T15:08:09.345Z",
+      "baselineSource": "phase1.1-hardened pristine package"
     }
   },
   "files": [
@@ -97,8 +139,37 @@
       "assertions": 11,
       "failures": 0,
       "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryProviders.test.js",
+      "missing": false,
+      "assertions": 15,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryQueues.test.js",
+      "missing": false,
+      "assertions": 21,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryRelevance.test.js",
+      "missing": false,
+      "assertions": 6,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryScale.test.js",
+      "missing": false,
+      "assertions": 10,
+      "failures": 0,
+      "exitCode": 0
     }
   ],
   "unattributedAssertions": 0,
+  "unattributedNames": [],
   "network": "none — every test runs against injected fetch, DNS, clock and jitter"
 }

@@ -12,6 +12,9 @@ import { IngestPipeline } from '../../../server/services/jobDiscovery/ingest.js'
 import { SourceDiscoveryEngine } from '../../../server/services/jobDiscovery/sourceDiscovery.js';
 import { StoreBackedSearchIndex } from '../../../server/services/jobDiscovery/searchIndex.js';
 import { CrawlScheduler, VerificationWorker, Metrics } from '../../../server/services/jobDiscovery/scheduler.js';
+import { DiscoveryQueue } from '../../../server/services/jobDiscovery/discoveryQueue.js';
+import { CrawlQueue } from '../../../server/services/jobDiscovery/crawlQueue.js';
+import { CompanyRegistry } from '../../../server/services/jobDiscovery/companyRegistry.js';
 import { JobDiscoveryService } from '../../../server/services/jobDiscovery/index.js';
 import { SafeHttpClient } from '../../../server/services/jobDiscovery/crawler/httpClient.js';
 import { RateController } from '../../../server/services/jobDiscovery/crawler/rateControl.js';
@@ -86,7 +89,7 @@ export function makeHttp({ routes = [], resolverMap = {}, rateOptions = {} } = {
  */
 export async function makeService({
   routes = [], resolverMap = {}, legacySources = [], now = () => new Date('2026-08-14T12:00:00.000Z'),
-  robotsText = null, browserPool = null,
+  robotsText = null, browserPool = null, queues = false,
 } = {}) {
   const store = await new MemoryJobStore().init();
   const metrics = new Metrics();
@@ -97,15 +100,27 @@ export async function makeService({
 
   const adapters = new AdapterRegistry({ http, robots, browserPool, legacySources, logger: silentLogger() });
   const registry = new SourceRegistry({ store, logger: silentLogger(), now });
+  const companies = new CompanyRegistry({ store, logger: silentLogger(), now });
+  /* Queues are opt-in for the phase-1 tests, which assert direct execution, and
+     on for the phase-2 queue tests. Both paths are real and both are covered. */
+  const discoveryQueue = queues ? new DiscoveryQueue({ store, logger: silentLogger(), now }) : null;
+  const crawlQueue = queues ? new CrawlQueue({ store, logger: silentLogger(), now, jitter: () => 0.5 }) : null;
   const ingest = new IngestPipeline({ store, registry, adapters, logger: silentLogger(), metrics, now });
-  const discovery = new SourceDiscoveryEngine({ http, registry, adapters, robots, logger: silentLogger() });
+  const discovery = new SourceDiscoveryEngine({
+    http, registry, adapters, robots, logger: silentLogger(),
+    queue: discoveryQueue, companies,
+  });
   const verifier = new VerificationWorker({ store, registry, adapters, metrics, logger: silentLogger(), now });
   const search = new StoreBackedSearchIndex({ store, now: () => now().getTime(), cache: null });
-  const scheduler = new CrawlScheduler({ registry, ingest, verifier, discovery, metrics, logger: silentLogger(), now });
+  const scheduler = new CrawlScheduler({
+    registry, ingest, verifier, discovery, metrics, logger: silentLogger(), now,
+    crawlQueue, discoveryQueue, workerId: 'test-worker',
+  });
 
   const service = new JobDiscoveryService({
     store, registry, adapters, ingest, search, scheduler, verifier, discovery,
     http, browserPool, robots, metrics, logger: silentLogger(),
+    crawlQueue, discoveryQueue, companies,
   });
   /* Mirror createJobDiscoveryService: legacy aggregators are bootstrapped into
      the registry as AGGREGATOR-class supplemental sources. */

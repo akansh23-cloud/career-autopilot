@@ -29,12 +29,17 @@ import { detectAts, boardUrlFor, extractAtsLinks, CAREER_PATH_HINTS } from './at
 import { extractMeta } from './crawler/extract.js';
 import { registrableDomain, normalizeUrl, hostOf } from './normalize/text.js';
 import { makeSource, CRAWL_STRATEGY } from './sourceRegistry.js';
+import {
+  DISCOVERY_KIND, leadsFromJob, leadsFromPage,
+} from './discoveryQueue.js';
+import { extractSitemapUrls, filterJobSitemapUrls, isSitemapIndex } from './crawler/extract.js';
 
 const CAREER_SUBDOMAINS = ['careers', 'jobs', 'work', 'hiring'];
 
 export class SourceDiscoveryEngine {
   constructor({
     http, registry, adapters, robots = null, logger = console,
+    queue = null, companies = null,
     maxProbesPerCompany = 8, allowGenericFallback = true,
   }) {
     this.http = http;
@@ -42,6 +47,11 @@ export class SourceDiscoveryEngine {
     this.adapters = adapters;
     this.robots = robots;
     this.logger = logger;
+    /* The durable queue and the company registry are what turn discovery from a
+       repeating sweep into work that COMPOUNDS: every resolved company is one we
+       never have to probe again, and every dead lead stays dead. */
+    this.queue = queue;
+    this.companies = companies;
     this.maxProbesPerCompany = maxProbesPerCompany;
     this.allowGenericFallback = allowGenericFallback;
     /* Negative cache: do not re-probe a domain that yielded nothing recently. */
@@ -258,7 +268,226 @@ export class SourceDiscoveryEngine {
     return { results, metrics: { ...this.metrics } };
   }
 
+  /* ------------------------------------------------------------------
+     Queue-driven discovery.
+     ------------------------------------------------------------------ */
+
+  /** Turn a job with no direct provenance into durable discovery leads. */
+  async seedFromJob(job) {
+    if (!this.queue) return { created: 0, deduped: 0, submitted: 0 };
+    const leads = leadsFromJob(job, { detectAts });
+    return this.queue.enqueueMany(leads);
+  }
+
+  /** Seed from an explicit company/domain, e.g. an admin action or an import. */
+  async seedFromDomain(domain, { companyName = null, discoveredFrom = 'manual' } = {}) {
+    if (!this.queue) return { created: 0, deduped: 0, submitted: 0 };
+    const d = registrableDomain(domain);
+    if (!d) return { created: 0, deduped: 0, submitted: 0 };
+    return this.queue.enqueueMany([{
+      kind: DISCOVERY_KIND.COMPANY_DOMAIN,
+      value: d,
+      payload: { companyName, companyDomain: d },
+      confidence: 0.75,
+      priority: 70,
+      discoveredFrom,
+    }]);
+  }
+
+  /**
+   * Execute one leased discovery task. Never throws: the queue needs a verdict
+   * for every task, and an exception here would strand a lease.
+   */
+  async processTask(task) {
+    try {
+      switch (task.kind) {
+        case DISCOVERY_KIND.ATS_LINK: return await this.processAtsLink(task);
+        case DISCOVERY_KIND.COMPANY_DOMAIN: return await this.processDomain(task);
+        case DISCOVERY_KIND.CAREERS_URL: return await this.processCareersUrl(task);
+        case DISCOVERY_KIND.SITEMAP: return await this.processSitemap(task);
+        case DISCOVERY_KIND.JOB_BACKFILL:
+          /* Nothing actionable yet. Exhaust it politely rather than probing the
+             internet on the strength of a company name alone. */
+          await this.queue?.fail(task, { errorClass: ERROR_CLASS.PARSE_FAILED, reason: 'no domain or ATS link available for this employer yet' });
+          return { ok: false, taskId: task.id, kind: task.kind, reason: 'no actionable identity' };
+        default:
+          await this.queue?.fail(task, { errorClass: ERROR_CLASS.UNKNOWN, reason: `unknown task kind ${task.kind}` });
+          return { ok: false, taskId: task.id, reason: `unknown task kind ${task.kind}` };
+      }
+    } catch (e) {
+      await this.queue?.fail(task, { errorClass: e?.errorClass || ERROR_CLASS.UNKNOWN, reason: e?.message });
+      return { ok: false, taskId: task.id, kind: task.kind, reason: e?.message || String(e) };
+    }
+  }
+
+  async processAtsLink(task) {
+    const { provider, tenant } = task.payload || {};
+    const r = await this.registerAts({
+      provider, tenant,
+      companyName: task.payload?.companyName ?? null,
+      companyDomain: task.payload?.companyDomain ?? null,
+      careersUrl: task.payload?.careersUrl ?? null,
+      discoveredFrom: task.discoveredFrom,
+    });
+    if (r.ok) {
+      await this.recordCompany(task, r, { provider, tenant });
+      await this.queue?.resolve(task, { sourceId: r.source?.id ?? null, reason: r.reason });
+    } else {
+      await this.queue?.fail(task, { errorClass: ERROR_CLASS.PARSE_FAILED, reason: r.reason });
+    }
+    return { ok: r.ok, taskId: task.id, kind: task.kind, created: r.created, source: sourceBrief(r.source), reason: r.reason };
+  }
+
+  async processDomain(task) {
+    const domain = String(task.key).split(':').slice(1).join(':');
+
+    /* Ask what we already know BEFORE touching the network. This is the whole
+       economic argument for the company registry. */
+    if (this.companies) {
+      const hint = await this.companies.discoveryHint({ domain, name: task.payload?.companyName });
+      if (hint.skipProbe) {
+        await this.queue?.resolve(task, { sourceId: hint.company?.sourceIds?.[0] ?? null, companyId: hint.company?.id ?? null, reason: hint.reason });
+        return { ok: true, taskId: task.id, kind: task.kind, skipped: true, reason: hint.reason };
+      }
+    }
+
+    const r = await this.discoverFromDomain(domain, {
+      companyName: task.payload?.companyName ?? null,
+      discoveredFrom: task.discoveredFrom,
+    });
+    if (r.ok) {
+      await this.recordCompany(task, r, { domain });
+      await this.queue?.resolve(task, { sourceId: r.source?.id ?? null, reason: r.reason });
+    } else {
+      await this.companies?.recordDiscovery({ domain, name: task.payload?.companyName, outcome: r.reason });
+      await this.queue?.fail(task, { errorClass: r.errorClass || ERROR_CLASS.PARSE_FAILED, reason: r.reason });
+    }
+    return { ok: r.ok, taskId: task.id, kind: task.kind, created: r.created, source: sourceBrief(r.source), reason: r.reason };
+  }
+
+  async processCareersUrl(task) {
+    const url = normalizeUrl(task.payload?.careersUrl || String(task.key).split(':').slice(1).join(':'));
+    if (!url) {
+      await this.queue?.fail(task, { errorClass: ERROR_CLASS.PARSE_FAILED, reason: 'unusable careers url' });
+      return { ok: false, taskId: task.id, kind: task.kind, reason: 'unusable careers url' };
+    }
+    let page;
+    try {
+      page = await this.http.fetch(url, { maxBytes: 1024 * 1024, retries: 0 });
+    } catch (e) {
+      await this.queue?.fail(task, { errorClass: e?.errorClass || ERROR_CLASS.NETWORK, reason: e?.message });
+      return { ok: false, taskId: task.id, kind: task.kind, reason: e?.message };
+    }
+
+    /* A careers page is also a source of NEW leads — boards it links to, and
+       further careers pages. Feed them back into the queue. */
+    if (this.queue) {
+      await this.queue.enqueueMany(leadsFromPage(page.text, page.url, {
+        extractAtsLinks, careerHints: CAREER_PATH_HINTS,
+      }));
+    }
+
+    const ats = detectAts(page.url, page.text);
+    if (ats.detected && ats.provider !== PROVIDER.GENERIC && ats.tenant) {
+      const r = await this.registerAts({
+        provider: ats.provider, tenant: ats.tenant,
+        companyName: task.payload?.companyName ?? extractMeta(page.text, page.url).siteName,
+        companyDomain: task.payload?.companyDomain ?? registrableDomain(page.url),
+        careersUrl: page.url,
+        discoveredFrom: task.discoveredFrom,
+      });
+      if (r.ok) {
+        await this.recordCompany(task, r, { provider: ats.provider, tenant: ats.tenant, domain: registrableDomain(page.url) });
+        await this.queue?.resolve(task, { sourceId: r.source?.id ?? null, reason: r.reason });
+      } else {
+        await this.queue?.fail(task, { errorClass: ERROR_CLASS.PARSE_FAILED, reason: r.reason });
+      }
+      return { ok: r.ok, taskId: task.id, kind: task.kind, source: sourceBrief(r.source), reason: r.reason };
+    }
+
+    const g = await this.registerGeneric({
+      careersUrl: page.url,
+      companyName: task.payload?.companyName ?? extractMeta(page.text, page.url).siteName,
+      companyDomain: task.payload?.companyDomain ?? registrableDomain(page.url),
+      discoveredFrom: task.discoveredFrom,
+    });
+    if (g.ok) {
+      await this.recordCompany(task, g, { domain: registrableDomain(page.url) });
+      await this.queue?.resolve(task, { sourceId: g.source?.id ?? null, reason: g.reason });
+    } else {
+      /* robots DENY is permanent — the queue marks it DEAD and stops asking. */
+      await this.queue?.fail(task, {
+        errorClass: /robots/i.test(g.reason || '') ? ERROR_CLASS.ROBOTS_DENIED : ERROR_CLASS.PARSE_FAILED,
+        reason: g.reason,
+      });
+    }
+    return { ok: g.ok, taskId: task.id, kind: task.kind, source: sourceBrief(g.source), reason: g.reason };
+  }
+
+  /** Sitemaps are the cheapest bulk source of career-page leads a site offers. */
+  async processSitemap(task) {
+    const url = normalizeUrl(task.payload?.sitemapUrl || String(task.key).split(':').slice(1).join(':'));
+    if (!url) {
+      await this.queue?.fail(task, { errorClass: ERROR_CLASS.PARSE_FAILED, reason: 'unusable sitemap url' });
+      return { ok: false, taskId: task.id, kind: task.kind, reason: 'unusable sitemap url' };
+    }
+    let page;
+    try {
+      page = await this.http.fetch(url, {
+        maxBytes: 4 * 1024 * 1024,
+        retries: 0,
+        accept: 'application/xml,text/xml',
+        allowedContentTypes: ['application/xml', 'text/xml', 'text/plain', 'application/rss+xml'],
+      });
+    } catch (e) {
+      await this.queue?.fail(task, { errorClass: e?.errorClass || ERROR_CLASS.NETWORK, reason: e?.message });
+      return { ok: false, taskId: task.id, kind: task.kind, reason: e?.message };
+    }
+
+    const urls = extractSitemapUrls(page.text);
+    const leads = [];
+    if (isSitemapIndex(page.text)) {
+      /* A sitemap index: queue the child sitemaps that look job-related, and
+         only those — following every sitemap on a large site is a crawl we have
+         no business running. */
+      for (const child of filterJobSitemapUrls(urls).slice(0, 20)) {
+        leads.push({
+          kind: DISCOVERY_KIND.SITEMAP, value: child, payload: { sitemapUrl: child },
+          confidence: 0.5, priority: 40, discoveredFrom: task.discoveredFrom,
+        });
+      }
+    } else {
+      for (const jobUrl of filterJobSitemapUrls(urls).slice(0, 50)) {
+        leads.push({
+          kind: DISCOVERY_KIND.CAREERS_URL, value: jobUrl, payload: { careersUrl: jobUrl },
+          confidence: 0.4, priority: 25, discoveredFrom: task.discoveredFrom,
+        });
+      }
+    }
+    const seeded = this.queue ? await this.queue.enqueueMany(leads) : { created: 0 };
+    await this.queue?.resolve(task, { reason: `sitemap yielded ${seeded.created} new leads` });
+    return { ok: true, taskId: task.id, kind: task.kind, seeded: seeded.created, reason: `sitemap yielded ${seeded.created} new leads` };
+  }
+
+  async recordCompany(task, result, { provider = null, tenant = null, domain = null } = {}) {
+    if (!this.companies) return null;
+    const source = result.source || null;
+    return this.companies.upsert({
+      name: task.payload?.companyName ?? source?.companyName ?? null,
+      domain: domain || task.payload?.companyDomain || source?.companyDomain || null,
+      careersUrl: source?.careersUrl ?? null,
+      atsProvider: provider || source?.provider || null,
+      atsTenant: tenant || source?.tenant || null,
+      sourceIds: source?.id ? [source.id] : [],
+    }, { source: `discovery:${task.kind}`, confidence: task.confidence ?? 0.6 });
+  }
+
   stats() { return { ...this.metrics, negativeCacheSize: this.attempted.size }; }
+}
+
+function sourceBrief(source) {
+  if (!source) return null;
+  return { id: source.id, provider: source.provider, tenant: source.tenant };
 }
 
 export default SourceDiscoveryEngine;

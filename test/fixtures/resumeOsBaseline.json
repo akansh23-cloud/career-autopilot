@@ -1,0 +1,570 @@
+{
+  "generatedAt": "2026-08-14T15:08:09.345Z",
+  "source": "phase1.1-hardened pristine package",
+  "files": {
+    "test/resumeActionProvenance.test.js": {
+      "passing": 28,
+      "failing": 0,
+      "passingNames": [
+        "contribution openers do not authorize a specific action",
+        "non-engineering contribution is treated identically",
+        "participating in a migration is not performing it",
+        "helping with deployment is not deploying",
+        "a nominalization under a CONTRIBUTION opener authorizes nothing",
+        "cross-family action switching still fails",
+        "a nominalization under a RESPONSIBILITY opener authorizes its verb",
+        "an explicit inner verb is a responsibility paraphrase",
+        "a responsibility paraphrase does not authorize neighbouring actions",
+        "registered equivalents pass; unregistered ones do not",
+        "contribution-level rewrites stay available",
+        "the nominalization map is explicit and covers the audited nouns",
+        "technology presence never establishes an action",
+        "rankAuthorizedVerbs reorders but never introduces a verb",
+        "rankAuthorizedVerbs still does its ranking job",
+        "an empty authorized set yields no verbs at all",
+        "verbObjectFit still scores collocation strength",
+        "the composer accepts no invented action for a contribution bullet",
+        "the composer still offers a stronger contribution-level rewrite",
+        "actionProvenance is a mandatory verdict on the truth sheet",
+        "summaries are NOT_APPLICABLE, not NOT_RUN",
+        "adverb-prefixed unsupported actions cannot hide from provenance",
+        "passive voice unsupported actions cannot hide from provenance",
+        "passive voice preserves an explicitly evidenced action",
+        "combined truth gate blocks adverb and passive action-provenance bypasses",
+        "contribution-safe composer restores the source determiner",
+        "worked-on contribution wording prefers contribution language and never overstates operational support",
+        "worked-with association cannot become an unsupported support claim"
+      ],
+      "failingNames": []
+    },
+    "test/resumeImport.test.js": {
+      "passing": 10,
+      "failing": 0,
+      "passingNames": [
+        "legacy extraction collapsed a page into ONE line — the whole bug",
+        "legacy extraction made section detection impossible",
+        "reconstruction recovers one line per baseline",
+        "reconstruction keeps same-baseline fragments together",
+        "reconstruction inserts spaces only at real gaps",
+        "letter-spaced headings are repaired",
+        "short letter sequences are NOT collapsed",
+        "sections are recoverable end-to-end after the fix",
+        "multi-page documents keep a blank-line boundary between pages",
+        "empty or text-free pages degrade quietly rather than throwing"
+      ],
+      "failingNames": []
+    },
+    "test/resumeNarrative.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/resumeNarrativeRoutes.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/resumeOs.test.js": {
+      "passing": 28,
+      "failing": 0,
+      "passingNames": [
+        "registry ships the 8 required legacy templates (V3 set is additive) with full metadata",
+        "no template carries a fake ATS score number anywhere",
+        "visual template is honestly flagged non-ATS-first; ATS templates carry the label",
+        "broken legacy ids (incl. two-column) map to safe new templates",
+        "role/JD recommendation picks sensible templates with a reason",
+        "parseResumeText + toStructuredResume produce the structured model",
+        "skill grouping buckets correctly, incl. DevOps grouped categories",
+        "paginator: everything fits on one page when it fits",
+        "paginator: keepWithNext headings never strand at a page bottom",
+        "paginator: bullet lists split with orphan/widow control and lose nothing",
+        "paginator: oversize atomic blocks are reported, never silently dropped",
+        "buildResumeBlocks uses standard ATS section names and marks headings keepWithNext",
+        "validator geometry: overlap, containment and orphan headings",
+        "density floor respects 9.5px minimum readability",
+        "one-page fit plan steps density first, then content, never silent cropping",
+        "fresher section order leads with education and projects",
+        "content quality flags weak phrases, skill dumps and missing metrics",
+        "JD recommendation surfaces matched/missing keywords + template",
+        "all 8 sample fixtures exist and are structurally valid",
+        "custom uploaded template builds registry shape with labels, no fake score",
+        "resume score comes from the backend scoring engine, not template metadata",
+        "VALIDATION_HOST_STYLE hides via opacity, never visibility:hidden",
+        "isHiddenForValidation truth table is baseline-aware",
+        "canExportLayout blocks pending and invalid reports, allows valid ones",
+        "buildEditorHandoff maps legacy template ids and defaults length to Auto",
+        "scoreResume returns 0–100 score/ats plus a deterministic qualityChecks array",
+        "qualityChecks flags weak bullets and missing metrics on a bad sample",
+        "qualityChecks stays clean of bullet/metric flags on a strong resume"
+      ],
+      "failingNames": []
+    },
+    "test/resumeOsCoreArchitecture.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/resumeOsV3.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/resumeOsV4.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/resumeRenderIntegrationStatic.test.js": {
+      "passing": 8,
+      "failing": 0,
+      "passingNames": [
+        "Resume Studio normal PDF export uses canonical server renderer",
+        "client uses canonical PDF endpoints",
+        "both server export surfaces delegate to ResumeRenderService",
+        "legacy and Template OS previews share the Template OS compiler used by export",
+        "Playwright is a production dependency for the Chromium provider",
+        "Editor built-in PDF export uses canonical server renderer",
+        "template preview modal built-in PDF export uses canonical server renderer",
+        "Editor preview uses canonical Template OS compiler for built-in templates"
+      ],
+      "failingNames": []
+    },
+    "test/resumeRenderService.test.js": {
+      "passing": 3,
+      "failing": 1,
+      "passingNames": [
+        "auto renderer uses vector for compatible Latin resume and preserves selectable text",
+        "unicode detection prevents vector character loss",
+        "render signature is stable for unchanged document/template"
+      ],
+      "failingNames": [
+        "auto renderer uses an HTML Unicode provider and preserves Devanagari text"
+      ]
+    },
+    "test/resumeResponsibilityScope.test.js": {
+      "passing": 14,
+      "failing": 0,
+      "passingNames": [
+        "responsibility: the three examples the brief calls out by name",
+        "responsibility: seniority makes strong language plausible, not true",
+        "responsibility: language may still be improved WITHIN the evidenced level",
+        "responsibility: genuine ownership evidence is not suppressed",
+        "responsibility: authority claimed against a silent source fails closed",
+        "responsibility: execution verbs are not authority claims",
+        "responsibility: level parsing prefers the longest matching phrase",
+        "responsibility: a student ceiling caps the whole scale",
+        "responsibility: the composer no longer emits the inflated candidate",
+        "scope: a technology from another record cannot enter this one",
+        "scope: the failure is attributed to skillContext, not caught by accident",
+        "scope: an umbrella term for THIS record stays permitted",
+        "scope: a technology this record does evidence is untouched",
+        "scope: a technology on no record at all is still fabrication, not leakage"
+      ],
+      "failingNames": []
+    },
+    "test/resumeTailoringAdversarial.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/resumeTailoringCanonical.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/templateAdminAuthorizationPhase23.test.js": {
+      "passing": 6,
+      "failing": 0,
+      "passingNames": [
+        "Phase 23 authorization policy separates runtime catalog reads from builder administration",
+        "Phase 23 API wiring makes every Template Builder operation server-admin-only",
+        "Template Builder trusts the server access probe and binds save/certify/publish to an exact stored version",
+        "Template store can bind a deep certification to the exact immutable version without creating another version",
+        "admin audit projection is bounded and never carries request bodies or user-controlled nested data",
+        "Phase 23 vocabulary adds precise technical and professional alternatives while all role actions remain recognized"
+      ],
+      "failingNames": []
+    },
+    "test/templateBalancedTwoColumnPremium.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "Phase 9 Balanced Two Column uses premium 38/62 narrative composition",
+        "Balanced Two Column HTML keeps reference and narrative regions distinct with a gutter rule",
+        "Balanced Two Column vector PDF mirrors premium split without stealing column width",
+        "Balanced Two Column keeps narrative sections on right and reference sections on left"
+      ],
+      "failingNames": []
+    },
+    "test/templateBuilderLifecyclePhase24.test.js": {
+      "passing": 8,
+      "failing": 0,
+      "passingNames": [
+        "Phase 24 lifecycle is an explicit Draft → Validating → Certified → Approved → Published state machine",
+        "lifecycle summary exposes release gates without pretending an uncertified draft is production-ready",
+        "definition fingerprint ignores lifecycle metadata but treats license/design changes as real content edits",
+        "template store preserves lifecycle history and published v1 while a content edit forks immutable v2",
+        "Phase 24 server exposes version history and enforces approval before publication",
+        "Template Builder shows lifecycle gates, version history, explicit approval, and safe published forks",
+        "Mongo persistence records base version, lifecycle history, approval and publication metadata",
+        "Phase 24 vocabulary expands precise action families and keeps every role verb grammar-recognized"
+      ],
+      "failingNames": []
+    },
+    "test/templateCachedPreviews.test.js": {
+      "passing": 8,
+      "failing": 0,
+      "passingNames": [
+        "preview cache has explicit versioning and stable URL invalidation",
+        "every static Resume Studio template has a real cached PNG at gallery size",
+        "Template OS premium builtins are cached from the actual vector PDF renderer",
+        "legacy/V3/V4 Resume Studio previews use the actual renderer block markup + CSS",
+        "legacy Resume Editor gallery has cached output from its real HTML renderer",
+        "preview fixtures are deterministic and role-aware without AI/user data",
+        "Resume Studio uses cached previews first and keeps SVG only as fallback",
+        "legacy Editor template cards use image cache and do not create live iframes unless cache fails"
+      ],
+      "failingNames": []
+    },
+    "test/templateCampusPortfolioPremium.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "Phase 13 Campus Portfolio is education/project-first with a compact student rail",
+        "Campus HTML uses grouped skills, featured education and project portfolio hierarchy without pill/progress UI",
+        "Campus vector PDF keeps targeted student resume one-page with content-height rail and education/project content",
+        "Campus full project-heavy fixture remains within declared two-page capability"
+      ],
+      "failingNames": []
+    },
+    "test/templateCareerStageComposition.test.js": {
+      "passing": 9,
+      "failing": 0,
+      "passingNames": [
+        "Phase 20 career stage normalizes historical vocabulary into one canonical ladder",
+        "career stage detection uses role intent first and tenure as deterministic fallback",
+        "template recommendation scores historical professional metadata as an exact mid-career fit",
+        "ResumeShape exposes the canonical career stage for layout adaptation",
+        "premium page composition fills accidental footer whitespace without shrinking typography or creating a second page",
+        "composition pass leaves already dense or multi-page content alone rather than compressing it",
+        "PDF writer reports exact per-page usage telemetry for composition verification",
+        "owned PDF pagination rebalances an orphan second page by moving a whole late section",
+        "Phase 20 deterministic vocabulary adds stronger same-meaning choices and stage-aware summary families"
+      ],
+      "failingNames": []
+    },
+    "test/templateCloudInfrastructureProPremium.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Phase 11 Cloud Infrastructure Pro is structurally distinct from Technical Sidebar",
+        "Cloud HTML uses certification-first right rail and labelled stack context",
+        "Cloud vector PDF keeps main narrative wide and content-sized right rail"
+      ],
+      "failingNames": []
+    },
+    "test/templateContentAwareAdaptation.test.js": {
+      "passing": 6,
+      "failing": 0,
+      "passingNames": [
+        "ResumeShape v2 understands renderer-structured resumes and exposes adaptation pressure",
+        "sparse technical rail yields page width back to narrative and honors declared fallbacks only",
+        "dense skills compact rail rhythm without reducing the base body typography",
+        "project-heavy student uses compact project geometry while retaining student project semantics",
+        "experience-heavy two-column resume prioritizes the narrative column",
+        "actual PDF consumes the adapted column geometry rather than the static template widths"
+      ],
+      "failingNames": []
+    },
+    "test/templateContentBudgetPropagation.test.js": {
+      "passing": 7,
+      "failing": 1,
+      "passingNames": [
+        "TemplateDefinition contentBudget survives projection into Resume OS registry card",
+        "all premium Template OS builtins expose a complete one/two-page capacity contract",
+        "budgetForTemplate reads direct and nested TemplateDefinition contracts and normalizes ATS aliases",
+        "summary capacity follows the selected template region width and declared line budget",
+        "content plan enforces template-specific experience, project, skill, certification and achievement capacity",
+        "ranking now provides deterministic certification and achievement value for budget selection",
+        "vocabulary library expands precise deterministic alternatives without adding facts"
+      ],
+      "failingNames": [
+        "Tailor for Job passes selected template summary capacity into deterministic compiler"
+      ]
+    },
+    "test/templateDensityModes.test.js": {
+      "passing": 5,
+      "failing": 0,
+      "passingNames": [
+        "premium density vocabulary maps legacy ResumeDocument values without changing storage",
+        "density modes change spacing and margins monotonically while preserving typography",
+        "template hand-tuned base spacing is preserved when no explicit density is requested",
+        "HTML and PDF consume the same density contract",
+        "compact/balanced/spacious alter metadata rhythm without changing font safety"
+      ],
+      "failingNames": []
+    },
+    "test/templateDslSecurityPhase22.test.js": {
+      "passing": 7,
+      "failing": 0,
+      "passingNames": [
+        "Phase 22 strict DSL security validates all builtins against a closed allowlist",
+        "strict sanitizer rejects unknown fields and every CSS-reachable injection path",
+        "strict sanitizer rejects prototype-manipulation, deep JSON and oversized arrays fail-closed",
+        "package CSS is palette-only and package path/image guards are fail-closed",
+        "premium composition never invents optional sections to consume whitespace",
+        "Project OS seed can preserve up to four distinct source-backed project pointers without inventing text",
+        "Phase 22 vocabulary expands precise role language while every configured role verb remains recognized"
+      ],
+      "failingNames": []
+    },
+    "test/templateEditorialProfessionalPremium.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Phase 10 Editorial Professional uses premium single-column editorial primitives",
+        "Editorial HTML uses narrower narrative measure, lead summary and inline hairline headings",
+        "Editorial vector PDF mirrors narrowed flow and editorial heading rules"
+      ],
+      "failingNames": []
+    },
+    "test/templateExecutiveTechnologyPremium.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Phase 12 registers a true Executive Technology template with leadership-first content order",
+        "Executive HTML uses inverse leadership band, impact-led experience, restrained skill rows and premium narrative measure",
+        "Executive vector PDF preserves senior content in one or two readable A4 pages"
+      ],
+      "failingNames": []
+    },
+    "test/templateExperienceDesign.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "shared experience contract defines premium stacked role/date/company hierarchy",
+        "HTML experience separates role/date from company/location and applies hanging bullet rhythm",
+        "vector PDF keeps dates on the role line and company/location immediately below in semantic stream",
+        "compact student experience remains an explicit inline mode instead of inheriting senior spacing"
+      ],
+      "failingNames": []
+    },
+    "test/templateFamilyExpansionPhase30.test.js": {
+      "passing": 6,
+      "failing": 0,
+      "passingNames": [
+        "Phase 30 expands Template OS to fourteen published builtins across distinct families",
+        "every expanded family validates and passes deterministic parse certification",
+        "expanded families are structurally distinct rather than palette-only clones",
+        "new families do not invent empty optional sections to fill whitespace",
+        "Phase 30+ reference family preview cache covers all 51 Resume Studio templates",
+        "resume vocabulary expands while every role-specific action remains grammar-recognized"
+      ],
+      "failingNames": []
+    },
+    "test/templateFlagshipPhase29.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Phase 29 ships a published Career Autopilot flagship TemplateDefinition",
+        "flagship renders a dense engineering fixture as a premium owned PDF",
+        "flagship earns strong multi-parser extraction rather than a decorative-only score"
+      ],
+      "failingNames": []
+    },
+    "test/templateFullResumeDocumentSections.test.js": {
+      "passing": 8,
+      "failing": 0,
+      "passingNames": [
+        "Phase 21 DSL and canonical compiler cover every canonical ResumeDocument section",
+        "TemplateDefinition can explicitly place new sections in approved regions",
+        "ResumeDocument bridge exposes optional sections directly without losing legacy extraSections compatibility",
+        "HTML renders all optional sections, custom titles and additional contact links with premium semantic markup",
+        "vector PDF renders the full optional section surface and stays within the template two-page capability",
+        "ResumeShape v4 counts optional-section pressure and reading-order anchors cover the new content",
+        "registry cards advertise the complete section surface for runtime templates",
+        "Phase 21 vocabulary recognizes previously role-listed verbs and adds precise same-meaning families"
+      ],
+      "failingNames": []
+    },
+    "test/templateGeneratorDiversityPhase25.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "Phase 25 generator returns structurally diverse deterministic candidates",
+        "Phase 25 generator prefers a new archetype before cosmetic variants",
+        "Phase 25 preserves student-first section priorities even in non-student archetypes",
+        "generated candidates remain valid, non-production TemplateDefinitions"
+      ],
+      "failingNames": []
+    },
+    "test/templateGeneratorUiPhase26.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Phase 26 Template Builder exposes deterministic generator controls and diversity evidence",
+        "Phase 26 generator UI loads candidates into normal lifecycle rather than publishing directly",
+        "Phase 26 server generator returns structural evidence with definitions"
+      ],
+      "failingNames": []
+    },
+    "test/templateHeaderSystem.test.js": {
+      "passing": 7,
+      "failing": 0,
+      "passingNames": [
+        "Phase 8 exposes five genuinely distinct premium header primitives",
+        "builtin families use distinct header systems rather than color-only variants",
+        "Technical header shares vertical-accent + grid contract across HTML and PDF",
+        "Corporate header renders split identity/contact geometry",
+        "Editorial header is compact inline editorial hierarchy, not stacked contact rows",
+        "Student header uses centered short accent signature while preserving one-page fixture",
+        "Executive header renders an inverse full-width band without changing resume facts"
+      ],
+      "failingNames": []
+    },
+    "test/templateMultiParserAtsPhase27.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "Phase 27 parses actual text-placement operators from the owned vector PDF",
+        "single-column flagship remains robust across all parser models",
+        "multi-column certification reports visual-order risk without pretending named ATS behavior",
+        "main certification contract is explicitly multi-parser aware"
+      ],
+      "failingNames": []
+    },
+    "test/templateOs.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/templateOsGaps.test.js": {
+      "passing": 0,
+      "failing": 0,
+      "passingNames": [],
+      "failingNames": []
+    },
+    "test/templateOwnedPaginationPhase28.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Phase 28 exposes owned semantic pagination telemetry",
+        "semantic heading/role groups are protected before the page break",
+        "premium two-page rebalance still moves a complete late section instead of individual lines"
+      ],
+      "failingNames": []
+    },
+    "test/templateProjectPresentation.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "shared project contract defines metadata, verification and bullet geometry",
+        "HTML projects separate name, verification, stack, link and impact bullets",
+        "vector PDF keeps project name, verified state, stack, link and bullets in a clean semantic sequence",
+        "compact project primitive preserves the two-bullet content budget"
+      ],
+      "failingNames": []
+    },
+    "test/templateReferencePremiumFamilies.test.js": {
+      "passing": 5,
+      "failing": 0,
+      "passingNames": [
+        "reference premium expansion adds nine published Template OS families",
+        "soft-chip families keep skill text semantic while rendering premium tokens",
+        "midnight rail carries an inverse high-contrast sidebar contract in both renderers",
+        "reference families remain parser-readable and do not synthesize empty resume sections",
+        "preview manifest includes every reference family when cache is generated"
+      ],
+      "failingNames": []
+    },
+    "test/templateRenderParity.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "shared render design resolves the same geometry contract for HTML and PDF",
+        "technical PDF honors grid-style contact layout instead of flattening it to one generic line",
+        "editorial PDF honors inline contact layout while HTML uses the same resolved spacing",
+        "PDF and HTML share the same header/sidebar visual token choices"
+      ],
+      "failingNames": []
+    },
+    "test/templateRuntimeCatalog.test.js": {
+      "passing": 5,
+      "failing": 0,
+      "passingNames": [
+        "Phase 17 client catalog: only published production rows install; static catalog is not mutated",
+        "Phase 17 client catalog: newer stored definition replaces same static id; builtin snapshot is skipped",
+        "Phase 17 server catalog: stored drafts are invisible until published; published definition participates in resolution",
+        "Phase 17 runtime-only card renders through Template OS and participates in deterministic ranking",
+        "Phase 17 wiring: catalog API returns definitions and Resume Studio consumes merged runtime catalog with preview fallback"
+      ],
+      "failingNames": []
+    },
+    "test/templateSkillsSystem.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "premium skill primitives cover compact sidebar groups, categorized lists, matrix and inline rows",
+        "Technical Sidebar renders categorized pill-free skill runs instead of one database row per skill",
+        "shared skill render contract keeps technical rail compact and readable in vector PDF",
+        "professional skill modes retain category meaning without pill UI"
+      ],
+      "failingNames": []
+    },
+    "test/templateTechnicalSidebarPremium.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "Technical Sidebar flagship uses premium content-aware rail geometry",
+        "HTML technical rail uses two-column contact grid and restrained rail headings",
+        "PDF technical rail stops near its content rather than painting to the page foot"
+      ],
+      "failingNames": []
+    },
+    "test/templateTypography.test.js": {
+      "passing": 3,
+      "failing": 0,
+      "passingNames": [
+        "premium typography resolves to readable PDF-scale body text and semantic hierarchy",
+        "technical PDF typography uses controlled mono contact font and remains one page on flagship fixture",
+        "editorial preset retains serif identity while using the premium scale"
+      ],
+      "failingNames": []
+    },
+    "test/templateVersionPinning.test.js": {
+      "passing": 9,
+      "failing": 0,
+      "passingNames": [
+        "template store caches the database-authoritative version after process restart",
+        "canonical ResumeDocument preserves an exact templateVersion and keeps legacy docs unpinned",
+        "server runtime catalog resolves latest and exact historical versions independently",
+        "pinDocument migrates legacy docs once but never upgrades an existing pin",
+        "client catalog can hydrate historical v1 while keeping v2 as latest gallery card",
+        "template recommendations carry the exact template version selected",
+        "static template version helper is deterministic",
+        "Resume Studio source pins version on selection, preview and export paths",
+        "persistence schema and runtime server routes carry templateVersion"
+      ],
+      "failingNames": []
+    },
+    "test/templateVisualPrimitives.test.js": {
+      "passing": 4,
+      "failing": 0,
+      "passingNames": [
+        "technical templates resolve reusable premium visual primitives",
+        "HTML renderer applies shared header, sidebar, certification, project, and badge treatments",
+        "vector PDF emits reusable line primitives while preserving searchable text",
+        "editorial layouts retain restrained hairline/short-rule visual identity without sidebar decoration"
+      ],
+      "failingNames": []
+    }
+  }
+}

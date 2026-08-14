@@ -20,7 +20,14 @@ export const RELATION_WEIGHT = Object.freeze({
   ALIAS: 0.85,
   STRONG: 0.62,
   RELATED: 0.38,
+  /* Second-degree adjacency, derived rather than hand-listed: a family reachable
+     only through another family's STRONG edge. Present so a thin result set can
+     be widened honestly, at a weight low enough that it can never outrank a
+     real family match. */
+  WEAK: 0.16,
 });
+
+export const RELATION_ORDER = Object.freeze(['EXACT', 'ALIAS', 'STRONG', 'RELATED', 'WEAK_RELATED']);
 
 /**
  * Each family: canonical label, aliases (same job, different words),
@@ -457,21 +464,59 @@ export function resolveFamilies(text) {
  * Weighted expansion for a query. Returns a Map familyId -> { weight, relation }.
  * Exact/alias/strong/related weights are DISTINCT so ranking can reflect them.
  */
-export function expandQuery(text) {
+export function expandQuery(text, { includeWeak = true, extraFamilies = [] } = {}) {
   const { families } = resolveFamilies(text);
+  const seeds = [...new Set([...families, ...extraFamilies])].filter((id) => ROLE_FAMILIES[id]);
+  return expandFamilies(seeds, { includeWeak });
+}
+
+/**
+ * Weighted expansion from an explicit seed set. Kept separate from expandQuery
+ * so query understanding can contribute families discovered from technology
+ * tokens ("kubernetes", "aws") without re-parsing the string.
+ */
+export function expandFamilies(seeds = [], { includeWeak = true } = {}) {
   const out = new Map();
   const put = (id, weight, relation) => {
     if (!ROLE_FAMILIES[id]) return;
     const prev = out.get(id);
     if (!prev || prev.weight < weight) out.set(id, { weight, relation });
   };
-  for (const id of families) {
+  for (const id of seeds) {
     put(id, RELATION_WEIGHT.EXACT, 'EXACT');
     const def = ROLE_FAMILIES[id];
     for (const s of def.strong || []) put(s, RELATION_WEIGHT.STRONG, 'STRONG');
     for (const r of def.related || []) put(r, RELATION_WEIGHT.RELATED, 'RELATED');
   }
+  if (!includeWeak) return out;
+
+  /* Second degree: reachable only through a STRONG edge of a STRONG neighbour.
+     Derived, so adding a family never requires hand-maintaining a weak list. */
+  const firstDegree = [...out.keys()];
+  for (const id of firstDegree) {
+    if (out.get(id).relation !== 'STRONG') continue;
+    for (const s of ROLE_FAMILIES[id]?.strong || []) {
+      if (out.has(s)) continue;
+      put(s, RELATION_WEIGHT.WEAK, 'WEAK_RELATED');
+    }
+  }
   return out;
+}
+
+/**
+ * Every family a free-text string can plausibly refer to, not just the single
+ * best one. "java backend" legitimately means JAVA_ENGINEER *and*
+ * BACKEND_ENGINEER; collapsing to one loses half the intent.
+ */
+export function resolveAllFamilies(text) {
+  const primary = resolveFamilies(text);
+  const set = new Set(primary.families);
+  const coreSet = new Set(coreTitleTokens(text));
+  const tokenSet = new Set(tokens(text));
+  for (const [need, familyId] of TOKEN_HINTS) {
+    if (need.every((t) => coreSet.has(t) || tokenSet.has(t))) set.add(familyId);
+  }
+  return { families: [...set], primary: primary.primary || [...set][0] || null, method: primary.method };
 }
 
 export function familyLabel(id) { return ROLE_FAMILIES[id]?.label || null; }
@@ -482,6 +527,6 @@ export function relationBetween(queryText, familyId) {
 }
 
 export default {
-  ROLE_FAMILIES, RELATION_WEIGHT, resolveFamilies, expandQuery,
-  familyLabel, relationBetween, coreTitleTokens,
+  ROLE_FAMILIES, RELATION_WEIGHT, RELATION_ORDER, resolveFamilies, resolveAllFamilies,
+  expandQuery, expandFamilies, familyLabel, relationBetween, coreTitleTokens,
 };

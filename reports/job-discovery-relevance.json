@@ -1,0 +1,438 @@
+{
+  "namespace": "FIXTURE",
+  "at": "2026-08-14T15:11:15.719Z",
+  "corpus": {
+    "jobs": 47,
+    "titles": 47
+  },
+  "thresholds": {
+    "minMeanNdcg": 0.9,
+    "minPerQueryNdcg": 0.75,
+    "maxIrrelevantLeaks": 0,
+    "maxOrderingFailures": 0
+  },
+  "summary": {
+    "benchmarks": 12,
+    "passed": 12,
+    "failed": 0,
+    "meanNdcg": 0.976,
+    "minNdcg": 0.936,
+    "worstBenchmark": "platform",
+    "irrelevantLeaks": []
+  },
+  "evaluations": [
+    {
+      "id": "devops",
+      "query": "DevOps Engineer",
+      "ndcg": 0.947,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "DevOps Engineer",
+        "CI/CD Engineer",
+        "Internal Platform Engineer",
+        "Site Reliability Engineer",
+        "AWS Engineer",
+        "Infrastructure Engineer",
+        "DevSecOps Engineer",
+        "Platform Engineer",
+        "Cloud Engineer",
+        "Backend Engineer"
+      ]
+    },
+    {
+      "id": "platform",
+      "query": "Platform Engineer",
+      "ndcg": 0.936,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Platform Engineer",
+        "Internal Platform Engineer",
+        "Site Reliability Engineer",
+        "Infrastructure Engineer",
+        "Kubernetes Engineer",
+        "CI/CD Engineer",
+        "DevOps Engineer",
+        "Backend Engineer",
+        "AWS Engineer",
+        "Cloud Engineer"
+      ]
+    },
+    {
+      "id": "java",
+      "query": "Java Developer",
+      "ndcg": 0.996,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Java Developer",
+        "Spring Boot Developer",
+        "Backend Engineer",
+        "Software Engineer",
+        "Full Stack Engineer",
+        "Android Engineer",
+        "React Developer",
+        "ETL Developer",
+        "React Native Developer",
+        "Frontend Engineer"
+      ]
+    },
+    {
+      "id": "data-engineer",
+      "query": "Data Engineer",
+      "ndcg": 0.936,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Data Engineer",
+        "ETL Developer",
+        "Backend Engineer",
+        "Data Scientist",
+        "Machine Learning Engineer",
+        "Applied Scientist",
+        "CI/CD Engineer",
+        "DevOps Engineer",
+        "Data Analyst",
+        "Full Stack Engineer"
+      ]
+    },
+    {
+      "id": "data-scientist",
+      "query": "Data Scientist",
+      "ndcg": 0.979,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Data Scientist",
+        "Applied Scientist",
+        "Data Analyst",
+        "Machine Learning Engineer",
+        "Data Engineer",
+        "ETL Developer",
+        "Business Analyst"
+      ]
+    },
+    {
+      "id": "product-manager",
+      "query": "Product Manager",
+      "ndcg": 0.996,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Product Manager",
+        "Product Owner",
+        "Program Manager",
+        "Product Designer",
+        "Business Analyst",
+        "Data Analyst"
+      ]
+    },
+    {
+      "id": "marketing",
+      "query": "Marketing Manager",
+      "ndcg": 1,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Marketing Manager",
+        "Digital Marketing Manager",
+        "Content Marketing Manager",
+        "Sales Manager"
+      ]
+    },
+    {
+      "id": "cloud",
+      "query": "Cloud Engineer",
+      "ndcg": 0.947,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Cloud Engineer",
+        "AWS Engineer",
+        "Internal Platform Engineer",
+        "Infrastructure Engineer",
+        "CI/CD Engineer",
+        "DevOps Engineer",
+        "Platform Engineer",
+        "Site Reliability Engineer",
+        "Systems Engineer",
+        "Cloud Architect"
+      ]
+    },
+    {
+      "id": "security",
+      "query": "Security Engineer",
+      "ndcg": 0.996,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Security Engineer",
+        "Application Security Engineer",
+        "DevSecOps Engineer",
+        "Infrastructure Engineer",
+        "Security Analyst",
+        "CI/CD Engineer",
+        "DevOps Engineer",
+        "Backend Engineer",
+        "Internal Platform Engineer",
+        "Site Reliability Engineer"
+      ]
+    },
+    {
+      "id": "qa",
+      "query": "QA Engineer",
+      "ndcg": 0.996,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "QA Engineer",
+        "SDET",
+        "Software Engineer",
+        "CI/CD Engineer",
+        "DevOps Engineer",
+        "Backend Engineer",
+        "Frontend Engineer",
+        "Full Stack Engineer",
+        "Internal Platform Engineer",
+        "Site Reliability Engineer"
+      ]
+    },
+    {
+      "id": "frontend",
+      "query": "Frontend Engineer",
+      "ndcg": 0.979,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Frontend Engineer",
+        "React Developer",
+        "Software Engineer",
+        "Full Stack Engineer",
+        "Mobile Engineer",
+        "Product Designer",
+        "React Native Developer",
+        "Backend Engineer",
+        "Internal Platform Engineer",
+        "Site Reliability Engineer"
+      ]
+    },
+    {
+      "id": "mobile",
+      "query": "Mobile Engineer",
+      "ndcg": 1,
+      "ordering": {
+        "ok": true,
+        "violations": []
+      },
+      "irrelevantReturned": false,
+      "returned": [
+        "Mobile Engineer",
+        "React Native Developer",
+        "Android Engineer",
+        "Frontend Engineer",
+        "Software Engineer",
+        "React Developer",
+        "Backend Engineer",
+        "Internal Platform Engineer",
+        "Site Reliability Engineer",
+        "Systems Engineer"
+      ]
+    }
+  ],
+  "understanding": [
+    {
+      "query": "Java backend",
+      "ok": true,
+      "misses": [],
+      "parsed": {
+        "roleText": "Java backend",
+        "families": [
+          "JAVA_ENGINEER",
+          "BACKEND_ENGINEER",
+          "SOFTWARE_ENGINEER",
+          "FULLSTACK_ENGINEER",
+          "ANDROID_ENGINEER",
+          "PYTHON_ENGINEER",
+          "NODE_ENGINEER",
+          "GOLANG_ENGINEER",
+          "DEVOPS_ENGINEER",
+          "DATA_ENGINEER",
+          "FRONTEND_ENGINEER"
+        ],
+        "techs": [
+          "java"
+        ],
+        "location": null,
+        "remote": null,
+        "seniority": []
+      }
+    },
+    {
+      "query": "AWS DevOps",
+      "ok": true,
+      "misses": [],
+      "parsed": {
+        "roleText": "AWS DevOps",
+        "families": [
+          "DEVOPS_ENGINEER",
+          "SRE",
+          "PLATFORM_ENGINEER",
+          "CLOUD_ENGINEER",
+          "INFRASTRUCTURE_ENGINEER",
+          "DEVSECOPS_ENGINEER",
+          "SYSTEMS_ENGINEER",
+          "KUBERNETES_ENGINEER",
+          "BACKEND_ENGINEER",
+          "CLOUD_ARCHITECT",
+          "SECURITY_ENGINEER"
+        ],
+        "techs": [
+          "aws"
+        ],
+        "location": null,
+        "remote": null,
+        "seniority": []
+      }
+    },
+    {
+      "query": "Remote data engineer India",
+      "ok": true,
+      "misses": [],
+      "parsed": {
+        "roleText": "data engineer",
+        "families": [
+          "DATA_ENGINEER",
+          "DATA_SCIENTIST",
+          "ML_ENGINEER",
+          "BACKEND_ENGINEER",
+          "DATA_ANALYST",
+          "DEVOPS_ENGINEER",
+          "JAVA_ENGINEER",
+          "PYTHON_ENGINEER",
+          "NODE_ENGINEER",
+          "GOLANG_ENGINEER",
+          "FULLSTACK_ENGINEER"
+        ],
+        "techs": [],
+        "location": "India",
+        "remote": "remote",
+        "seniority": []
+      }
+    },
+    {
+      "query": "platform engineer kubernetes",
+      "ok": true,
+      "misses": [],
+      "parsed": {
+        "roleText": "platform engineer kubernetes",
+        "families": [
+          "PLATFORM_ENGINEER",
+          "DEVOPS_ENGINEER",
+          "SRE",
+          "INFRASTRUCTURE_ENGINEER",
+          "KUBERNETES_ENGINEER",
+          "CLOUD_ENGINEER",
+          "BACKEND_ENGINEER",
+          "DEVSECOPS_ENGINEER"
+        ],
+        "techs": [
+          "kubernetes"
+        ],
+        "location": null,
+        "remote": null,
+        "seniority": []
+      }
+    },
+    {
+      "query": "fresher software engineer",
+      "ok": true,
+      "misses": [],
+      "parsed": {
+        "roleText": "fresher software engineer",
+        "families": [
+          "SOFTWARE_ENGINEER",
+          "BACKEND_ENGINEER",
+          "FULLSTACK_ENGINEER",
+          "FRONTEND_ENGINEER",
+          "QA_ENGINEER",
+          "DEVOPS_ENGINEER",
+          "MOBILE_ENGINEER",
+          "JAVA_ENGINEER",
+          "PYTHON_ENGINEER",
+          "NODE_ENGINEER",
+          "GOLANG_ENGINEER"
+        ],
+        "techs": [],
+        "location": null,
+        "remote": null,
+        "seniority": [
+          "ENTRY",
+          "INTERN"
+        ]
+      }
+    },
+    {
+      "query": "senior python developer in Pune",
+      "ok": true,
+      "misses": [],
+      "parsed": {
+        "roleText": "senior python developer",
+        "families": [
+          "PYTHON_ENGINEER",
+          "BACKEND_ENGINEER",
+          "SOFTWARE_ENGINEER",
+          "DATA_ENGINEER",
+          "ML_ENGINEER",
+          "JAVA_ENGINEER",
+          "NODE_ENGINEER",
+          "GOLANG_ENGINEER",
+          "FULLSTACK_ENGINEER",
+          "FRONTEND_ENGINEER"
+        ],
+        "techs": [
+          "python"
+        ],
+        "location": "Pune",
+        "remote": null,
+        "seniority": [
+          "SENIOR"
+        ]
+      }
+    }
+  ],
+  "pass": true
+}

@@ -20,6 +20,7 @@
    ============================================================ */
 
 import { expandQuery, resolveFamilies, RELATION_WEIGHT, coreTitleTokens } from './normalize/taxonomy.js';
+import { understandQuery, techRelevance } from './normalize/queryUnderstanding.js';
 import { tokens } from './normalize/text.js';
 import { locationCompatibility } from './normalize/location.js';
 import { salaryCompatibility } from './normalize/compensation.js';
@@ -35,15 +36,21 @@ export const WEIGHTS = Object.freeze({
   directApply: 6,
   completeness: 4,
   salary: 4,
+  /* Technology overlap. Deliberately small: it sharpens ordering INSIDE a
+     relevant role family, it never lifts an unrelated role into the results. */
+  tech: 6,
 });
 
 /** Tiered title relevance. Returns { score 0..1, relation, basis }. */
-export function titleRelevance(job, queryText) {
+export function titleRelevance(job, queryText, { expansion: providedExpansion = null, roleText = null } = {}) {
   const q = String(queryText || '').trim();
   if (!q) return { score: 0.5, relation: 'NO_QUERY', basis: 'no title query supplied' };
 
   const jobTitleNorm = coreTitleTokens(job.title || '').join(' ');
-  const queryNorm = coreTitleTokens(q).join(' ');
+  /* When query understanding has stripped location/work-model/seniority words,
+     match the ROLE remainder — "Remote data engineer India" must be able to
+     match the title "Data Engineer" exactly. */
+  const queryNorm = coreTitleTokens(roleText || q).join(' ');
 
   if (queryNorm && jobTitleNorm === queryNorm) {
     return { score: RELATION_WEIGHT.EXACT, relation: 'EXACT', basis: 'exact normalized title match' };
@@ -52,7 +59,7 @@ export function titleRelevance(job, queryText) {
     return { score: RELATION_WEIGHT.EXACT, relation: 'EXACT', basis: 'exact normalized title match' };
   }
 
-  const expansion = expandQuery(q);
+  const expansion = providedExpansion || expandQuery(q);
   const jobFamilies = new Set([job.titleFamily, ...(job.titleFamilies || [])].filter(Boolean));
 
   let best = null;
@@ -88,15 +95,35 @@ export function titleRelevance(job, queryText) {
   return { score: Math.min(0.3, ratio * 0.3), relation: 'WEAK', basis: `${overlap}/${qTok.size} title words overlap` };
 }
 
-/** Description/company/tag relevance — secondary to the title signal. */
-export function queryRelevance(job, queryText) {
-  const q = tokens(queryText || '');
-  if (!q.length) return { score: 0.5, basis: 'no query' };
-  const hay = new Set(tokens([
+/**
+ * Token set for one job, memoised.
+ *
+ * Ranking touches every candidate, and tokenising 3 KB of description per
+ * candidate per query dominated search latency at scale — it was the single
+ * largest cost in the 100k benchmark. The cache is a WeakMap keyed on the job
+ * object, so it costs nothing when a job is evicted and never has to be
+ * invalidated: an updated job is a NEW object from the store.
+ */
+const JOB_TOKEN_CACHE = new WeakMap();
+
+export function jobTokenSet(job) {
+  if (!job || typeof job !== 'object') return new Set();
+  const cached = JOB_TOKEN_CACHE.get(job);
+  if (cached) return cached;
+  const set = new Set(tokens([
     job.title, job.company?.name, job.department,
     (job.tags || []).join(' '),
     String(job.description?.text || '').slice(0, 3000),
   ].filter(Boolean).join(' ')));
+  JOB_TOKEN_CACHE.set(job, set);
+  return set;
+}
+
+/** Description/company/tag relevance — secondary to the title signal. */
+export function queryRelevance(job, queryText) {
+  const q = tokens(queryText || '');
+  if (!q.length) return { score: 0.5, basis: 'no query' };
+  const hay = jobTokenSet(job);
   if (!hay.size) return { score: 0, basis: 'no indexable text' };
   let hits = 0;
   for (const t of new Set(q)) if (hay.has(t)) hits += 1;
@@ -170,23 +197,38 @@ export function employmentCompatibility(job, wanted) {
  * @returns {{ overall, title, query, location, freshness, source, ...,
  *             excluded, exclusionReason, explanations }}
  */
-export function rankJob(job, criteria = {}, { now = Date.now() } = {}) {
-  const title = titleRelevance(job, criteria.q);
+export function rankJob(job, criteria = {}, { now = Date.now(), understanding = null } = {}) {
+  const u = understanding;
+  const title = titleRelevance(job, criteria.q, {
+    expansion: u?.familyWeights || null,
+    roleText: u?.roleText || null,
+  });
   const query = queryRelevance(job, criteria.q);
-  const location = locationCompatibility(job, criteria.location);
-  const remote = remoteCompatibility(job, criteria.remote);
+  const tech = techRelevance(job, u?.techs || []);
+  /* Understanding may recover an intent the caller never filtered on
+     ("Remote data engineer India" -> location India, remote). Those values
+     SCORE, but they never hard-exclude: the user typed a search box, not a
+     filter, and an inference is not permission to delete results. Only an
+     EXPLICIT criterion can exclude a job. */
+  const location = locationCompatibility(job, criteria.location ?? u?.location ?? null);
+  const remote = remoteCompatibility(job, criteria.remote ?? u?.remote ?? null);
   const salary = salaryCompatibility(job, criteria);
-  const employment = employmentCompatibility(job, criteria.employmentType);
+  const employment = employmentCompatibility(job, criteria.employmentType ?? u?.employmentType ?? null);
+  const explicit = {
+    location: criteria.location != null && criteria.location !== '',
+    remote: criteria.remote != null && criteria.remote !== '',
+    employmentType: criteria.employmentType != null && criteria.employmentType !== '',
+  };
   const fresh = freshnessScore(job, { now });
   const source = sourceScore(job);
   const apply = directApplyScore(job);
   const completeness = (job.completeness ?? 0) / 100;
 
   const hardFails = [];
-  if (!location.compatible) hardFails.push(`location: ${location.reason}`);
-  if (!remote.compatible) hardFails.push(`remote: ${remote.reason}`);
+  if (explicit.location && !location.compatible) hardFails.push(`location: ${location.reason}`);
+  if (explicit.remote && !remote.compatible) hardFails.push(`remote: ${remote.reason}`);
   if (!salary.compatible) hardFails.push(`salary: ${salary.reason}`);
-  if (!employment.compatible) hardFails.push(`employment type: ${employment.reason}`);
+  if (explicit.employmentType && !employment.compatible) hardFails.push(`employment type: ${employment.reason}`);
 
   const raw = (
     title.score * WEIGHTS.title
@@ -197,6 +239,7 @@ export function rankJob(job, criteria = {}, { now = Date.now() } = {}) {
     + apply.score * WEIGHTS.directApply
     + completeness * WEIGHTS.completeness
     + salary.score * WEIGHTS.salary
+    + tech.score * WEIGHTS.tech
   );
   const total = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
 
@@ -208,7 +251,7 @@ export function rankJob(job, criteria = {}, { now = Date.now() } = {}) {
      the word "Engineer". Quality may only AMPLIFY relevance, never substitute
      for it, so the composite is scaled by how relevant the role actually is.
      An exact match is unaffected (factor 1.0); a weak token overlap is damped. */
-  const relevance = Math.max(title.score, query.score * 0.8);
+  const relevance = Math.max(title.score, query.score * 0.8, tech.score * 0.55);
   const gate = criteria.q ? (0.35 + 0.65 * relevance) : 1;
   const overall = Math.round((raw / total) * 100 * gate);
 
@@ -221,6 +264,8 @@ export function rankJob(job, criteria = {}, { now = Date.now() } = {}) {
     source: Math.round(source.score * 100),
     directApply: Math.round(apply.score * 100),
     completeness: Math.round(completeness * 100),
+    tech: Math.round(tech.score * 100),
+    techHits: tech.hits,
     titleRelation: title.relation,
     freshnessBasis: fresh.basis,
     excluded: hardFails.length > 0,
@@ -234,14 +279,15 @@ export function rankJob(job, criteria = {}, { now = Date.now() } = {}) {
       employmentType: employment.reason,
       source: source.basis,
       directApply: apply.basis,
+      tech: tech.basis,
     },
   };
 }
 
 /** Is this role family relevant to the query at all? Used for cheap filtering. */
-export function familyRelevant(job, queryText) {
+export function familyRelevant(job, queryText, expansion0 = null) {
   if (!queryText) return true;
-  const expansion = expandQuery(queryText);
+  const expansion = expansion0 || expandQuery(queryText);
   if (!expansion.size) return true; // unresolvable query — fall back to text scoring
   for (const fam of [job.titleFamily, ...(job.titleFamilies || [])].filter(Boolean)) {
     if (expansion.has(fam)) return true;
@@ -249,9 +295,10 @@ export function familyRelevant(job, queryText) {
   return false;
 }
 
-export { resolveFamilies, expandQuery };
+export { resolveFamilies, expandQuery, understandQuery, techRelevance };
 
 export default {
   rankJob, titleRelevance, queryRelevance, sourceScore, directApplyScore,
   remoteCompatibility, employmentCompatibility, familyRelevant, WEIGHTS,
+  understandQuery, techRelevance,
 };

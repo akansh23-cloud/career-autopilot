@@ -1,3 +1,95 @@
+## Job Discovery OS — Phase 2: Scale Foundation
+
+Turns the phase-1.1 foundation into an autonomous discovery network. Optimised
+for jobs that are real, direct, fresh, deduplicated and findable — never for a
+larger job count.
+
+### Added
+- **Provider expansion to 20 ingest-ready connectors.** New: Workday (public
+  candidate-experience POST endpoint, offset pagination, bounded detail
+  enrichment), Oracle Recruiting CE, iCIMS, Taleo, BambooHR, Recruitee,
+  Personio (XML feed), Teamtailor, JazzHR, Jobvite, Pinpoint, Rippling, Zoho
+  Recruit. Comeet and SuccessFactors are detected and registered but report
+  `NOT_CONFIGURED` — neither publishes an unauthenticated listing endpoint.
+- **Spec-driven adapter engine** (`adapters/spec/`). Providers that differ only
+  in URL shape, field names and pagination are declared, not rewritten, so all
+  of them inherit identical conditional-request, error-classification,
+  authoritative-listing and provenance behaviour.
+- **Durable source-discovery queue** (`discoveryQueue.js`). Canonical dedupe
+  keys, exponential backoff, permanent-failure classification, 21-day recheck of
+  resolved leads. The same company is never rediscovered.
+- **Durable crawl queue** (`crawlQueue.js`). Idempotency keyed on
+  `(sourceId, due-window)`, worker leases with automatic reclaim, mid-crawl
+  checkpointing, jittered retries, dead-letter with retained errors, host-fair
+  ordering. Atomicity lives in the store, so it is distributed-safe on Mongo.
+- **Inverted search index** (`invertedIndex.js`). Dense doc ids, tombstoned
+  deletes with amortised compaction, precomputed scoring metadata. Retrieval
+  scores every match and quickselects the top N — never a blind first-N slice.
+- **Query understanding** (`normalize/queryUnderstanding.js`). Deterministic,
+  no LLM, no candidate data: role families, ~90 technology tokens, location,
+  remote intent and seniority parsed from free text.
+- **Adaptive verification** (`verificationPolicy.js`). Six tiers from URGENT
+  (1h) to DORMANT (30d), earned from age, source class, velocity, volatility and
+  status. Budget is spent highest-value first.
+- **CompanyRegistry** (`companyRegistry.js`). Confidence-ranked provenance;
+  short-circuits discovery for companies already resolved or repeatedly failed.
+- **Change intelligence** (`changeIntelligence.js`). Typed lifecycle events. An
+  edit updates one canonical record and can never become a duplicate.
+- **Source health & self-healing** (`sourceHealth.js`). Volume collapse, empty
+  board, parse-failure spike and schema-change detection.
+- **Namespaced coverage metrics** (`coverageMetrics.js`). `PRODUCTION` vs
+  `FIXTURE` enforced in code: unlabelled snapshots throw, cross-namespace merges
+  throw.
+- **Search quality evaluator** (`searchQualityEvaluator.js`) — 12 graded nDCG
+  benchmarks plus 6 query-understanding benchmarks.
+- **Deterministic 100k scale corpus** (`scaleCorpus.js`) and benchmark
+  (`scripts/job-discovery-scale.mjs`).
+- New gates: `SOURCE_EXPANSION_GATE`, `DISCOVERY_GATE`, `SEARCH_RELEVANCE_GATE`,
+  `SEARCH_SCALE_GATE`, `RESUME_OS_REGRESSION_GATE`.
+
+### Fixed
+- **A broken parser can no longer close a board's jobs.** Reconciliation now
+  requires both an authoritative complete listing *and* a credible run assessed
+  against the source's own history. Incredible runs mark the source `DEGRADED`,
+  record the anomaly, and retain every job untouched.
+- **A missing listing path is no longer an "authoritative empty board."** The
+  spec engine coerced an absent array to `[]`, which was licence to close every
+  job on the board; it is now classified `SCHEMA_CHANGED`.
+- **Workday tenant extraction skipped the locale segment.** `/en-US/External`
+  parsed as site `en-US`, producing board URLs that 404 for every job.
+- **`"Posted 3 Days Ago"` is never treated as a posting date.** Only Workday's
+  detail-endpoint `startDate` becomes one.
+- **Disjunctive filters no longer drive a scan from one branch.** Employment-type
+  filters include `UNKNOWN`; location filters include unrestricted remote roles.
+- **The location parser no longer invents cities.** "DevOps Engineer" was being
+  read as a city, emptying every result set; a city must now resolve to a real
+  country code.
+- **Dedupe candidate fan-out is bounded per blocking key**, with precise keys
+  ordered first, so a broad key cannot make ingestion an O(N) scan
+  (15 → 3,191 lookups/sec at 100k).
+- **Retrieval no longer re-derives title tokens and source authority per
+  matched document** (search P50 100 ms → 80 ms at 100k).
+
+### Validation
+- All 12 gates PASS: 200 job-discovery assertions + 247 Resume/Template OS
+  regression checks, 0 failures, 0 unattributed.
+- 100k benchmark: P50 79.6 ms, P95 141.7 ms, rare 1-in-100k titles retrieved at
+  rank 1, zero closed-job leaks, 687 MB (~7.2 KB/job).
+- Relevance: 12/12 ordering-clean, mean nDCG@5 0.976, zero irrelevant leaks,
+  6/6 query understanding.
+- Resume OS and Template OS compared against a baseline recorded from the
+  pristine pre-phase-2 package: no new failures. Two pre-existing failures are
+  reported as inherited and are unchanged.
+
+### Known limitations
+- **Real-world live coverage is NOT YET MEASURED** — every figure above is
+  fixture data measuring the engine, not job coverage.
+- Comeet and SuccessFactors require deployment-supplied credentials.
+- JSON-LD board providers are never authoritative, so absence there cannot close
+  a job.
+- Multi-worker operation is real only on the Mongo backend.
+- Candidate ↔ job intelligence remains out of scope.
+
 ## Job Discovery OS — Phase 1.1 Merge + Production Hardening
 
 ### Fixed

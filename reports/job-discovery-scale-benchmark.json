@@ -1,0 +1,179 @@
+{
+  "namespace": "FIXTURE",
+  "at": "2026-08-14T15:10:39.445Z",
+  "jobCount": 100000,
+  "normalization": {
+    "jobs": 100000,
+    "ms": 14629,
+    "jobsPerSec": 6836,
+    "composition": {
+      "duplicates": 7479,
+      "closed": 4686,
+      "stale": 2802,
+      "undated": 10955,
+      "aggregatorOnly": 13757,
+      "remoteRestricted": 10154,
+      "multiLocation": 10286,
+      "rare": 3
+    },
+    "companies": 4000,
+    "sources": 5200
+  },
+  "indexBuild": {
+    "ms": 7910,
+    "jobsPerSec": 12642,
+    "index": {
+      "docs": 100000,
+      "tombstones": 0,
+      "fieldTerms": 4123,
+      "bodyTerms": 29,
+      "families": 45,
+      "companies": 4000,
+      "cities": 16,
+      "countries": 8
+    }
+  },
+  "memory": {
+    "heapUsedMb": 692.8,
+    "corpusAndIndexMb": 687.4,
+    "bytesPerJob": 7208
+  },
+  "dedupe": {
+    "checks": 2000,
+    "hits": 320,
+    "ms": 627,
+    "checksPerSec": 3191
+  },
+  "search": {
+    "queries": 128,
+    "p50Ms": 79.58,
+    "p95Ms": 141.73,
+    "p99Ms": 150.78,
+    "maxMs": 154.28,
+    "meanCandidatesRanked": 738,
+    "maxCandidatesRanked": 750,
+    "meanIndexMatches": 33391,
+    "emptyResultQueries": 0
+  },
+  "rareTitleRetrieval": {
+    "findings": [
+      {
+        "title": "Quantum Compiler Engineer",
+        "presentInCorpus": true,
+        "found": true,
+        "rank": 1
+      },
+      {
+        "title": "Seismic Data Platform Engineer",
+        "presentInCorpus": true,
+        "found": true,
+        "rank": 1
+      },
+      {
+        "title": "Cryogenic Systems Technician",
+        "presentInCorpus": true,
+        "found": true,
+        "rank": 1
+      }
+    ],
+    "allFound": true
+  },
+  "closedJobLeak": {
+    "leaked": 0
+  },
+  "verificationSelection": {
+    "scanned": 20000,
+    "selected": 200,
+    "ms": 55,
+    "byTier": {
+      "URGENT": 200
+    }
+  },
+  "schedulerFairness": {
+    "tasks": 400,
+    "distinctHosts": 7,
+    "distinctHostsInFirst7": 7,
+    "fair": true
+  },
+  "coverage": {
+    "namespace": "FIXTURE",
+    "generatedAt": "2026-08-14T12:00:00.000Z",
+    "windowHours": 24,
+    "jobs": {
+      "activeCanonicalJobs": 92512,
+      "total": 100000,
+      "byStatus": {
+        "ACTIVE": 92512,
+        "REMOVED": 4686,
+        "STALE": 2802
+      },
+      "byProvider": {
+        "LEVER": 19766,
+        "API": 21236,
+        "GENERIC": 19579,
+        "GREENHOUSE": 19764,
+        "WORKDAY": 19655
+      },
+      "bySourceClass": {
+        "ORIGINAL_ATS": 59185,
+        "AGGREGATOR": 21236,
+        "ORIGINAL_CAREER_SITE": 19579
+      },
+      "new": 0,
+      "stale": 2802,
+      "removed": 4686
+    },
+    "sources": {
+      "registered": 5200,
+      "healthy": 5146,
+      "degraded": 54,
+      "failing": 54,
+      "byStatus": {
+        "DEGRADED": 54,
+        "ACTIVE": 5146
+      },
+      "sourceFailureRatePct": 1
+    },
+    "companies": {
+      "known": 4000,
+      "covered": 3000,
+      "coveragePct": 75
+    },
+    "discovery": {
+      "jobsDiscoveredPerDay": 5045,
+      "jobsDiscoveredInWindow": 5045,
+      "newJobsLastHour": 2506,
+      "medianDiscoveryAgeDays": 39,
+      "datedSampleSize": 57935,
+      "queue": null
+    },
+    "quality": {
+      "directSourceCount": 78764,
+      "directSourcePct": 78.8,
+      "directApplyCount": 78764,
+      "directApplyPct": 78.8,
+      "applyUrlCoveragePct": 100,
+      "withPublishedDatePct": 88.2,
+      "withSalaryPct": 23.2,
+      "verificationCoveragePct": 50.9,
+      "multiSourcedCount": 0,
+      "duplicateRatio": 1,
+      "duplicatesCollapsed": 0,
+      "changedInWindow": 0
+    },
+    "machine": {
+      "crawlQueue": null,
+      "browserFallbackPct": null,
+      "fetchSuccessRate": null,
+      "searchP50Ms": null,
+      "searchP95Ms": null
+    }
+  },
+  "thresholds": {
+    "p95Ms": 250,
+    "rareRecall": true,
+    "closedLeak": 0,
+    "fairness": true
+  },
+  "pass": true
+}

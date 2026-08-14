@@ -28,6 +28,9 @@ import {
   observeSeen, observeMissing, observeSourceFailure, applyContentChange,
 } from './freshness.js';
 import { ERROR_CLASS, SOURCE_STATUS, JOB_STATUS } from './schema.js';
+import { assessRun, mayReconcileMissing, healthStatusFor, anomalyRecord } from './sourceHealth.js';
+import { applyChangeIntelligence } from './changeIntelligence.js';
+import { applyVerificationSchedule } from './verificationPolicy.js';
 
 export class IngestPipeline {
   constructor({
@@ -50,7 +53,7 @@ export class IngestPipeline {
    * Run one source end to end. NEVER throws: every failure is classified and
    * returned so one bad ATS cannot stop ingestion.
    */
-  async runSource(source, { ctx = {}, followCursor = true, maxPages = 20 } = {}) {
+  async runSource(source, { ctx = {}, followCursor = true, maxPages = 20, checkpoint = null, resumeCursor = null } = {}) {
     const started = Date.now();
     const adapter = this.adapters.forSource(source);
     const result = {
@@ -58,9 +61,14 @@ export class IngestPipeline {
       fetched: 0, created: 0, updated: 0, merged: 0, unchanged: 0, changed: 0,
       duplicates: 0, rejected: 0, errors: [], stages: {}, notModified: false,
       notConfigured: false, nextCursor: null, http: null, seenJobIds: [],
+      titlelessRows: 0, changeEvents: {}, pagesFetched: 0,
+      reconciliation: null, health: null,
     };
 
-    let cursor = source.cursor || null;
+    /* A resumed crawl continues from the queue's checkpoint, not from page one:
+       refetching 40 pages of a board after a worker restart is both slow and an
+       unnecessary load on someone else's server. */
+    let cursor = resumeCursor || source.cursor || null;
     let pages = 0;
     let anyAuthoritative = false;
 
@@ -100,13 +108,26 @@ export class IngestPipeline {
 
         cursor = batch.nextCursor || null;
         result.nextCursor = cursor;
+        result.pagesFetched = pages;
+        /* Persist progress between pages so a crash costs one page, not a board. */
+        if (checkpoint && cursor) {
+          // eslint-disable-next-line no-await-in-loop
+          await checkpoint({ cursor, pagesFetched: pages, created: result.created, merged: result.merged });
+        }
         if (!followCursor || !cursor || pages >= maxPages) break;
       }
 
-      /* Absence is evidence ONLY when the source returned a complete listing. */
-      if (anyAuthoritative && !result.notModified) {
+      /* Absence is evidence ONLY when the source returned a complete listing AND
+         the run looks credible against this source's own history. A parser that
+         breaks and returns 3 jobs instead of 400 must never be allowed to close
+         397 live postings. */
+      const assessment = assessRun(source, result);
+      result.health = assessment;
+      const gate = mayReconcileMissing({ authoritative: anyAuthoritative && !result.notModified, assessment });
+      result.reconciliation = { ...gate, flagged: 0 };
+      if (gate.allowed) {
         // eslint-disable-next-line no-await-in-loop
-        await this.reconcileMissing(source, new Set(result.seenJobIds));
+        result.reconciliation.flagged = await this.reconcileMissing(source, new Set(result.seenJobIds));
       }
 
       result.ok = result.errors.length === 0;
@@ -119,7 +140,14 @@ export class IngestPipeline {
     result.latencyMs = Date.now() - started;
 
     if (this.registry) {
+      /* Health verdict travels with the run so the registry can DEGRADE a
+         source whose output stopped being believable, even though its HTTP
+         calls all returned 200. */
+      const assessment = result.health || { credible: true, anomalies: [], baseline: null, observed: result.fetched };
       await this.registry.recordRun(source.id, {
+        credible: assessment.credible,
+        anomaly: anomalyRecord(assessment, { at: this.nowIso() }),
+        healthStatus: healthStatusFor(source, assessment, { ok: result.ok }),
         ok: result.ok,
         latencyMs: result.latencyMs,
         jobCount: result.fetched,
@@ -152,8 +180,11 @@ export class IngestPipeline {
       return null;
     }
     if (!input || !input.title) {
-      /* A posting with no title is not a job we can honestly index. */
+      /* A posting with no title is not a job we can honestly index. Counted
+         separately because a SPIKE in titleless rows is the signature of a
+         provider markup change, not of a board full of nameless jobs. */
       result.rejected += 1;
+      result.titlelessRows += 1;
       return null;
     }
 
@@ -185,10 +216,13 @@ export class IngestPipeline {
 
     if (!dup) {
       candidate.status = JOB_STATUS.NEW;
-      await this.store.putJob(candidate);
+      const created = applyChangeIntelligence(null, candidate, { at });
+      recordEvents(result, created.events);
+      const scheduled = applyVerificationSchedule(created.job, { now: Date.parse(at), from: at });
+      await this.store.putJob(scheduled);
       result.created += 1;
-      result.seenJobIds.push(candidate.id);
-      return candidate;
+      result.seenJobIds.push(scheduled.id);
+      return scheduled;
     }
 
     result.duplicates += 1;
@@ -201,6 +235,14 @@ export class IngestPipeline {
     merged = observeSeen(merged, { sourceId: source.id, at });
     merged.dedupeStage = dup.stage;
     merged.dedupeConfidence = dup.confidence;
+
+    /* An ordinary edit updates ONE canonical record and emits an event. It never
+       produces a second job — that is the whole point of doing this here rather
+       than letting a changed content hash look like a new posting. */
+    const intelligence = applyChangeIntelligence(dup.job, merged, { at });
+    merged = intelligence.job;
+    recordEvents(result, intelligence.events);
+    merged = applyVerificationSchedule(merged, { now: Date.parse(at) });
 
     await this.store.putJob(merged);
     if (merged.id !== dup.job.id && this.store.deleteJob) {
@@ -259,6 +301,12 @@ export class IngestPipeline {
       await this.ingestOne(snap.payload, source, adapter, result, {});
     }
     return result;
+  }
+}
+
+function recordEvents(result, events = []) {
+  for (const e of events) {
+    result.changeEvents[e.kind] = (result.changeEvents[e.kind] || 0) + 1;
   }
 }
 

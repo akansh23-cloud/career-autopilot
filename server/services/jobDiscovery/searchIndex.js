@@ -17,6 +17,7 @@ import { JOB_STATUS, SOURCE_CLASS, SOURCE_AUTHORITY } from './schema.js';
 import { tokens } from './normalize/text.js';
 import { normalizeCompany } from './normalize/entity.js';
 import { expandQuery } from './normalize/taxonomy.js';
+import { understandQuery } from './normalize/queryUnderstanding.js';
 
 export const FRESHNESS_WINDOWS = Object.freeze({
   '24h': 1, '3d': 3, '7d': 7, '14d': 14, '30d': 30, latest: null, any: null,
@@ -105,18 +106,42 @@ export class StoreBackedSearchIndex extends JobSearchIndex {
       : [JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE];
 
     /* Indexed candidate retrieval first, deterministic Career Autopilot ranking
-       second. Mongo selects a bounded candidate set using the text/title-family
-       indexes; memory/file stores use the same interface for local fixtures. */
-    const expansion = criteria.q ? expandQuery(criteria.q) : new Map();
+       second. Query understanding runs BEFORE retrieval so the index is asked
+       for the right families, technologies and structural filters rather than
+       for a bag of raw words. */
+    const understanding = understandQuery(criteria.q, {
+      explicit: {
+        location: criteria.location ?? null,
+        remote: criteria.remote ?? null,
+        employmentType: criteria.employmentType ?? null,
+      },
+    });
+    const expansion = understanding.familyWeights;
     const familyKeys = [...expansion.keys()];
     const companyNormalized = criteria.company ? normalizeCompany(criteria.company).normalizedName : null;
-    const pool = await this.store.searchCandidates({
+
+    const retrieval = await this.store.searchCandidates({
       ...criteria,
       status: statuses,
       familyKeys,
+      familyWeights: expansion,
+      queryTerms: understanding.terms.concat(understanding.techs),
+      /* Structural filters come from EXPLICIT criteria only. Signals that were
+         merely inferred from the query string steer ranking, never candidate
+         elimination — an inferred "remote" must not delete every job whose
+         source simply never stated a workplace type. */
+      seniority: criteria.seniority ?? null,
+      location: criteria.location ?? null,
+      remote: criteria.remote ?? null,
+      employmentType: criteria.employmentType ?? null,
       companyNormalized,
-      candidateLimit: Math.max(250, Math.min(1500, Number(criteria.candidateLimit) || 750)),
+      candidateLimit: Math.max(250, Math.min(2000, Number(criteria.candidateLimit) || 750)),
+      withRetrievalMeta: true,
     });
+    const pool = Array.isArray(retrieval) ? retrieval : retrieval.docs;
+    const retrievalMeta = Array.isArray(retrieval)
+      ? { matchedTotal: pool.length, truncated: false, strategy: 'list' }
+      : { matchedTotal: retrieval.matchedTotal, truncated: retrieval.truncated, strategy: retrieval.strategy };
 
     const maxDays = FRESHNESS_WINDOWS[criteria.freshness ?? 'latest'] ?? null;
     const nowMs = this.now();
@@ -149,7 +174,7 @@ export class StoreBackedSearchIndex extends JobSearchIndex {
         } else if (days > maxDays) { rejected.freshness += 1; continue; }
       }
 
-      const relevance = rankJob(job, criteria, { now: nowMs });
+      const relevance = rankJob(job, criteria, { now: nowMs, understanding });
       if (relevance.excluded) {
         const key = String(relevance.exclusionReason || '').split(':')[0];
         if (rejected[key] != null) rejected[key] += 1;
@@ -158,7 +183,8 @@ export class StoreBackedSearchIndex extends JobSearchIndex {
       /* A query that resolves to a role family and matches nothing about the
          job is suppressed rather than shown at rank 40 (§64.5). */
       if (criteria.q && relevance.title === 0 && relevance.query < 30) { rejected.relevance += 1; continue; }
-      if (criteria.q && !familyRelevant(job, criteria.q) && relevance.title < 20 && relevance.query < 50) {
+      if (criteria.q && !familyRelevant(job, criteria.q, expansion)
+        && relevance.title < 20 && relevance.query < 50 && relevance.tech < 60) {
         rejected.relevance += 1; continue;
       }
 
@@ -196,12 +222,34 @@ export class StoreBackedSearchIndex extends JobSearchIndex {
         sourceType: criteria.sourceType ?? null,
         limit,
         cursor: criteria.cursor ?? null,
-        expandedFamilies: criteria.q ? [...expandQuery(criteria.q).entries()].map(([family, v]) => ({ family, relation: v.relation, weight: v.weight })) : [],
+        expandedFamilies: [...expansion.entries()].map(([family, v]) => ({ family, relation: v.relation, weight: v.weight })),
       },
       results,
       total: scored.length,
       candidatesRetrieved: pool.length,
       scanned: pool.length, // compatibility alias; this is a bounded indexed candidate set, not a collection scan
+      /* Honest retrieval accounting: how many documents the INDEX matched, how
+         many were handed to the ranker, and whether the budget truncated the
+         set. A truncated set is always the strongest candidates by a
+         deterministic prefilter, never an arbitrary first-N slice. */
+      retrieval: {
+        matchedTotal: retrievalMeta.matchedTotal,
+        candidatesRanked: pool.length,
+        truncated: !!retrievalMeta.truncated,
+        strategy: retrievalMeta.strategy,
+      },
+      understanding: {
+        roleText: understanding.roleText,
+        method: understanding.method,
+        families: understanding.families,
+        seedFamilies: understanding.seedFamilies,
+        techs: understanding.techs,
+        location: understanding.location,
+        remote: understanding.remote,
+        employmentType: understanding.employmentType,
+        seniority: understanding.seniority,
+        consumed: understanding.consumed,
+      },
       rejected,
       nextCursor,
       cached: false,

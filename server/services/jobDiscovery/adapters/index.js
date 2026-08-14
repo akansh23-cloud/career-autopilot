@@ -4,21 +4,50 @@
    One place that maps provider -> adapter instance. Everything
    downstream (ingest, verification, discovery) resolves through
    here, so adding a provider is one registration, not a rewrite.
+
+   Two kinds of connector live here:
+
+     hand-written   providers whose protocol is genuinely distinct
+                    (Greenhouse, Lever, Ashby, Workable,
+                    SmartRecruiters, Workday, Oracle CE, iCIMS,
+                    the universal career-site crawler, aggregators)
+
+     spec-driven    providers that differ only in URL shape, field
+                    names and pagination. Declared in
+                    spec/providerSpecs.js and executed by one
+                    SpecAdapter, so every one of them inherits the
+                    same conditional-request, error-classification,
+                    authoritative-listing and provenance guarantees.
+
+   DETECTION IS SEPARATE FROM SUPPORT. atsDetect fingerprints more
+   providers than this registry can ingest, and a provider whose
+   only listing surface needs credentials reports NOT_CONFIGURED
+   through statusReport() rather than silently returning zero jobs.
    ============================================================ */
 
 import { PROVIDER, SOURCE_STATUS } from '../schema.js';
+import { DETECTED_PROVIDERS, SUPPORTED_PROVIDERS } from '../atsDetect.js';
 import { JobSourceAdapter, assertNormalizedInput, NORMALIZED_INPUT_KEYS } from './base.js';
 import GreenhouseAdapter from './greenhouse.js';
 import LeverAdapter from './lever.js';
 import AshbyAdapter from './ashby.js';
 import WorkableAdapter from './workable.js';
 import SmartRecruitersAdapter from './smartrecruiters.js';
+import WorkdayAdapter from './workday.js';
+import OracleRecruitingAdapter from './oracleRecruiting.js';
+import ICIMSAdapter from './icims.js';
 import GenericCareerSiteAdapter from './genericCareerSite.js';
 import AggregatorAdapter from './aggregator.js';
+import { adapterFromSpec } from './spec/specAdapter.js';
+import PROVIDER_SPECS from './spec/providerSpecs.js';
+
+export const SPEC_ADAPTER_CLASSES = PROVIDER_SPECS.map(adapterFromSpec);
 
 export const ADAPTER_CLASSES = [
   GreenhouseAdapter, LeverAdapter, AshbyAdapter, WorkableAdapter,
-  SmartRecruitersAdapter, GenericCareerSiteAdapter, AggregatorAdapter,
+  SmartRecruitersAdapter, WorkdayAdapter, OracleRecruitingAdapter, ICIMSAdapter,
+  ...SPEC_ADAPTER_CLASSES,
+  GenericCareerSiteAdapter, AggregatorAdapter,
 ];
 
 export class AdapterRegistry {
@@ -43,6 +72,11 @@ export class AdapterRegistry {
     return [...this.adapters.keys()];
   }
 
+  /** Providers we can fingerprint, whether or not we can ingest them. */
+  detectedProviders() {
+    return [...DETECTED_PROVIDERS];
+  }
+
   /**
    * Truthful per-adapter status. An adapter needing absent credentials reports
    * NOT_CONFIGURED here and is skipped by the scheduler — never faked as OK.
@@ -58,10 +92,44 @@ export class AdapterRegistry {
         sourceType: adapter.constructor.sourceType,
         sourceClass: adapter.constructor.sourceClass,
         requiresCredentials: adapter.constructor.requiresCredentials === true,
+        specDriven: !!adapter.constructor.spec,
+        detectable: DETECTED_PROVIDERS.has(provider),
         ...cfg,
       };
     }
     return out;
+  }
+
+  /**
+   * Coverage matrix for the final report. Separates three DIFFERENT facts that
+   * are easy to conflate into an inflated "providers supported" number:
+   *   detected      we can fingerprint it from a URL or page
+   *   connector     a connector exists in this build
+   *   ingestReady   that connector can actually run right now
+   */
+  coverageMatrix() {
+    const status = this.statusReport();
+    const providers = new Set([...DETECTED_PROVIDERS, ...this.adapters.keys()]);
+    const rows = [];
+    for (const p of providers) {
+      const s = status[p];
+      rows.push({
+        provider: p,
+        detected: DETECTED_PROVIDERS.has(p),
+        connector: !!s,
+        listedSupported: SUPPORTED_PROVIDERS.has(p),
+        ingestReady: !!s?.configured,
+        mode: s?.mode ?? null,
+        reason: s?.reason ?? 'no connector in this build',
+      });
+    }
+    rows.sort((a, b) => a.provider.localeCompare(b.provider));
+    return {
+      rows,
+      detectedCount: [...providers].filter((p) => DETECTED_PROVIDERS.has(p)).length,
+      connectorCount: rows.filter((r) => r.connector).length,
+      ingestReadyCount: rows.filter((r) => r.ingestReady).length,
+    };
   }
 
   /** Identify which registered adapter claims a URL. */
@@ -79,7 +147,8 @@ export class AdapterRegistry {
 export {
   JobSourceAdapter, assertNormalizedInput, NORMALIZED_INPUT_KEYS,
   GreenhouseAdapter, LeverAdapter, AshbyAdapter, WorkableAdapter,
-  SmartRecruitersAdapter, GenericCareerSiteAdapter, AggregatorAdapter,
+  SmartRecruitersAdapter, WorkdayAdapter, OracleRecruitingAdapter, ICIMSAdapter,
+  GenericCareerSiteAdapter, AggregatorAdapter,
 };
 
 export default AdapterRegistry;

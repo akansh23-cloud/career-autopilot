@@ -207,7 +207,13 @@ export class SourceRegistry {
     };
 
     const consecutiveFailures = ok ? 0 : (source.consecutiveFailures || 0) + 1;
-    const status = this.deriveStatus(source, { ok, consecutiveFailures, errorClass: result.errorClass });
+    /* A run can succeed at the HTTP level and still be untrustworthy. When the
+       health assessment says the output is not credible, DEGRADED wins over the
+       ordinary success path — otherwise a broken parser keeps a green light. */
+    const baseStatus = this.deriveStatus(source, { ok, consecutiveFailures, errorClass: result.errorClass });
+    const status = result.credible === false
+      ? SOURCE_STATUS.DEGRADED
+      : (result.healthStatus && ok ? result.healthStatus : baseStatus);
     const crawlIntervalMinutes = this.deriveInterval(source, { ok, result, health });
 
     const merged = {
@@ -223,6 +229,9 @@ export class SourceRegistry {
       crawlIntervalMinutes,
       nextCrawlAt: new Date(this.now().getTime() + crawlIntervalMinutes * 60000).toISOString(),
       cursor: result.nextCursor ?? null,
+      /* Retained, not overwritten with null on the next good run, so an operator
+         can still see what tripped after a source self-heals. */
+      anomaly: result.anomaly ?? source.anomaly ?? null,
       http: result.http ? { etag: result.http.etag ?? source.http?.etag ?? null, lastModified: result.http.lastModified ?? source.http?.lastModified ?? null } : source.http,
       health,
     };

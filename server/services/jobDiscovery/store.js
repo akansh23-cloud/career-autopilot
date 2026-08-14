@@ -1,23 +1,29 @@
 /* ============================================================
    JOB DISCOVERY OS — PERSISTENCE
    ------------------------------------------------------------
-   Three collections behind one interface:
+   Six collections behind one interface:
 
-     jobs      canonical JobDocuments
-     sources   JobSourceRegistry entries (§5) — persistent, and one
-               of the central assets of the whole system
-     raw       RawJobSnapshots (§15) with a retention policy
+     jobs        canonical JobDocuments
+     sources     JobSourceRegistry entries — persistent, and one of
+                 the central assets of the whole system
+     raw         RawJobSnapshots with a retention policy
+     companies   CompanyRegistry — normalized employer knowledge
+     discovery   persistent Source Discovery Queue
+     crawl       persistent Crawl Queue with worker leases + DLQ
 
    Three backends:
 
-     MemoryStore  tests and ephemeral workers
+     MemoryStore  tests, workers and large deterministic fixtures.
+                  Backed by a REAL inverted index, so 100k documents
+                  are queried by posting-list retrieval rather than
+                  by walking the collection.
      FileStore    single-node deployments and local development
-     MongoStore   Atlas, with every index §40 asks for
+     MongoStore   Atlas, with every index the system needs, plus an
+                  optional Atlas Search retrieval path
 
-   The repo already degrades gracefully without MONGODB_URI, so
-   `createStore()` follows the same rule: Mongo when configured,
-   file when a data dir exists, memory otherwise. No new
-   infrastructure is introduced (§30).
+   Every backend answers searchCandidates() with the SAME contract:
+   { docs, matchedTotal, truncated, strategy } — so a caller can
+   always tell whether a candidate budget hid anything.
    ============================================================ */
 
 import fs from 'node:fs';
@@ -26,6 +32,7 @@ import { JOB_STATUS, RAW_SNAPSHOT_SCHEMA_VERSION, REMOTE_SCOPE, WORKPLACE_TYPE }
 import { parseLocation, detectCountry, detectRegion, locationCompatibility } from './normalize/location.js';
 import { salaryCompatibility } from './normalize/compensation.js';
 import { blockingKeys } from './dedupe.js';
+import { InvertedIndex } from './invertedIndex.js';
 
 /* ------------------------------------------------------------------
    Base: shared query semantics so every backend behaves identically.
@@ -34,28 +41,43 @@ import { blockingKeys } from './dedupe.js';
 export class BaseJobStore {
   async init() { return this; }
 
-  // eslint-disable-next-line no-unused-vars
+  /* eslint-disable no-unused-vars */
   async putJob(job) { throw new Error('not implemented'); }
-  // eslint-disable-next-line no-unused-vars
   async getJob(id) { throw new Error('not implemented'); }
-  // eslint-disable-next-line no-unused-vars
   async findCandidates(job) { throw new Error('not implemented'); }
-  // eslint-disable-next-line no-unused-vars
   async listJobs(filter = {}) { throw new Error('not implemented'); }
-  async searchCandidates(criteria = {}) { return this.listJobs({ status: criteria.status, limit: criteria.candidateLimit || 500 }); }
+  async putSource(source) { throw new Error('not implemented'); }
+  async getSource(id) { throw new Error('not implemented'); }
+  async listSources(filter = {}) { throw new Error('not implemented'); }
+  async putRaw(snapshot) { throw new Error('not implemented'); }
+  /* eslint-enable no-unused-vars */
+
+  async searchCandidates(criteria = {}) {
+    const docs = await this.listJobs({ status: criteria.status, limit: criteria.candidateLimit || 500 });
+    return criteria.withRetrievalMeta
+      ? { docs, matchedTotal: docs.length, truncated: false, strategy: 'list' }
+      : docs;
+  }
+
   async listVerificationCandidates({ before = null, limit = 25 } = {}) { return this.listJobs({ excludeStatus: JOB_STATUS.REMOVED, limit }); }
   async listDiscoveryCandidates({ at = null, limit = 25 } = {}) { return this.listJobs({ excludeStatus: JOB_STATUS.REMOVED, limit }); }
-  // eslint-disable-next-line no-unused-vars
-  async putSource(source) { throw new Error('not implemented'); }
-  // eslint-disable-next-line no-unused-vars
-  async getSource(id) { throw new Error('not implemented'); }
-  // eslint-disable-next-line no-unused-vars
-  async listSources(filter = {}) { throw new Error('not implemented'); }
   async listDueSources({ at = null, limit = 20 } = {}) { return this.listSources({}); }
-  // eslint-disable-next-line no-unused-vars
-  async putRaw(snapshot) { throw new Error('not implemented'); }
   async pruneRaw() { return 0; }
   async stats() { return {}; }
+
+  /* Queues + company registry. A backend that does not implement these
+     degrades visibly rather than pretending to persist. */
+  async putCompany() { return null; }
+  async getCompany() { return null; }
+  async listCompanies() { return []; }
+  async putDiscoveryTask() { return null; }
+  async getDiscoveryTask() { return null; }
+  async listDiscoveryTasks() { return []; }
+  async leaseDiscoveryTasks() { return []; }
+  async putCrawlTask() { return null; }
+  async getCrawlTask() { return null; }
+  async listCrawlTasks() { return []; }
+  async leaseCrawlTasks() { return []; }
 }
 
 function matchesJobFilter(job, filter = {}) {
@@ -79,8 +101,31 @@ function matchesJobFilter(job, filter = {}) {
   return true;
 }
 
+/** Translate free-form search criteria into index-level structural filters. */
+export function retrievalFiltersOf(criteria = {}) {
+  const filters = {};
+  if (criteria.companyNormalized) filters.companyNormalized = criteria.companyNormalized;
+  if (criteria.employmentType) filters.employmentType = criteria.employmentType;
+  if (Array.isArray(criteria.seniority) && criteria.seniority.length) filters.seniority = criteria.seniority;
+  if (criteria.sourceType) filters.sourceClass = String(criteria.sourceType).toUpperCase();
+  if (criteria.directApply) filters.directApply = true;
+  if (criteria.remote === 'remote') filters.workplaceType = WORKPLACE_TYPE.REMOTE;
+  if (criteria.remote === 'hybrid') filters.workplaceType = WORKPLACE_TYPE.HYBRID;
+  if (criteria.remote === 'onsite') filters.workplaceType = WORKPLACE_TYPE.ONSITE;
+  if (criteria.location) {
+    const qLoc = parseLocation(criteria.location);
+    const qCountry = detectCountry(criteria.location);
+    const qRegion = detectRegion(criteria.location);
+    if (qLoc?.city) filters.city = qLoc.city;
+    const code = qCountry?.code || qLoc?.countryCode || null;
+    if (code) filters.countryCode = code;
+    filters.remoteRegions = [qCountry?.code, qRegion?.code].filter(Boolean);
+  }
+  return filters;
+}
+
 /* ------------------------------------------------------------------
-   Memory
+   Memory — index-backed, not a linear scan.
    ------------------------------------------------------------------ */
 
 export class MemoryJobStore extends BaseJobStore {
@@ -88,11 +133,15 @@ export class MemoryJobStore extends BaseJobStore {
     super();
     this.jobs = new Map();
     this.sources = new Map();
+    this.companies = new Map();
+    this.discoveryTasks = new Map();
+    this.crawlTasks = new Map();
     this.raw = [];
     this.blocking = new Map(); // key -> Set(jobId)
+    this.index = new InvertedIndex();
   }
 
-  index(job) {
+  indexBlocking(job) {
     for (const key of blockingKeys(job)) {
       let set = this.blocking.get(key);
       if (!set) { set = new Set(); this.blocking.set(key, set); }
@@ -111,63 +160,100 @@ export class MemoryJobStore extends BaseJobStore {
     const prev = this.jobs.get(job.id);
     if (prev) this.deindex(prev);
     this.jobs.set(job.id, job);
-    this.index(job);
+    this.indexBlocking(job);
+    this.index.add(job);
     return job;
+  }
+
+  /** Bulk load used by large fixtures — same semantics, far less churn. */
+  async putJobs(jobs = []) {
+    for (const job of jobs) await this.putJob(job);
+    return jobs.length;
   }
 
   async getJob(id) { return this.jobs.get(id) || null; }
 
   async deleteJob(id) {
     const j = this.jobs.get(id);
-    if (j) { this.deindex(j); this.jobs.delete(id); }
+    if (j) { this.deindex(j); this.jobs.delete(id); this.index.remove(id); }
     return !!j;
   }
 
-  async findCandidates(job) {
+  /**
+   * Dedupe candidates for one job.
+   *
+   * Bounded per key. Blocking keys are supposed to be selective, but some are
+   * broad by nature — a company key on an employer with thousands of openings
+   * matches thousands of rows, and an unbounded fan-out there turns every
+   * ingest into an O(N) scan. The cap is applied PER KEY, not to the total, so
+   * the precise keys (fingerprint, provider job id, apply url) always
+   * contribute their matches even when a broad key is saturated.
+   */
+  async findCandidates(job, { perKeyLimit = 200, totalLimit = 600 } = {}) {
     const ids = new Set();
-    for (const key of blockingKeys(job)) {
-      for (const id of this.blocking.get(key) || []) if (id !== job.id) ids.add(id);
+    /* Precise keys first, so a saturating broad key can never crowd out the
+       exact match that would have deduped this job. */
+    const keys = blockingKeys(job);
+    const ordered = [
+      ...keys.filter((k) => /^(fp|pid|ap|req):/.test(k)),
+      ...keys.filter((k) => !/^(fp|pid|ap|req):/.test(k)),
+    ];
+    for (const key of ordered) {
+      const postings = this.blocking.get(key);
+      if (!postings) continue;
+      let taken = 0;
+      for (const id of postings) {
+        if (id === job.id) continue;
+        ids.add(id);
+        taken += 1;
+        if (taken >= perKeyLimit || ids.size >= totalLimit) break;
+      }
+      if (ids.size >= totalLimit) break;
     }
     return [...ids].map((id) => this.jobs.get(id)).filter(Boolean);
   }
 
   async listJobs(filter = {}) {
     const out = [];
-    for (const job of this.jobs.values()) if (matchesJobFilter(job, filter)) out.push(job);
-    return filter.limit ? out.slice(0, filter.limit) : out;
+    for (const job of this.jobs.values()) {
+      if (matchesJobFilter(job, filter)) out.push(job);
+      if (filter.limit && out.length >= filter.limit) break;
+    }
+    return out;
   }
 
+  /**
+   * Indexed candidate retrieval. The compatibility checks that need evidence
+   * (location scope, salary) still run afterwards, but only over candidates the
+   * index actually matched — never over the whole collection.
+   */
   async searchCandidates(criteria = {}) {
     const statuses = criteria.status || [JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE];
-    let out = await this.listJobs({ status: statuses });
-    if (criteria.employmentType) out = out.filter((j) => !j.employmentType || j.employmentType === 'UNKNOWN' || j.employmentType === criteria.employmentType);
-    if (Array.isArray(criteria.seniority) && criteria.seniority.length) out = out.filter((j) => !j.seniority || j.seniority === 'UNKNOWN' || criteria.seniority.includes(j.seniority));
-    if (criteria.companyNormalized) out = out.filter((j) => (j.company?.normalizedName || '') === criteria.companyNormalized);
-    if (criteria.sourceType) out = out.filter((j) => (j.sourceInstances || []).some((x) => x.sourceClass === criteria.sourceType || x.sourceType === criteria.sourceType));
-    if (criteria.remote === 'remote') out = out.filter((j) => j.workplace?.type === WORKPLACE_TYPE.REMOTE);
-    if (criteria.remote === 'hybrid') out = out.filter((j) => j.workplace?.type === WORKPLACE_TYPE.HYBRID);
-    if (criteria.remote === 'onsite') out = out.filter((j) => j.workplace?.type === WORKPLACE_TYPE.ONSITE);
+    const cap = Math.max(50, Math.min(5000, Number(criteria.candidateLimit) || 750));
+
+    const { docs, matchedTotal, truncated, strategy } = this.index.retrieve({
+      familyKeys: criteria.familyWeights || criteria.familyKeys || null,
+      queryTerms: criteria.queryTerms || [],
+      statuses,
+      filters: retrievalFiltersOf(criteria),
+      cap,
+    });
+
+    let out = docs;
     if (criteria.location) out = out.filter((j) => locationCompatibility(j, criteria.location).compatible);
     if (criteria.salaryMin != null || criteria.salaryMax != null) out = out.filter((j) => salaryCompatibility(j, criteria).compatible);
-    const families = new Set(criteria.familyKeys || []);
-    const q = String(criteria.q || '').toLowerCase().trim();
-    if (q || families.size) {
-      out = out.filter((job) => {
-        const fam = [job.titleFamily, ...(job.titleFamilies || [])].filter(Boolean);
-        const familyHit = fam.some((x) => families.has(x));
-        const hay = searchTextOf(job).toLowerCase();
-        return familyHit || !q || q.split(/\s+/).filter(Boolean).some((t) => hay.includes(t));
-      });
-    }
-    return out.slice(0, criteria.candidateLimit || 750);
+
+    return criteria.withRetrievalMeta ? { docs: out, matchedTotal, truncated, strategy } : out;
   }
 
   async listVerificationCandidates({ before = null, limit = 25 } = {}) {
     const cutoff = before ? Date.parse(before) : Date.now();
     const out = [...this.jobs.values()].filter((j) => j.status !== JOB_STATUS.REMOVED && (
-      j.needsVerification || !j.lastVerifiedAt || Date.parse(j.lastVerifiedAt) <= cutoff
+      j.needsVerification
+      || (j.nextVerifyAt ? Date.parse(j.nextVerifyAt) <= cutoff : (!j.lastVerifiedAt || Date.parse(j.lastVerifiedAt) <= cutoff))
     ));
-    out.sort((a,b) => Number(!!b.needsVerification)-Number(!!a.needsVerification) || String(a.lastVerifiedAt||'').localeCompare(String(b.lastVerifiedAt||'')));
+    out.sort((a, b) => Number(!!b.needsVerification) - Number(!!a.needsVerification)
+      || String(a.nextVerifyAt || a.lastVerifiedAt || '').localeCompare(String(b.nextVerifyAt || b.lastVerifiedAt || '')));
     return out.slice(0, limit);
   }
 
@@ -179,9 +265,12 @@ export class MemoryJobStore extends BaseJobStore {
       if (hasDirect) return false;
       return !j.sourceDiscovery?.nextAttemptAt || j.sourceDiscovery.nextAttemptAt <= now;
     });
-    out.sort((a,b) => String(a.sourceDiscovery?.nextAttemptAt||'').localeCompare(String(b.sourceDiscovery?.nextAttemptAt||'')) || String(a.firstSeenAt||'').localeCompare(String(b.firstSeenAt||'')));
+    out.sort((a, b) => String(a.sourceDiscovery?.nextAttemptAt || '').localeCompare(String(b.sourceDiscovery?.nextAttemptAt || ''))
+      || String(a.firstSeenAt || '').localeCompare(String(b.firstSeenAt || '')));
     return out.slice(0, limit);
   }
+
+  /* ------------------------------ sources ------------------------------ */
 
   async putSource(source) { this.sources.set(source.id, source); return source; }
   async getSource(id) { return this.sources.get(id) || null; }
@@ -194,24 +283,104 @@ export class MemoryJobStore extends BaseJobStore {
       out = out.filter((s) => wanted.includes(s.status));
     }
     if (filter.sourceClass) out = out.filter((s) => s.sourceClass === filter.sourceClass);
-    return out;
+    if (filter.companyId) out = out.filter((s) => s.companyId === filter.companyId);
+    return filter.limit ? out.slice(0, filter.limit) : out;
   }
 
   async listDueSources({ at = null, limit = 20 } = {}) {
     const now = at || new Date().toISOString();
-    const out = [...this.sources.values()].filter((src) =>
-      !['DISABLED','NOT_CONFIGURED'].includes(src.status)
+    const out = [...this.sources.values()].filter((src) => !['DISABLED', 'NOT_CONFIGURED'].includes(src.status)
       && src.accessPolicy === 'ALLOW'
-      && (!src.nextCrawlAt || src.nextCrawlAt <= now)
-    );
-    out.sort((a,b) => (b.crawlPriority || 0) - (a.crawlPriority || 0) || String(a.nextCrawlAt||'').localeCompare(String(b.nextCrawlAt||'')));
+      && (!src.nextCrawlAt || src.nextCrawlAt <= now));
+    out.sort((a, b) => (b.crawlPriority || 0) - (a.crawlPriority || 0) || String(a.nextCrawlAt || '').localeCompare(String(b.nextCrawlAt || '')));
     return out.slice(0, limit);
   }
 
-  async putRaw(snapshot) {
-    this.raw.push(snapshot);
-    return snapshot;
+  /* ------------------------------ companies ------------------------------ */
+
+  async putCompany(company) { this.companies.set(company.id, company); return company; }
+  async getCompany(id) { return this.companies.get(id) || null; }
+
+  async listCompanies(filter = {}) {
+    let out = [...this.companies.values()];
+    if (filter.domain) out = out.filter((c) => c.domain === filter.domain);
+    if (filter.normalizedName) out = out.filter((c) => c.normalizedName === filter.normalizedName);
+    if (filter.hasSource === true) out = out.filter((c) => (c.sourceIds || []).length > 0);
+    if (filter.hasSource === false) out = out.filter((c) => !(c.sourceIds || []).length);
+    return filter.limit ? out.slice(0, filter.limit) : out;
   }
+
+  /* --------------------------- discovery queue --------------------------- */
+
+  async putDiscoveryTask(task) { this.discoveryTasks.set(task.id, task); return task; }
+  async getDiscoveryTask(id) { return this.discoveryTasks.get(id) || null; }
+
+  async listDiscoveryTasks(filter = {}) {
+    let out = [...this.discoveryTasks.values()];
+    if (filter.state) {
+      const wanted = Array.isArray(filter.state) ? filter.state : [filter.state];
+      out = out.filter((t) => wanted.includes(t.state));
+    }
+    if (filter.kind) out = out.filter((t) => t.kind === filter.kind);
+    return filter.limit ? out.slice(0, filter.limit) : out;
+  }
+
+  /**
+   * Lease due tasks. In-process this is trivially atomic; the Mongo backend uses
+   * findOneAndUpdate so two workers can never take the same task.
+   */
+  async leaseDiscoveryTasks({ at = null, limit = 10, owner = 'local', leaseMs = 120000 } = {}) {
+    const nowIso = at || new Date().toISOString();
+    const expiry = new Date(Date.parse(nowIso) + leaseMs).toISOString();
+    const due = [...this.discoveryTasks.values()]
+      .filter((t) => ['PENDING', 'RETRY'].includes(t.state) || (t.state === 'LEASED' && (t.leaseExpiresAt || '') <= nowIso))
+      .filter((t) => !t.nextAttemptAt || t.nextAttemptAt <= nowIso)
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0) || String(a.nextAttemptAt || '').localeCompare(String(b.nextAttemptAt || '')))
+      .slice(0, limit);
+    const leased = [];
+    for (const t of due) {
+      const next = { ...t, state: 'LEASED', leaseOwner: owner, leaseExpiresAt: expiry, leasedAt: nowIso };
+      this.discoveryTasks.set(t.id, next);
+      leased.push(next);
+    }
+    return leased;
+  }
+
+  /* ----------------------------- crawl queue ----------------------------- */
+
+  async putCrawlTask(task) { this.crawlTasks.set(task.id, task); return task; }
+  async getCrawlTask(id) { return this.crawlTasks.get(id) || null; }
+
+  async listCrawlTasks(filter = {}) {
+    let out = [...this.crawlTasks.values()];
+    if (filter.state) {
+      const wanted = Array.isArray(filter.state) ? filter.state : [filter.state];
+      out = out.filter((t) => wanted.includes(t.state));
+    }
+    if (filter.sourceId) out = out.filter((t) => t.sourceId === filter.sourceId);
+    return filter.limit ? out.slice(0, filter.limit) : out;
+  }
+
+  async leaseCrawlTasks({ at = null, limit = 5, owner = 'local', leaseMs = 300000 } = {}) {
+    const nowIso = at || new Date().toISOString();
+    const expiry = new Date(Date.parse(nowIso) + leaseMs).toISOString();
+    const due = [...this.crawlTasks.values()]
+      .filter((t) => ['PENDING', 'RETRY'].includes(t.state) || (t.state === 'LEASED' && (t.leaseExpiresAt || '') <= nowIso))
+      .filter((t) => !t.availableAt || t.availableAt <= nowIso)
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0) || String(a.availableAt || '').localeCompare(String(b.availableAt || '')))
+      .slice(0, limit);
+    const leased = [];
+    for (const t of due) {
+      const next = { ...t, state: 'LEASED', leaseOwner: owner, leaseExpiresAt: expiry, leasedAt: nowIso, attempts: (t.attempts || 0) + 1 };
+      this.crawlTasks.set(t.id, next);
+      leased.push(next);
+    }
+    return leased;
+  }
+
+  /* -------------------------------- raw -------------------------------- */
+
+  async putRaw(snapshot) { this.raw.push(snapshot); return snapshot; }
 
   async pruneRaw({ maxAgeDays = 30, maxCount = 20000 } = {}) {
     const cutoff = new Date(Date.now() - maxAgeDays * 86400000).toISOString();
@@ -230,7 +399,17 @@ export class MemoryJobStore extends BaseJobStore {
   async stats() {
     const byStatus = {};
     for (const j of this.jobs.values()) byStatus[j.status] = (byStatus[j.status] || 0) + 1;
-    return { backend: 'memory', jobs: this.jobs.size, sources: this.sources.size, raw: this.raw.length, byStatus };
+    return {
+      backend: 'memory',
+      jobs: this.jobs.size,
+      sources: this.sources.size,
+      companies: this.companies.size,
+      discoveryTasks: this.discoveryTasks.size,
+      crawlTasks: this.crawlTasks.size,
+      raw: this.raw.length,
+      byStatus,
+      index: this.index.stats(),
+    };
   }
 }
 
@@ -252,6 +431,9 @@ export class FileJobStore extends MemoryJobStore {
       jobs: path.join(this.dir, 'jobs.json'),
       sources: path.join(this.dir, 'sources.json'),
       raw: path.join(this.dir, 'raw.json'),
+      companies: path.join(this.dir, 'companies.json'),
+      discovery: path.join(this.dir, 'discovery-queue.json'),
+      crawl: path.join(this.dir, 'crawl-queue.json'),
     };
   }
 
@@ -261,8 +443,11 @@ export class FileJobStore extends MemoryJobStore {
     const read = (file, fallback) => {
       try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
     };
-    for (const job of read(p.jobs, [])) { this.jobs.set(job.id, job); this.index(job); }
+    for (const job of read(p.jobs, [])) { this.jobs.set(job.id, job); this.indexBlocking(job); this.index.add(job); }
     for (const s of read(p.sources, [])) this.sources.set(s.id, s);
+    for (const c of read(p.companies, [])) this.companies.set(c.id, c);
+    for (const t of read(p.discovery, [])) this.discoveryTasks.set(t.id, t);
+    for (const t of read(p.crawl, [])) this.crawlTasks.set(t.id, t);
     this.raw = read(p.raw, []);
     return this;
   }
@@ -286,6 +471,9 @@ export class FileJobStore extends MemoryJobStore {
     write(p.jobs, [...this.jobs.values()]);
     write(p.sources, [...this.sources.values()]);
     write(p.raw, this.raw);
+    write(p.companies, [...this.companies.values()]);
+    write(p.discovery, [...this.discoveryTasks.values()]);
+    write(p.crawl, [...this.crawlTasks.values()]);
     this.dirty = false;
     return true;
   }
@@ -294,12 +482,15 @@ export class FileJobStore extends MemoryJobStore {
   async deleteJob(id) { const r = await super.deleteJob(id); this.scheduleFlush(); return r; }
   async putSource(s) { const r = await super.putSource(s); this.scheduleFlush(); return r; }
   async putRaw(s) { const r = await super.putRaw(s); this.scheduleFlush(); return r; }
+  async putCompany(c) { const r = await super.putCompany(c); this.scheduleFlush(); return r; }
+  async putDiscoveryTask(t) { const r = await super.putDiscoveryTask(t); this.scheduleFlush(); return r; }
+  async putCrawlTask(t) { const r = await super.putCrawlTask(t); this.scheduleFlush(); return r; }
   async pruneRaw(o) { const r = await super.pruneRaw(o); this.scheduleFlush(); return r; }
   async stats() { return { ...(await super.stats()), backend: 'file', dir: this.dir }; }
 }
 
 /* ------------------------------------------------------------------
-   Mongo — reuses the app's existing Atlas connection (§30).
+   Mongo — reuses the app's existing Atlas connection.
    ------------------------------------------------------------------ */
 
 let mongooseModels = null;
@@ -314,6 +505,7 @@ async function buildModels(mongoose) {
     schemaVersion: Number,
     normalizerVersion: Number,
     company: { type: Mixed, default: {} },
+    companyId: { type: String, default: null },
     title: String,
     normalizedTitle: String,
     titleFamily: { type: String, default: null },
@@ -332,8 +524,11 @@ async function buildModels(mongoose) {
     lastVerifiedAt: { type: Date, default: null },
     lastChangedAt: { type: Date, default: null },
     closedAt: { type: Date, default: null },
+    nextVerifyAt: { type: Date, default: null },
+    verificationTier: { type: String, default: null },
     status: { type: String, default: JOB_STATUS.NEW },
     needsVerification: { type: Boolean, default: false },
+    changeLog: { type: [Mixed], default: [] },
     sourceDiscovery: {
       attempts: { type: Number, default: 0 },
       lastAttemptAt: { type: Date, default: null },
@@ -357,23 +552,27 @@ async function buildModels(mongoose) {
     tags: { type: [String], default: [] },
     blockingKeys: { type: [String], default: [], index: true },
     searchText: { type: String, default: '' },
+    directApply: { type: Boolean, default: false },
   }, { _id: false, timestamps: true, collection: 'jobdiscovery_jobs' });
 
-  /* §40 — every index the spec asks for. */
   jobSchema.index({ 'company.domain': 1 });
   jobSchema.index({ 'company.normalizedName': 1 });
+  jobSchema.index({ companyId: 1 });
   jobSchema.index({ normalizedTitle: 1 });
-  jobSchema.index({ titleFamilies: 1 });
+  jobSchema.index({ titleFamilies: 1, status: 1, sourcePublishedAt: -1 });
   jobSchema.index({ status: 1, lastSeenAt: -1 });
   jobSchema.index({ firstSeenAt: -1 });
   jobSchema.index({ sourcePublishedAt: -1 });
+  jobSchema.index({ status: 1, nextVerifyAt: 1, needsVerification: 1 });
   jobSchema.index({ status: 1, lastVerifiedAt: 1, needsVerification: 1 });
   jobSchema.index({ 'sourceDiscovery.nextAttemptAt': 1, status: 1 });
   jobSchema.index({ 'workplace.type': 1, 'workplace.remoteScope': 1 });
   jobSchema.index({ 'locations.countryCode': 1, 'locations.city': 1 });
   jobSchema.index({ contentHash: 1 });
   jobSchema.index({ dedupeFingerprint: 1 });
+  jobSchema.index({ directApply: 1, status: 1 });
   jobSchema.index({ 'sourceInstances.provider': 1, 'sourceInstances.sourceJobId': 1 });
+  jobSchema.index({ 'sourceInstances.sourceClass': 1, status: 1 });
   jobSchema.index({ searchText: 'text', title: 'text' }, { weights: { title: 10, searchText: 3 }, name: 'job_text' });
 
   const sourceSchema = new Schema({
@@ -406,6 +605,7 @@ async function buildModels(mongoose) {
     storagePolicy: { type: Mixed, default: {} },
     http: { type: Mixed, default: {} },
     health: { type: Mixed, default: {} },
+    anomaly: { type: Mixed, default: null },
     cursor: { type: Mixed, default: null },
     queries: { type: Mixed, default: null },
     location: { type: Mixed, default: null },
@@ -413,6 +613,66 @@ async function buildModels(mongoose) {
   }, { _id: false, timestamps: true, collection: 'jobdiscovery_sources' });
   sourceSchema.index({ provider: 1, tenant: 1 }, { unique: true, sparse: true });
   sourceSchema.index({ accessPolicy: 1, status: 1, nextCrawlAt: 1, crawlPriority: -1 });
+
+  const companySchema = new Schema({
+    _id: { type: String },
+    name: { type: String, default: null },
+    normalizedName: { type: String, index: true },
+    domain: { type: String, default: null, index: true },
+    website: { type: String, default: null },
+    careersUrl: { type: String, default: null },
+    atsProvider: { type: String, default: null, index: true },
+    atsTenant: { type: String, default: null },
+    country: { type: String, default: null },
+    industry: { type: String, default: null },
+    sourceIds: { type: [String], default: [] },
+    sourceConfidence: { type: Number, default: 0 },
+    lastDiscoveryAt: { type: Date, default: null },
+    lastDiscoveryOutcome: { type: String, default: null },
+    discoveryAttempts: { type: Number, default: 0 },
+    sourceHealth: { type: String, default: null },
+    jobCount: { type: Number, default: 0 },
+    provenance: { type: Mixed, default: {} },
+  }, { _id: false, timestamps: true, collection: 'jobdiscovery_companies' });
+
+  const discoverySchema = new Schema({
+    _id: { type: String },
+    kind: { type: String, index: true },
+    key: { type: String, index: true },
+    payload: { type: Mixed, default: {} },
+    state: { type: String, default: 'PENDING', index: true },
+    attempts: { type: Number, default: 0 },
+    priority: { type: Number, default: 0 },
+    nextAttemptAt: { type: Date, default: null, index: true },
+    lastAttemptAt: { type: Date, default: null },
+    lastReason: { type: String, default: null },
+    failureReason: { type: String, default: null },
+    confidence: { type: Number, default: 0 },
+    discoveredFrom: { type: String, default: null },
+    resolvedSourceId: { type: String, default: null },
+    companyId: { type: String, default: null },
+    leaseOwner: { type: String, default: null },
+    leaseExpiresAt: { type: Date, default: null },
+  }, { _id: false, timestamps: true, collection: 'jobdiscovery_discovery_queue' });
+  discoverySchema.index({ state: 1, nextAttemptAt: 1, priority: -1 });
+
+  const crawlSchema = new Schema({
+    _id: { type: String },
+    sourceId: { type: String, index: true },
+    idempotencyKey: { type: String, index: true },
+    state: { type: String, default: 'PENDING', index: true },
+    priority: { type: Number, default: 0 },
+    attempts: { type: Number, default: 0 },
+    maxAttempts: { type: Number, default: 5 },
+    availableAt: { type: Date, default: null, index: true },
+    leaseOwner: { type: String, default: null },
+    leaseExpiresAt: { type: Date, default: null },
+    checkpoint: { type: Mixed, default: null },
+    lastError: { type: Mixed, default: null },
+    deadLetteredAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+  }, { _id: false, timestamps: true, collection: 'jobdiscovery_crawl_queue' });
+  crawlSchema.index({ state: 1, availableAt: 1, priority: -1 });
 
   const rawSchema = new Schema({
     schemaVersion: { type: Number, default: RAW_SNAPSHOT_SCHEMA_VERSION },
@@ -424,13 +684,15 @@ async function buildModels(mongoose) {
     normalizerVersion: Number,
     payload: { type: Mixed, default: null },
   }, { collection: 'jobdiscovery_raw' });
-  /* Retention: raw payloads expire automatically rather than growing forever. */
   rawSchema.index({ fetchedAt: 1 }, { expireAfterSeconds: 30 * 86400 });
 
   mongooseModels = {
     Job: mongoose.models.JobDiscoveryJob || mongoose.model('JobDiscoveryJob', jobSchema),
     Source: mongoose.models.JobDiscoverySource || mongoose.model('JobDiscoverySource', sourceSchema),
     Raw: mongoose.models.JobDiscoveryRaw || mongoose.model('JobDiscoveryRaw', rawSchema),
+    Company: mongoose.models.JobDiscoveryCompany || mongoose.model('JobDiscoveryCompany', companySchema),
+    Discovery: mongoose.models.JobDiscoveryDiscoveryTask || mongoose.model('JobDiscoveryDiscoveryTask', discoverySchema),
+    Crawl: mongoose.models.JobDiscoveryCrawlTask || mongoose.model('JobDiscoveryCrawlTask', crawlSchema),
   };
   return mongooseModels;
 }
@@ -445,11 +707,18 @@ export function searchTextOf(job) {
 }
 
 export class MongoJobStore extends BaseJobStore {
-  constructor({ mongoose, connect }) {
+  constructor({ mongoose, connect, atlasSearchIndex = process.env.JOB_DISCOVERY_ATLAS_SEARCH_INDEX || null }) {
     super();
     this.mongoose = mongoose;
     this.connect = connect;
     this.models = null;
+    /* Atlas Search is PREFERRED when the deployment provides an index name.
+       Without one we do not pretend to have it — retrieval uses the indexed
+       $text + titleFamilies path, which is the strongest thing plain Mongo
+       offers, and stats() reports which path is actually live. */
+    this.atlasSearchIndex = atlasSearchIndex || null;
+    this.atlasSearchAvailable = null;
+    this.lastAtlasError = null;
   }
 
   async init() {
@@ -459,13 +728,24 @@ export class MongoJobStore extends BaseJobStore {
   }
 
   toDoc(job) {
-    return { ...job, _id: job.id, blockingKeys: blockingKeys(job), searchText: searchTextOf(job) };
+    return {
+      ...job,
+      _id: job.id,
+      blockingKeys: blockingKeys(job),
+      searchText: searchTextOf(job),
+      directApply: !!(job.canonicalApplyUrl && (job.sourceInstances || []).some(
+        (s) => s.applyUrl === job.canonicalApplyUrl
+          && (s.sourceClass === 'ORIGINAL_ATS' || s.sourceClass === 'ORIGINAL_CAREER_SITE'),
+      )),
+    };
   }
 
   fromDoc(doc) {
     if (!doc) return null;
     const o = doc.toObject ? doc.toObject() : doc;
-    const { _id, blockingKeys: _bk, searchText: _st, __v, createdAt, updatedAt, ...rest } = o;
+    const {
+      _id, blockingKeys: _bk, searchText: _st, __v, createdAt, updatedAt, score, ...rest
+    } = o;
     const iso = (v) => (v instanceof Date ? v.toISOString() : v ?? null);
     return {
       ...rest,
@@ -482,6 +762,7 @@ export class MongoJobStore extends BaseJobStore {
       lastVerifiedAt: iso(rest.lastVerifiedAt),
       lastChangedAt: iso(rest.lastChangedAt),
       closedAt: iso(rest.closedAt),
+      nextVerifyAt: iso(rest.nextVerifyAt),
     };
   }
 
@@ -520,24 +801,23 @@ export class MongoJobStore extends BaseJobStore {
     return docs.map((d) => this.fromDoc(d));
   }
 
-  /** Indexed candidate retrieval. Production search never takes an arbitrary
-      first-N slice of the collection and hopes the relevant job is present. */
-  async searchCandidates(criteria = {}) {
+  baseQuery(criteria) {
     const statuses = criteria.status || [JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE];
     const base = { status: { $in: statuses } };
     if (criteria.employmentType) base.employmentType = { $in: [criteria.employmentType, 'UNKNOWN', null] };
     if (Array.isArray(criteria.seniority) && criteria.seniority.length) base.seniority = { $in: [...criteria.seniority, 'UNKNOWN', null] };
     if (criteria.companyNormalized) base['company.normalizedName'] = criteria.companyNormalized;
+    if (criteria.directApply) base.directApply = true;
 
-    /* Compose structured OR clauses under $and so source-type and location
-       filters cannot overwrite each other. These are candidate-selection
-       constraints only; the deterministic ranker still performs the final
-       compatibility check before a result is surfaced. */
     const andClauses = [];
-    if (criteria.sourceType) andClauses.push({ $or: [
-      { 'sourceInstances.sourceClass': criteria.sourceType },
-      { 'sourceInstances.sourceType': criteria.sourceType },
-    ] });
+    if (criteria.sourceType) {
+      andClauses.push({
+        $or: [
+          { 'sourceInstances.sourceClass': criteria.sourceType },
+          { 'sourceInstances.sourceType': criteria.sourceType },
+        ],
+      });
+    }
     if (criteria.remote === 'remote') base['workplace.type'] = WORKPLACE_TYPE.REMOTE;
     if (criteria.remote === 'hybrid') base['workplace.type'] = WORKPLACE_TYPE.HYBRID;
     if (criteria.remote === 'onsite') base['workplace.type'] = WORKPLACE_TYPE.ONSITE;
@@ -560,25 +840,97 @@ export class MongoJobStore extends BaseJobStore {
       if (locationOr.length) andClauses.push({ $or: locationOr });
     }
     if (andClauses.length) base.$and = andClauses;
+    return base;
+  }
 
-    const cap = Math.max(50, Math.min(1500, Number(criteria.candidateLimit) || 750));
+  /**
+   * Indexed candidate retrieval. Atlas Search when the deployment provides an
+   * index; otherwise compound $text + titleFamilies queries. Either way the
+   * result is a BOUNDED candidate set that the deterministic Career Autopilot
+   * reranker then orders — Node never ranks the whole collection.
+   */
+  async searchCandidates(criteria = {}) {
+    const cap = Math.max(50, Math.min(2000, Number(criteria.candidateLimit) || 750));
+    const base = this.baseQuery(criteria);
+    const families = (criteria.familyKeys || []).filter(Boolean);
+    const text = String(criteria.q || '').trim();
+
+    if (this.atlasSearchIndex) {
+      try {
+        const out = await this.atlasSearchCandidates({ base, families, text, cap });
+        this.atlasSearchAvailable = true;
+        return criteria.withRetrievalMeta ? out : out.docs;
+      } catch (e) {
+        /* A missing or renamed Atlas index must not take search down — fall
+           back and RECORD it, never silently claim Atlas Search ran. */
+        this.atlasSearchAvailable = false;
+        this.lastAtlasError = e?.message || String(e);
+      }
+    }
+
     const docsById = new Map();
     const add = (docs) => { for (const d of docs) docsById.set(String(d._id), d); };
-    const families = (criteria.familyKeys || []).filter(Boolean);
+    let matchedTotal = 0;
+
     if (families.length) {
       const q = { ...base, titleFamilies: { $in: families } };
+      matchedTotal += await this.models.Job.countDocuments(q);
       add(await this.models.Job.find(q).sort({ sourcePublishedAt: -1, firstSeenAt: -1 }).limit(Math.ceil(cap * 0.7)).lean());
     }
-    const text = String(criteria.q || '').trim();
     if (text) {
       const q = { ...base, $text: { $search: text } };
-      // If base already used $or for source type, $text remains a top-level AND.
       add(await this.models.Job.find(q, { score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' } }).limit(cap).lean());
     }
     if (!text && !families.length) {
+      matchedTotal += await this.models.Job.countDocuments(base);
       add(await this.models.Job.find(base).sort({ sourcePublishedAt: -1, firstSeenAt: -1 }).limit(cap).lean());
     }
-    return [...docsById.values()].slice(0, cap).map((d) => this.fromDoc(d));
+
+    const docs = [...docsById.values()].slice(0, cap).map((d) => this.fromDoc(d));
+    const out = {
+      docs,
+      matchedTotal: Math.max(matchedTotal, docs.length),
+      truncated: docs.length >= cap,
+      strategy: this.atlasSearchAvailable === false ? 'mongo-text (atlas index unavailable)' : 'mongo-text',
+    };
+    return criteria.withRetrievalMeta ? out : docs;
+  }
+
+  /** $search + $searchMeta so truncation is reported against a real total. */
+  async atlasSearchCandidates({ base, families, text, cap }) {
+    const should = [];
+    if (text) {
+      should.push({ text: { query: text, path: 'title', score: { boost: { value: 8 } } } });
+      should.push({ text: { query: text, path: 'searchText' } });
+      should.push({ text: { query: text, path: 'company.name', score: { boost: { value: 3 } } } });
+    }
+    if (families.length) {
+      should.push({ text: { query: families, path: 'titleFamilies', score: { boost: { value: 5 } } } });
+    }
+    if (!should.length) should.push({ exists: { path: 'title' } });
+
+    const compound = { should, minimumShouldMatch: 1 };
+    const docs = await this.models.Job.aggregate([
+      { $search: { index: this.atlasSearchIndex, compound } },
+      { $match: base },
+      { $limit: cap },
+      { $addFields: { score: { $meta: 'searchScore' } } },
+    ]);
+
+    let matchedTotal = docs.length;
+    try {
+      const meta = await this.models.Job.aggregate([
+        { $searchMeta: { index: this.atlasSearchIndex, compound, count: { type: 'lowerBound' } } },
+      ]);
+      matchedTotal = meta?.[0]?.count?.lowerBound ?? matchedTotal;
+    } catch { /* count metadata is optional */ }
+
+    return {
+      docs: docs.map((d) => this.fromDoc(d)),
+      matchedTotal,
+      truncated: docs.length >= cap,
+      strategy: 'atlas-search',
+    };
   }
 
   async listVerificationCandidates({ before = null, limit = 25 } = {}) {
@@ -587,12 +939,13 @@ export class MongoJobStore extends BaseJobStore {
       status: { $ne: JOB_STATUS.REMOVED },
       $or: [
         { needsVerification: true },
-        { lastVerifiedAt: null },
-        { lastVerifiedAt: { $lte: cutoff } },
+        { nextVerifyAt: { $lte: cutoff } },
+        { nextVerifyAt: null, lastVerifiedAt: null },
+        { nextVerifyAt: null, lastVerifiedAt: { $lte: cutoff } },
       ],
     };
     const docs = await this.models.Job.find(q)
-      .sort({ needsVerification: -1, lastVerifiedAt: 1, firstSeenAt: 1 })
+      .sort({ needsVerification: -1, nextVerifyAt: 1, lastVerifiedAt: 1, firstSeenAt: 1 })
       .limit(Math.max(1, limit)).lean();
     return docs.map((d) => this.fromDoc(d));
   }
@@ -632,6 +985,7 @@ export class MongoJobStore extends BaseJobStore {
     if (filter.provider) q.provider = filter.provider;
     if (filter.status) q.status = Array.isArray(filter.status) ? { $in: filter.status } : filter.status;
     if (filter.sourceClass) q.sourceClass = filter.sourceClass;
+    if (filter.companyId) q.companyId = filter.companyId;
     const docs = await this.models.Source.find(q).limit(filter.limit || 5000).lean();
     return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
   }
@@ -646,6 +1000,131 @@ export class MongoJobStore extends BaseJobStore {
     return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
   }
 
+  /* ------------------------------ companies ------------------------------ */
+
+  async putCompany(company) {
+    const { id, _id, ...doc } = company;
+    await this.models.Company.updateOne({ _id: id || _id }, { $set: doc }, { upsert: true });
+    return company;
+  }
+
+  async getCompany(id) {
+    const d = await this.models.Company.findById(id).lean();
+    if (!d) return null;
+    const { _id, __v, ...rest } = d;
+    return { ...rest, id: _id };
+  }
+
+  async listCompanies(filter = {}) {
+    const q = {};
+    if (filter.domain) q.domain = filter.domain;
+    if (filter.normalizedName) q.normalizedName = filter.normalizedName;
+    if (filter.hasSource === true) q['sourceIds.0'] = { $exists: true };
+    if (filter.hasSource === false) q['sourceIds.0'] = { $exists: false };
+    const docs = await this.models.Company.find(q).limit(filter.limit || 5000).lean();
+    return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
+  }
+
+  /* --------------------------- discovery queue --------------------------- */
+
+  async putDiscoveryTask(task) {
+    const { id, _id, ...doc } = task;
+    await this.models.Discovery.updateOne({ _id: id || _id }, { $set: doc }, { upsert: true });
+    return task;
+  }
+
+  async getDiscoveryTask(id) {
+    const d = await this.models.Discovery.findById(id).lean();
+    if (!d) return null;
+    const { _id, __v, ...rest } = d;
+    return { ...rest, id: _id };
+  }
+
+  async listDiscoveryTasks(filter = {}) {
+    const q = {};
+    if (filter.state) q.state = Array.isArray(filter.state) ? { $in: filter.state } : filter.state;
+    if (filter.kind) q.kind = filter.kind;
+    const docs = await this.models.Discovery.find(q).limit(filter.limit || 500).lean();
+    return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
+  }
+
+  /** Atomic lease — two workers can never take the same discovery task. */
+  async leaseDiscoveryTasks({ at = null, limit = 10, owner = 'worker', leaseMs = 120000 } = {}) {
+    const now = at ? new Date(at) : new Date();
+    const expiry = new Date(now.getTime() + leaseMs);
+    const out = [];
+    for (let i = 0; i < limit; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const d = await this.models.Discovery.findOneAndUpdate(
+        {
+          $or: [
+            { state: { $in: ['PENDING', 'RETRY'] } },
+            { state: 'LEASED', leaseExpiresAt: { $lte: now } },
+          ],
+          $and: [{ $or: [{ nextAttemptAt: null }, { nextAttemptAt: { $lte: now } }] }],
+        },
+        { $set: { state: 'LEASED', leaseOwner: owner, leaseExpiresAt: expiry, lastAttemptAt: now } },
+        { sort: { priority: -1, nextAttemptAt: 1 }, returnDocument: 'after', new: true, lean: true },
+      );
+      if (!d) break;
+      const { _id, __v, ...rest } = d;
+      out.push({ ...rest, id: _id });
+    }
+    return out;
+  }
+
+  /* ----------------------------- crawl queue ----------------------------- */
+
+  async putCrawlTask(task) {
+    const { id, _id, ...doc } = task;
+    await this.models.Crawl.updateOne({ _id: id || _id }, { $set: doc }, { upsert: true });
+    return task;
+  }
+
+  async getCrawlTask(id) {
+    const d = await this.models.Crawl.findById(id).lean();
+    if (!d) return null;
+    const { _id, __v, ...rest } = d;
+    return { ...rest, id: _id };
+  }
+
+  async listCrawlTasks(filter = {}) {
+    const q = {};
+    if (filter.state) q.state = Array.isArray(filter.state) ? { $in: filter.state } : filter.state;
+    if (filter.sourceId) q.sourceId = filter.sourceId;
+    const docs = await this.models.Crawl.find(q).limit(filter.limit || 500).lean();
+    return docs.map(({ _id, __v, ...rest }) => ({ ...rest, id: _id }));
+  }
+
+  async leaseCrawlTasks({ at = null, limit = 5, owner = 'worker', leaseMs = 300000 } = {}) {
+    const now = at ? new Date(at) : new Date();
+    const expiry = new Date(now.getTime() + leaseMs);
+    const out = [];
+    for (let i = 0; i < limit; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const d = await this.models.Crawl.findOneAndUpdate(
+        {
+          $or: [
+            { state: { $in: ['PENDING', 'RETRY'] } },
+            { state: 'LEASED', leaseExpiresAt: { $lte: now } },
+          ],
+          $and: [{ $or: [{ availableAt: null }, { availableAt: { $lte: now } }] }],
+        },
+        {
+          $set: { state: 'LEASED', leaseOwner: owner, leaseExpiresAt: expiry, leasedAt: now },
+          $inc: { attempts: 1 },
+        },
+        { sort: { priority: -1, availableAt: 1 }, returnDocument: 'after', new: true, lean: true },
+      );
+      if (!d) break;
+      const { _id, __v, ...rest } = d;
+      out.push({ ...rest, id: _id });
+    }
+    return out;
+  }
+
+  /* -------------------------------- raw -------------------------------- */
+
   async putRaw(snapshot) {
     await this.models.Raw.create({ ...snapshot, fetchedAt: new Date(snapshot.fetchedAt) });
     return snapshot;
@@ -656,7 +1135,7 @@ export class MongoJobStore extends BaseJobStore {
     return this.models.Raw.find(q).sort({ fetchedAt: -1 }).limit(filter.limit || 200).lean();
   }
 
-  /* TTL index handles retention; this exists for explicit operator-run cleanup. */
+  /* TTL index handles retention; this exists for explicit operator cleanup. */
   async pruneRaw({ maxAgeDays = 30 } = {}) {
     const cutoff = new Date(Date.now() - maxAgeDays * 86400000);
     const r = await this.models.Raw.deleteMany({ fetchedAt: { $lt: cutoff } });
@@ -664,11 +1143,21 @@ export class MongoJobStore extends BaseJobStore {
   }
 
   async stats() {
-    const [jobs, sources, raw] = await Promise.all([
+    const [jobs, sources, raw, companies, discoveryTasks, crawlTasks] = await Promise.all([
       this.models.Job.countDocuments(), this.models.Source.countDocuments(), this.models.Raw.countDocuments(),
+      this.models.Company.countDocuments(), this.models.Discovery.countDocuments(), this.models.Crawl.countDocuments(),
     ]);
     const agg = await this.models.Job.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]);
-    return { backend: 'mongo', jobs, sources, raw, byStatus: Object.fromEntries(agg.map((a) => [a._id, a.n])) };
+    return {
+      backend: 'mongo',
+      jobs, sources, raw, companies, discoveryTasks, crawlTasks,
+      byStatus: Object.fromEntries(agg.map((a) => [a._id, a.n])),
+      atlasSearch: {
+        configuredIndex: this.atlasSearchIndex,
+        available: this.atlasSearchAvailable,
+        lastError: this.lastAtlasError,
+      },
+    };
   }
 }
 
@@ -684,17 +1173,17 @@ export async function createStore({
   connect = null,
   dataDir = process.env.JOB_DISCOVERY_DATA_DIR || '.data/job-discovery',
   backend = process.env.JOB_DISCOVERY_STORE || '',
+  atlasSearchIndex = process.env.JOB_DISCOVERY_ATLAS_SEARCH_INDEX || null,
 } = {}) {
-  /* Fail closed when a Mongo URI is present. Falling back to a local file store
-     in that situation can split the crawler worker and HTTP API across two
-     different indexes while both appear healthy. */
   const chosen = backend || (mongoUri ? 'mongo' : (dataDir ? 'file' : 'memory'));
   if (chosen === 'mongo') {
     if (!mongoose) throw new Error('createStore: MONGODB_URI/mongo backend configured without a mongoose instance; refusing local-store fallback');
-    return new MongoJobStore({ mongoose, connect }).init();
+    return new MongoJobStore({ mongoose, connect, atlasSearchIndex }).init();
   }
   if (chosen === 'file') return new FileJobStore({ dir: dataDir }).init();
   return new MemoryJobStore().init();
 }
 
-export default { MemoryJobStore, FileJobStore, MongoJobStore, createStore, searchTextOf };
+export default {
+  MemoryJobStore, FileJobStore, MongoJobStore, createStore, searchTextOf, retrievalFiltersOf,
+};

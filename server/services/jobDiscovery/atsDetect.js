@@ -76,9 +76,15 @@ export const ATS_SIGNATURES = [
     hosts: [/(^|\.)myworkdayjobs\.com$/i, /(^|\.)myworkdaysite\.com$/i, /(^|\.)workday\.com$/i],
     paths: [/\/wday\//i, /\/en-US\//i],
     html: [/myworkdayjobs\.com/i, /wd\d+\.myworkdayjobs/i, /workday/i],
+    /* A Workday board URL may carry a locale segment before the site name
+       (/en-US/External). Capturing the locale as the site produces a board URL
+       that 404s for every job on it, so the locale is skipped explicitly. */
     tenant: (url) => {
-      const m = String(url).match(/https?:\/\/([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com\/([^/?#]+)/i);
-      return m ? `${m[1]}/${m[2]}/${m[3]}` : null;
+      const m = String(url).match(/https?:\/\/([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com\/(?:([a-z]{2}(?:[-_][A-Za-z]{2})?)\/)?([^/?#]+)/i);
+      if (!m) return null;
+      const site = m[4];
+      if (!site || /^(wday|cxs)$/i.test(site)) return null;
+      return `${m[1]}/${m[2]}/${site}`;
     },
   },
   {
@@ -151,13 +157,103 @@ export const ATS_SIGNATURES = [
       return m ? m[1].toLowerCase() : null;
     },
   },
+  {
+    provider: PROVIDER.ORACLE_RECRUITING,
+    hosts: [/(^|\.)oraclecloud\.com$/i, /(^|\.)fa\.oraclecloud\.com$/i, /(^|\.)oraclecloud\.cn$/i],
+    paths: [/\/hcmUI\/CandidateExperience/i, /\/recruitingCEJobRequisitions/i],
+    html: [/CandidateExperience/i, /recruitingCEJobRequisitions/i, /ORA_CE/i],
+    /* Oracle Recruiting identity is host + candidate-experience site name; both
+       are needed to address a board, so the tenant carries both. */
+    tenant: (url) => {
+      const m = String(url).match(/https?:\/\/([a-z0-9.-]+)\/hcmUI\/CandidateExperience\/[a-z-]+\/sites\/([A-Za-z0-9_-]+)/i);
+      if (m) return `${m[1].toLowerCase()}/${m[2]}`;
+      const api = String(url).match(/https?:\/\/([a-z0-9.-]+)\/hcmRestApi\/.*siteNumber=([A-Za-z0-9_-]+)/i);
+      return api ? `${api[1].toLowerCase()}/${api[2]}` : null;
+    },
+  },
+  {
+    provider: PROVIDER.TALEO,
+    hosts: [/(^|\.)taleo\.net$/i, /(^|\.)tbe\.taleo\.net$/i],
+    paths: [/\/careersection/i],
+    html: [/taleo\.net/i, /careersection/i],
+    tenant: (url) => {
+      const m = String(url).match(/https?:\/\/([a-z0-9-]+)\.taleo\.net/i);
+      return m && m[1] !== 'www' ? m[1].toLowerCase() : null;
+    },
+  },
+  {
+    provider: PROVIDER.COMEET,
+    hosts: [/(^|\.)comeet\.co$/i, /(^|\.)comeet\.com$/i],
+    paths: [/\/jobs\//i, /\/careers/i],
+    html: [/comeet\.co\/jobs/i, /comeet-\w+/i],
+    tenant: (url) => {
+      const m = String(url).match(/comeet\.co\/jobs\/([a-z0-9_-]+)/i)
+        || String(url).match(/careers-api\/2\.0\/company\/([A-Za-z0-9._-]+)/i);
+      return m ? m[1] : null;
+    },
+  },
+  {
+    provider: PROVIDER.JAZZHR,
+    hosts: [/(^|\.)applytojob\.com$/i, /(^|\.)jazz\.co$/i, /(^|\.)jazzhr\.com$/i],
+    paths: [/\/apply/i],
+    html: [/applytojob\.com/i, /jazzhr/i],
+    tenant: (url) => {
+      const m = String(url).match(/https?:\/\/([a-z0-9-]+)\.applytojob\.com/i);
+      return m ? m[1].toLowerCase() : null;
+    },
+  },
+  {
+    provider: PROVIDER.PINPOINT,
+    hosts: [/(^|\.)pinpointhq\.com$/i, /(^|\.)pinpoint\.dev$/i],
+    paths: [/\/postings/i, /\/jobs/i],
+    html: [/pinpointhq\.com/i],
+    tenant: (url) => {
+      const m = String(url).match(/https?:\/\/([a-z0-9-]+)\.pinpointhq\.com/i);
+      return m && m[1] !== 'www' ? m[1].toLowerCase() : null;
+    },
+  },
+  {
+    provider: PROVIDER.RIPPLING,
+    hosts: [/(^|\.)ats\.rippling\.com$/i, /(^|\.)rippling\.com$/i, /(^|\.)rippling-ats\.com$/i],
+    paths: [/\/jobs/i, /\/board/i],
+    html: [/ats\.rippling\.com/i, /rippling-ats/i],
+    tenant: (url) => {
+      const m = String(url).match(/ats\.rippling\.com\/([a-z0-9._-]+)/i)
+        || String(url).match(/rippling-ats\.com\/([a-z0-9._-]+)/i);
+      return m ? m[1].toLowerCase() : null;
+    },
+  },
+  {
+    provider: PROVIDER.ZOHO_RECRUIT,
+    hosts: [/(^|\.)zohorecruit\.com$/i, /(^|\.)zohorecruit\.eu$/i, /(^|\.)zohorecruit\.in$/i],
+    paths: [/\/jobs\//i, /\/careers/i],
+    html: [/zohorecruit\.com/i, /zoho\.com\/recruit/i],
+    tenant: (url) => {
+      const m = String(url).match(/https?:\/\/([a-z0-9-]+)\.zohorecruit\.(com|eu|in)/i);
+      return m && m[1] !== 'www' ? m[1].toLowerCase() : null;
+    },
+  },
 ];
 
-/** Which providers actually have a working connector in THIS build. */
+/**
+ * Which providers actually have a working connector in THIS build.
+ *
+ * DETECTION IS NOT SUPPORT. Every signature above is detected and registered —
+ * that knowledge is worth keeping even with no connector — but only the
+ * providers listed here can be ingested, and the registry reports the rest as
+ * DETECTED / NOT_SUPPORTED rather than pretending coverage exists.
+ */
 export const SUPPORTED_PROVIDERS = new Set([
   PROVIDER.GREENHOUSE, PROVIDER.LEVER, PROVIDER.ASHBY, PROVIDER.WORKABLE,
-  PROVIDER.SMARTRECRUITERS, PROVIDER.GENERIC, PROVIDER.API,
+  PROVIDER.SMARTRECRUITERS, PROVIDER.WORKDAY, PROVIDER.RECRUITEE, PROVIDER.PERSONIO,
+  PROVIDER.TEAMTAILOR, PROVIDER.BAMBOOHR, PROVIDER.JAZZHR, PROVIDER.PINPOINT,
+  PROVIDER.RIPPLING, PROVIDER.ZOHO_RECRUIT, PROVIDER.JOBVITE, PROVIDER.COMEET,
+  PROVIDER.ICIMS, PROVIDER.ORACLE_RECRUITING, PROVIDER.TALEO, PROVIDER.SUCCESSFACTORS,
+  PROVIDER.GENERIC, PROVIDER.API,
 ]);
+
+/** Providers we can FINGERPRINT. Always a superset of SUPPORTED_PROVIDERS. */
+export const DETECTED_PROVIDERS = new Set(ATS_SIGNATURES.map((s) => s.provider));
 
 export const CAREER_PATH_HINTS = [
   '/careers', '/career', '/jobs', '/join-us', '/join', '/work-with-us',
@@ -244,6 +340,24 @@ export function boardUrlFor(provider, tenant, { region = 'us' } = {}) {
     case PROVIDER.RECRUITEE: return `https://${tenant}.recruitee.com/`;
     case PROVIDER.TEAMTAILOR: return `https://${tenant}.teamtailor.com/jobs`;
     case PROVIDER.BAMBOOHR: return `https://${tenant}.bamboohr.com/jobs/`;
+    case PROVIDER.PERSONIO: return `https://${tenant}.jobs.personio.de/`;
+    case PROVIDER.JAZZHR: return `https://${tenant}.applytojob.com/apply`;
+    case PROVIDER.PINPOINT: return `https://${tenant}.pinpointhq.com/`;
+    case PROVIDER.RIPPLING: return `https://ats.rippling.com/${tenant}/jobs`;
+    case PROVIDER.ZOHO_RECRUIT: return `https://${tenant}.zohorecruit.com/jobs/Careers`;
+    case PROVIDER.COMEET: return `https://www.comeet.co/jobs/${tenant}`;
+    case PROVIDER.JOBVITE: return `https://jobs.jobvite.com/${tenant}`;
+    case PROVIDER.ICIMS: return `https://${tenant}.icims.com/jobs/search`;
+    case PROVIDER.TALEO: return `https://${tenant}.taleo.net/careersection/`;
+    case PROVIDER.WORKDAY: {
+      /* tenant is "company/wdN/site" — the only shape that addresses a board. */
+      const [co, wd, site] = String(tenant).split('/');
+      return co && wd && site ? `https://${co}.${wd}.myworkdayjobs.com/${site}` : null;
+    }
+    case PROVIDER.ORACLE_RECRUITING: {
+      const [host, site] = String(tenant).split('/');
+      return host && site ? `https://${host}/hcmUI/CandidateExperience/en/sites/${site}` : null;
+    }
     default: return null;
   }
 }
@@ -271,4 +385,7 @@ export function extractAtsLinks(html, baseUrl = '') {
   return [...found.values()];
 }
 
-export default { detectAts, boardUrlFor, extractAtsLinks, ATS_SIGNATURES, SUPPORTED_PROVIDERS, CAREER_PATH_HINTS };
+export default {
+  detectAts, boardUrlFor, extractAtsLinks, ATS_SIGNATURES,
+  SUPPORTED_PROVIDERS, DETECTED_PROVIDERS, CAREER_PATH_HINTS,
+};

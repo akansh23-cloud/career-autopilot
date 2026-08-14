@@ -20,7 +20,7 @@ import { resolveFamilies, expandQuery, RELATION_WEIGHT } from '../server/service
 import { parseLocation, classifyWorkplace, locationCompatibility } from '../server/services/jobDiscovery/normalize/location.js';
 import { parseCompensationText, normalizeCompensation, salaryCompatibility } from '../server/services/jobDiscovery/normalize/compensation.js';
 import { toCanonicalJob } from '../server/services/jobDiscovery/normalize/index.js';
-import { detectAts, extractAtsLinks, boardUrlFor } from '../server/services/jobDiscovery/atsDetect.js';
+import { detectAts, extractAtsLinks, boardUrlFor, SUPPORTED_PROVIDERS, DETECTED_PROVIDERS } from '../server/services/jobDiscovery/atsDetect.js';
 import { findJobPostings, jobPostingToInput, extractEmbeddedJson, findJobArrays, extractJobLinks, extractSitemapUrls } from '../server/services/jobDiscovery/crawler/extract.js';
 import { assertNormalizedInput } from '../server/services/jobDiscovery/adapters/base.js';
 import GreenhouseAdapter from '../server/services/jobDiscovery/adapters/greenhouse.js';
@@ -241,7 +241,16 @@ test('ATS fingerprinting extracts tenants and separates DETECTED from SUPPORTED'
   const wd = detectAts('https://acme.wd3.myworkdayjobs.com/en-US/External');
   assert.equal(wd.provider, PROVIDER.WORKDAY);
   assert.equal(wd.detected, true);
-  assert.equal(wd.supported, false, 'Workday is detected but has no connector in this build');
+  assert.equal(wd.tenant, 'acme/wd3/External', 'a Workday board is only addressable as company/wdN/site');
+
+  /* DETECTION IS NOT SUPPORT. The detected set must always be a superset of
+     the supported set — a provider we can fingerprint but not ingest is still
+     worth registering, and must never be reported as covered. */
+  for (const p of SUPPORTED_PROVIDERS) {
+    if (p === PROVIDER.GENERIC || p === PROVIDER.API) continue;
+    assert.ok(DETECTED_PROVIDERS.has(p), `${p} claims support without a detection signature`);
+  }
+  assert.ok(DETECTED_PROVIDERS.size >= 20, 'provider fingerprinting coverage regressed');
 
   const embedded = detectAts('https://northwindlabs.example/careers', fx.greenhouseEmbeddedPage);
   assert.equal(embedded.provider, PROVIDER.GREENHOUSE);
