@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown, Users, Linkedin, FileText, Mail, Sparkles, Copy, Check, AlertTriangle, ClipboardCheck, Hammer, Send, Download, Wand2, ListChecks, Target, Eye, X, Rocket } from 'lucide-react';
 import { PageIntro } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal, Spinner } from '../components/ui/kit.jsx';
-import { Jobs, Contacts, AI } from '../lib/api.js';
+import { Jobs, Contacts, AI, Applications } from '../lib/api.js';
+import { fromSearchPayload } from '../lib/jobDiscovery.js';
 import { ROLE_GROUPS } from '../lib/roles.js';
 import { consumeQueuedResumeJobSearch, getResumeSearchRole, getStoredResume, getStoredJobResults, saveStoredJobResults, saveSelectedJob } from '../lib/resumeStore.js';
 import { saveStudioSeed } from '../lib/projectStore.js';
@@ -40,21 +41,31 @@ function slug(s = 'file') { return String(s).toLowerCase().replace(/[^a-z0-9]+/g
 
 function enrichJob(j, resume) {
   const text = `${jobText(j)} ${(j.tags || []).join(' ')}`;
-  const jw = new Set(words(text));
   const rw = new Set(words(`${resume.text || ''} ${resume.analysis?.summary || ''} ${(resume.analysis?.strengths || []).join(' ')}`));
   const required = uniq([...(j.requiredSkills || []), ...(String(j.title || '').match(/devops|kubernetes|docker|terraform|aws|azure|java|react|python|data|cloud|ci\/cd/gi) || [])]).slice(0, 12);
-  const matched = required.filter((s) => rw.has(String(s).toLowerCase()) || words(s).some((w) => rw.has(w)));
-  const missing = required.filter((s) => !matched.includes(s)).slice(0, 8);
+  const matched = required.filter((skill) => rw.has(String(skill).toLowerCase()) || words(skill).some((w) => rw.has(w)));
+  const missing = required.filter((skill) => !matched.includes(skill)).slice(0, 8);
+
+  /* Job Discovery results already have a deterministic server relevance score.
+     Resume evidence may annotate downstream tailoring/gap UX, but MUST NOT
+     replace or reorder the discovery engine's search ranking. */
+  if (j._discovery) {
+    const relevance = j._discovery.relevance || {};
+    const overall = clamp(relevance.overall ?? j._match ?? 0, 0, 100);
+    const titleScore = clamp(relevance.title ?? overall, 0, 100);
+    const why = Array.isArray(relevance.explanations) && relevance.explanations.length
+      ? relevance.explanations.slice(0, 4)
+      : [j._discovery.titleRelation ? `${String(j._discovery.titleRelation).toLowerCase()} title relationship` : 'Relevant indexed role'];
+    return { ...j, _match: overall, _backup: titleScore, _matched: matched, _missing: missing, _why: why };
+  }
+
+  /* Compatibility only for stored historical/legacy job objects. New product
+     searches never arrive through this path. */
   const titleHit = words(j.title).some((w) => rw.has(w));
-  const locOk = true;
-  const base = 45 + matched.length * 7 + (titleHit ? 13 : 0) + (j.verified ? 4 : 0) + (String(j.postedDate || '').toLowerCase().includes('today') ? 4 : 0);
+  const base = 45 + matched.length * 7 + (titleHit ? 13 : 0) + (j.verified ? 4 : 0);
   const match = clamp(j.matchScore || j.match || base, 35, 96);
   const backup = clamp(Math.max(25, match - 12 - missing.length * 2), 20, 85);
-  const why = uniq([
-    titleHit && 'Relevant role/title',
-    matched.length ? `${matched.slice(0, 3).join(', ')} already present in resume` : '',
-    locOk && (j.mode || j.location) ? 'Location/work mode looks acceptable' : '',
-  ]).filter(Boolean);
+  const why = uniq([titleHit && 'Relevant role/title', matched.length ? `${matched.slice(0, 3).join(', ')} present in resume` : '']).filter(Boolean);
   return { ...j, _match: match, _backup: backup, _matched: matched, _missing: missing, _why: why.length ? why : ['Relevant role/title'] };
 }
 
@@ -118,7 +129,6 @@ ${resume.analysis?.name || '[Your name]'}`;
     riskNotes: missing.length ? [`Resume may be missing: ${missing.slice(0, 4).join(', ')}`] : [],
     changeNotes,
     tailoredResume: resume.text || '',
-    latexResume: '',
     docs: { coverLetter, recruiterMessage, linkedinNote, applicationEmail: { subject: `Application: ${title} — ${resume.analysis?.name || ''}`.trim(), body: coverLetter }, followUp3: '', followUp5: '', followUp7: '', salaryNegotiation: '', applyChecklist },
     template, length, deterministic: true,
     createdAt: new Date().toISOString(), job,
@@ -127,12 +137,11 @@ ${resume.analysis?.name || '[Your name]'}`;
 
 function KitTabs({ kit, tab, setTab }) {
   const tabs = [
-    ['resume', 'Resume'], ['latex', 'Resume (LaTeX)'], ['cover', 'Cover Letter'], ['recruiter', 'Recruiter'], ['linkedin', 'LinkedIn'], ['email', 'Email'], ['follow', 'Follow-up'], ['negotiation', 'Negotiation'], ['checklist', 'Checklist'], ['changes', 'Changes'],
+    ['resume', 'Resume'], ['cover', 'Cover Letter'], ['recruiter', 'Recruiter'], ['linkedin', 'LinkedIn'], ['email', 'Email'], ['follow', 'Follow-up'], ['negotiation', 'Negotiation'], ['checklist', 'Checklist'], ['changes', 'Changes'],
   ];
   const value = (() => {
     const d = kit?.docs || {};
     if (tab === 'resume') return kit?.tailoredResume || '';
-    if (tab === 'latex') return kit?.latexResume || '';
     if (tab === 'cover') return d.coverLetter || '';
     if (tab === 'recruiter') return d.recruiterMessage || '';
     if (tab === 'linkedin') return d.linkedinNote || '';
@@ -186,16 +195,9 @@ function TailorModal({ open, job, go, onClose }) {
       return;
     }
     setStatus('loading'); setErr(''); setNotice(''); setNeedsResume(false); setUpgradeMsg('');
-    const prompt = `You are an expert job application assistant. Build a truthful tailored application kit.
-Return ONLY valid JSON with this shape:
-{"atsBefore":0,"atsAfter":0,"matchedKeywords":[],"stillMissing":[],"summary":"","whyFit":[],"riskNotes":[],"changeNotes":[],"tailoredResume":"plain text resume","latexResume":"Jake's Resume LaTeX if possible","docs":{"coverLetter":"","recruiterMessage":"","linkedinNote":"","applicationEmail":{"subject":"","body":""},"followUp3":"","followUp5":"","followUp7":"","salaryNegotiation":"","applyChecklist":[]}}
-Rules: never invent employers, dates, certifications, tools or metrics. Use only resume facts. Template=${template}. Length=${length}. If single page, compress lower priority content; if multi page, keep sections complete.
-RESUME:\n"""${resume.text.slice(0, 9000)}"""
-ANALYSIS:\n${JSON.stringify(resume.analysis || {}).slice(0, 2500)}
-JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
-
-    // If the AI call can't be used, fall back to a deterministic kit so the
-    // modal still produces a usable package — never a raw technical error.
+    // Resume content is produced by the canonical Career Autopilot engine.
+    // Application messages come from the deterministic application-package
+    // service; unrelated outreach AI elsewhere in Jobs remains separate.
     const degrade = (message) => {
       const fb = buildFallbackKit(job, resume, { template, length });
       const all = safeRead(KIT_KEY, {}); all[keyForJob(job)] = fb; safeWrite(KIT_KEY, all);
@@ -203,36 +205,45 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
     };
 
     try {
-      const d = await AI.message({ max_tokens: 3600, messages: [{ role: 'user', content: prompt }] });
-      const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-      const parsed = extractJSON(text);
-      if (!parsed) { degrade('We couldn’t read the AI response, so this is a deterministic starter kit you can edit. You can still use the checklist and gap analysis.'); return; }
+      const response = await Applications.generate({
+        resumeText: resume.text,
+        jobDescription: jobText(job),
+        targetRole: job.title || '',
+        applicantName: resume.analysis?.name || '',
+        enrich: false,
+      });
+      const p = response.package || {};
+      if (!p.tailoredResume?.text) { degrade('The canonical resume engine could not create a tailored variant, so this is a fact-preserving starter kit using your existing resume.'); return; }
+      const docs = p.documents || {};
       const next = {
-        atsBefore: clamp(parsed.atsBefore || job._backup || 45), atsAfter: clamp(parsed.atsAfter || job._match || 70),
-        matchedKeywords: parsed.matchedKeywords || job._matched || [], stillMissing: parsed.stillMissing || job._missing || [],
-        summary: parsed.summary || '', whyFit: parsed.whyFit || job._why || [], riskNotes: parsed.riskNotes || [], changeNotes: parsed.changeNotes || [],
-        tailoredResume: parsed.tailoredResume || '', latexResume: parsed.latexResume || '', docs: parsed.docs || {}, template, length,
+        atsBefore: clamp(job._backup || p.jobFitScore || 45),
+        atsAfter: clamp(p.jobFitScore || job._match || 70),
+        matchedKeywords: p.highlightSkills || job._matched || [],
+        stillMissing: p.missingRequiredSkills || job._missing || [],
+        summary: p.resumeQuality?.strengths?.map((x) => x.dimension).slice(0, 3).join(', ') || '',
+        whyFit: job._why || [],
+        riskNotes: (p.missingRequiredSkills || []).length ? [`Evidence gaps: ${(p.missingRequiredSkills || []).slice(0, 4).join(', ')}`] : [],
+        changeNotes: (p.tailoringChangeLog || []).map((c) => c.reason || `${c.before || ''} → ${c.after || ''}`).filter(Boolean),
+        tailoredResume: p.tailoredResume.text,
+        resumeDocument: p.resumeDocument || p.tailoredResume.document || null,
+            docs: {
+          coverLetter: docs.coverLetter || '',
+          recruiterMessage: docs.recruiterEmail?.body || '',
+          linkedinNote: docs.linkedinMessage || '',
+          applicationEmail: docs.recruiterEmail || { subject: '', body: '' },
+          followUp3: docs.followUp || '', followUp5: '', followUp7: '', salaryNegotiation: '',
+          applyChecklist: docs.interviewTalkingPoints || [],
+        },
+        template, length, deterministic: true, canonicalResumeEngine: !!p.canonicalResumeEngine,
+        quality: p.resumeQuality || null, truth: p.resumeTruth || null,
         createdAt: new Date().toISOString(), job,
       };
       const all = safeRead(KIT_KEY, {}); all[keyForJob(job)] = next; safeWrite(KIT_KEY, all);
-      useMeter('tailoring');
-      setKit(next); setStatus('done');
+      useMeter('tailoring'); setKit(next); setStatus('done');
     } catch (e) {
-      // Never a raw error, but never a misleading one either. A plan limit is
-      // NOT "temporarily unavailable" — that phrasing is what made students
-      // retry forever instead of upgrading or waiting for the daily reset.
       const d = describeApiError(e, 'resume tailoring');
-      if (d.kind === 'quota') {
-        setUpgradeMsg(d.message);
-        promptUpgrade(d.message, d.suggestPlan || 'pro');
-        degrade(`${d.message} In the meantime, here's a deterministic starter kit built from your resume — fully editable.`);
-      } else if (d.kind === 'rate') {
-        degrade(`${d.message} Here's a deterministic starter kit you can use or edit right now.`);
-      } else if (d.kind === 'config') {
-        degrade('Tailoring is not enabled on this account, so this is the standard template version. The checklist and project gap analysis below still work.');
-      } else {
-        degrade('Tailoring could not run just now, so here’s a starter kit you can edit. You can still use the checklist and gap analysis.');
-      }
+      if (d.kind === 'quota') { setUpgradeMsg(d.message); promptUpgrade(d.message, d.suggestPlan || 'pro'); }
+      degrade(`${d.message || 'Tailoring could not run.'} Your original resume has been preserved; no AI-authored resume was substituted.`);
     }
   };
 
@@ -245,7 +256,7 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
   const base = `${slug(job?.company)}-${slug(job?.title)}`;
 
   return <Modal open={open} onClose={onClose} width="max-w-5xl" title={job ? `Tailoring for ${job.title}` : 'Tailor resume'}>
-    {status === 'loading' && <div className="flex items-center gap-4 rounded-2xl border border-subtle bg-surface-1 p-5 text-sm text-fg-secondary"><Spinner className="border-aurora-mint/20 border-t-aurora-mint" /> Rewriting resume + writing cover letter, recruiter, LinkedIn and email notes…</div>}
+    {status === 'loading' && <div className="flex items-center gap-4 rounded-2xl border border-subtle bg-surface-1 p-5 text-sm text-fg-secondary"><Spinner className="border-aurora-mint/20 border-t-aurora-mint" /> Running Career Autopilot tailoring + preparing application messages…</div>}
     {(status === 'idle' || status === 'error') && <div className="space-y-4">
       {err && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-danger">
@@ -259,7 +270,7 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       <div className="rounded-2xl border border-aurora-mint/25 bg-aurora-mint/10 p-4">
         <div className="text-xs font-semibold uppercase tracking-[0.3em] text-aurora-mint">Tailored application kit</div>
         <h3 className="mt-1 font-display text-2xl text-fg">{job?.title} <span className="text-fg-muted">· {job?.company}</span></h3>
-        <p className="mt-2 text-sm text-muted">This generates the same package flow as the legacy version: tailored resume, LaTeX, cover letter, recruiter message, LinkedIn note, email, follow-ups, negotiation, checklist and change notes.</p>
+        <p className="mt-2 text-sm text-muted">Career Autopilot generates the tailored resume with its evidence-grounded engine, then prepares application messages separately. Resume content does not depend on AI.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-subtle bg-surface-1 p-4"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-fg-muted">Resume length</p><div className="flex gap-2">{['Auto','Single page','Multi page'].map((x) => <button key={x} onClick={() => setLength(x)} className={`rounded-xl px-3 py-2 text-xs font-semibold ${length === x ? 'bg-aurora-mint text-ink-950' : 'bg-surface-1 text-fg'}`}>{x}</button>)}</div></div>
@@ -272,7 +283,7 @@ JOB:\n"""${jobText(job).slice(0, 6000)}"""`;
       <div className="rounded-2xl border border-aurora-mint/30 bg-aurora-mint/10 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div><div className="text-xs font-semibold uppercase tracking-[0.3em] text-aurora-mint">Tailored application kit</div><h3 className="font-display text-2xl text-fg">{job?.title} <span className="text-fg-muted">· {job?.company}</span></h3></div>
-          <div className="flex flex-wrap gap-2"><Button size="sm" onClick={openEditor}><PenIcon /> Open in Resume Editor</Button><Button size="sm" variant="soft" onClick={() => downloadText(`${base}.txt`, kit.tailoredResume)}> <Download size={13}/>TXT</Button><Button size="sm" variant="soft" onClick={() => downloadText(`${base}.doc`, kit.tailoredResume, 'application/msword')}> <Download size={13}/>DOCX</Button><Button size="sm" variant="soft" onClick={() => downloadText(`${base}.tex`, kit.latexResume || kit.tailoredResume)}> <Download size={13}/>LaTeX</Button></div>
+          <div className="flex flex-wrap gap-2"><Button size="sm" onClick={openEditor}><PenIcon /> Open in Resume Editor</Button><Button size="sm" variant="soft" onClick={() => downloadText(`${base}.txt`, kit.tailoredResume)}> <Download size={13}/>TXT</Button><Button size="sm" variant="soft" onClick={() => downloadText(`${base}.doc`, kit.tailoredResume, 'application/msword')}> <Download size={13}/>DOCX</Button></div>
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -328,17 +339,32 @@ function ContactCard({ c, onDraft }) {
 
 function JobCard({ j, saved, onSave, onAction }) {
   const miss = j._missing?.length ? j._missing.slice(0, 6).join(', ') : 'No major gaps';
+  /* Provenance from the canonical Job Discovery OS. */
+  const d = j._discovery || null;
   return <Card hover className="overflow-hidden p-4 md:p-5">
     <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 truncate font-display text-lg font-semibold text-fg md:text-xl">{j.title}</h3>
-          <Badge tone="mint">✓ Open</Badge>
-          {j.postedDate
-            ? <Badge tone="cyan"><Clock size={11}/> {j.postedDate}</Badge>
-            : <Badge tone="amber" title="The source did not provide a posting date; this job is not treated as fresh."><Clock size={11}/> Date unavailable</Badge>}
+          {d?.status === 'NEW' ? <Badge tone="mint">NEW</Badge> : <Badge tone="mint">✓ Open</Badge>}
+          {/* §34: the label comes from the freshness engine, which cannot print
+              "Posted" unless the SOURCE published a date. When it did not, the
+              card says "First discovered …" — firstSeenAt is never relabelled
+              as a posting time. */}
+          {d?.dateLabel
+            ? <Badge tone={d.dateKind === 'posted' ? 'cyan' : 'amber'} title={d.dateKind === 'posted' ? 'Publication date supplied by the source.' : 'The source published no date. This is when Career Autopilot first discovered the posting — it is not a posting date.'}><Clock size={11}/> {d.dateLabel}</Badge>
+            : (j.postedDate
+              ? <Badge tone="cyan"><Clock size={11}/> {j.postedDate}</Badge>
+              : <Badge tone="amber" title="The source did not provide a posting date; this job is not treated as fresh."><Clock size={11}/> Date unavailable</Badge>)}
+          {d?.isOriginal && <Badge tone="mint" title="Ingested from the employer's own careers site or applicant tracking system.">Direct source</Badge>}
           {j.source && <Badge>{j.source}</Badge>}
         </div>
+        {d && <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-widest text-fg-muted">
+          <span title="Last time this posting was re-checked against its original source.">{d.verifiedLabel}</span>
+          {d.sourceCount > 1 && <span title={`Same vacancy found on: ${(d.providers || []).join(', ')}`}>{d.sourceCount} sources merged</span>}
+          {d.titleRelation && d.titleRelation !== 'EXACT' && <span title="This title is not an exact match for your query — it is in a related role family.">{d.titleRelation.toLowerCase()} role match</span>}
+          {d.remoteScope === 'UNKNOWN' && j.mode === 'Remote' && <span title="The source said remote but did not state which countries or regions are eligible.">remote scope not stated</span>}
+        </div>}
         <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Building2 size={14}/> {j.company || 'Company not listed'}</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {j.location && <Badge><MapPin size={11}/>{j.location}</Badge>}
@@ -347,8 +373,8 @@ function JobCard({ j, saved, onSave, onAction }) {
         </div>
       </div>
       <div className="flex gap-2 xl:flex-col">
-        <div className="min-w-[76px] rounded-xl border border-aurora-mint/30 bg-sunken px-3 py-2 text-center"><div className="font-display text-2xl text-amber-glow">{j._match}</div><div className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">Match</div></div>
-        <div className="min-w-[76px] rounded-xl border border-rose-400/25 bg-sunken px-3 py-2 text-center"><div className="font-display text-xl text-fg">{j._backup}</div><div className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">Backup</div></div>
+        <div className="min-w-[76px] rounded-xl border border-aurora-mint/30 bg-sunken px-3 py-2 text-center"><div className="font-display text-2xl text-amber-glow">{j._match}</div><div className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">Relevance</div></div>
+        <div className="min-w-[76px] rounded-xl border border-rose-400/25 bg-sunken px-3 py-2 text-center"><div className="font-display text-xl text-fg">{j._backup}</div><div className="font-mono text-[9px] uppercase tracking-widest text-fg-muted">Title</div></div>
       </div>
     </div>
 
@@ -430,9 +456,10 @@ export default function JobsView({ go }) {
   const enrichedJobs = useMemo(() => {
     const resume = getStoredResume();
     const list = (state.jobs || []).map((j) => enrichJob(j, resume));
-    if (sort === 'newest') return list.sort((a, b) => String(b.postedDate || '').localeCompare(String(a.postedDate || '')));
-    if (sort === 'match') return list.sort((a, b) => b._match - a._match);
-    return list.sort((a, b) => (b._match + b._backup) - (a._match + a._backup));
+    if (sort === 'newest') return list.sort((a, b) => String(b._discovery?.sourcePublishedAt || b._discovery?.firstSeenAt || '').localeCompare(String(a._discovery?.sourcePublishedAt || a._discovery?.firstSeenAt || '')));
+    if (sort === 'title') return list.sort((a, b) => (b._discovery?.relevance?.title || 0) - (a._discovery?.relevance?.title || 0));
+    /* Default: preserve server rank exactly. */
+    return list.sort((a, b) => (a._discovery?.rank || Number.MAX_SAFE_INTEGER) - (b._discovery?.rank || Number.MAX_SAFE_INTEGER));
   }, [state.jobs, sort]);
 
   const run = async (e, override = {}) => {
@@ -447,12 +474,19 @@ export default function JobsView({ go }) {
     setRole(searchRole); setState({ status: 'loading', jobs: [], err: null }); setMeta(null); setDiag(null);
     persist({ status: 'loading', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, experience: nextExp, jobType: nextType, freshness: nextFresh });
     try {
-      const d = await Jobs.search({ role: searchRole, location: nextLoc, mode: nextMode, experience: nextExp, jobType: nextType, freshness: nextFresh, verify: '0', limit: '18' });
-      const jobs = d.jobs || [];
-      // payload.search carries the fallback level, per-cause removal counts and a
-      // one-line explanation, so a thin result set is never an unexplained blank.
-      setMeta(d.search || null);
-      setDiag(d.diagnostics || null);
+      const payload = await Jobs.discoverySearch({
+        q: searchRole,
+        location: nextLoc || '',
+        remote: nextMode === 'any' ? '' : nextMode,
+        employmentType: nextType === 'any' ? '' : nextType,
+        experience: nextExp === 'any' ? '' : nextExp,
+        freshness: nextFresh === '1d' ? '24h' : nextFresh,
+        limit: '18',
+      });
+      const mapped = fromSearchPayload(payload);
+      const jobs = mapped.jobs;
+      setMeta(mapped.meta);
+      setDiag(null);
       setState({ status: 'done', jobs, err: null });
       saveStoredJobResults({ status: 'done', jobs, role: searchRole, location: nextLoc, mode: nextMode, experience: nextExp, jobType: nextType, freshness: nextFresh, saved });
     }
@@ -514,12 +548,12 @@ export default function JobsView({ go }) {
   };
 
   return <>
-    <PageIntro title="Find verified jobs" sub="Resume-aware job discovery with the same legacy flow: match score → tailor package → contacts/referrals → editor → tracker." />
+    <PageIntro title="Find verified jobs" sub="Fresh, deduplicated jobs from the canonical Career Autopilot index. Resume data is not required for discovery or ranking." />
     {resumeHint && <div className="mb-4 rounded-2xl border border-aurora-mint/20 bg-aurora-mint/10 px-4 py-3 text-sm text-fg">Resume and analysis are saved. Job results stay here when you move to another section. <span className="ml-1 font-medium text-fg">Current role: {role || 'select a role'}</span></div>}
     <form onSubmit={run} className="gradient-border mb-6 p-4"><div className="flex flex-col gap-3 md:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted"/><Input value={role} onChange={(e)=>setRole(e.target.value)} placeholder="Role e.g. DevOps Engineer" className="pl-10"/></div><div className="relative md:w-56"><select value={ROLE_OPTIONS.includes(role) ? role : ''} onChange={(e)=>e.target.value && setRole(e.target.value)} className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-field-border bg-field pl-3.5 pr-9 text-sm text-fg outline-none transition hover:border-strong hover:bg-field-hover focus:border-aurora-violet/70 focus:ring-2 focus:ring-aurora-violet/25"><option value="">Pick a role…</option>{Object.entries(ROLE_GROUPS).map(([grp, roles]) => <optgroup key={grp} label={grp}>{roles.map((r)=><option key={r} value={r}>{r}</option>)}</optgroup>)}</select><ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted"/></div><div className="relative md:w-52"><MapPin size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted"/><Input value={loc} onChange={(e)=>setLoc(e.target.value)} placeholder="Country / city" className="pl-10"/></div><Button type="submit" disabled={state.status === 'loading' || !role.trim()}><Search size={16}/> Search</Button></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs text-fg-muted"><Filter size={13}/> Filters:</span>{MODES.map((m)=><button key={m.value} onClick={()=>setMode(m.value)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${mode===m.value?'bg-aurora-violet/15 text-fg ring-1 ring-aurora-violet/30':'text-fg-secondary hover:bg-surface-hover'}`}>{m.label}</button>)}<span className="mx-1 h-4 w-px bg-surface-2"/><select value={experience} onChange={(e)=>setExperience(e.target.value)} className="h-7 cursor-pointer rounded-lg border border-field-border bg-field px-2 text-xs text-fg-secondary outline-none">{EXPERIENCE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><select value={jobType} onChange={(e)=>setJobType(e.target.value)} className="h-7 cursor-pointer rounded-lg border border-field-border bg-field px-2 text-xs text-fg-secondary outline-none">{JOB_TYPE_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select><span className="mx-1 h-4 w-px bg-surface-2"/>{FRESH.map(([l,v])=><button key={v} onClick={()=>setFresh(v)} type="button" className={`rounded-lg px-3 py-1 text-xs transition ${fresh===v?'bg-aurora-cyan/15 text-fg ring-1 ring-aurora-cyan/30':'text-fg-secondary hover:bg-surface-hover'}`}>{l}</button>)}</div></form>
     {state.status === 'loading' && <div className="space-y-4">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-56 w-full rounded-2xl"/>)}</div>}
     {state.status === 'error' && <EmptyState icon={Briefcase} title="Search failed" hint={state.err} action={<Button size="sm" onClick={run}>Retry</Button>} />}
-    {state.status === 'idle' && <EmptyState icon={Search} title="Search for your next role" hint="Analyze your resume first for best matching, or manually search a role here." />}
+    {state.status === 'idle' && <EmptyState icon={Search} title="Search for your next role" hint="Search by role and location. A resume is not required; tailoring is available after you choose a job." />}
     {/* Why a result set is thin or empty. The backend returns the fallback level
         it had to reach and a per-cause removal breakdown; showing it turns an
         unexplained blank page into something a student can act on. */}
@@ -541,7 +575,7 @@ export default function JobsView({ go }) {
       </div>
     )}
     {/* Which filters the backend had to relax, named individually. */}
-    {state.status === 'done' && meta?.usedFallback && (meta.explanation || meta.relaxedFilters?.length > 0) && (
+    {state.status === 'done' && meta?.explanation && (
       <div className="mb-4 rounded-xl border border-aurora-cyan/30 bg-aurora-cyan/10 px-4 py-3 text-xs leading-relaxed text-fg-secondary">
         {meta.explanation && <p className="text-fg">{meta.explanation}</p>}
         {meta.relaxedFilters?.length > 0 && (
@@ -558,11 +592,11 @@ export default function JobsView({ go }) {
       <EmptyState
         icon={Briefcase}
         title={diag?.errorCode ? 'Job search could not run' : 'No jobs found'}
-        hint={diag?.errorMessage || meta?.coverageHint || meta?.explanation || 'Try a broader role, clear the location, or widen the time window.'}
+        hint={meta?.explanation || 'No indexed jobs match yet. Try a broader role, clear the location, or widen the time window.'}
         action={fresh !== 'latest' ? <Button size="sm" onClick={(e)=>run(e,{ freshness:'latest', mode:'any', experience:'any', jobType:'any' })}>Search with all filters cleared</Button> : null}
       />
     )}
-    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {fresh === 'latest' ? 'jobs' : 'jobs within window'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Sort by priority</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Sort newest</button><button onClick={()=>setSort('match')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='match'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Sort match</button><button className="rounded-xl border border-subtle px-4 py-2 text-xs font-semibold text-fg-secondary">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
+    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {fresh === 'latest' ? 'jobs' : 'jobs within window'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Discovery relevance</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Sort newest</button><button onClick={()=>setSort('title')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='title'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Title relevance</button><button className="rounded-xl border border-subtle px-4 py-2 text-xs font-semibold text-fg-secondary">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
     <TailorModal open={!!tailorJob} job={tailorJob} go={go} onClose={()=>setTailorJob(null)} />
     <Modal open={!!buildConfirm} onClose={()=>setBuildConfirm(null)} title="Build a project for these gaps" width="max-w-xl">
       {buildConfirm && <div className="space-y-4">

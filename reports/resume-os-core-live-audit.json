@@ -1,0 +1,293 @@
+{
+  "generatedAt": "2026-08-13T10:26:51.843Z",
+  "version": "resume-os-core-live-audit-v1",
+  "aiPolish": false,
+  "cases": [
+    {
+      "id": "strong_devops",
+      "label": "Strong DevOps",
+      "scores": {
+        "original": 71,
+        "enhance": 77,
+        "improveAgain": 77,
+        "optimize": 77
+      },
+      "summaries": {
+        "original": "Results-driven DevOps professional leveraging cutting-edge technologies to deliver robust and scalable solutions.",
+        "enhance": "DevOps Engineer with 7 years of experience across delivery automation, including Java, GitLab CI, Helm and Jenkins. Automated post-deployment sanity test triggering, reducing manual verification effort by 80%.",
+        "optimize": "DevOps Engineer with 7 years of experience across delivery automation, including Java, GitLab CI, Helm and Jenkins. Automated post-deployment sanity test triggering, reducing manual verification effort by 80%."
+      },
+      "bulletChanges": {
+        "enhance": [
+          {
+            "before": "Responsible for deployment configuration of Java 17 services across OpenShift environments using Helm and ConfigMaps.",
+            "after": "Configured Java 17 service deployments covering OpenShift environments using Helm and ConfigMaps."
+          },
+          {
+            "before": "Worked on GitLab CI pipelines for build, test and deployment of banking services.",
+            "after": "Contributed to GitLab CI pipelines for build, test and deployment of banking services."
+          }
+        ],
+        "improveAgain": [],
+        "optimizeFromImprove": []
+      },
+      "improveObjective": "specificity",
+      "optimizePasses": [
+        {
+          "objective": "domain_authenticity",
+          "accepted": false,
+          "before": 77,
+          "after": 77,
+          "reason": "oscillation_prevented"
+        }
+      ],
+      "acceptedOptimizationPasses": 0,
+      "directOptimize": {
+        "before": 71,
+        "after": 77,
+        "acceptedPasses": 1,
+        "attemptedPasses": 2,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "stopReason": "all_actionable_objectives_attempted",
+      "converged": true,
+      "finalStatus": "OPTIMIZED",
+      "aiCalls": 0,
+      "truthFailures": [],
+      "optimizationCeiling": {
+        "reached": true,
+        "missingEvidence": [
+          "low_specificity"
+        ]
+      },
+      "autofit": {
+        "enhanceCalled": true,
+        "improveCalled": false,
+        "optimizeCalled": true,
+        "pendingMeasurement": true
+      },
+      "monotonicAccepted": true
+    },
+    {
+      "id": "partial_devops",
+      "label": "Partial DevOps",
+      "scores": {
+        "original": 68,
+        "enhance": 70,
+        "improveAgain": 70,
+        "optimize": 70
+      },
+      "summaries": {
+        "original": "Build and release engineer supporting application delivery and cloud environments.",
+        "enhance": "Build & Release Engineer with hands-on release and deployment work. Works day to day with AWS, Docker, EC2 and Java.",
+        "optimize": "Build & Release Engineer with hands-on release and deployment work. Works day to day with AWS, Docker, EC2 and Java."
+      },
+      "bulletChanges": {
+        "enhance": [],
+        "improveAgain": [],
+        "optimizeFromImprove": []
+      },
+      "improveObjective": "specificity",
+      "optimizePasses": [
+        {
+          "objective": "evidence_utilization",
+          "accepted": false,
+          "before": 70,
+          "after": 70,
+          "reason": "no_material_change"
+        },
+        {
+          "objective": "domain_authenticity",
+          "accepted": false,
+          "before": 70,
+          "after": 70,
+          "reason": "no_material_change"
+        },
+        {
+          "objective": "summary_quality",
+          "accepted": false,
+          "before": 70,
+          "after": 70,
+          "reason": "no_material_change"
+        }
+      ],
+      "acceptedOptimizationPasses": 0,
+      "directOptimize": {
+        "before": 68,
+        "after": 70,
+        "acceptedPasses": 1,
+        "attemptedPasses": 4,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "stopReason": "all_actionable_objectives_attempted",
+      "converged": true,
+      "finalStatus": "OPTIMIZED",
+      "aiCalls": 0,
+      "truthFailures": [],
+      "optimizationCeiling": {
+        "reached": true,
+        "missingEvidence": [
+          "low_specificity",
+          "underused_evidence"
+        ]
+      },
+      "autofit": {
+        "enhanceCalled": true,
+        "improveCalled": false,
+        "optimizeCalled": true,
+        "pendingMeasurement": true
+      },
+      "monotonicAccepted": true
+    },
+    {
+      "id": "fresher",
+      "label": "Fresher",
+      "scores": {
+        "original": 72,
+        "enhance": 77,
+        "improveAgain": 77,
+        "optimize": 77
+      },
+      "summaries": {
+        "original": "Highly motivated and results-driven computer science graduate with a passion for cutting-edge technologies.",
+        "enhance": "B.Tech Computer Science graduate building with JUnit, MySQL, Node.js and React. Project work covers release and deployment work.",
+        "optimize": "B.Tech Computer Science graduate building with JUnit, MySQL, Node.js and React. Project work covers release and deployment work."
+      },
+      "bulletChanges": {
+        "enhance": [
+          {
+            "before": "Worked on a Spring Boot service for internal ticket routing.",
+            "after": "Contributed to a Spring Boot service for internal ticket routing."
+          }
+        ],
+        "improveAgain": [],
+        "optimizeFromImprove": []
+      },
+      "improveObjective": "evidence_utilization",
+      "optimizePasses": [
+        {
+          "objective": "specificity",
+          "accepted": false,
+          "before": 77,
+          "after": 77,
+          "reason": "oscillation_prevented"
+        },
+        {
+          "objective": "domain_authenticity",
+          "accepted": false,
+          "before": 77,
+          "after": 77,
+          "reason": "oscillation_prevented"
+        },
+        {
+          "objective": "summary_quality",
+          "accepted": false,
+          "before": 77,
+          "after": 77,
+          "reason": "oscillation_prevented"
+        }
+      ],
+      "acceptedOptimizationPasses": 0,
+      "directOptimize": {
+        "before": 72,
+        "after": 77,
+        "acceptedPasses": 1,
+        "attemptedPasses": 4,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "stopReason": "all_actionable_objectives_attempted",
+      "converged": true,
+      "finalStatus": "OPTIMIZED",
+      "aiCalls": 0,
+      "truthFailures": [],
+      "optimizationCeiling": {
+        "reached": true,
+        "missingEvidence": [
+          "underused_evidence",
+          "low_specificity"
+        ]
+      },
+      "autofit": {
+        "enhanceCalled": true,
+        "improveCalled": false,
+        "optimizeCalled": true,
+        "pendingMeasurement": true
+      },
+      "monotonicAccepted": true
+    },
+    {
+      "id": "marketing",
+      "label": "Marketing",
+      "scores": {
+        "original": 66,
+        "enhance": 73,
+        "improveAgain": 73,
+        "optimize": 73
+      },
+      "summaries": {
+        "original": "Results-driven marketing professional passionate about game-changing campaigns.",
+        "enhance": "Marketing Manager with 5 years of experience across delivery, including Google Analytics, HubSpot and SEO. Ran the lifecycle email programme.",
+        "optimize": "Marketing Manager with 5 years of experience across delivery, including Google Analytics, HubSpot and SEO. Ran the lifecycle email programme."
+      },
+      "bulletChanges": {
+        "enhance": [
+          {
+            "before": "Worked on SEO content briefs for the product blog.",
+            "after": "Contributed to SEO content briefs for the product blog."
+          }
+        ],
+        "improveAgain": [],
+        "optimizeFromImprove": []
+      },
+      "improveObjective": "specificity",
+      "optimizePasses": [
+        {
+          "objective": "domain_authenticity",
+          "accepted": false,
+          "before": 73,
+          "after": 73,
+          "reason": "oscillation_prevented"
+        }
+      ],
+      "acceptedOptimizationPasses": 0,
+      "directOptimize": {
+        "before": 66,
+        "after": 73,
+        "acceptedPasses": 1,
+        "attemptedPasses": 2,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "stopReason": "all_actionable_objectives_attempted",
+      "converged": true,
+      "finalStatus": "OPTIMIZED",
+      "aiCalls": 0,
+      "truthFailures": [],
+      "optimizationCeiling": {
+        "reached": true,
+        "missingEvidence": [
+          "low_specificity"
+        ]
+      },
+      "autofit": {
+        "enhanceCalled": true,
+        "improveCalled": false,
+        "optimizeCalled": true,
+        "pendingMeasurement": true
+      },
+      "monotonicAccepted": true
+    }
+  ],
+  "gates": {
+    "aiOffZeroCalls": true,
+    "noCriticalTruthFailures": true,
+    "bestVersionMonotonic": true,
+    "optimizerBounded": true,
+    "autofitActivated": true,
+    "optimizerActuallyImprovesBaseline": true
+  },
+  "passed": true
+}

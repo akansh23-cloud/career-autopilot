@@ -1,0 +1,131 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Length 3874 >>
+stream
+q 0.933 0.969 0.965 rg 411.88 320.60 144.88 368.17 re f Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 656.03 m 394.50 656.03 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 595.46 m 394.50 595.46 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 571.03 m 47.02 571.03 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 499.33 m 47.02 499.33 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 446.70 m 394.50 446.70 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 425.63 663.90 m 442.13 663.90 l S Q
+q 0.059 0.463 0.431 RG 1.95 w 427.63 650.09 m 427.63 660.13 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 425.63 603.33 m 442.13 603.33 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 425.63 398.86 m 442.13 398.86 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 42.52 711.79 m 552.76 711.79 l S Q
+q 0.059 0.463 0.431 RG 1.80 w 411.88 320.60 m 411.88 688.77 l S Q
+0.067 0.094 0.153 rg
+BT /F4 21.38 Tf 42.52 767.44 Td (Aarav Sharma) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.90 Tf 42.52 750.40 Td (Computer Science Graduate) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 7.95 Tf 42.52 734.02 Td (aarav.sharma@email.com) Tj ET
+BT /F5 7.95 Tf 304.39 734.02 Td (+91 98765 43210) Tj ET
+BT /F5 7.95 Tf 42.52 719.89 Td (Pune, India) Tj ET
+BT /F5 7.95 Tf 304.39 719.89 Td (github.com/aaravs) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 658.23 Td (SUMMARY) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 42.52 643.21 Td (Final-year CS student with hands-on full-stack projects and two hackathon wins,) Tj ET
+BT /F3 10.05 Tf 42.52 628.20 Td (looking for an SDE-1 role.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 597.66 Td (PROJECTS) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 10.05 Tf 42.52 582.64 Td (CampusConnect) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 568.78 Td (React, Node.js, MongoDB) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 55.27 551.14 Td (\225  Built a campus event platform used by 1,200+ students.) Tj ET
+BT /F3 10.05 Tf 55.27 534.64 Td (\225  Implemented JWT auth and role-based access for organisers.) Tj ET
+BT /F4 10.05 Tf 42.52 510.95 Td (ExpenseLens) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 497.08 Td (Python, Flask) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 55.27 479.44 Td (\225  Created an OCR expense tracker that parses receipts with 92% accuracy.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 448.90 Td (ACHIEVEMENTS) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 48.52 433.89 Td (\225  Winner \227 Smart India Hackathon 2025) Tj ET
+BT /F3 10.05 Tf 48.52 418.88 Td (\225  Runner-up \227 HackMIT online track) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 425.63 666.10 Td (CERTIFICATIONS) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 10.05 Tf 433.63 651.09 Td (AWS Cloud Practitioner) Tj ET
+BT /F4 10.05 Tf 433.63 636.07 Td (\(2025\)) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 425.63 605.53 Td (SKILLS) Tj ET
+BT /F4 8.04 Tf 425.63 593.53 Td (LANGUAGES) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 425.63 578.21 Td (Python \267 JavaScript \267 C++) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 425.63 556.87 Td (FRONTEND) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 425.63 541.56 Td (React \267 HTML \267 CSS) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 425.63 520.22 Td (BACKEND) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 425.63 504.91 Td (Node.js \267 Express) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 425.63 483.56 Td (DATABASES) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 425.63 468.25 Td (MongoDB \267 MySQL) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 425.63 446.91 Td (TOOLS) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 425.63 431.60 Td (Git \267 Postman) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 425.63 401.06 Td (EDUCATION) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 9.91 Tf 425.63 386.26 Td (Savitribai Phule Pune) Tj ET
+BT /F4 9.91 Tf 425.63 371.46 Td (University \227 B.E.) Tj ET
+BT /F4 9.91 Tf 425.63 356.65 Td (Computer Engineering \227) Tj ET
+BT /F4 9.91 Tf 425.63 341.85 Td (CGPA 8.7/10) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 425.63 329.86 Td (2022 \226 2026) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 9 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R /F3 3 0 R /F4 4 0 R /F5 5 0 R /F6 6 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Type /Pages /Count 1 /Kids [8 0 R] >>
+endobj
+10 0 obj
+<< /Type /Catalog /Pages 9 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000106 00000 n 
+0000000208 00000 n 
+0000000307 00000 n 
+0000000405 00000 n 
+0000000500 00000 n 
+0000000600 00000 n 
+0000004525 00000 n 
+0000004707 00000 n 
+0000004764 00000 n 
+trailer
+<< /Size 11 /Root 10 0 R >>
+startxref
+4814
+%%EOF

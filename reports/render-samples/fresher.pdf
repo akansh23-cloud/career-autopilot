@@ -1,0 +1,172 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Length 5726 >>
+stream
+q 0.933 0.969 0.965 rg 415.79 285.08 140.97 403.68 re f Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 656.03 m 398.41 656.03 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 595.46 m 398.41 595.46 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 517.31 m 398.41 517.31 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 494.00 m 47.02 494.00 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 425.12 m 47.02 425.12 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 372.74 m 47.02 372.74 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 320.36 m 47.02 320.36 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 267.98 m 47.02 267.98 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 216.48 m 398.41 216.48 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 429.54 663.90 m 446.04 663.90 l S Q
+q 0.059 0.463 0.431 RG 1.95 w 431.54 650.09 m 431.54 660.13 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 429.54 603.33 m 446.04 603.33 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 429.54 348.54 m 446.04 348.54 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 42.52 711.79 m 552.76 711.79 l S Q
+q 0.059 0.463 0.431 RG 1.80 w 415.79 285.08 m 415.79 688.77 l S Q
+0.067 0.094 0.153 rg
+BT /F4 21.38 Tf 42.52 767.44 Td (Ishaan Patel) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.90 Tf 42.52 750.40 Td (B.Tech Student \227 AI/ML) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 7.95 Tf 42.52 734.02 Td (ishaan.p@email.com) Tj ET
+BT /F5 7.95 Tf 304.39 734.02 Td (+91 95555 12345) Tj ET
+BT /F5 7.95 Tf 42.52 719.89 Td (Ahmedabad, India) Tj ET
+BT /F5 7.95 Tf 304.39 719.89 Td (github.com/ishaanp) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 658.23 Td (SUMMARY) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 42.52 643.21 Td (Third-year AI/ML student who ships projects: 7 deployed apps, 3 hackathon wins, 1) Tj ET
+BT /F3 10.05 Tf 42.52 628.20 Td (research internship.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 597.66 Td (EXPERIENCE) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 9.91 Tf 42.52 582.86 Td (Research Intern) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 330.20 582.86 Td (May 2025 \226 Jul 2025) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 42.52 567.69 Td (IIT Gandhinagar \227 Vision Lab) Tj ET
+0.784 0.886 0.875 rg
+BT /F3 8.02 Tf 153.82 567.69 Td (  \267  ) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 165.86 567.69 Td (Gandhinagar) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 55.27 550.05 Td (\225  Improved crowd-counting model MAE by 11% with density-aware augmentation.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 519.51 Td (PROJECTS) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 10.05 Tf 42.52 504.49 Td (SignSpeak) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 491.76 Td (PyTorch, MediaPipe) Tj ET
+0.059 0.463 0.431 rg
+BT /F3 7.92 Tf 353.73 491.76 Td (signspeak.app) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 53.02 475.24 Td (\225  Real-time sign-language translator; 94% accuracy on 60-gesture set.) Tj ET
+BT /F3 10.05 Tf 53.02 458.74 Td (\225  Won Smart India Hackathon 2025 \(team of 4, led ML\).) Tj ET
+BT /F4 10.05 Tf 42.52 435.61 Td (AgriScan) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 422.87 Td (FastAPI, OpenCV) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 53.02 406.36 Td (\225  Leaf-disease detector used in a 200-farmer pilot in Gujarat.) Tj ET
+BT /F4 10.05 Tf 42.52 383.23 Td (NoteWeave) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 370.49 Td (React, LangChain) Tj ET
+0.059 0.463 0.431 rg
+BT /F3 7.92 Tf 300.02 370.49 Td (github.com/ishaanp/noteweave) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 53.02 353.98 Td (\225  RAG note-search over personal PDFs; 1.1k GitHub stars.) Tj ET
+BT /F4 10.05 Tf 42.52 330.85 Td (QuizForge) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 318.11 Td (Next.js) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 53.02 301.60 Td (\225  Auto-generates quizzes from lecture slides; used by 2 professors.) Tj ET
+BT /F4 10.05 Tf 42.52 278.47 Td (TrackMyBus) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 265.73 Td (React Native) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 53.02 249.21 Td (\225  Live campus bus tracker with 900 daily users.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 218.68 Td (ACHIEVEMENTS) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 48.52 203.66 Td (\225  3\327 hackathon winner) Tj ET
+BT /F3 10.05 Tf 48.52 188.65 Td (\225  Top 500 \227 Google Code Jam farewell round) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 429.54 666.10 Td (CERTIFICATIONS) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 10.05 Tf 437.54 651.09 Td (DeepLearning.AI ML) Tj ET
+BT /F4 10.05 Tf 437.54 636.07 Td (Specialization) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 429.54 605.53 Td (SKILLS) Tj ET
+BT /F4 8.04 Tf 429.54 593.53 Td (LANGUAGES) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 429.54 578.21 Td (Python \267 JavaScript) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 429.54 556.87 Td (AIML) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 429.54 541.56 Td (PyTorch \267 scikit-learn \267) Tj ET
+BT /F3 9.15 Tf 429.54 527.90 Td (LangChain \267 OpenCV) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 429.54 506.56 Td (FRONTEND) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 429.54 491.24 Td (React) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 429.54 469.90 Td (BACKEND) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 429.54 454.59 Td (FastAPI) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 429.54 433.25 Td (DATABASES) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 429.54 417.93 Td (PostgreSQL) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 8.04 Tf 429.54 396.59 Td (TOOLS) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 429.54 381.28 Td (Git \267 Docker) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 429.54 350.74 Td (EDUCATION) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 9.91 Tf 429.54 335.94 Td (Nirma University \227) Tj ET
+BT /F4 9.91 Tf 429.54 321.14 Td (B.Tech CSE \(AI/ML\) \227) Tj ET
+BT /F4 9.91 Tf 429.54 306.34 Td (CGPA 9.1) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 429.54 294.35 Td (2023 \226 2027) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 9 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R /F3 3 0 R /F4 4 0 R /F5 5 0 R /F6 6 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Type /Pages /Count 1 /Kids [8 0 R] >>
+endobj
+10 0 obj
+<< /Type /Catalog /Pages 9 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000106 00000 n 
+0000000208 00000 n 
+0000000307 00000 n 
+0000000405 00000 n 
+0000000500 00000 n 
+0000000600 00000 n 
+0000006377 00000 n 
+0000006559 00000 n 
+0000006616 00000 n 
+trailer
+<< /Size 11 /Root 10 0 R >>
+startxref
+6666
+%%EOF

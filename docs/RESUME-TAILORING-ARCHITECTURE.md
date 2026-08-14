@@ -312,10 +312,15 @@ consistency changes, boundary id and violation counters.
 
 Carried honestly rather than quietly:
 
-- Route delegation is **incomplete**. `/api/resume-os/tailor-v3` and
-  `/assist` still call `proposeTailoredSelection()` / `assistRewrite()`
-  directly. The canonical service and its operations exist and are tested; the
-  route rewiring is not done.
+- Product route delegation is now complete for resume-authoring operations:
+  Jobs, Editor, Resume Studio, legacy `/api/resume/tailor`, `/tailor-v3`,
+  `/tailor-for-job`, `/enhance`, `/assist`, and application-package resume
+  generation delegate to the canonical Resume OS application service. The
+  narrative preview endpoint may call `runTailoring()` directly because it is
+  a non-authoritative candidate-inspection surface, not a second writer.
+- Final rendering is intentionally pending: the existing Template OS/vector and
+  browser preview paths are not yet normalized behind ResumeRenderService and
+  Chromium/Unicode render gates.
 - Domain language packs (P2.9) not expanded beyond the existing
   `domainVocabulary.js`.
 - ATS null-scoring statuses (P2.20) not implemented.

@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-08-13T10:26:56.266Z",
+  "provider": "Gemini contract test with mocked HTTP response; no external network call performed",
+  "deterministic": {
+    "aiCalls": 0,
+    "quality": 77
+  },
+  "safePolish": {
+    "aiCalls": 1,
+    "applied": 1,
+    "rejected": 0,
+    "quality": 77,
+    "containsAcceptedWording": true,
+    "truthFailures": 0
+  },
+  "unsafePolish": {
+    "aiCalls": 1,
+    "applied": 0,
+    "rejected": 1,
+    "containsUnsafeWording": false,
+    "truthFailures": 0
+  },
+  "passed": true
+}

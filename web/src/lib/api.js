@@ -99,6 +99,10 @@ export const Auth = {
 };
 
 export const Jobs = {
+  // Canonical Job Discovery OS search. Product search must use this path;
+  // /jobs/search is retained only as a legacy/operator compatibility endpoint.
+  discoverySearch: (params) => api.get('/jobs/search-v2?' + new URLSearchParams(params).toString()),
+  getCanonical: (id) => api.get(`/jobs/v2/${encodeURIComponent(id)}`),
   search: (params) => api.get('/jobs/search?' + new URLSearchParams(params).toString()),
   sources: () => api.get('/jobs/sources'),
 };

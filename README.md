@@ -64,6 +64,7 @@ Required Vercel environment variables:
 - `SESSION_SECRET`
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_MODEL`
+- Optional Resume OS wording polish: `GEMINI_API_KEY` (optional model override: `GEMINI_RESUME_MODEL`)
 - `FRONTEND_ORIGIN=https://your-vercel-domain.vercel.app`
 - Optional job source keys: `SERPAPI_KEY` and/or `RAPIDAPI_KEY` for LinkedIn/Indeed/Naukri-style coverage; `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_EMAIL`, `USAJOBS_API_KEY` for additional APIs
 
@@ -176,13 +177,28 @@ Open **http://localhost:3000**. The backend automatically serves the built `dist
 
 > No Google keys? A **demo sign-in** is available in dev (`ALLOW_DEV_LOGIN=1`, on by default when Google is off and not in production).
 
+
+### Resume PDF renderer
+
+Resume Studio PDF downloads are server-owned through `ResumeRenderService`.
+`auto` uses the deterministic Template OS vector PDF writer for ATS-first Latin
+content and switches to a Unicode-capable HTML renderer when required. The
+Playwright/Chromium provider is the preferred high-fidelity HTML path; a
+WeasyPrint adapter is available as a fail-safe. Preview and export compile from
+the same Template OS definition, including deterministically adapted legacy
+templates. Screenshot-only PDF export is no longer the normal Resume Studio
+path.
+
 ## What needs which env var
 
 | Feature | Works without config | Needs env var |
 |---|---|---|
 | Resume parsing (PDF/DOCX/TXT) | ✅ | — |
 | Verified job search (Remotive/RemoteOK/Arbeitnow/Jobicy) | ✅ (via backend, no keys) | — |
-| Resume analysis, tailoring, match scoring, cover letters, recruiter messages, interview prep | — | `ANTHROPIC_API_KEY` |
+| Resume analysis, deterministic tailoring, fixed quality scoring, Improve Again / Optimize Resume | ✅ | — |
+| Optional Resume OS wording polish | deterministic engine remains the default | `GEMINI_API_KEY` (optional `GEMINI_RESUME_MODEL`) |
+| Resume PDF rendering | vector ATS renderer works without external API; Unicode needs an HTML renderer | `RESUME_RENDER_PROVIDER` optional; Playwright/Chromium preferred, WeasyPrint supported as fail-safe |
+| Cover letters, recruiter messages and other non-resume AI features | — | `ANTHROPIC_API_KEY` where the feature still uses the generic AI proxy |
 | Plan upgrades (Razorpay checkout) | shows "gateway not configured" message | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` |
 | Admin full access (bypass all plan limits, no payment) | normal Free/Pro/Premium for everyone | `ADMIN_EMAILS` (comma-separated emails) |
 | Connect LinkedIn (OAuth) | — | `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` |
@@ -383,3 +399,14 @@ POST /opportunities/convert-to-resume
 ```
 
 Integrated with the resume editor, tracker (statuses incl. Saved → Registered → Submitted → Shortlisted/Winner → Converted to Resume Project), contact/referral/outreach tools and the dashboard (upcoming deadlines, best-fit, hiring challenges, saved). Includes per-opportunity fit score, prep-plan generator, hackathon-to-resume converter, a local Team Finder MVP, deadline reminders and free/pro/premium usage limits. State persists in `localStorage` (`careerAutopilot_opportunities`, `careerAutopilot_savedOpportunities`, `careerAutopilot_opportunityTracker`, `careerAutopilot_teamFinder`, `careerAutopilot_opportunityPrepPlans`, `careerAutopilot_opportunityResumeProjects`).
+
+
+### Production Chromium for Resume PDFs
+
+The canonical ResumeRenderService uses the vector PDF provider for ATS-first Latin resumes and prefers Playwright/Chromium when Unicode or HTML fidelity requires it. After installing Node dependencies in a production image, install the Playwright Chromium browser explicitly:
+
+```bash
+npx playwright install --with-deps chromium
+```
+
+Alternatively provide `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` / `CHROMIUM_EXECUTABLE_PATH`. WeasyPrint remains an optional fail-safe Unicode HTML provider rather than the preferred production renderer.

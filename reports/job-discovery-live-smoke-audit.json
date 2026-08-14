@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-08-14T07:46:29.753Z",
+  "kind": "LIVE_SMOKE",
+  "disclaimer": "Live network results. Reported separately from the deterministic fixture gates. A network failure here is not an adapter defect.",
+  "networkReachable": false,
+  "adapters": [
+    {
+      "provider": "GREENHOUSE",
+      "tenant": "vaulttec",
+      "note": "Greenhouse's public sample board",
+      "ok": false,
+      "reachable": false,
+      "jobs": 0,
+      "created": 0,
+      "errorClass": "NETWORK",
+      "message": "DNS resolution failed for boards-api.greenhouse.io",
+      "sample": null,
+      "durationMs": 10
+    },
+    {
+      "provider": "LEVER",
+      "tenant": "leverdemo",
+      "note": "Lever's public demo site",
+      "ok": false,
+      "reachable": false,
+      "jobs": 0,
+      "created": 0,
+      "errorClass": "NETWORK",
+      "message": "DNS resolution failed for api.eu.lever.co",
+      "sample": null,
+      "durationMs": 5047
+    },
+    {
+      "provider": "ASHBY",
+      "tenant": "ashby",
+      "note": "Ashby's own public board",
+      "ok": false,
+      "reachable": false,
+      "jobs": 0,
+      "created": 0,
+      "errorClass": "NETWORK",
+      "message": "DNS resolution failed for api.ashbyhq.com",
+      "sample": null,
+      "durationMs": 5009
+    },
+    {
+      "provider": "WORKABLE",
+      "tenant": "workable",
+      "note": "Workable's own public account",
+      "ok": false,
+      "reachable": false,
+      "jobs": 0,
+      "created": 0,
+      "errorClass": "NETWORK",
+      "message": "DNS resolution failed for www.workable.com",
+      "sample": null,
+      "durationMs": 2
+    }
+  ],
+  "passed": 0,
+  "reachable": 0,
+  "attempted": 4,
+  "indexedJobs": 0,
+  "searchProbe": {
+    "q": "engineer",
+    "shown": 0,
+    "total": 0,
+    "usedResume": false
+  },
+  "http": {
+    "attempts": 0,
+    "ok": 0,
+    "notModified": 0,
+    "failures": 5,
+    "rateLimited": 0,
+    "ssrfBlocked": 0,
+    "bytes": 0,
+    "redirects": 0,
+    "rate": {
+      "globalInFlight": 0,
+      "globalLimit": 2,
+      "hosts": {}
+    }
+  }
+}

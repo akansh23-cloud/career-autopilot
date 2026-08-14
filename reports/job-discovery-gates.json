@@ -1,0 +1,104 @@
+{
+  "generatedAt": "2026-08-14T07:47:20.651Z",
+  "overall": "PASS",
+  "totalAssertions": 148,
+  "totalFailures": 0,
+  "durationMs": 5863,
+  "gates": {
+    "SOURCE_GATE": {
+      "label": "Source adapters",
+      "status": "PASS",
+      "assertions": 10,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "INGEST_GATE": {
+      "label": "Raw → normalized ingestion",
+      "status": "PASS",
+      "assertions": 21,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "DEDUPE_GATE": {
+      "label": "Deduplication",
+      "status": "PASS",
+      "assertions": 9,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "FRESHNESS_GATE": {
+      "label": "Freshness & lifecycle",
+      "status": "PASS",
+      "assertions": 8,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "SEARCH_GATE": {
+      "label": "Search & ranking",
+      "status": "PASS",
+      "assertions": 24,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "SECURITY_GATE": {
+      "label": "Crawler safety",
+      "status": "PASS",
+      "assertions": 55,
+      "failures": [],
+      "missingRequirements": []
+    },
+    "INTEGRATION_GATE": {
+      "label": "Product integration",
+      "status": "PASS",
+      "assertions": 23,
+      "failures": [],
+      "missingRequirements": []
+    }
+  },
+  "files": [
+    {
+      "file": "test/jobDiscoveryNormalization.test.js",
+      "missing": false,
+      "assertions": 28,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryDedupeFreshness.test.js",
+      "missing": false,
+      "assertions": 18,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoverySearch.test.js",
+      "missing": false,
+      "assertions": 20,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoverySecurity.test.js",
+      "missing": false,
+      "assertions": 54,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryIntegration.test.js",
+      "missing": false,
+      "assertions": 17,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryPhase11Hardening.test.js",
+      "missing": false,
+      "assertions": 11,
+      "failures": 0,
+      "exitCode": 0
+    }
+  ],
+  "unattributedAssertions": 0,
+  "network": "none — every test runs against injected fetch, DNS, clock and jitter"
+}

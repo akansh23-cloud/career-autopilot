@@ -1,0 +1,162 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>
+endobj
+7 0 obj
+<< /Length 5666 >>
+stream
+q 0.933 0.969 0.965 rg 411.88 246.50 144.88 442.27 re f Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 656.03 m 394.50 656.03 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 580.44 m 394.50 580.44 l S Q
+q 0.784 0.886 0.875 RG 0.45 w 42.52 319.01 m 394.50 319.01 l S Q
+q 0.059 0.463 0.431 RG 1.40 w 43.52 294.57 m 47.02 294.57 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 425.63 663.90 m 442.13 663.90 l S Q
+q 0.059 0.463 0.431 RG 1.95 w 427.63 650.09 m 427.63 660.13 l S Q
+q 0.059 0.463 0.431 RG 1.95 w 427.63 601.67 m 427.63 611.71 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 425.63 554.92 m 442.13 554.92 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 425.63 295.16 m 442.13 295.16 l S Q
+q 0.059 0.463 0.431 RG 1.13 w 42.52 711.79 m 552.76 711.79 l S Q
+q 0.059 0.463 0.431 RG 1.80 w 411.88 246.50 m 411.88 688.77 l S Q
+0.067 0.094 0.153 rg
+BT /F4 21.38 Tf 42.52 767.44 Td (Rahul Verma) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.90 Tf 42.52 750.40 Td (DevOps Engineer) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 7.95 Tf 42.52 734.02 Td (rahul.verma@email.com) Tj ET
+BT /F5 7.95 Tf 304.39 734.02 Td (+91 99887 76655) Tj ET
+BT /F5 7.95 Tf 42.52 719.89 Td (Hyderabad, India) Tj ET
+BT /F5 7.95 Tf 304.39 719.89 Td (linkedin.com/in/rahulv) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 658.23 Td (SUMMARY) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 42.52 643.21 Td (DevOps engineer with 5 years automating cloud infrastructure. Own CI/CD for 30+) Tj ET
+BT /F3 10.05 Tf 42.52 628.20 Td (services, manage multi-region Kubernetes clusters and led incident response for a) Tj ET
+BT /F3 10.05 Tf 42.52 613.18 Td (99.95% SLA platform.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 582.64 Td (EXPERIENCE) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 9.91 Tf 42.52 567.84 Td (Senior DevOps Engineer) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 331.43 567.84 Td (Mar 2023 \226 Present) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 42.52 552.67 Td (SkyLattice) Tj ET
+0.784 0.886 0.875 rg
+BT /F3 8.02 Tf 82.17 552.67 Td (  \267  ) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 94.20 552.67 Td (Hyderabad) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 55.27 535.03 Td (\225  Own release pipeline for 30+ microservices; deploy frequency up from weekly to) Tj ET
+BT /F3 10.05 Tf 55.27 520.02 Td (   12/day.) Tj ET
+BT /F3 10.05 Tf 55.27 503.52 Td (\225  Migrated workloads to EKS with Terraform + Helm, cutting infra cost 28%.) Tj ET
+BT /F3 10.05 Tf 55.27 487.02 Td (\225  Built Prometheus/Grafana observability stack; MTTR down from 90 to 22) Tj ET
+BT /F3 10.05 Tf 55.27 472.00 Td (   minutes.) Tj ET
+BT /F3 10.05 Tf 55.27 455.50 Td (\225  Led incident command for SEV-1s; wrote postmortem playbooks adopted) Tj ET
+BT /F3 10.05 Tf 55.27 440.49 Td (   org-wide.) Tj ET
+BT /F4 9.91 Tf 42.52 416.07 Td (DevOps Engineer) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 324.51 416.07 Td (Aug 2020 \226 Feb 2023) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 9.15 Tf 42.52 400.90 Td (CloudMint) Tj ET
+0.784 0.886 0.875 rg
+BT /F3 8.02 Tf 82.69 400.90 Td (  \267  ) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 94.73 400.90 Td (Remote) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 55.27 383.26 Td (\225  Automated environment provisioning with Ansible \227 onboarding time from 3) Tj ET
+BT /F3 10.05 Tf 55.27 368.25 Td (   days to 2 hours.) Tj ET
+BT /F3 10.05 Tf 55.27 351.75 Td (\225  Hardened CI with SAST/Trivy scans, blocking 40+ vulnerable builds per quarter.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 42.52 321.21 Td (PROJECTS) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 10.05 Tf 42.52 306.19 Td (kube-sentry) Tj ET
+0.267 0.380 0.369 rg
+BT /F5 8.02 Tf 49.52 292.33 Td (Go, Kubernetes operators) Tj ET
+0.059 0.463 0.431 rg
+BT /F3 7.92 Tf 296.55 292.33 Td (github.com/rahulv/kube-sentry) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 10.05 Tf 55.27 274.69 Td (\225  Open-source operator that auto-remediates crash-looping pods.) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 425.63 666.10 Td (CERTIFICATIONS) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 10.05 Tf 433.63 651.09 Td (CKA \227 Certified) Tj ET
+BT /F4 10.05 Tf 433.63 636.07 Td (Kubernetes) Tj ET
+BT /F4 10.05 Tf 433.63 621.06 Td (Administrator) Tj ET
+BT /F4 10.05 Tf 433.63 602.67 Td (AWS DevOps Engineer) Tj ET
+BT /F4 10.05 Tf 433.63 587.65 Td (Professional) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 425.63 557.12 Td (SKILLS) Tj ET
+BT /F4 7.80 Tf 425.63 545.47 Td (CLOUD) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 8.84 Tf 425.63 530.61 Td (AWS \267 EKS \267 S3 \267 Lambda \267) Tj ET
+BT /F3 8.84 Tf 425.63 517.39 Td (CloudFormation \267 Route53) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 7.80 Tf 425.63 498.09 Td (DEVOPS) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 8.84 Tf 425.63 483.23 Td (Docker \267 Kubernetes \267 Helm \267) Tj ET
+BT /F3 8.84 Tf 425.63 470.02 Td (Terraform \267 Ansible \267 Jenkins \267) Tj ET
+BT /F3 8.84 Tf 425.63 456.81 Td (GitHub Actions \267 ArgoCD \267) Tj ET
+BT /F3 8.84 Tf 425.63 443.59 Td (Prometheus \267 Grafana \267 Linux) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 7.80 Tf 425.63 424.29 Td (LANGUAGES) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 8.84 Tf 425.63 409.43 Td (Python \267 Bash \267 Go) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 7.80 Tf 425.63 390.13 Td (DATABASES) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 8.84 Tf 425.63 375.27 Td (PostgreSQL \267 Redis \267) Tj ET
+BT /F3 8.84 Tf 425.63 362.06 Td (DynamoDB) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 7.80 Tf 425.63 342.76 Td (OTHER) Tj ET
+0.067 0.094 0.153 rg
+BT /F3 8.84 Tf 425.63 327.90 Td (Vault \267 IAM \267 Trivy) Tj ET
+0.059 0.463 0.431 rg
+BT /F4 9.15 Tf 425.63 297.36 Td (EDUCATION) Tj ET
+0.067 0.094 0.153 rg
+BT /F4 9.91 Tf 425.63 282.56 Td (JNTU Hyderabad \227 B.Tech) Tj ET
+BT /F4 9.91 Tf 425.63 267.75 Td (Information Technology) Tj ET
+0.267 0.380 0.369 rg
+BT /F3 8.02 Tf 425.63 255.76 Td (2014 \226 2018) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 9 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R /F3 3 0 R /F4 4 0 R /F5 5 0 R /F6 6 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Type /Pages /Count 1 /Kids [8 0 R] >>
+endobj
+10 0 obj
+<< /Type /Catalog /Pages 9 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000106 00000 n 
+0000000208 00000 n 
+0000000307 00000 n 
+0000000405 00000 n 
+0000000500 00000 n 
+0000000600 00000 n 
+0000006317 00000 n 
+0000006499 00000 n 
+0000006556 00000 n 
+trailer
+<< /Size 11 /Root 10 0 R >>
+startxref
+6606
+%%EOF

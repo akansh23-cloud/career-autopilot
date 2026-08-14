@@ -13,7 +13,8 @@
    ============================================================ */
 import { parseJD } from './resume/jdParser.js';
 import { computeJobFit } from './resume/jobFitEngine.js';
-import { tailorResume } from './resume/tailoringEngine.js';
+import { tailorForJob as canonicalTailorForJob } from '../services/resumeOs/resumeOsApplicationService.js';
+import { toPlainText } from './resume/resumeDocument.js';
 import { checkFabrication } from './resume/fabricationChecker.js';
 import { normalizeResumeText } from './resume/normalizeResumeText.js';
 import { presentSkills } from './resume/skillMatcher.js';
@@ -27,16 +28,22 @@ function nameFrom(resumeText) {
   return /^[a-z .'-]{2,40}$/i.test(first) && first.split(/\s+/).length <= 4 ? first : 'Candidate';
 }
 
-export function generateApplicationPackage({ resumeText = '', jobDescription = '', targetRole = '', verifiedSkills = [], verifiedProjects = [], applicantName = '' } = {}) {
+export async function generateApplicationPackage({ resumeText = '', jobDescription = '', targetRole = '', verifiedSkills = [], verifiedProjects = [], applicantName = '' } = {}) {
   const jd = parseJD({ jobDescription, targetRole });
   const role = jd.jobTitle || targetRole || 'the role';
   const company = jd.company || 'your company';
   const name = applicantName || nameFrom(resumeText);
 
-  // Tailor resume (safe, fact-preserving) + verify no fabrication.
-  const tailored = tailorResume({ resumeText, jd, targetRole, mode: 'balanced' });
-  const fit = computeJobFit({ resumeText: tailored.tailoredResume.text, jd });
-  const fabrication = checkFabrication({ originalResume: resumeText, tailoredResume: tailored.tailoredResume.text });
+  // Resume content is produced only by the canonical Career Autopilot engine.
+  const core = await canonicalTailorForJob({
+    resumeText, jobDescription, targetRole, aiPolish: false,
+    context: { verifiedSkills, profileSkills: [], userKey: 'application-package', plan: 'free' },
+  });
+  const tailoredText = core?.ok ? toPlainText(core.resumeDocument) : String(resumeText || '');
+  const fit = computeJobFit({ resumeText: tailoredText, jd });
+  const fabrication = checkFabrication({ originalResume: resumeText, tailoredResume: tailoredText });
+  const tailoredResume = { text: tailoredText, document: core?.resumeDocument || null };
+  const tailoringChangeLog = core?.changeLedger || [];
 
   // Only reference skills the resume actually proves AND that match the JD.
   const norm = normalizeResumeText(resumeText);
@@ -111,8 +118,12 @@ ${name}`;
     company,
     jobFitScore: fit.score,
     jobFitBreakdown: fit.breakdown,
-    tailoredResume: tailored.tailoredResume,
-    tailoringChangeLog: tailored.changeLog,
+    tailoredResume,
+    resumeDocument: core?.resumeDocument || null,
+    tailoringChangeLog,
+    resumeQuality: core?.quality || null,
+    resumeTruth: core?.truth || null,
+    canonicalResumeEngine: !!core?.ok,
     fabricationSafe: fabrication.safe,
     fabricationRisks: fabrication.risks,
     integrityScore: fabrication.integrityScore,

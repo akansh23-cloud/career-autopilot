@@ -108,6 +108,42 @@ export function isRelated(a, b) {
       || (RELATED.get(kb) || []).some((r) => equivalenceKey(r) === ka);
 }
 
+/* ------------------------------------------------------------------ *
+   GENERIC CAPABILITY TERMS
+
+   A forbidden term is a NAMED THING the candidate cannot claim to have
+   used — Kubernetes, Terraform, SQL. It is not an ordinary English noun
+   that happens to appear in a job description.
+
+   "analysis", "monitoring", "reporting" and their kin are capability
+   descriptors. Blocking them stops the engine writing "analysis and
+   reporting" in a finance summary, which is not a false claim about a
+   product — it is a plain description of the work. Enforcing them
+   suppressed the entire summary for the finance fixture and the word
+   "monitoring" for DevOps.
+
+   These words are still governed by the evidence-based validators:
+   claiming a capability the evidence does not support fails
+   `evidenceBinding` and `skillContext`. What they do not get is a
+   vocabulary-level ban.
+ * ------------------------------------------------------------------ */
+const GENERIC_CAPABILITY_TERMS = new Set([
+  'analysis', 'analytics', 'reporting', 'monitoring', 'observability',
+  'testing', 'automation', 'documentation', 'communication', 'design',
+  'security', 'compliance', 'governance', 'troubleshooting', 'debugging',
+  'optimisation', 'optimization', 'integration', 'migration', 'deployment',
+  'configuration', 'administration', 'maintenance', 'support', 'operations',
+  'scripting', 'modelling', 'modeling', 'forecasting', 'budgeting',
+  'planning', 'scheduling', 'training', 'mentoring', 'leadership',
+  'collaboration', 'stakeholder management', 'project management',
+  'problem solving', 'teamwork', 'agile', 'scrum', 'devops', 'ci/cd',
+]);
+
+/** True when a term is an ordinary capability noun rather than a named tool. */
+export function isGenericCapability(term) {
+  return GENERIC_CAPABILITY_TERMS.has(equivalenceKey(term));
+}
+
 /* ------------------------------------------------------------------ */
 /* Requirement statement parsing                                        */
 /* ------------------------------------------------------------------ */
@@ -291,12 +327,16 @@ export function buildRequirementGraph(jobIntel, classification, {
      technology may appear in several statements. */
   for (const k of claimable) { forbidden.delete(k); transferable.delete(k); }
 
+  /* Generic capability nouns are never vocabulary-banned. */
+  for (const k of [...forbidden]) if (isGenericCapability(k)) forbidden.delete(k);
+
   /* Priority skills the JD mentions outside parseable statements are still
      subject to the same rule: unsupported means forbidden. */
   for (const p of jobIntel.prioritySkills || []) {
     const key = equivalenceKey(p.canonical || p.skill);
     if (claimable.has(key)) continue;
     if (supportedKeys.has(key)) { claimable.add(key); forbidden.delete(key); continue; }
+    if (isGenericCapability(key)) continue;
     forbidden.add(key);
   }
 
@@ -337,5 +377,5 @@ export function forbiddenVocabulary(reqGraph) {
 export default {
   REQUIREMENT_GRAPH_VERSION, SUPPORT_STATE, PRIORITY,
   buildRequirementGraph, claimableVocabulary, forbiddenVocabulary,
-  equivalenceKey, areEquivalent, isRelated,
+  equivalenceKey, areEquivalent, isRelated, isGenericCapability,
 };

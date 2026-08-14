@@ -172,6 +172,33 @@ async function runPipeline(doc, ctx) {
   const forbiddenTerms = new Set(requirementGraph?.forbiddenTerms || []);
   const termSurfaces = buildTermSurfaces([...forbiddenTerms], DEFAULT_SURFACE_ALIASES);
 
+  /* Entities the candidate genuinely has: employers, role titles, project and
+     product names, and their own technologies. The employer-grounding check
+     needs these, otherwise it flags the candidate's own job title as an
+     invented organisation the moment a rewrite rephrases the sentence. */
+  const knownEntities = new Set();
+  for (const rec of graph.records || []) {
+    for (const v of [rec.company, rec.role, rec.projectName]) {
+      if (v) knownEntities.add(String(v));
+    }
+    for (const sk of rec.skillsDisplay || rec.skills || []) knownEntities.add(String(sk));
+  }
+  for (const e of d.experience || []) {
+    if (e.company) knownEntities.add(String(e.company));
+    if (e.role) knownEntities.add(String(e.role));
+  }
+  for (const p of d.projects || []) if (p.name) knownEntities.add(String(p.name));
+  for (const ed of d.education || []) if (ed.school) knownEntities.add(String(ed.school));
+  for (const sk of d.skills || []) if (sk.name) knownEntities.add(String(sk.name));
+  if (d.contact?.title) knownEntities.add(String(d.contact.title));
+  if (targetRole) knownEntities.add(String(targetRole));
+  /* Individual words of multi-word entities, so "Engineer" from "DevOps
+     Engineer" is recognised rather than treated as a new organisation. */
+  for (const e of [...knownEntities]) {
+    for (const w of String(e).split(/\s+/)) if (w.length > 2) knownEntities.add(w);
+  }
+  const auditCtx = { forbiddenTerms, termSurfaces, knownEntities: [...knownEntities] };
+
   /* Terminology pairs the composer may apply — derived only from SUPPORTED
      skills, so no unsupported keyword can enter through this door. */
   const targetTerms = terminologyAlignment.map((t) => ({ from: t.from, to: t.to }));
@@ -366,9 +393,9 @@ async function runPipeline(doc, ctx) {
     evidenceId: sel.evidence.id,
     before: sel.originalText,
     after: sel.chosen.text,
-    truthChecks: sel.chosen.truthChecks || {},
+    truthChecks: sel.chosen.verdicts || sel.chosen.truthChecks || {},
   }));
-  const leakageAudit = auditAndRevert(proposed, { forbiddenTerms, termSurfaces });
+  const leakageAudit = auditAndRevert(proposed, auditCtx);
   /* Apply reversions to the selections themselves. */
   const verdictById = new Map(leakageAudit.changes.map((c) => [c.changeId, c]));
   repaired.selections.forEach((sel, i) => {
@@ -422,7 +449,8 @@ async function runPipeline(doc, ctx) {
   if (summary.best) {
     const sv = auditAndRevert([{
       changeId: 'chg-summary', before: d.summary || '', after: summary.best.text,
-    }], { forbiddenTerms, termSurfaces });
+      truthChecks: summary.best.verdicts || {},
+    }], auditCtx);
     if (sv.revertedCount) {
       summarySafe = false;
       telemetry.count('safetyReversions');

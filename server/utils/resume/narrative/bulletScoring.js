@@ -25,6 +25,8 @@ import { analyzePhraseQuality } from './phraseQuality.js';
 import { voiceConsistency } from './candidateIntelligence.js';
 import { vocabularyFor } from './domainVocabulary.js';
 
+import { scoreSentenceVerbFit } from './objectVerbFit.js';
+
 export const BULLET_SCORING_VERSION = 'bullet-scoring-v1';
 
 export const WEIGHTS = Object.freeze({
@@ -186,7 +188,7 @@ export function scoreDomain(text, { roleFamily = 'general', seniority = 'mid' } 
 
 /* Opening with one of these is a structural weakness, not a word choice — no
    amount of concrete detail later in the sentence redeems the lead. */
-const WEAK_OPENER_RE = /^(responsible for|worked on|helped (?:with|to|in)|assisted (?:with|in)|involved in|participated in|tasked with|duties included|exposure to|familiar with|was part of|part of|contributed to the)\b/i;
+const WEAK_OPENER_RE = /^(responsible for|worked on|worked with|helped (?:with|to|in)|assisted (?:with|in)|involved in|participated in|tasked with|duties included|exposure to|familiar with|was part of|part of|contributed to the)\b/i;
 
 /** Natural professional language: cliché load + structural naturalness. */
 export function scoreNaturalness(text, { documentFrequency = null, technologies = [], domainAvoid = [] } = {}) {
@@ -216,6 +218,14 @@ export function scoreNaturalness(text, { documentFrequency = null, technologies 
   const nominals = (t.match(/\b\w{4,}(?:tion|ment|ance|ence|sion)\b/gi) || []).length;
   const ofLinked = (t.match(/\b\w{4,}(?:tion|ment|ance|ence|sion)\s+of\b/gi) || []).length;
   s -= Math.min(0.3, nominals * 0.05 + ofLinked * 0.05);
+
+  /* Verb–object collocation (Phase A2). "Ran deployment configuration" is
+     truthful and unidiomatic; without this the reranker cannot tell it apart
+     from "Configured deployments", and a two-word synonym swap keeps beating
+     a real rewrite. Centred on 0.5 so an unknown pairing is neutral rather
+     than punished — absence of data is not evidence of awkwardness. */
+  const fit = scoreSentenceVerbFit(t);
+  s += (fit.score - 0.5) * 0.5;
   return clamp01(s);
 }
 

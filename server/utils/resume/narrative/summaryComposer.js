@@ -158,7 +158,7 @@ const TECHNICAL_INTENT_PHRASES = {
 };
 
 const NEUTRAL_INTENT_PHRASES = {
-  delivery: 'delivering work end to end',
+  delivery: 'end-to-end delivery',
   automation: 'automating repetitive work',
   reliability: 'keeping delivery consistent',
   scale: 'work at volume',
@@ -275,7 +275,7 @@ const STRUCTURES = [
 
   /* S2: work-first — leads with what they actually do */
   (f) => [
-    sentence(`${f.roleTitle || f.roleFamilyLabel} working on ${joinProse(f.intentPhrases, 2)}${f.technologies.length ? ` across ${joinList(f.technologies, { max: 3 })}` : ''}`),
+    sentence(`${f.roleTitle || f.roleFamilyLabel} focused on ${joinProse(f.intentPhrases, 2)}${f.technologies.length ? ` across ${joinList(f.technologies, { max: 3 })}` : ''}`),
     f.yearsKnown && f.years >= 2 ? sentence(`${f.years} years across ${f.employers.length ? joinList(f.employers, { max: 2 }) : 'delivery teams'}`) : '',
   ].filter(Boolean).join(' '),
 
@@ -460,6 +460,7 @@ export function composeSummary(doc, graph, intelligence, {
     seen.add(key);
 
     const truth = validateAgainstEvidence(text, summaryEvidence, {
+      kind: 'summary',
       ownershipCeiling: intelligence.ownershipCeiling,
       globalPermittedSkills: graph.permittedSkills,
     });
@@ -491,7 +492,12 @@ export function composeSummary(doc, graph, intelligence, {
         && text.includes(facts.headlineAchievement.metric) ? 18 : 0)
     ).toFixed(2));
 
-    candidates.push({ text, source: c.source, score, clicheHits: pq.hits.length, templateSimilarity: gen.similarity, words });
+    /* Carry the named verdicts so the engine's audit stage does not re-check
+       from NOT_RUN and revert a summary that already passed here. */
+    candidates.push({
+      text, source: c.source, score, clicheHits: pq.hits.length,
+      templateSimilarity: gen.similarity, words, verdicts: truth.verdicts,
+    });
   }
 
   candidates.sort((a, b) => b.score - a.score || a.text.length - b.text.length);

@@ -1,0 +1,134 @@
+{
+  "generatedAt": "2026-08-14T12:50:00+05:30",
+  "version": "job-discovery-phase1.1-hardening-v1",
+  "base": "career-autopilot-resume-os-final-render.zip",
+  "status": "PASS",
+  "jobDiscoveryFoundation": "PASS",
+  "candidateAwareJobIntelligence": "PENDING",
+  "resumeOsFrozen": {
+    "serviceTreesIdentical": {
+      "resumeOs": true,
+      "resumeRender": true
+    },
+    "criticalFilesIdentical": {
+      "web/src/views/Editor.jsx": true,
+      "web/src/views/ResumeStudio.jsx": true,
+      "server/routes/resumeOsRoutes.js": true
+    },
+    "finalGatePassed": true,
+    "finalGates": {
+      "safety": true,
+      "quality": true,
+      "optimization": true,
+      "integration": true,
+      "render": true,
+      "regression": true
+    },
+    "focusedRegressionTests": {
+      "passed": 104,
+      "failed": 0,
+      "note": "run with temporary audit-only minimal Zod shim because uploaded ZIP has no node_modules; shim removed before packaging"
+    }
+  },
+  "jobDiscovery": {
+    "tests": {
+      "passed": 148,
+      "failed": 0
+    },
+    "gates": {
+      "SOURCE_GATE": {
+        "label": "Source adapters",
+        "status": "PASS",
+        "assertions": 10,
+        "failures": [],
+        "missingRequirements": []
+      },
+      "INGEST_GATE": {
+        "label": "Raw \u2192 normalized ingestion",
+        "status": "PASS",
+        "assertions": 21,
+        "failures": [],
+        "missingRequirements": []
+      },
+      "DEDUPE_GATE": {
+        "label": "Deduplication",
+        "status": "PASS",
+        "assertions": 9,
+        "failures": [],
+        "missingRequirements": []
+      },
+      "FRESHNESS_GATE": {
+        "label": "Freshness & lifecycle",
+        "status": "PASS",
+        "assertions": 8,
+        "failures": [],
+        "missingRequirements": []
+      },
+      "SEARCH_GATE": {
+        "label": "Search & ranking",
+        "status": "PASS",
+        "assertions": 24,
+        "failures": [],
+        "missingRequirements": []
+      },
+      "SECURITY_GATE": {
+        "label": "Crawler safety",
+        "status": "PASS",
+        "assertions": 55,
+        "failures": [],
+        "missingRequirements": []
+      },
+      "INTEGRATION_GATE": {
+        "label": "Product integration",
+        "status": "PASS",
+        "assertions": 23,
+        "failures": [],
+        "missingRequirements": []
+      }
+    },
+    "overallGate": "PASS",
+    "fixtureDemo": {
+      "canonicalJobs": 12,
+      "sourceInstances": 13,
+      "note": "fixture/demo counts only; not production coverage"
+    },
+    "hardening": [
+      "final Resume OS base restored and preserved",
+      "worker and API share Mongo backend when configured; fail-closed against local fallback",
+      "Mongo upserts do not $set immutable _id",
+      "indexed candidate retrieval replaces first-5000 search scan",
+      "structured filters applied before candidate limiting",
+      "no synchronous legacy provider fallback in Jobs UI",
+      "server discovery rank preserved by default in UI",
+      "durable source discovery queue replaces first-500 scan",
+      "due verification selection replaces first-2000 scan",
+      "typed Mongo sourceDiscovery scheduling fields",
+      "source registry operational fields persist under Mongoose strict schemas",
+      "REVIEW policy is not crawl permission",
+      "Workable direct strategy uses documented public account endpoint",
+      "DNS outages classified NETWORK rather than SSRF_BLOCKED"
+    ],
+    "scaleProofs": {
+      "relevantJobBeyondFormer5000Boundary": "PASS",
+      "structuredLocationBeforeCandidateLimit": "PASS",
+      "sourceDiscoveryBeyondFormer500Prefix": "PASS"
+    },
+    "liveSmoke": {
+      "attempted": 4,
+      "networkReachable": false,
+      "passed": 0,
+      "classification": "ENVIRONMENT_NO_DNS",
+      "note": "Container DNS/outbound resolution unavailable; deterministic gates remain authoritative for this artifact."
+    }
+  },
+  "syntax": {
+    "jsMjsChecked": 574,
+    "failures": 0
+  },
+  "limitations": [
+    "No production job-count or throughput claim is made from fixture tests.",
+    "Live ATS smoke could not reach public endpoints because this container had no DNS/outbound resolution.",
+    "Candidate-aware evidence reranking/gap analysis is intentionally pending.",
+    "A future Atlas Search/OpenSearch adapter can replace Mongo candidate retrieval behind JobSearchIndex when corpus/query load requires it."
+  ]
+}

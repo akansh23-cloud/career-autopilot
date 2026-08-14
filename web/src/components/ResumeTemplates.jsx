@@ -5,10 +5,35 @@ import {
   TEMPLATES, getTemplate, renderResumeHTML, exportResumePDF, exportResumeDOCX,
 } from '../lib/resumeTemplates.js';
 import { cachedTemplatePreviewUrl } from '../lib/templateOs/previewAssets.js';
+import { fromStructuredResume, toRendererStructured, downloadResumePdf } from '../lib/resumeOs.js';
+import { getResumeTemplate as getCanonicalResumeTemplate } from '../lib/resumeTemplateRegistry.js';
+import { compileTemplate, normalizeResumeDensityToTemplateMode, adaptTreeToShape, balancePageComposition, buildLayoutHTML, analyzeResumeShape, fromLegacyTemplate } from '../lib/templateOs/index.js';
 
 /* A real, isolated A4 render of the resume in a given template, scaled to fit. */
 export function ResumePaper({ data, templateId, mode, width = 794, scale = 1, className = '', title = 'preview' }) {
-  const html = useMemo(() => renderResumeHTML(data, templateId, { mode }), [data, templateId, mode]);
+  const html = useMemo(() => {
+    // Preview parity: built-in templates use the same Template OS compiler/layout
+    // model as the canonical server PDF renderer. The transient image-derived
+    // custom template remains on its legacy renderer until Phase 3 persists a
+    // server-side definition for user-authored templates.
+    if (templateId === 'custom') return renderResumeHTML(data, templateId, { mode });
+    try {
+      const doc = fromStructuredResume(data);
+      doc.templateId = templateId;
+      doc.pageSize = 'a4';
+      const structured = toRendererStructured(doc);
+      const tpl = getCanonicalResumeTemplate(templateId);
+      const definition = tpl.engine === 'template-os' ? tpl.definition : fromLegacyTemplate(tpl);
+      const compiled = balancePageComposition(
+        adaptTreeToShape(compileTemplate(definition, { density: normalizeResumeDensityToTemplateMode(doc.density) }), analyzeResumeShape(doc)),
+        structured,
+        { sizeId: doc.pageSize },
+      );
+      return buildLayoutHTML(compiled, structured, { sizeId: doc.pageSize });
+    } catch {
+      return renderResumeHTML(data, templateId, { mode });
+    }
+  }, [data, templateId, mode]);
   const h = Math.round(1123 * scale);
   return (
     <div className={className} style={{ width: Math.round(width * scale), height: h, overflow: 'hidden' }}>
@@ -145,7 +170,17 @@ export function TemplatePreviewModal({ open, onClose, data, templateId, onUse })
 
   const doPDF = async () => {
     setBusy('pdf');
-    try { await exportResumePDF(data, templateId, { mode, fileName: `${safeName}-${tpl.id}.pdf` }); }
+    try {
+      if (templateId === 'custom' || tpl.id === 'custom-upload') {
+        await exportResumePDF(data, templateId, { mode, fileName: `${safeName}-${tpl.id}.pdf` });
+      } else {
+        const doc = fromStructuredResume(data);
+        doc.templateId = templateId;
+        doc.pageSize = 'a4';
+        doc.pageTarget = mode === 'multi' ? 2 : 1;
+        await downloadResumePdf(doc, { id: templateId }, { provider: 'auto' });
+      }
+    }
     catch (e) { alert('PDF export failed: ' + (e.message || e)); }
     finally { setBusy(''); }
   };

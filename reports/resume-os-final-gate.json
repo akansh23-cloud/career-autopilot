@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-08-14T07:40:19.197Z",
+  "version": "resume-os-final-gate-v1",
+  "passed": true,
+  "gates": {
+    "safety": true,
+    "quality": true,
+    "optimization": true,
+    "integration": true,
+    "render": true,
+    "regression": true
+  },
+  "renderer": {
+    "vectorAtsFirst": true,
+    "playwrightChromiumImplemented": true,
+    "unicodeFallbackImplemented": true,
+    "activeUnicodeProviderInAudit": "weasyprint",
+    "previewAndExportShareTemplateCompiler": true,
+    "selectableTextRequired": true
+  },
+  "coreVersion": "resume-os-core-phase-gate-v1",
+  "renderVersion": "resume-render-gate-v1",
+  "regressionVersion": "resume-render-regression-gate-v1"
+}

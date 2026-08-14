@@ -26,6 +26,7 @@ import path from 'node:path';
 import { FIXTURES } from '../test/fixtures/resumeNarrativeFixtures.js';
 import { enhanceResumeNarrative, tailorResumeNarrative } from '../server/utils/resume/narrative/narrativeEngine.js';
 import { bulletSimilarity } from '../server/utils/resume/textQualityEngines.js';
+import { evaluateResumeQuality } from '../server/services/resumeOs/resumeQualityEvaluator.js';
 
 const USE_AI = process.argv.includes('--ai');
 const OUT_DIR = path.resolve(process.cwd(), 'reports');
@@ -47,6 +48,10 @@ function measure(result, fixture, mode) {
 
   const openers = new Set(texts.map((t) => t.split(/\s+/)[0].toLowerCase()));
   const dims = bullets.map((b) => b.metadata || {});
+  const globalQuality = evaluateResumeQuality(result.doc || fixture.doc, {
+    jobDescription: mode === 'tailor' ? fixture.jd : '',
+    targetRole: result.doc?.targetRole || fixture.doc?.targetRole || '',
+  });
 
   return {
     fixture: fixture.id,
@@ -73,6 +78,10 @@ function measure(result, fixture, mode) {
     genericityPenalty: round(result.genericity?.penalty ?? 0),
     evidenceCoverage: round(result.quality?.evidenceCoverage ?? 0),
     averageFinalScore: round(result.quality?.averageFinalScore ?? 0, 2),
+    globalQualityOverall: globalQuality.overall,
+    globalJdRelevance: globalQuality.dimensions.jdRelevance,
+    globalNaturalness: globalQuality.dimensions.naturalness,
+    globalSpecificity: globalQuality.dimensions.specificity,
 
     /* --- P2.22 useful rewrite rate --- */
     improvableBullets: result.rewriteStats?.improvableBullets ?? 0,
@@ -80,6 +89,12 @@ function measure(result, fixture, mode) {
     insufficientEvidenceBullets: result.rewriteStats?.insufficientEvidenceBullets ?? 0,
     unchangedDespiteEvidence: result.rewriteStats?.unchangedDespiteEvidence ?? 0,
     usefulRewriteRate: result.rewriteStats?.usefulRewriteRate,
+
+    /* --- A.1 action provenance --- */
+    unsupportedActionClaims: (result.bullets || []).reduce(
+      (a, b) => a + ((b.truthChecks && b.truthChecks.actionProvenance === 'FAIL') ? 1 : 0), 0),
+    actionProvenanceNotRun: (result.bullets || []).reduce(
+      (a, b) => a + ((b.truthChecks && b.truthChecks.actionProvenance === 'NOT_RUN') ? 1 : 0), 0),
 
     /* --- P1.3 safety reversions --- */
     safetyReversions: result.leakage?.revertedCount ?? 0,
@@ -143,7 +158,10 @@ async function main() {
   }
 
   const ok = rows.filter((r) => !r.failed);
-  const agg = (key) => round(mean(ok.map((r) => r[key]).filter((v) => typeof v === 'number')));
+  const enhanceRows = ok.filter((r) => r.mode === 'enhance');
+  const tailorRows = ok.filter((r) => r.mode === 'tailor');
+  const aggRows = (source, key) => round(mean(source.map((r) => r[key]).filter((v) => typeof v === 'number')));
+  const agg = (key) => aggRows(ok, key);
   const totalUnsupported = ok.reduce((a, r) => a + (r.unsupportedClaimCount || 0), 0);
   const totalUntraced = ok.reduce((a, r) => a + (r.untracedMetricCount || 0), 0);
   const overlap = vocabularyOverlapMatrix(ok);
@@ -169,26 +187,52 @@ async function main() {
       unsupportedClaims: totalUnsupported,
       untracedMetrics: totalUntraced,
       failedRuns: rows.filter((r) => r.failed).length,
-      passed: totalUnsupported === 0 && totalUntraced === 0 && rows.every((r) => !r.failed),
+      unsupportedActionClaims: ok.reduce((a, r) => a + (r.unsupportedActionClaims || 0), 0),
+      passed: totalUnsupported === 0 && totalUntraced === 0
+        && ok.reduce((a, r) => a + (r.unsupportedActionClaims || 0), 0) === 0
+        && rows.every((r) => !r.failed),
       rule: 'unsupported claims, unsupported metrics and failed runs must all be zero',
     },
     qualityGate: (() => {
-      const rate = agg('usefulRewriteRate');
+      /* POOLED, not a mean of per-fixture rates. Averaging rates gives a
+         fixture with one improvable bullet the same weight as one with six,
+         which is how a headline number drifts away from what actually
+         happened across the corpus. */
+      const pooledNum = ok.reduce((a, r) => a + (r.usefullyRewritten || 0), 0);
+      const pooledDen = ok.reduce((a, r) => a + (r.improvableBullets || 0), 0);
+      const rate = pooledDen ? round(pooledNum / pooledDen) : null;
       const checks = [
         { name: 'usefulRewriteRate', value: rate, min: 0.55 },
-        { name: 'jdRelevance', value: agg('jdRelevance'), min: 0.35 },
-        { name: 'specificity', value: agg('specificity'), min: 0.30 },
+        { name: 'enhanceGlobalSpecificity', value: aggRows(enhanceRows, 'globalSpecificity'), min: 45 },
+        { name: 'tailorGlobalJdRelevance', value: aggRows(tailorRows, 'globalJdRelevance'), min: 40 },
+        { name: 'globalNaturalness', value: agg('globalNaturalness'), min: 65 },
         { name: 'domainAuthenticity', value: agg('domainAuthenticity'), min: 0.30 },
-        { name: 'naturalness', value: agg('naturalness'), min: 0.85 },
       ];
+      const fixtureFloors = tailorRows.map((r) => ({ fixture: r.fixture, label: r.label, value: r.globalJdRelevance, min: 25, passed: Number(r.globalJdRelevance) >= 25 }));
       const failed = checks.filter((c) => !(Number(c.value) >= c.min));
+      const failedFixtures = fixtureFloors.filter((c) => !c.passed);
       return {
-        checks,
-        failed: failed.map((c) => c.name),
-        passed: failed.length === 0,
-        rule: 'quality is measured independently of safety; a safe run that improves nothing fails here',
+        checks, fixtureFloors,
+        failed: [...failed.map((c) => c.name), ...failedFixtures.map((c) => `fixture:${c.fixture}`)],
+        passed: failed.length === 0 && failedFixtures.length === 0,
+        rule: 'enhance and job-tailor quality are gated separately; poor role fixtures cannot hide inside an aggregate',
       };
     })(),
+    operationAggregate: {
+      enhance: {
+        globalQuality: aggRows(enhanceRows, 'globalQualityOverall'),
+        specificity: aggRows(enhanceRows, 'globalSpecificity'),
+        naturalness: aggRows(enhanceRows, 'globalNaturalness'),
+        jdRelevance: null,
+      },
+      tailor: {
+        globalQuality: aggRows(tailorRows, 'globalQualityOverall'),
+        jdRelevance: aggRows(tailorRows, 'globalJdRelevance'),
+        narrativeBulletRelevance: aggRows(tailorRows, 'jdRelevance'),
+        specificity: aggRows(tailorRows, 'globalSpecificity'),
+        naturalness: aggRows(tailorRows, 'globalNaturalness'),
+      },
+    },
     aggregate: {
       truthfulness: agg('truthfulness'),
       jdRelevance: agg('jdRelevance'),
@@ -215,6 +259,7 @@ async function main() {
       insufficientEvidenceBullets: ok.reduce((a, r) => a + (r.insufficientEvidenceBullets || 0), 0),
       unchangedDespiteEvidence: ok.reduce((a, r) => a + (r.unchangedDespiteEvidence || 0), 0),
       safetyReversions: ok.reduce((a, r) => a + (r.safetyReversions || 0), 0),
+      unsupportedActionClaims: ok.reduce((a, r) => a + (r.unsupportedActionClaims || 0), 0),
       usefulRewriteRateStrict: (() => {
         const n = ok.reduce((a, r) => a + (r.usefullyRewritten || 0), 0);
         const d = ok.reduce((a, r) => a + (r.improvableBullets || 0), 0);
@@ -250,7 +295,31 @@ async function main() {
   console.log(`Naturalness ${report.aggregate.naturalness} · Specificity ${report.aggregate.specificity} · Domain ${report.aggregate.domainAuthenticity} · Vocabulary diversity ${report.aggregate.vocabularyDiversity}`);
   console.log(`Cross-domain vocabulary overlap: max ${overlap.maxOverlap}, mean ${overlap.meanOverlap}`);
   console.log(`Reports written to ${OUT_DIR}\n`);
-  if (!report.gate.passed) process.exitCode = 1;
+  /* Phase B1 — every gate is a release gate. A benchmark that prints FAIL and
+     exits 0 is decoration: CI goes green and the regression ships. */
+  /* PHASE A.1 gate. Deliberately NOT called a final release gate: render and
+     regression do not exist yet, and a green tick that omits them would be
+     claiming more than has been verified. */
+  const gates = {
+    safety: report.safetyGate.passed,
+    quality: report.qualityGate.passed,
+    actionProvenance: (report.safetyGate.unsupportedActionClaims || 0) === 0,
+    /* Not yet implemented. Reported as such rather than defaulted to true,
+       because a gate nobody wrote must not read as a gate that passed. */
+    render: report.renderGate ? report.renderGate.passed : null,
+    regression: report.regressionGate ? report.regressionGate.passed : null,
+  };
+  const notImplemented = Object.entries(gates).filter(([, v]) => v === null).map(([k]) => k);
+  const failed = Object.entries(gates).filter(([, v]) => v === false).map(([k]) => k);
+
+  console.log(`\nCORE_QUALITY_GATE: ${Object.entries(gates)
+    .map(([k, v]) => `${k}=${v === null ? 'NOT_IMPLEMENTED' : v ? 'PASS' : 'FAIL'}`).join(' · ')}`);
+  if (notImplemented.length) {
+    console.log(`  (${notImplemented.join(', ')} are FUTURE gates — not implemented, and NOT counted as passes)`);
+    console.log('  → This is a CORE QUALITY pass at most. Final rendering remains pending.');
+  }
+  if (failed.length) console.log(`  FAILING: ${failed.join(', ')}`);
+  if (failed.length) process.exitCode = 1;
 }
 
 function renderMarkdown(r) {
@@ -272,6 +341,9 @@ function renderMarkdown(r) {
   L.push(`- **Quality: ${r.qualityGate.passed ? 'PASS' : 'FAIL'}** — ${r.qualityGate.rule}`, '');
   L.push('| Quality check | Value | Minimum | Verdict |', '|---|---|---|---|');
   for (const c of r.qualityGate.checks) L.push(`| ${c.name} | ${c.value} | ${c.min} | ${Number(c.value) >= c.min ? 'pass' : 'FAIL'} |`);
+  L.push('');
+  L.push('### Job-tailor fixture floors', '', '| Fixture | JD relevance | Minimum | Verdict |', '|---|---:|---:|---|');
+  for (const c of (r.qualityGate.fixtureFloors || [])) L.push(`| ${c.label || c.fixture} | ${c.value} | ${c.min} | ${c.passed ? 'pass' : 'FAIL'} |`);
   L.push('');
   L.push('## Useful rewrite rate', '', '| Measure | Count |', '|---|---|');
   for (const [k, v] of Object.entries(r.rewrite)) L.push(`| ${k} | ${v} |`);

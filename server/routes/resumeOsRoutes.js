@@ -30,16 +30,19 @@ import { compileSummary, SUMMARY_COMPILER_VERSION } from '../utils/resume/summar
 import { planContentBudget, buildAutoFitPlan, budgetForTemplate, CONTENT_BUDGET_VERSION } from '../utils/resume/contentBudget.js';
 import { rankTemplates, TEMPLATE_RECOMMENDER_VERSION } from '../utils/resume/templateRecommender.js';
 import { runTailoring } from '../services/resumeTailoring/canonicalTailoringService.js';
-import { assistRewrite, makeAnthropicWritingProvider, WRITING_PROVIDERS_VERSION } from '../utils/resume/writingProviders.js';
+import { WRITING_PROVIDERS_VERSION } from '../utils/resume/writingProviders.js';
 import { renderResumeDocx, DOCX_WRITER_VERSION } from '../utils/docxWriter.js';
 import { makeRuntimeTemplateCatalog, SERVER_RUNTIME_TEMPLATE_CATALOG_VERSION } from '../utils/templateOs/runtimeCatalog.js';
-/* ---- Resume Narrative Intelligence (a layer OF Resume OS, not a peer) ---- */
+import { getResumeTemplate } from '../../web/src/lib/resumeTemplateRegistry.js';
+import { fromLegacyTemplate } from '../../web/src/lib/templateOs/adapter.js';
+import { renderResumePdf } from '../services/resumeRender/resumeRenderService.js';
+import { safeFilename } from '../services/resumeRender/renderUtils.js';
+/* ---- Resume Narrative Intelligence remains the canonical implementation behind the application service. ---- */
+import { NARRATIVE_ENGINE_VERSION, NARRATIVE_ENGINE_VERSIONS } from '../utils/resume/narrative/narrativeEngine.js';
 import {
-  enhanceResumeNarrative, tailorResumeNarrative,
-  NARRATIVE_ENGINE_VERSION, NARRATIVE_ENGINE_VERSIONS,
-} from '../utils/resume/narrative/narrativeEngine.js';
-import { createNarrativeRouter } from '../utils/resume/narrative/narrativeProviders.js';
-import { resolveSearchProvider } from '../utils/resume/narrative/externalContext.js';
+  analyzeResume as appAnalyzeResume, enhance as appEnhance, tailorForJob as appTailorForJob,
+  assistUnit as appAssistUnit, improveAgain as appImproveAgain, optimizeResume as appOptimizeResume,
+} from '../services/resumeOs/resumeOsApplicationService.js';
 
 const ENGINE_VERSIONS = Object.freeze({
   document: RESUME_DOCUMENT_VERSION, truth: TRUTH_ENGINE_VERSION, ats: ATS_ENGINE_VERSION,
@@ -408,20 +411,28 @@ export function registerResumeOsRoutes(app, deps = {}) {
 
   /* ---- deterministic tailoring proposal (non-destructive) ---- */
   const tailorSchema = z.object({
-    doc: z.object({}).passthrough(),
+    doc: z.object({}).passthrough().optional(),
+    resumeText: z.string().max(60000).optional().default(''),
     jobDescription: z.string().max(60000).optional().default(''),
+    aiPolish: z.boolean().optional().default(false),
     maxBulletsPerItem: z.number().int().min(2).max(8).optional().default(4),
     maxProjects: z.number().int().min(1).max(8).optional().default(4),
   }).passthrough();
   app.post('/api/resume-os/tailor-v3', requireAuth, generationLimiter, validate(tailorSchema), async (req, res) => {
     try {
-      const ctx = await truthContext(req);
-      const doc = sanitizeDocumentTrust(req.body.doc, ctx).doc;
-      const jdText = req.body.jobDescription || doc.targetJobDescription || '';
-      const jd = jdText.trim().length >= 40 ? parseJDv2({ jobDescription: jdText, targetRole: doc.targetRole }) : null;
+      const ctx = await narrativeContext(req);
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
+      const jdText = String(req.body.jobDescription || inputDoc?.targetJobDescription || '').trim();
+      const aiPolish = !!req.body.aiPolish;
+      const core = jdText.length >= 40
+        ? await appTailorForJob({ doc: inputDoc, resumeText: req.body.resumeText, jobDescription: jdText, targetRole: inputDoc?.targetRole || '', context: ctx, aiPolish })
+        : await appEnhance({ doc: inputDoc, resumeText: req.body.resumeText, targetRole: inputDoc?.targetRole || '', context: ctx, aiPolish });
+      if (!core.ok) return res.status(200).json({ ok: false, error: 'canonical_tailoring_failed', preservedOriginal: true, core });
+      const doc = core.resumeDocument;
+      const jd = jdText.length >= 40 ? parseJDv2({ jobDescription: jdText, targetRole: doc.targetRole }) : null;
       const ranking = rankContentForTarget(doc, { jd, targetRole: doc.targetRole, verifiedSkills: ctx.verifiedSkills });
       const proposal = proposeTailoredSelection(doc, ranking, { maxBulletsPerItem: req.body.maxBulletsPerItem, maxProjects: req.body.maxProjects });
-      res.json({ ok: true, ranking, proposal, jd, db: dbOn() });
+      res.json({ ok: true, ranking, proposal, jd, doc, resumeDocument: doc, quality: core.quality, changeLedger: core.changeLedger, truth: core.truth, aiPolish: core.aiPolish, optimization: core.optimization, autofit: core.autofit, canonical: true, db: dbOn() });
     } catch (err) { res.status(500).json({ ok: false, error: 'tailor_v3_failed', message: err.message }); }
   });
 
@@ -434,94 +445,69 @@ export function registerResumeOsRoutes(app, deps = {}) {
      client applies on explicit Accept; nothing is silently written.
      ============================================================ */
   const tailorJobSchema = z.object({
-    doc: z.object({}).passthrough(),
+    doc: z.object({}).passthrough().optional(),
+    resumeText: z.string().max(60000).optional().default(''),
     jobDescription: z.string().min(40).max(60000),
+    aiPolish: z.boolean().optional().default(false),
     job: z.object({ company: z.string().max(200).optional(), title: z.string().max(200).optional() }).optional().default({}),
     pageTarget: z.number().int().min(1).max(2).optional().default(1),
     atsPreference: z.enum(['very-high', 'high', 'balanced']).optional().default('high'),
   }).passthrough();
   app.post('/api/resume-os/tailor-for-job', requireAuth, generationLimiter, validate(tailorJobSchema), async (req, res) => {
     try {
-      const ctx = await truthContext(req);
-      const trust = sanitizeDocumentTrust(req.body.doc, ctx);
-      const master = trust.doc;
+      const ctx = await narrativeContext(req);
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
       const { jobDescription, job, pageTarget, atsPreference } = req.body;
-
-      /* 1–5. parse + weight the JD (detects role, must-have vs preferred) */
-      const jd = parseJDv2({ jobDescription, targetRole: master.targetRole });
-      const targetRole = jd.detectedRole || master.targetRole || '';
-
-      /* 6–12. compare profile + evidence, rank all content */
-      const match = matchDocumentToJD(master, jd, { verifiedSkills: ctx.verifiedSkills, targetRole });
-      const ranking = rankContentForTarget(master, { jd, targetRole, verifiedSkills: ctx.verifiedSkills });
-
-      /* 17–18. rank the complete published runtime catalog for THIS document + target */
-      const templateCatalog = await runtimeTemplates.listPublishedCards();
-      const templateRanking = rankTemplates(templateCatalog, master, { targetRole, atsPreference, pageTarget });
-      const templateId = templateRanking.best?.id || master.templateId;
-      const template = await runtimeTemplates.resolve(templateId, templateRanking.best?.templateVersion || null);
-
-      /* 12. choose content within the recommended template's budget */
-      const budgetPlan = planContentBudget(master, ranking, template, { pageTarget });
-
-      /* 13. deterministic summary candidates from facts only. Phase 19 feeds
-         the selected template's actual summary capacity into the compiler. */
-      const summary = compileSummary(master, {
-        targetRole, verifiedSkills: ctx.verifiedSkills,
-        maxChars: budgetPlan.summary?.maxChars,
+      const core = await appTailorForJob({
+        doc: inputDoc, resumeText: req.body.resumeText, jobDescription, job,
+        targetRole: inputDoc?.targetRole || '', context: ctx,
+        aiPolish: !!req.body.aiPolish, mode: req.body.mode || 'balanced', depth: req.body.depth || '',
       });
-      let variantSummary = master.summary;
-      const shouldCompileSummary = !String(master.summary || '').trim() || !!budgetPlan.summary?.overBudget;
-      if (shouldCompileSummary && summary.ok && summary.candidates[0]?.text) {
-        variantSummary = summary.candidates[0].text;
-        if (budgetPlan.summary?.overBudget) {
-          budgetPlan.decisions.unshift({
-            action: 'replace_summary_for_fit', section: 'summary',
-            reason: `The current summary exceeds the ${template?.name || 'selected template'} budget (${budgetPlan.summary.maxChars} chars). Proposed a shorter deterministic summary built only from confirmed resume facts.`,
-          });
-        }
-      }
+      if (!core.ok) return res.status(200).json({ ok: false, error: 'canonical_tailoring_failed', preservedOriginal: true, core });
 
-      /* variant proposal — non-destructive; master untouched */
+      const master = inputDoc || core.resumeDocument;
+      const canonicalDoc = core.resumeDocument;
+      const jd = parseJDv2({ jobDescription, targetRole: canonicalDoc.targetRole });
+      const targetRole = jd.detectedRole || canonicalDoc.targetRole || '';
+      const match = matchDocumentToJD(canonicalDoc, jd, { verifiedSkills: ctx.verifiedSkills, targetRole });
+      const ranking = rankContentForTarget(canonicalDoc, { jd, targetRole, verifiedSkills: ctx.verifiedSkills });
+      const templateCatalog = await runtimeTemplates.listPublishedCards();
+      const templateRanking = rankTemplates(templateCatalog, canonicalDoc, { targetRole, atsPreference, pageTarget });
+      const templateId = templateRanking.best?.id || canonicalDoc.templateId;
+      const template = await runtimeTemplates.resolve(templateId, templateRanking.best?.templateVersion || null);
+      const budgetPlan = planContentBudget(canonicalDoc, ranking, template, { pageTarget });
+
       const variantDoc = normalizeResumeDocument({
-        ...master,
-        id: makeId('rd'),
-        kind: 'variant', parentId: master.id,
+        ...canonicalDoc,
+        id: canonicalDoc.kind === 'variant' ? canonicalDoc.id : makeId('rd'),
+        kind: 'variant', parentId: master?.id || canonicalDoc.parentId || null,
         title: [job.company, job.title].filter(Boolean).join(' — ') || `${targetRole || 'Job'} variant`,
         targetRole, targetJobDescription: jobDescription,
         templateId,
-        templateVersion: Number(template?.templateVersion || template?.definition?.version || 1),
-        overrides: budgetPlan.overrides,
-        summary: variantSummary,
+        templateVersion: Number(template?.templateVersion || template?.definition?.version || canonicalDoc.templateVersion || 1),
+        overrides: { ...(canonicalDoc.overrides || {}), ...(budgetPlan.overrides || {}) },
       });
-
-      /* 20–23. truth, health, coverage, gaps on the PROPOSED variant */
       const truth = auditResumeTruth(variantDoc, { verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills, verifiedProjectIds: ctx.verifiedProjectIds, evidenceIndex: ctx.evidenceIndex });
       const health = scoreResumeDocument(variantDoc, { targetRole, jd, verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills });
       const requiredTotal = (jd.required || []).length;
       const requiredMet = (match.strong || []).filter((x) => x.tier === 'required').length;
       const missingEvidence = (match.missing || []).filter((x) => x.tier === 'required');
       const evidenceCoverage = requiredTotal ? Math.round(((requiredTotal - missingEvidence.length) / requiredTotal) * 100) : 100;
-
-      emit('resume.tailored_for_job', { docId: master.id, jobTitle: job.title || jd.jobTitle || '', match: match.overall });
+      emit('resume.tailored_for_job', { docId: master?.id || '', jobTitle: job.title || jd.jobTitle || '', match: match.overall, canonical: true });
       res.json({
-        ok: true,
-        engineVersions: ENGINE_VERSIONS,
+        ok: true, canonical: true, engineVersions: ENGINE_VERSIONS,
         package: {
           job: { company: job.company || '', title: job.title || jd.jobTitle || '', detectedRole: targetRole },
-          jobMatch: match.overall,
-          atsHealth: health.score,
-          evidenceCoverage,
+          jobMatch: match.overall, atsHealth: health.score, evidenceCoverage,
           criticalRequirements: { met: requiredMet, total: requiredTotal },
           missingEvidence: missingEvidence.map((m2) => ({ skill: m2.skill, provable: !!m2.provable })),
-          template: templateRanking.best,
-          templateAlternatives: templateRanking.ranked.slice(1, 4),
-          pageTarget,
+          template: templateRanking.best, templateAlternatives: templateRanking.ranked.slice(1, 4), pageTarget,
         },
-        variant: variantDoc,
-        jd, match, ranking, budgetPlan, summary, truth, health, templateRanking,
-        trust: { changes: trust.changes, version: trust.version },
-        db: dbOn(),
+        variant: variantDoc, resumeDocument: variantDoc,
+        jd, match, ranking, budgetPlan, truth, health, templateRanking,
+        quality: core.quality, beforeQuality: core.beforeQuality, changeLedger: core.changeLedger,
+        optimization: core.optimization, aiPolish: core.aiPolish, autofit: core.autofit,
+        canonicalResult: core.canonical, db: dbOn(),
       });
     } catch (err) { res.status(500).json({ ok: false, error: 'tailor_for_job_failed', message: err.message }); }
   });
@@ -584,9 +570,11 @@ export function registerResumeOsRoutes(app, deps = {}) {
      mutated by a tailor call.
      ============================================================ */
   const narrativeCommon = z.object({
-    doc: z.object({}).passthrough(),
+    doc: z.object({}).passthrough().optional(),
+    resumeText: z.string().max(60000).optional().default(''),
     targetRole: z.string().max(160).optional().default(''),
-    useAi: z.boolean().optional().default(true),
+    aiPolish: z.boolean().optional().default(false),
+    useAi: z.boolean().optional().default(false),
     persist: z.boolean().optional().default(false),
     maxBulletsCurrent: z.number().int().min(2).max(8).optional().default(5),
     maxBulletsPrevious: z.number().int().min(1).max(8).optional().default(4),
@@ -621,191 +609,134 @@ export function registerResumeOsRoutes(app, deps = {}) {
     };
   }
 
-  function narrativeDeps(useAi) {
-    return {
-      router: createNarrativeRouter({ env: process.env, forceDisable: !useAi }),
-      searchProvider: resolveSearchProvider(process.env),
-    };
+
+  const coreAnalyzeSchema = z.object({
+    doc: z.object({}).passthrough().optional(),
+    resumeText: z.string().max(60000).optional().default(''),
+    jobDescription: z.string().max(60000).optional().default(''),
+    targetRole: z.string().max(160).optional().default(''),
+  }).passthrough();
+  const improveSchema = coreAnalyzeSchema.extend({
+    job: z.object({}).passthrough().optional().default({}),
+    aiPolish: z.boolean().optional().default(false),
+    minDelta: z.number().min(0.1).max(10).optional().default(0.5),
+  }).passthrough();
+  const optimizeSchema = improveSchema.extend({
+    maxPasses: z.number().int().min(1).max(8).optional().default(7),
+  }).passthrough();
+
+  async function snapshotBeforeAcceptedOptimization(req, originalDoc, result, trigger = 'manual') {
+    if (!result?.accepted || !originalDoc?.id || !dbOn() || !db.snapshotResumeDocument) return { ok: false, reason: 'not_applicable' };
+    const u = userOf(req);
+    try {
+      return await db.snapshotResumeDocument({
+        userId: u.id, email: u.email, docId: originalDoc.id, trigger,
+        note: `Before ${result.operation || 'resume optimization'}`,
+        score: result.beforeQuality?.overall ?? null,
+      });
+    } catch { return { ok: false, reason: 'snapshot_failed' }; }
   }
+
+  app.post('/api/resume-os/analyze-quality', requireAuth, generationLimiter, validate(coreAnalyzeSchema), async (req, res) => {
+    try {
+      const ctx = await narrativeContext(req);
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
+      const result = await appAnalyzeResume({ doc: inputDoc, resumeText: req.body.resumeText, jobDescription: req.body.jobDescription, targetRole: req.body.targetRole || inputDoc?.targetRole || '', context: ctx });
+      res.json({ ...result, canonical: true, db: dbOn() });
+    } catch (err) { res.status(500).json({ ok: false, error: 'resume_quality_failed', message: err.message }); }
+  });
+
+  app.post('/api/resume-os/improve-again', requireAuth, generationLimiter, validate(improveSchema), async (req, res) => {
+    try {
+      const ctx = await narrativeContext(req);
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
+      const result = await appImproveAgain({
+        doc: inputDoc, resumeText: req.body.resumeText, jobDescription: req.body.jobDescription,
+        job: req.body.job, targetRole: req.body.targetRole || inputDoc?.targetRole || '', context: ctx,
+        aiPolish: !!req.body.aiPolish, minDelta: req.body.minDelta,
+      });
+      const snapshot = await snapshotBeforeAcceptedOptimization(req, inputDoc, result, 'manual');
+      res.json({ ...result, snapshot, canonical: true, db: dbOn() });
+    } catch (err) { res.status(500).json({ ok: false, error: 'improve_again_failed', message: err.message }); }
+  });
+
+  app.post('/api/resume-os/optimize', requireAuth, generationLimiter, validate(optimizeSchema), async (req, res) => {
+    try {
+      const ctx = await narrativeContext(req);
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
+      const result = await appOptimizeResume({
+        doc: inputDoc, resumeText: req.body.resumeText, jobDescription: req.body.jobDescription,
+        job: req.body.job, targetRole: req.body.targetRole || inputDoc?.targetRole || '', context: ctx,
+        aiPolish: !!req.body.aiPolish, minDelta: req.body.minDelta, maxPasses: req.body.maxPasses,
+      });
+      /* optimize may accept multiple in-memory passes. One snapshot of the saved
+         pre-optimization state is sufficient; OptimizationHistory holds every pass. */
+      let snapshot = { ok: false, reason: 'not_applicable' };
+      if ((result.improvement?.acceptedPasses || 0) > 0 && inputDoc?.id && dbOn() && db.snapshotResumeDocument) {
+        const u = userOf(req);
+        try { snapshot = await db.snapshotResumeDocument({ userId: u.id, email: u.email, docId: inputDoc.id, trigger: 'manual', note: 'Before Optimize Resume', score: result.beforeQuality?.overall ?? null }); }
+        catch { snapshot = { ok: false, reason: 'snapshot_failed' }; }
+      }
+      res.json({ ...result, snapshot, canonical: true, db: dbOn() });
+    } catch (err) { res.status(500).json({ ok: false, error: 'optimize_resume_failed', message: err.message }); }
+  });
+
 
   app.post('/api/resume-os/enhance', requireAuth, generationLimiter, validate(enhanceSchema), async (req, res) => {
     try {
       const u = userOf(req);
       const ctx = await narrativeContext(req);
-      /* TRUST BOUNDARY: enhancement runs on server-truth, never client flags. */
-      const trust = sanitizeDocumentTrust(req.body.doc, ctx);
-      const { router, searchProvider } = narrativeDeps(req.body.useAi);
-
-      const result = await enhanceResumeNarrative(trust.doc, {
-        master: ctx.master,
-        verifiedSkills: ctx.verifiedSkills,
-        profileSkills: ctx.profileSkills,
-        githubEvidence: ctx.githubEvidence,
-        targetRole: req.body.targetRole || trust.doc.targetRole,
-        userKey: ctx.userKey,
-        useAi: !!req.body.useAi,
-        router,
-        searchProvider,
-        maxBulletsCurrent: req.body.maxBulletsCurrent,
-        maxBulletsPrevious: req.body.maxBulletsPrevious,
-        maxProjects: req.body.maxProjects,
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
+      const result = await appEnhance({
+        doc: inputDoc, resumeText: req.body.resumeText,
+        targetRole: req.body.targetRole || inputDoc?.targetRole || '', context: ctx,
+        aiPolish: !!(req.body.aiPolish || req.body.useAi), mode: req.body.mode || 'balanced', depth: req.body.depth || '',
       });
-
-      if (!result.ok) {
-        /* AI/engine failure preserves the original resume and says so. */
-        return res.status(200).json({
-          ok: false, error: result.error, message: result.message,
-          doc: result.doc, preservedOriginal: true, telemetry: result.telemetry, db: dbOn(),
-        });
-      }
-
-      /* Deterministic Resume OS verdicts are still the authority. */
-      const truth = auditResumeTruth(result.doc, {
-        verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills,
-        verifiedProjectIds: ctx.verifiedProjectIds, evidenceIndex: ctx.evidenceIndex,
-      });
-      const health = scoreResumeDocument(result.doc, {
-        targetRole: result.doc.targetRole, jd: null,
-        verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills,
-      });
-
+      if (!result.ok) return res.status(200).json({ ok: false, error: 'canonical_enhance_failed', preservedOriginal: true, result });
       let persisted = false;
       if (req.body.persist && dbOn() && db.saveResumeDocument) {
-        const pin = await runtimeTemplates.pinDocument(result.doc, { strictExisting: true });
+        const pin = await runtimeTemplates.pinDocument(result.resumeDocument, { strictExisting: true });
         if (pin.ok) {
           const saved = normalizeResumeDocument(pin.pinned);
-          saved.updatedAt = new Date().toISOString();
-          const out = await db.saveResumeDocument({ userId: u.id, email: u.email, doc: saved, lastScore: health.score, engineVersions: ENGINE_VERSIONS });
+          const out = await db.saveResumeDocument({ userId: u.id, email: u.email, doc: saved, lastScore: result.quality?.atsHealth?.score ?? null, engineVersions: ENGINE_VERSIONS });
           persisted = !!out.ok;
         }
       }
-
-      emit('resume.narrative.enhanced', {
-        docId: result.doc.id, bullets: result.bullets.length,
-        unsupported: result.truth.unsupportedClaimCount, ms: result.telemetry.durationMs,
-      });
-
+      emit('resume.narrative.enhanced', { docId: result.resumeDocument.id, canonical: true, aiPolishCalls: result.aiPolish?.calls || 0 });
       res.json({
-        ok: true, mode: 'enhance', engineVersions: ENGINE_VERSIONS,
-        doc: result.doc, summary: result.summary, bullets: result.bullets,
-        intelligence: result.intelligence, voice: result.voice, strategy: result.strategy,
-        skills: result.skills, naturalness: result.naturalness, genericity: result.genericity,
-        narrativeTruth: result.truth, untracedMetrics: result.untracedMetrics,
-        gaps: result.gaps, consistency: result.consistency, changes: result.changes,
-        quality: result.quality, telemetry: result.telemetry,
-        truth, health,
-        trust: { changes: trust.changes, version: trust.version },
-        persisted, db: dbOn(),
+        ok: true, canonical: true, mode: 'enhance', engineVersions: ENGINE_VERSIONS,
+        doc: result.resumeDocument, resumeDocument: result.resumeDocument,
+        quality: result.quality, beforeQuality: result.beforeQuality,
+        truth: result.truth, changeLedger: result.changeLedger, changes: result.changeLedger,
+        optimization: result.optimization, aiPolish: result.aiPolish, autofit: result.autofit,
+        canonicalResult: result.canonical, persisted, db: dbOn(),
       });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: 'narrative_enhance_failed', message: err.message });
-    }
+    } catch (err) { res.status(500).json({ ok: false, error: 'narrative_enhance_failed', message: err.message }); }
   });
 
   app.post('/api/resume-os/tailor-narrative', requireAuth, generationLimiter, validate(tailorNarrativeSchema), async (req, res) => {
     try {
       const ctx = await narrativeContext(req);
-      const trust = sanitizeDocumentTrust(req.body.doc, ctx);
-      const master = trust.doc;
-      const { jobDescription, job } = req.body;
-      const { router, searchProvider } = narrativeDeps(req.body.useAi);
-
-      /* P1.2 — delegated to the canonical service. The legacy route shape is
-         preserved for compatibility; the tailoring intelligence behind it is
-         not independent. `useAi` is deliberately ignored: resume content is
-         deterministic, and the AI deny boundary would throw anyway. */
-      const result = await runTailoring({
-        operation: 'job-tailor',
-        doc: master,
-        surface: 'resume-os/tailor-narrative',
-        plan: ctx.plan,
-        mode: req.body.mode,
-        depth: req.body.depth,
-        master: ctx.master,
-        verifiedSkills: ctx.verifiedSkills,
-        profileSkills: ctx.profileSkills,
-        githubEvidence: ctx.githubEvidence,
-        jobDescription, job,
-        targetRole: req.body.targetRole || master.targetRole,
-        userKey: ctx.userKey,
-        maxBulletsCurrent: req.body.maxBulletsCurrent,
-        maxBulletsPrevious: req.body.maxBulletsPrevious,
-        maxProjects: req.body.maxProjects,
+      const inputDoc = req.body.doc ? sanitizeDocumentTrust(req.body.doc, ctx).doc : null;
+      const result = await appTailorForJob({
+        doc: inputDoc, resumeText: req.body.resumeText, jobDescription: req.body.jobDescription, job: req.body.job,
+        targetRole: req.body.targetRole || inputDoc?.targetRole || '', context: ctx,
+        aiPolish: !!(req.body.aiPolish || req.body.useAi), mode: req.body.mode || 'balanced', depth: req.body.depth || '',
       });
-
-      if (!result.ok) {
-        return res.status(200).json({
-          ok: false, error: result.error, message: result.message,
-          doc: result.doc, preservedOriginal: true, telemetry: result.telemetry, db: dbOn(),
-        });
-      }
-
-      /* The tailored document is a non-destructive VARIANT — exactly the V4
-         contract. The master is never written to by this route. */
-      const jd = parseJDv2({ jobDescription, targetRole: master.targetRole });
-      const targetRole = result.jobIntelligence?.roleIdentity?.canonicalRole || jd.detectedRole || master.targetRole || '';
-      const templateCatalog = await runtimeTemplates.listPublishedCards();
-      const templateRanking = rankTemplates(templateCatalog, result.doc, { targetRole, atsPreference: 'high', pageTarget: 1 });
-      const templateId = templateRanking.best?.id || master.templateId;
-      const template = await runtimeTemplates.resolve(templateId, templateRanking.best?.templateVersion || null);
-
-      const variant = normalizeResumeDocument({
-        ...result.doc,
-        id: makeId('rd'),
-        kind: 'variant',
-        parentId: master.id,
-        title: [job.company, job.title].filter(Boolean).join(' — ') || `${targetRole || 'Job'} variant`,
-        targetRole,
-        targetJobDescription: jobDescription,
-        templateId,
-        templateVersion: Number(template?.templateVersion || template?.definition?.version || 1),
-      });
-
-      const match = matchDocumentToJD(variant, jd, { verifiedSkills: ctx.verifiedSkills, targetRole });
-      const truth = auditResumeTruth(variant, {
-        verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills,
-        verifiedProjectIds: ctx.verifiedProjectIds, evidenceIndex: ctx.evidenceIndex,
-      });
-      const health = scoreResumeDocument(variant, { targetRole, jd, verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills });
-      const requiredTotal = (jd.required || []).length;
-      const missingEvidence = (match.missing || []).filter((x) => x.tier === 'required');
-      const evidenceCoverage = requiredTotal ? Math.round(((requiredTotal - missingEvidence.length) / requiredTotal) * 100) : 100;
-
-      emit('resume.narrative.tailored', {
-        docId: master.id, jobTitle: job.title || jd.jobTitle || '',
-        match: match.overall, unsupported: result.truth.unsupportedClaimCount, ms: result.telemetry.durationMs,
-      });
-
+      if (!result.ok) return res.status(200).json({ ok: false, error: 'canonical_tailor_failed', preservedOriginal: true, result });
+      const variant = normalizeResumeDocument({ ...result.resumeDocument, kind: 'variant', parentId: inputDoc?.id || result.resumeDocument.parentId || null, targetJobDescription: req.body.jobDescription });
+      const jd = parseJDv2({ jobDescription: req.body.jobDescription, targetRole: variant.targetRole });
+      const match = matchDocumentToJD(variant, jd, { verifiedSkills: ctx.verifiedSkills, targetRole: variant.targetRole });
+      const health = scoreResumeDocument(variant, { targetRole: variant.targetRole, jd, verifiedSkills: ctx.verifiedSkills, profileSkills: ctx.profileSkills });
       res.json({
-        ok: true, mode: 'tailor', engineVersions: ENGINE_VERSIONS,
-        /* Same package shape as tailor-for-job so existing UI code can read it. */
-        package: {
-          job: { company: job.company || '', title: job.title || jd.jobTitle || '', detectedRole: targetRole },
-          jobMatch: match.overall,
-          atsHealth: health.score,
-          evidenceCoverage,
-          criticalRequirements: { met: (match.strong || []).filter((x) => x.tier === 'required').length, total: requiredTotal },
-          missingEvidence: missingEvidence.map((m) => ({ skill: m.skill, provable: !!m.provable })),
-          template: templateRanking.best,
-          templateAlternatives: templateRanking.ranked.slice(1, 4),
-          pageTarget: 1,
-        },
-        variant,
-        summary: result.summary, bullets: result.bullets,
-        jobIntelligence: result.jobIntelligence, externalContext: result.externalContext,
-        intelligence: result.intelligence, voice: result.voice, strategy: result.strategy,
-        skills: result.skills, ats: result.ats, atsOpportunities: result.atsOpportunities,
-        naturalness: result.naturalness, genericity: result.genericity,
-        narrativeTruth: result.truth, untracedMetrics: result.untracedMetrics,
-        gaps: result.gaps, consistency: result.consistency, changes: result.changes,
-        quality: result.quality, telemetry: result.telemetry,
-        jd, match, truth, health, templateRanking,
-        trust: { changes: trust.changes, version: trust.version },
-        db: dbOn(),
+        ok: true, canonical: true, mode: 'tailor', engineVersions: ENGINE_VERSIONS,
+        variant, resumeDocument: variant, jd, match, health,
+        quality: result.quality, beforeQuality: result.beforeQuality,
+        changeLedger: result.changeLedger, changes: result.changeLedger,
+        truth: result.truth, optimization: result.optimization, aiPolish: result.aiPolish, autofit: result.autofit,
+        canonicalResult: result.canonical, db: dbOn(),
       });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: 'narrative_tailor_failed', message: err.message });
-    }
+    } catch (err) { res.status(500).json({ ok: false, error: 'narrative_tailor_failed', message: err.message }); }
   });
 
   /* ---- single-unit preview: all candidates + scores for one bullet ---- */
@@ -854,64 +785,74 @@ export function registerResumeOsRoutes(app, deps = {}) {
     facts: z.object({}).passthrough().nullish(),
     jdSkills: z.array(z.string().max(80)).max(20).optional().default([]),
     allowedSkills: z.array(z.string().max(80)).max(200).optional().default([]),
-    useAi: z.boolean().optional().default(false),
+    aiPolish: z.boolean().optional().default(false),
+    useAi: z.boolean().optional().default(false), // legacy alias; never defaults on
   }).passthrough();
   app.post('/api/resume-os/assist', requireAuth, generationLimiter, validate(assistSchema), async (req, res) => {
     try {
-      /* P1.2 — bullet/summary assist is now a SCOPE of the canonical pipeline,
-         not a second writer. The old assistRewrite() path is gone from the
-         request path; `useAi` is accepted for wire compatibility and ignored,
-         because resume wording is deterministic. */
       const ctx = await narrativeContext(req);
       const isSummary = req.body.kind === 'summary';
       const doc = normalizeResumeDocument(isSummary
         ? { targetRole: req.body.targetRole || '', summary: req.body.text }
-        : {
-          targetRole: req.body.targetRole || '',
-          experience: [{
-            id: 'assist', company: '', role: req.body.targetRole || '', current: true,
-            bullets: [{ id: 'assist_b', text: req.body.text }],
-          }],
-        });
-      const run = await runTailoring({
-        operation: isSummary ? 'summary-assist' : 'bullet-assist',
-        doc,
-        surface: 'resume-os/assist',
-        plan: ctx.plan,
-        verifiedSkills: ctx.verifiedSkills,
-        profileSkills: ctx.profileSkills,
-        targetRole: req.body.targetRole,
-        userKey: ctx.userKey,
-        jobDescription: req.body.jobDescription || '',
-      });
-      /* Legacy response shape preserved for wire compatibility.
-         `aiAvailable` is now permanently false for resume wording: it is not
-         a capability we failed to reach, it is a capability this surface
-         deliberately does not use. */
+        : { targetRole: req.body.targetRole || '', experience: [{ id: 'assist', company: '', role: req.body.targetRole || '', current: true, bullets: [{ id: 'assist_b', text: req.body.text }] }] });
+      const core = await appAssistUnit({ doc, targetRole: req.body.targetRole || '', context: ctx, kind: req.body.kind, aiPolish: !!(req.body.aiPolish || req.body.useAi) });
+      const run = core.canonical || {};
       const bullet = (run.bullets || [])[0] || null;
-      const chosen = isSummary
-        ? (run.summary?.chosen || req.body.text)
-        : (bullet?.text || req.body.text);
+      const deterministicChosen = isSummary ? (run.summary?.chosen || req.body.text) : (bullet?.text || req.body.text);
       const alternatives = isSummary
         ? (run.summary?.alternatives || []).map((a) => (typeof a === 'string' ? a : a.text)).filter(Boolean)
         : (bullet?.alternatives || []).map((a) => a.text).filter(Boolean);
-
-      const result = {
-        ok: !!run.ok,
-        kind: req.body.kind,
-        aiAvailable: false,
-        deterministic: [chosen, ...alternatives].filter(Boolean),
-        text: chosen,
-        alternatives,
-        safe: isSummary ? run.safe !== false : (bullet ? bullet.safe !== false : true),
-        truthChecks: bullet?.truthChecks || {},
-        engine: 'career-autopilot-narrative-intelligence',
-      };
-      res.json({ ok: true, result, status: run.status, quotaBucket: run.quotaBucket });
+      const polishedChosen = isSummary
+        ? (core.resumeDocument?.summary || deterministicChosen)
+        : (core.resumeDocument?.experience?.[0]?.bullets?.[0]?.text || deterministicChosen);
+      const deterministic = [deterministicChosen, ...alternatives]
+        .filter(Boolean)
+        .filter((text, i, arr) => arr.indexOf(text) === i)
+        .map((text, i) => ({ text, rationale: i === 0 ? 'Career Autopilot selected this evidence-safe wording.' : 'Evidence-safe deterministic alternative.' }));
+      const ai = (req.body.aiPolish || req.body.useAi) && polishedChosen && polishedChosen !== deterministicChosen
+        ? [{ text: polishedChosen, rationale: 'Optional Gemini wording candidate accepted by every mandatory Career Autopilot truth gate.' }]
+        : [];
+      res.json({ ok: true, result: {
+        ok: !!core.ok, kind: req.body.kind, aiAvailable: !!core.aiPolish?.available,
+        aiPolish: core.aiPolish, deterministic, ai, aiRejected: core.aiPolish?.rejected || 0, aiError: core.aiPolish?.error || '',
+        text: polishedChosen || deterministicChosen, alternatives, safe: core.quality?.hardFailures?.length === 0,
+        truthChecks: bullet?.truthChecks || {}, engine: 'career-autopilot-resume-os-canonical',
+      }, quality: core.quality, changeLedger: core.changeLedger, status: run.status, quotaBucket: run.quotaBucket });
     } catch (err) { res.status(500).json({ ok: false, error: 'assist_failed', message: err.message }); }
   });
 
   /* ---- REAL DOCX export (WordprocessingML, editable) ---- */
+  const renderPdfSchema = z.object({
+    doc: z.object({}).passthrough(),
+    templateId: z.string().max(120).optional().default(''),
+    templateVersion: z.number().int().min(1).optional().nullable().default(null),
+    sizeId: z.enum(['a4', 'letter']).optional().default('a4'),
+    provider: z.enum(['auto', 'vector', 'chromium', 'weasyprint']).optional().default('auto'),
+  }).passthrough();
+  app.post('/api/resume-os/export/pdf', requireAuth, validate(renderPdfSchema), async (req, res) => {
+    try {
+      const doc = normalizeResumeDocument(sanitizeDocumentTrust(req.body.doc, {}).doc);
+      const templateId = req.body.templateId || doc.templateId;
+      const templateVersion = req.body.templateVersion || doc.templateVersion || null;
+      const tpl = getResumeTemplate(templateId, templateVersion, { strictVersion: !!templateVersion });
+      if (!tpl) return res.status(404).json({ ok: false, error: 'template_version_unavailable' });
+      const definition = tpl.engine === 'template-os' && tpl.definition ? tpl.definition : fromLegacyTemplate(tpl);
+      const out = await renderResumePdf({ doc, definition, sizeId: req.body.sizeId || doc.pageSize || 'a4', provider: req.body.provider });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(doc.title || 'resume')}.pdf"`);
+      res.setHeader('X-Resume-Render-Provider', out.selectedProvider);
+      res.setHeader('X-Resume-Render-Engine', out.engine || out.selectedProvider);
+      res.setHeader('X-Resume-Render-Signature', out.renderSignature);
+      res.setHeader('X-Resume-Pages', String(out.pageCount));
+      res.setHeader('X-Resume-Text-Layer', out.validation?.selectableText ? '1' : '0');
+      res.send(out.bytes);
+    } catch (err) {
+      const code = err?.code || 'pdf_export_failed';
+      const status = code === 'chromium_renderer_unavailable' || code === 'vector_renderer_cannot_preserve_unicode' ? 503 : 500;
+      res.status(status).json({ ok: false, error: code, message: err.message, recommendedProvider: err?.recommendedProvider || null });
+    }
+  });
+
   app.post('/api/resume-os/export/docx', requireAuth, validate(docSchema), async (req, res) => {
     try {
       const ctx = await truthContext(req);

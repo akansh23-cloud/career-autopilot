@@ -7,7 +7,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { PageIntro, SectionCard } from './common.jsx';
 import { Button, Badge, Field } from '../components/ui/kit.jsx';
-import { AI } from '../lib/api.js';
+import { ResumeOsApi, toPlainText, fromStructuredResume, downloadResumePdf } from '../lib/resumeOs.js';
 import {
   getSelectedJob, getStoredResume, getSelectedTemplate, saveSelectedTemplate,
   getCustomTemplateSpec, saveCustomTemplateSpec,
@@ -295,6 +295,7 @@ export default function Editor() {
   const [len, setLen] = useState(last.len || 'Auto');
   const [out, setOut] = useState(last.out || '');
   const [status, setStatus] = useState('idle');
+  const [aiPolish, setAiPolish] = useState(false);
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -339,38 +340,27 @@ export default function Editor() {
   };
 
   const tailor = async () => {
-    if (resume.trim().length < 40 || jd.trim().length < 20) { setErr('Add both your resume and the job description.'); return; }
+    if (resume.trim().length < 40 || jd.trim().length < 40) { setErr('Add both your full resume and a fuller job description.'); return; }
     if (!canUse('tailoring')) { promptUpgrade('You’ve used all your resume tailoring this month. Upgrade for more.', 'pro'); return; }
     setStatus('loading'); setErr(''); setOut('');
-    const prompt = `Rewrite and tailor the resume below to the job description. Keep it truthful — never invent experience, companies, dates, certifications, metrics or tools.
-Length preference: ${len}. If Single page, compress bullets and remove weaker content. If Multi page, keep sections complete and do not split section content.
-Optimise for ATS, lead with quantified impact, mirror the JD language, and output a clean plain-text resume only (no markdown).
-Keep clear ALL-CAPS section headings (e.g. SUMMARY, EXPERIENCE, SKILLS, EDUCATION, PROJECTS) and use "•" for bullets.
-JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000)}"""`;
     try {
-      const d = await AI.message({ max_tokens: 2600, messages: [{ role: 'user', content: prompt }] });
-      const text = (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-      const next = text.trim();
+      const r = await ResumeOsApi.tailorForJob({
+        resumeText: resume,
+        jobDescription: jd,
+        targetRole: activeRole,
+        pageTarget: len === 'Multi page' ? 2 : 1,
+        aiPolish,
+      });
+      const doc = r.resumeDocument || r.variant;
+      if (!r.ok || !doc) throw new Error('Canonical tailoring did not return a ResumeDocument.');
+      const next = toPlainText(doc).trim();
       setOut(next); setStatus('done');
       useMeter('tailoring');
-      safeWrite({ resume, jd, tpl: tplId, len, out: next, updatedAt: new Date().toISOString() });
+      safeWrite({ resume, jd, tpl: tplId, len, out: next, resumeDocument: doc, quality: r.quality || null, aiPolish, updatedAt: new Date().toISOString() });
     } catch (e) {
-      // Every failure used to collapse into one "temporarily unavailable"
-      // string, so a bad key, a retired model, an hourly rate limit and a
-      // stale CSRF cookie all looked identical — to the student AND to us.
-      // describeApiError() is the shared classifier Jobs.jsx already uses.
       const d = describeApiError(e, 'Resume tailoring');
-      if (d.kind === 'quota') {
-        setErr(d.message);
-        promptUpgrade(d.message, d.suggestPlan || 'pro');
-      } else if (d.kind === 'config') {
-        setErr('AI rewrite isn’t enabled on this account yet. Use the deterministic “Tailor resume for a job” tool in Resume OS — it works without AI.');
-      } else if (d.kind === 'rate') {
-        setErr(`${d.message} You can use the deterministic “Tailor resume for a job” tool in Resume OS meanwhile — it works without AI.`);
-      } else {
-        setErr(`${d.message || 'Tailoring could not run just now.'} You can use the deterministic “Tailor resume for a job” tool in Resume OS meanwhile — it works without AI.`);
-      }
-      // Full detail for the browser console so the cause is one F12 away.
+      if (d.kind === 'quota') { setErr(d.message); promptUpgrade(d.message, d.suggestPlan || 'pro'); }
+      else setErr(d.message || 'Career Autopilot could not tailor the resume. Your original resume was not replaced.');
       console.error('[tailor] failed', { status: e?.status, code: e?.code, message: e?.message, body: e?.data });
       setStatus('error');
     }
@@ -382,7 +372,20 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
   const doPDF = async () => {
     if (activeText.trim().length < 30) { setErr('Add resume content first.'); return; }
     setBusy('pdf'); setErr('');
-    try { await exportResumePDF(data, tplId, { mode: lenToMode(len), fileName: `${safeName}-${selectedTpl.id}.pdf` }); }
+    try {
+      // Built-in templates export through the canonical server-side renderer.
+      // The transient image-derived custom-upload template remains on the legacy
+      // client exporter until Phase 3 gives custom templates a persisted server definition.
+      if (tplId === 'custom' || selectedTpl.id === 'custom-upload') {
+        await exportResumePDF(data, tplId, { mode: lenToMode(len), fileName: `${safeName}-${selectedTpl.id}.pdf` });
+      } else {
+        const doc = fromStructuredResume(data);
+        doc.templateId = tplId;
+        doc.pageSize = 'a4';
+        doc.pageTarget = len === 'Multi page' ? 2 : 1;
+        await downloadResumePdf(doc, { id: tplId }, { provider: 'auto' });
+      }
+    }
     catch (e) { setErr('PDF export failed: ' + (e.message || e)); }
     finally { setBusy(''); }
   };
@@ -441,7 +444,11 @@ JOB DESCRIPTION:\n"""${jd.slice(0, 5000)}"""\nRESUME:\n"""${resume.slice(0, 8000
             </div>
             <p className="mt-2 text-xs text-fg-muted">Single page fits everything cleanly on one A4. Multi page keeps sections intact across pages.</p>
             {err && <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-glow"><AlertTriangle size={13} /> {err}</p>}
-            <Button className="mt-3 w-full" onClick={tailor} disabled={status === 'loading'}>
+            <label className="mt-3 flex items-center gap-2 text-xs text-fg-secondary">
+              <input type="checkbox" checked={aiPolish} onChange={(e) => setAiPolish(e.target.checked)} />
+              Optional AI wording polish (Career Autopilot still validates every change)
+            </label>
+            <Button className="mt-2 w-full" onClick={tailor} disabled={status === 'loading'}>
               <Wand2 size={16} /> {status === 'loading' ? 'Tailoring…' : 'Tailor for This Job'}
             </Button>
           </SectionCard>

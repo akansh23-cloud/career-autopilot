@@ -1,0 +1,60 @@
+{
+  "version": "resume-render-regression-gate-v1",
+  "passed": true,
+  "failures": [],
+  "baseline": {
+    "maxPages": {
+      "devops": 2,
+      "fresher": 2,
+      "long-senior": 3,
+      "unicode-hindi": 2
+    },
+    "maxBytes": 1500000
+  },
+  "rows": [
+    {
+      "id": "devops",
+      "provider": "vector",
+      "engine": "vector",
+      "bytes": 6893,
+      "pages": 1,
+      "selectableText": true,
+      "criticalOk": true,
+      "signature": "b87c832ff09dfa86d0f835b4e2f2e48faaab312a31a241ca95a5da15142a4bbc",
+      "file": "reports/render-samples/devops.pdf"
+    },
+    {
+      "id": "fresher",
+      "provider": "vector",
+      "engine": "vector",
+      "bytes": 6953,
+      "pages": 1,
+      "selectableText": true,
+      "criticalOk": true,
+      "signature": "cd5c3e6cace3e34a72415ec09fcbaa34a89997e7173021309164fcbb498c2d82",
+      "file": "reports/render-samples/fresher.pdf"
+    },
+    {
+      "id": "long-senior",
+      "provider": "vector",
+      "engine": "vector",
+      "bytes": 5101,
+      "pages": 1,
+      "selectableText": true,
+      "criticalOk": true,
+      "signature": "b5fb91ca3e9eabc0b4d7954b64f7c143fe584c3d649fa85101fc6cccf34dc7d1",
+      "file": "reports/render-samples/long-senior.pdf"
+    },
+    {
+      "id": "unicode-hindi",
+      "provider": "weasyprint",
+      "engine": "weasyprint",
+      "bytes": 108947,
+      "pages": 1,
+      "selectableText": true,
+      "criticalOk": true,
+      "signature": "575c8ead6a9f7583e05ce0b645c13b87747c83b27ae0508a11fbfcb0d81f2941",
+      "file": "reports/render-samples/unicode-hindi.pdf"
+    }
+  ]
+}

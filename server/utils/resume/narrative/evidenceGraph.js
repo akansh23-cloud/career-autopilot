@@ -100,7 +100,7 @@ const PURPOSE_LEAD = /\b(?:to|in order to)\s+([a-z][^,.;]{4,80})/i;
 /* Weak/vague openers we detect but never silently delete — they mark the
    evidence unit as low-specificity so the composer knows to work harder. */
 const WEAK_OPENERS = [
-  'responsible for', 'worked on', 'helped with', 'helped to', 'involved in',
+  'responsible for', 'worked on', 'worked with', 'helped with', 'helped to', 'involved in',
   'assisted with', 'participated in', 'tasked with', 'duties included',
   'exposure to', 'familiar with', 'part of', 'contributed to the',
 ];

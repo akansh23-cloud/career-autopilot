@@ -1,0 +1,212 @@
+{
+  "generatedAt": "2026-08-13T10:26:57.119Z",
+  "version": "resume-os-core-phase-gate-v1",
+  "gates": {
+    "safety": true,
+    "quality": true,
+    "optimization": true,
+    "integration": true
+  },
+  "integrationChecks": {
+    "jobsCanonical": true,
+    "editorCanonical": true,
+    "studioCanonical": true,
+    "studioAutoFit": true,
+    "legacyHttpCanonical": true,
+    "resumeOsRoutesCanonical": true,
+    "applicationPackageCanonical": true,
+    "legacyModuleAdapter": true,
+    "deterministicDefault": true,
+    "aiOffLiveZeroCalls": true,
+    "geminiPolishTruthGated": true
+  },
+  "benchmark": {
+    "usefulRewriteRate": 0.714,
+    "enhance": {
+      "globalQuality": 73.417,
+      "specificity": 64,
+      "naturalness": 98.083,
+      "jdRelevance": null
+    },
+    "tailor": {
+      "globalQuality": 71.917,
+      "jdRelevance": 62.583,
+      "narrativeBulletRelevance": 0.304,
+      "specificity": 64,
+      "naturalness": 96.917
+    },
+    "fixtureFloors": [
+      {
+        "fixture": "fresher_software_engineer",
+        "label": "Fresher software engineer",
+        "value": 54,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "devops_engineer",
+        "label": "DevOps engineer",
+        "value": 53,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "senior_platform_engineer",
+        "label": "Senior platform engineer",
+        "value": 85,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "data_engineer",
+        "label": "Data engineer",
+        "value": 50,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "data_scientist",
+        "label": "Data scientist",
+        "value": 56,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "product_manager",
+        "label": "Product manager",
+        "value": 40,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "finance_analyst",
+        "label": "Finance analyst",
+        "value": 73,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "marketing_manager",
+        "label": "Marketing manager",
+        "value": 40,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "mechanical_engineer",
+        "label": "Mechanical engineer",
+        "value": 85,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "weak_resume",
+        "label": "Candidate with a weak resume",
+        "value": 85,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "excellent_resume",
+        "label": "Candidate with an already-excellent resume",
+        "value": 68,
+        "min": 25,
+        "passed": true
+      },
+      {
+        "fixture": "career_transition",
+        "label": "Career transition (QA → data engineering)",
+        "value": 62,
+        "min": 25,
+        "passed": true
+      }
+    ]
+  },
+  "geminiPolishContract": {
+    "passed": true,
+    "deterministicCalls": 0,
+    "safeApplied": 1,
+    "unsafeRejected": 1
+  },
+  "live": [
+    {
+      "label": "Strong DevOps",
+      "scores": {
+        "original": 71,
+        "enhance": 77,
+        "improveAgain": 77,
+        "optimize": 77
+      },
+      "directOptimize": {
+        "before": 71,
+        "after": 77,
+        "acceptedPasses": 1,
+        "attemptedPasses": 2,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "aiCalls": 0,
+      "truthFailures": 0
+    },
+    {
+      "label": "Partial DevOps",
+      "scores": {
+        "original": 68,
+        "enhance": 70,
+        "improveAgain": 70,
+        "optimize": 70
+      },
+      "directOptimize": {
+        "before": 68,
+        "after": 70,
+        "acceptedPasses": 1,
+        "attemptedPasses": 4,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "aiCalls": 0,
+      "truthFailures": 0
+    },
+    {
+      "label": "Fresher",
+      "scores": {
+        "original": 72,
+        "enhance": 77,
+        "improveAgain": 77,
+        "optimize": 77
+      },
+      "directOptimize": {
+        "before": 72,
+        "after": 77,
+        "acceptedPasses": 1,
+        "attemptedPasses": 4,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "aiCalls": 0,
+      "truthFailures": 0
+    },
+    {
+      "label": "Marketing",
+      "scores": {
+        "original": 66,
+        "enhance": 73,
+        "improveAgain": 73,
+        "optimize": 73
+      },
+      "directOptimize": {
+        "before": 66,
+        "after": 73,
+        "acceptedPasses": 1,
+        "attemptedPasses": 2,
+        "stopReason": "all_actionable_objectives_attempted",
+        "converged": true
+      },
+      "aiCalls": 0,
+      "truthFailures": 0
+    }
+  ],
+  "coreResumeOs": "PASS",
+  "finalRendering": "PENDING",
+  "note": "Final ResumeRenderService/Vector normalization/Playwright/Unicode/render-regression gates are intentionally outside this phase."
+}

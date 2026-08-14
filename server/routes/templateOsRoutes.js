@@ -21,6 +21,8 @@ import { BUILTIN_CERTIFICATION } from '../../web/src/lib/templateOs/builtins.js'
 import { readTemplatePackage, PACKAGE_LIMITS } from '../utils/templateOs/packageImport.js';
 import { normalizeResumeDocument, toRendererStructured } from '../utils/resume/resumeDocument.js';
 import { sanitizeDocumentTrust } from '../utils/resume/trustBoundary.js';
+import { renderResumePdf } from '../services/resumeRender/resumeRenderService.js';
+import { safeFilename } from '../services/resumeRender/renderUtils.js';
 import {
   TEMPLATE_ADMIN_AUTH_VERSION, TEMPLATE_ADMIN_CAPABILITIES, isRuntimeCatalogRequest,
   isProductionLicenseCleared, isProductionPublishedTemplate, publicTemplateProjection, safeTemplateAudit,
@@ -283,8 +285,10 @@ export function registerTemplateOsRoutes(app, { requireAuth, requireRole, curren
     } catch { return safeAdminFailure(res, 'package_import_failed'); }
   });
 
-  /* VECTOR PDF EXPORT: real text layer, Template OS pagination */
-  const pdfSchema = z.object({ templateId: z.string().min(1).max(80), templateVersion: z.number().int().min(1).optional().nullable().default(null), doc: z.object({}).passthrough(), sizeId: z.enum(['a4', 'letter']).optional().default('a4') }).passthrough();
+  /* CANONICAL PDF EXPORT: same ResumeRenderService used by Resume OS.
+     Auto selects the ATS vector writer for compatible content and Chromium
+     when Unicode preservation requires it. */
+  const pdfSchema = z.object({ templateId: z.string().min(1).max(80), templateVersion: z.number().int().min(1).optional().nullable().default(null), doc: z.object({}).passthrough(), sizeId: z.enum(['a4', 'letter']).optional().default('a4'), provider: z.enum(['auto','vector','chromium','weasyprint']).optional().default('auto') }).passthrough();
   app.post('/api/template-os/export/pdf', requireAuth, validate(pdfSchema), async (req, res) => {
     try {
       const requestedVersion = req.body.templateVersion || req.body.doc?.templateVersion || null;
@@ -292,15 +296,20 @@ export function registerTemplateOsRoutes(app, { requireAuth, requireRole, curren
       if (!row) return res.status(404).json({ ok: false, error: requestedVersion ? 'template_version_unavailable' : 'not_found', templateVersion: requestedVersion });
       if (!isProductionPublishedTemplate(row)) return res.status(404).json({ ok: false, error: 'not_found' });
       const doc = normalizeResumeDocument(sanitizeDocumentTrust(req.body.doc, {}).doc);
-      const structured = toRendererStructured(doc);
-      const compiled = balancePageComposition(adaptTreeToShape(compileTemplate(row.definition, { density: normalizeResumeDensityToTemplateMode(doc.density) }), analyzeResumeShape(doc)), structured, { sizeId: req.body.sizeId });
-      if (!compiled.ok) return res.status(400).json({ ok: false, error: 'invalid_definition' });
-      const out = renderTemplatePdf(compiled, structured, { sizeId: req.body.sizeId });
+      const out = await renderResumePdf({ doc, definition: row.definition, sizeId: req.body.sizeId, provider: req.body.provider });
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${(doc.title || 'resume').replace(/[^a-z0-9-_ ]/gi, '')}.pdf"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(doc.title || 'resume')}.pdf"`);
       res.setHeader('X-Template-Pages', String(out.pageCount));
-      res.send(Buffer.from(out.bytes));
-    } catch (err) { res.status(500).json({ ok: false, error: 'pdf_export_failed', message: err.message }); }
+      res.setHeader('X-Resume-Render-Provider', out.selectedProvider);
+      res.setHeader('X-Resume-Render-Engine', out.engine || out.selectedProvider);
+      res.setHeader('X-Resume-Render-Signature', out.renderSignature);
+      res.setHeader('X-Resume-Text-Layer', out.validation?.selectableText ? '1' : '0');
+      res.send(out.bytes);
+    } catch (err) {
+      const code = err?.code || 'pdf_export_failed';
+      const status = code === 'chromium_renderer_unavailable' || code === 'vector_renderer_cannot_preserve_unicode' ? 503 : 500;
+      res.status(status).json({ ok: false, error: code, message: err.message, recommendedProvider: err?.recommendedProvider || null });
+    }
   });
 
   /* RENDER a document through a stored definition (server-side HTML) */

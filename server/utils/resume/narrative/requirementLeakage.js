@@ -14,7 +14,10 @@
    bulk accept.
    ============================================================ */
 import { equivalenceKey } from './requirementGraph.js';
-import { canonicalSkill } from '../skillOntology.js';
+import { canonicalSkill, isKnownSkill } from '../skillOntology.js';
+import {
+  newVerdictSheet, recordVerdict, evaluateSheet, VERDICT,
+} from './truthCheckRegistry.js';
 
 export const REQUIREMENT_LEAKAGE_VERSION = 'requirement-leakage-v1';
 
@@ -70,6 +73,53 @@ export function introducedForbiddenTerms(text, original, forbiddenTerms, termSur
   return hits;
 }
 
+/* Employer/client grounding: a rewrite must not introduce a capitalised
+   organisation-shaped token that the original sentence did not contain.
+   Returns NOT_RUN when there is nothing capitalised to reason about, because
+   "no proper nouns present" is not evidence that grounding was verified. */
+function employerVerdict(after, before, ctx = {}) {
+  const text = String(after || '');
+  if (!text.trim()) return VERDICT.NOT_RUN;
+
+  const known = new Set((ctx.knownEntities || []).map((e) => String(e).toLowerCase()));
+
+  /* Drop the leading token before scanning. The first word of a sentence is
+     capitalised by grammar, and leaving it in makes a greedy proper-noun match
+     swallow it together with the real names that follow ("Built GitLab CI"),
+     which then looks sentence-initial and gets discarded — silently skipping
+     the check on exactly the tokens it exists to inspect. */
+  const scanned = text
+    /* Capitalisation resets at EVERY sentence, not just the first. Dropping
+       only the document's opening word left "Automated" — the second
+       sentence's verb — looking like an organisation name. */
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.replace(/^\s*\S+\s*/, ''))
+    .join(' ');
+
+  const proper = scanned.match(/\b[A-Z][A-Za-z&.'-]+(?:\s+[A-Z][A-Za-z&.'-]+)*\b/g) || [];
+  const candidates = proper
+    .map((p) => p.trim())
+    .filter((p) => p && p.split(/\s+/).length <= 4);
+
+  const beforeLower = String(before || '').toLowerCase();
+  for (const c of candidates) {
+    if (beforeLower.includes(c.toLowerCase())) continue;
+    if (known.has(c.toLowerCase())) continue;
+    /* Technologies are capitalised too. "GitLab CI" is not an employer, and
+       flagging it here would double-report a concern that skillContext already
+       owns — two validators disagreeing about the same token is worse than
+       either verdict alone. */
+    if (isKnownSkill(c)) continue;
+    if (c.split(/\s+/).every((w) => isKnownSkill(w))) continue;
+    return VERDICT.FAIL;
+  }
+
+  /* The check ran over the full text and found nothing ungrounded. That is a
+     PASS, not a NOT_RUN: "we looked and there was nothing to flag" is a real
+     result, whereas NOT_RUN means we could not look at all. */
+  return VERDICT.PASS;
+}
+
 /**
  * Audit one proposed change. Returns a verdict carrying the per-check
  * results, the definitive `safe` boolean, and the action taken.
@@ -87,14 +137,25 @@ export function auditChange(change, ctx = {}) {
   const before = String(change.before || '');
   const after = String(change.after || '');
 
-  const truthChecks = {};
-  for (const k of TRUTH_CHECKS) truthChecks[k] = priorChecks[k] || 'PASS';
+  /* Part 4.4 — start from the verdict sheet the candidate carried out of the
+     composer/validator, defaulting to NOT_RUN rather than PASS. Anything this
+     stage owns is filled in below; anything nobody ran stays NOT_RUN and
+     blocks safety. */
+  const truthChecks = newVerdictSheet();
+  for (const [k, v] of Object.entries(priorChecks || {})) {
+    if (truthChecks[k] !== undefined && Object.values(VERDICT).includes(v)) {
+      recordVerdict(truthChecks, k, v);
+    }
+  }
 
   const leaked = introducedForbiddenTerms(after, before, forbiddenTerms, termSurfaces);
   const violations = [];
 
+  /* This stage is the owner of requirementLeakage and employer grounding. */
+  recordVerdict(truthChecks, 'requirementLeakage', leaked.length ? VERDICT.FAIL : VERDICT.PASS);
+  recordVerdict(truthChecks, 'employer', employerVerdict(after, before, ctx));
+
   if (leaked.length) {
-    truthChecks.requirementLeakage = 'FAIL';
     for (const term of leaked) {
       violations.push({
         type: LEAKAGE_TYPE.UNSUPPORTED_REQUIREMENT_LEAKAGE,
@@ -106,13 +167,15 @@ export function auditChange(change, ctx = {}) {
     }
   }
 
-  const failed = Object.entries(truthChecks).filter(([, v]) => v !== 'PASS').map(([k]) => k);
-  const safe = failed.length === 0;
+  const safety = evaluateSheet(truthChecks);
+  const failed = [...safety.failed, ...safety.notRun];
+  const safe = safety.safe;
 
   return {
     changeId: change.changeId || change.id || null,
     safe,
     truthChecks,
+    safety,
     failedChecks: failed,
     violations,
     /* Fail closed: an unsafe change reverts to the candidate's own words. */
@@ -149,6 +212,7 @@ export function auditAndRevert(changes = [], ctx = {}) {
       changed: verdict.changed,
       reverted: verdict.reverted,
       truthChecks: verdict.truthChecks,
+      safety: verdict.safety,
       failedChecks: verdict.failedChecks,
       violations: verdict.violations,
     });

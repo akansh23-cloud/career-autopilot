@@ -11,7 +11,7 @@
    ========================================================================== */
 import { api } from './api.js';
 export {
-  normalizeResumeDocument, emptyResumeDocument, toRendererStructured, toPlainText,
+  normalizeResumeDocument, emptyResumeDocument, fromStructuredResume, toRendererStructured, toPlainText,
   makeId, PROVENANCE, RESUME_DOCUMENT_VERSION, collectBullets, normalizeBullet,
 } from '../../../server/utils/resume/resumeDocument.js';
 export { extractTextFromHtml, simulateAtsParse } from '../../../server/utils/resume/atsParseSimulator.js';
@@ -55,6 +55,9 @@ export const ResumeOsApi = {
   tailorForJob: (payload) => api.post('/api/resume-os/tailor-for-job', payload),
   /* Narrative Intelligence — evidence-driven content generation */
   enhance: (payload) => api.post('/api/resume-os/enhance', payload),
+  analyzeQuality: (payload) => api.post('/api/resume-os/analyze-quality', payload),
+  improveAgain: (payload) => api.post('/api/resume-os/improve-again', payload),
+  optimize: (payload) => api.post('/api/resume-os/optimize', payload),
   tailorNarrative: (payload) => api.post('/api/resume-os/tailor-narrative', payload),
   narrativePreview: (payload) => api.post('/api/resume-os/narrative/preview', payload),
   compileSummary: (payload) => api.post('/api/resume-os/summary/compile', payload),
@@ -68,6 +71,37 @@ export const ResumeOsApi = {
   exportText: (doc) => api.post('/api/resume-os/export/text', { doc }),
   collegeOverview: (collegeId) => api.get(`/api/resume-os/college/overview?collegeId=${encodeURIComponent(collegeId || '')}`),
 };
+
+/* Canonical PDF download. All normal resume PDF exports are server rendered
+   through ResumeRenderService: vector for ATS-first Latin content, Chromium
+   when Unicode/high-fidelity rendering is required. */
+export async function downloadResumePdf(doc, template, { provider = 'auto' } = {}) {
+  const m = typeof document !== 'undefined' && document.cookie.match(/(?:^|;\s*)ca_csrf=([^;]+)/);
+  const isTemplateOs = template?.engine === 'template-os';
+  const endpoint = isTemplateOs ? '/api/template-os/export/pdf' : '/api/resume-os/export/pdf';
+  const payload = {
+    doc, provider, sizeId: doc?.pageSize || 'a4',
+    templateId: template?.id || doc?.templateId || '',
+    templateVersion: template?.templateVersion || doc?.templateVersion || null,
+  };
+  const res = await fetch(endpoint, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(m ? { 'X-CSRF-Token': decodeURIComponent(m[1]) } : {}) },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = {}; try { detail = await res.json(); } catch { /* non-json */ }
+    const err = new Error(detail.message || detail.error || 'PDF export failed');
+    err.code = detail.error || 'pdf_export_failed';
+    throw err;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${(doc?.title || 'resume').replace(/[^\w.-]+/g, '_')}.pdf`; a.click();
+  URL.revokeObjectURL(url);
+  return { provider: res.headers.get('X-Resume-Render-Provider'), engine: res.headers.get('X-Resume-Render-Engine'), pages: Number(res.headers.get('X-Resume-Pages') || res.headers.get('X-Template-Pages') || 0), signature: res.headers.get('X-Resume-Render-Signature') };
+}
 
 /* Real DOCX download (server-generated WordprocessingML, editable). */
 export async function downloadRealDocx(doc) {

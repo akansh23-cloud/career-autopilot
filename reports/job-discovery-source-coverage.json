@@ -1,0 +1,549 @@
+{
+  "generatedAt": "2026-08-14T07:40:29.896Z",
+  "providersImplemented": [
+    "GREENHOUSE",
+    "LEVER",
+    "ASHBY",
+    "WORKABLE",
+    "SMARTRECRUITERS",
+    "GENERIC",
+    "API"
+  ],
+  "adapterStatus": {
+    "GREENHOUSE": {
+      "adapter": "GreenhouseAdapter",
+      "sourceType": "ATS",
+      "sourceClass": "ORIGINAL_ATS",
+      "requiresCredentials": false,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": null,
+      "reason": "no credentials required"
+    },
+    "LEVER": {
+      "adapter": "LeverAdapter",
+      "sourceType": "ATS",
+      "sourceClass": "ORIGINAL_ATS",
+      "requiresCredentials": false,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": null,
+      "reason": "no credentials required"
+    },
+    "ASHBY": {
+      "adapter": "AshbyAdapter",
+      "sourceType": "ATS",
+      "sourceClass": "ORIGINAL_ATS",
+      "requiresCredentials": false,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": null,
+      "reason": "no credentials required"
+    },
+    "WORKABLE": {
+      "adapter": "WorkableAdapter",
+      "sourceType": "ATS",
+      "sourceClass": "ORIGINAL_ATS",
+      "requiresCredentials": false,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": null,
+      "reason": "no credentials required"
+    },
+    "SMARTRECRUITERS": {
+      "adapter": "SmartRecruitersAdapter",
+      "sourceType": "ATS",
+      "sourceClass": "ORIGINAL_ATS",
+      "requiresCredentials": true,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": "PUBLIC",
+      "reason": "public postings endpoint"
+    },
+    "GENERIC": {
+      "adapter": "GenericCareerSiteAdapter",
+      "sourceType": "CAREER_SITE",
+      "sourceClass": "ORIGINAL_CAREER_SITE",
+      "requiresCredentials": false,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": null,
+      "reason": "no credentials required"
+    },
+    "API": {
+      "adapter": "AggregatorAdapter",
+      "sourceType": "AGGREGATOR",
+      "sourceClass": "AGGREGATOR",
+      "requiresCredentials": false,
+      "status": "ACTIVE",
+      "configured": true,
+      "mode": null,
+      "reason": "no credentials required"
+    }
+  },
+  "sources": {
+    "registered": 8,
+    "total": 8,
+    "byProvider": {
+      "API": 1,
+      "GREENHOUSE": 1,
+      "LEVER": 1,
+      "ASHBY": 1,
+      "WORKABLE": 1,
+      "SMARTRECRUITERS": 1,
+      "GENERIC": 2
+    },
+    "byStatus": {
+      "ACTIVE": 8
+    },
+    "byClass": {
+      "AGGREGATOR": 1,
+      "ORIGINAL_ATS": 5,
+      "ORIGINAL_CAREER_SITE": 2
+    }
+  },
+  "jobs": {
+    "total": 12,
+    "byStatus": {
+      "NEW": 9,
+      "REMOVED": 1,
+      "ACTIVE": 2
+    },
+    "byProvider": {
+      "GREENHOUSE": 3,
+      "LEVER": 2,
+      "ASHBY": 2,
+      "API": 2,
+      "SMARTRECRUITERS": 1,
+      "GENERIC": 3
+    },
+    "active": 11,
+    "new": 9,
+    "removed": 1,
+    "stale": 0
+  },
+  "coverage": {
+    "originalSourceCount": 11,
+    "originalSourcePct": 91.7,
+    "supplementalOnlyCount": 1,
+    "supplementalOnlyPct": 8.3,
+    "directApplyCount": 11,
+    "directApplyPct": 91.7,
+    "withPublishedDatePct": 91.7,
+    "withSalaryPct": 25,
+    "verificationCoveragePct": 100,
+    "dedupeRatio": 1.08
+  },
+  "runtime": {
+    "counters": {
+      "sourcesRegistered": 0,
+      "sourcesHealthy": 0,
+      "sourcesDegraded": 0,
+      "sourcesDisabled": 0,
+      "fetchAttempts": 8,
+      "fetchSuccess": 7,
+      "fetchFailure": 1,
+      "rateLimited": 0,
+      "rawJobsFetched": 31,
+      "newJobs": 12,
+      "updatedJobs": 19,
+      "removedJobs": 1,
+      "dedupeMerges": 19,
+      "dedupeRejected": 0,
+      "verificationsRun": 12,
+      "verificationsOk": 11,
+      "verificationsClosed": 1,
+      "verificationsFailed": 0,
+      "browserFallbacks": 0,
+      "extractionStages": {
+        "JSON_LD": 1,
+        "EMBEDDED_JSON": 1
+      }
+    },
+    "errorsByClass": {
+      "UNKNOWN": 1
+    },
+    "latency": {
+      "crawlP50": 3,
+      "crawlP95": 20,
+      "verifyP50": 0,
+      "searchP50": 2,
+      "searchP95": 3
+    },
+    "browserFallbackPct": 0,
+    "fetchSuccessRate": 0.875
+  },
+  "basis": "FIXTURE",
+  "basisNote": "Measured against the offline fixture world in test/fixtures/jobDiscovery/. NOT production coverage.",
+  "verification": {
+    "checked": 12,
+    "alive": 11,
+    "closed": 1,
+    "inconclusive": 0,
+    "details": [
+      {
+        "jobId": "cj_dcb3fbdab443001ef744b467",
+        "provider": "GREENHOUSE",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_de224dbd6a457c8cfd00f479",
+        "provider": "GREENHOUSE",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_ed397b8625ca369df1ddb118",
+        "provider": "GREENHOUSE",
+        "ok": false,
+        "status": 410,
+        "newStatus": "REMOVED"
+      },
+      {
+        "jobId": "cj_17a15ade1cf113a6b3037fe7",
+        "provider": "LEVER",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_c72dd65554670ba7ddb0e6a7",
+        "provider": "LEVER",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_bd3d81a8a9c7d826fae08f2a",
+        "provider": "ASHBY",
+        "ok": true,
+        "status": 200,
+        "newStatus": "ACTIVE"
+      },
+      {
+        "jobId": "cj_55f2cea0d9d3394e31275f02",
+        "provider": "ASHBY",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_a67f364cb5345df8254aba9f",
+        "provider": "SMARTRECRUITERS",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_d126595a94c8aa9a7cadc60d",
+        "provider": "GENERIC",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_5924672930269970647f2c30",
+        "provider": "GENERIC",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_df4a9afac73e924ebad73938",
+        "provider": "GENERIC",
+        "ok": true,
+        "status": 200,
+        "newStatus": "NEW"
+      },
+      {
+        "jobId": "cj_c339d18ccc8f89b88c10a92d",
+        "provider": "API",
+        "ok": true,
+        "status": 200,
+        "newStatus": "ACTIVE"
+      }
+    ],
+    "forced": true
+  },
+  "ingestionRuns": [
+    {
+      "tenant": "northwindlabs",
+      "provider": "GREENHOUSE",
+      "ok": true,
+      "fetched": 3,
+      "created": 3,
+      "merged": 0,
+      "rejected": 0,
+      "errors": []
+    },
+    {
+      "tenant": "harbourpoint",
+      "provider": "LEVER",
+      "ok": true,
+      "fetched": 2,
+      "created": 2,
+      "merged": 0,
+      "rejected": 0,
+      "errors": []
+    },
+    {
+      "tenant": "vellumsystems",
+      "provider": "ASHBY",
+      "ok": true,
+      "fetched": 2,
+      "created": 2,
+      "merged": 0,
+      "rejected": 0,
+      "errors": []
+    },
+    {
+      "tenant": "corvidanalytics",
+      "provider": "WORKABLE",
+      "ok": false,
+      "fetched": 0,
+      "created": 0,
+      "merged": 0,
+      "rejected": 0,
+      "errors": [
+        "UNKNOWN"
+      ]
+    },
+    {
+      "tenant": "Meridian",
+      "provider": "SMARTRECRUITERS",
+      "ok": true,
+      "fetched": 1,
+      "created": 1,
+      "merged": 0,
+      "rejected": 0,
+      "errors": []
+    },
+    {
+      "tenant": "careers.orchardworks.com",
+      "provider": "GENERIC",
+      "ok": true,
+      "fetched": 1,
+      "created": 1,
+      "merged": 0,
+      "rejected": 0,
+      "errors": []
+    },
+    {
+      "tenant": "jobs.tessellate.io",
+      "provider": "GENERIC",
+      "ok": true,
+      "fetched": 2,
+      "created": 2,
+      "merged": 0,
+      "rejected": 0,
+      "errors": []
+    },
+    {
+      "tenant": "Remotive",
+      "provider": "API",
+      "ok": true,
+      "fetched": 20,
+      "created": 1,
+      "merged": 19,
+      "rejected": 0,
+      "errors": []
+    }
+  ],
+  "demonstration": [
+    {
+      "label": "DevOps Engineer — Remote India",
+      "criteria": {
+        "q": "DevOps Engineer",
+        "location": "Remote India",
+        "limit": 5
+      },
+      "shown": 5,
+      "total": 7,
+      "top": [
+        {
+          "rank": 1,
+          "title": "DevOps Engineer",
+          "company": "Vellum Systems",
+          "score": 95,
+          "titleRelation": "EXACT",
+          "provider": "ASHBY",
+          "isOriginal": true,
+          "sourceInstances": 2,
+          "sourcePublishedAt": "2026-08-13T06:30:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "REMOTE_COUNTRY",
+          "directApply": true
+        },
+        {
+          "rank": 2,
+          "title": "Senior Platform Engineer",
+          "company": "Northwind Labs",
+          "score": 54,
+          "titleRelation": "STRONG",
+          "provider": "GREENHOUSE",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-11T14:00:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "ONSITE",
+          "directApply": true
+        },
+        {
+          "rank": 3,
+          "title": "Backend Engineer, Payments",
+          "company": "Harbourpoint",
+          "score": 38,
+          "titleRelation": "RELATED",
+          "provider": "LEVER",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-11T00:00:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "HYBRID",
+          "directApply": true
+        }
+      ]
+    },
+    {
+      "label": "Java Backend — Bangalore",
+      "criteria": {
+        "q": "Java Backend",
+        "location": "Bangalore",
+        "limit": 5
+      },
+      "shown": 2,
+      "total": 2,
+      "top": [
+        {
+          "rank": 1,
+          "title": "Java Backend Engineer",
+          "company": "Meridian",
+          "score": 73,
+          "titleRelation": "ALIAS",
+          "provider": "SMARTRECRUITERS",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-12T11:45:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "ONSITE",
+          "directApply": true
+        },
+        {
+          "rank": 2,
+          "title": "Backend Engineer, Payments",
+          "company": "Harbourpoint",
+          "score": 73,
+          "titleRelation": "ALIAS",
+          "provider": "LEVER",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-11T00:00:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "HYBRID",
+          "directApply": true
+        }
+      ]
+    },
+    {
+      "label": "Data Engineer — Remote",
+      "criteria": {
+        "q": "Data Engineer",
+        "remote": "remote",
+        "limit": 5
+      },
+      "shown": 5,
+      "total": 5,
+      "top": [
+        {
+          "rank": 1,
+          "title": "DevOps Engineer",
+          "company": "Vellum Systems",
+          "score": 35,
+          "titleRelation": "RELATED",
+          "provider": "ASHBY",
+          "isOriginal": true,
+          "sourceInstances": 2,
+          "sourcePublishedAt": "2026-08-13T06:30:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "REMOTE_COUNTRY",
+          "directApply": true
+        },
+        {
+          "rank": 2,
+          "title": "Remote Support Engineer",
+          "company": "Alderman Foods",
+          "score": 31,
+          "titleRelation": "WEAK",
+          "provider": "GENERIC",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-12T00:00:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "REMOTE_COUNTRY",
+          "directApply": true
+        },
+        {
+          "rank": 3,
+          "title": "QA Engineer",
+          "company": "Tessellate",
+          "score": 29,
+          "titleRelation": "WEAK",
+          "provider": "GENERIC",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-06T00:00:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "UNKNOWN",
+          "directApply": true
+        }
+      ]
+    },
+    {
+      "label": "Product Manager — India",
+      "criteria": {
+        "q": "Product Manager",
+        "location": "India",
+        "limit": 5
+      },
+      "shown": 1,
+      "total": 1,
+      "top": [
+        {
+          "rank": 1,
+          "title": "Product Manager, Growth",
+          "company": "Vellum Systems",
+          "score": 72,
+          "titleRelation": "ALIAS",
+          "provider": "ASHBY",
+          "isOriginal": true,
+          "sourceInstances": 1,
+          "sourcePublishedAt": "2026-08-09T08:00:00.000Z",
+          "firstSeenAt": "2026-08-14T12:00:00.000Z",
+          "lastVerifiedAt": "2026-08-14T12:00:00.000Z",
+          "dateKind": "posted",
+          "remoteScope": "ONSITE",
+          "directApply": true
+        }
+      ]
+    }
+  ]
+}

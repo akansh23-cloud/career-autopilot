@@ -333,9 +333,17 @@ test('leakage: a term the candidate already used is theirs to keep', () => {
 
 test('leakage: offending changes are REVERTED, not warned about', () => {
   const surfaces = buildTermSurfaces(['kubernetes'], DEFAULT_SURFACE_ALIASES);
+  /* Full verdict sheets: under the Part 4.4 contract an unsupplied check is
+     NOT_RUN and blocks safety, so a test that wants to isolate leakage must
+     say explicitly that the other validators ran. */
+  const ranClean = {
+    metric: 'PASS', entity: 'PASS', skillContext: 'PASS', seniority: 'PASS',
+    certification: 'PASS', employer: 'PASS', evidenceBinding: 'PASS',
+    actionSemantics: 'PASS', actionProvenance: 'PASS',
+  };
   const out = auditAndRevert([
-    { changeId: 'c1', before: 'Deployed services on OpenShift.', after: 'Deployed services on Kubernetes and OpenShift.' },
-    { changeId: 'c2', before: 'Built pipelines.', after: 'Built GitLab CI pipelines.' },
+    { changeId: 'c1', before: 'Deployed services on OpenShift.', after: 'Deployed services on Kubernetes and OpenShift.', truthChecks: ranClean },
+    { changeId: 'c2', before: 'Built pipelines.', after: 'Built GitLab CI pipelines.', truthChecks: ranClean },
   ], { forbiddenTerms: new Set(['kubernetes']), termSurfaces: surfaces });
 
   const c1 = out.changes.find((c) => c.changeId === 'c1');

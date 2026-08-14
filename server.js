@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import * as db from './db.js';
 import demoTalent from './server/utils/demoTalentData.js';
 import * as subs from './paymentsStore.js';
@@ -16,7 +17,7 @@ import { maxFreshDaysFromQuery, passesFreshness } from './freshness.js';
 import { createMongooseSessionStore } from './sessionStore.js';
 import {
   scoreResume, normalizeResumeText, normalizeRole, hashResume as computeResumeHash,
-  SCORING_VERSION, buildFeedback, parseJD, computeJobFit, tailorResume, checkFabrication,
+  SCORING_VERSION, buildFeedback, parseJD, computeJobFit, checkFabrication,
 } from './server/utils/resume/index.js';
 import { verifyProjectSubmission, levelForXp } from './server/utils/skillVerificationEngine.js';
 import { computeMarketplaceScore, sortComparator, LISTING_TYPES, LISTING_CTAS } from './server/utils/marketplaceEngine.js';
@@ -24,6 +25,8 @@ import { buildInspirations, generateProjectBlueprint } from './server/modules/in
 import { generateArchitecture, ARCH_LEVELS } from './server/utils/architectureEngine.js';
 import { assessPatentReadiness, priorArtKeywords, inventionDisclosureDraft, PATENT_STATUSES, PATENT_DISCLAIMER } from './server/utils/patentEngine.js';
 import { generateApplicationPackage } from './server/utils/applicationPackageEngine.js';
+import { tailorForJob as appTailorForJob } from './server/services/resumeOs/resumeOsApplicationService.js';
+import { toPlainText as resumeDocumentToPlainText } from './server/utils/resume/resumeDocument.js';
 import { computeReadiness, READINESS_CATEGORIES, computeRoleReadiness, explainReadinessChange } from './server/utils/readinessEngine.js';
 import { rankNextBestActions } from './server/utils/nextBestActionEngine.js';
 import { classifyResumeEvidenceGaps } from './server/utils/resume/evidenceGapClassifier.js';
@@ -68,6 +71,7 @@ import { registerCollegeRoutes } from './server/routes/collegeRoutes.js';
 import { registerTeamProjectRoutes } from './server/routes/teamProjectRoutes.js';
 import { registerTeamProgressRoutes } from './server/routes/teamProgressRoutes.js';
 import { registerJobSearchRoute } from './server/routes/jobSearchRoute.js';
+import { registerJobDiscoveryRoutes } from './server/routes/jobDiscoveryRoutes.js';
 import { patchAppAsync, installProcessGuards, errorMiddleware } from './server/utils/asyncRoute.js';
 import progressEngine from './server/utils/teamProgressEngine.js';
 import { requestIdMiddleware, createErrorHandler } from './server/utils/observability.js';
@@ -1957,43 +1961,52 @@ app.post('/api/resume/analyze', requireAuth, aiLimiter, validateBody(resumeAnaly
    ============================================================ */
 app.post('/api/resume/tailor', requireAuth, aiLimiter, validateBody(resumeTailorSchema), async (req, res) => {
   try {
+    const u = currentUser(req) || {};
     const { resumeText, jobDescription, fileName } = req.body || {};
     const targetRole = normalizeRole(req.body?.targetRole);
-    const mode = ['conservative', 'balanced', 'aggressive'].includes(req.body?.mode) ? req.body.mode : 'balanced';
+    const requestedMode = String(req.body?.mode || 'balanced');
+    const mode = requestedMode === 'aggressive' ? 'achievement-focus' : requestedMode === 'conservative' ? 'balanced' : 'balanced';
+    if (!resumeText || String(resumeText).trim().length < 40) return res.status(400).json({ error: 'resume_too_short', message: 'Please provide more resume text to tailor.' });
+    if (!jobDescription || String(jobDescription).trim().length < 30) return res.status(400).json({ error: 'jd_too_short', message: 'Please paste a fuller job description to tailor against.' });
 
-    if (!resumeText || String(resumeText).trim().length < 40) {
-      return res.status(400).json({ error: 'resume_too_short', message: 'Please provide more resume text to tailor.' });
-    }
-    if (!jobDescription || String(jobDescription).trim().length < 30) {
-      return res.status(400).json({ error: 'jd_too_short', message: 'Please paste a fuller job description to tailor against.' });
-    }
+    let verifiedSkills = [];
+    try { verifiedSkills = await db.getVerifiedSkills({ userId: u.id, email: u.email }); } catch { verifiedSkills = []; }
+    const core = await appTailorForJob({
+      resumeText, jobDescription, targetRole, mode,
+      context: { verifiedSkills, profileSkills: [], userKey: String(u.id || u.email || 'legacy'), plan: u.plan || 'free' },
+      aiPolish: false,
+    });
+    if (!core.ok) return res.status(200).json({ error: 'tailor_failed', message: core.run?.message || 'Could not tailor the resume.', preservedOriginal: true });
 
+    const tailoredText = resumeDocumentToPlainText(core.resumeDocument);
     const jd = parseJD({ jobDescription, targetRole });
     const fitBefore = computeJobFit({ resumeText, jd });
-    const tailored = tailorResume({ resumeText, jd, targetRole, mode });
-    const fitAfter = computeJobFit({ resumeText: tailored.tailoredResume.text, jd });
-    const fabrication = checkFabrication({ originalResume: resumeText, tailoredResume: tailored.tailoredResume.text });
+    const fitAfter = computeJobFit({ resumeText: tailoredText, jd });
+    const fabrication = checkFabrication({ originalResume: resumeText, tailoredResume: tailoredText });
+    const changeLog = (core.changeLedger || []).map((c) => ({ section: c.section, before: c.before, after: c.after, reason: c.reason, truthChecks: c.truthChecks }));
 
     res.json({
       jd,
-      tailoredResume: tailored.tailoredResume,
+      tailoredResume: { text: tailoredText, document: core.resumeDocument },
+      resumeDocument: core.resumeDocument,
       jobFitScoreBefore: fitBefore.score,
       jobFitScoreAfter: fitAfter.score,
       jobFitBreakdownBefore: fitBefore.breakdown,
       jobFitBreakdownAfter: fitAfter.breakdown,
-      keywordsAdded: tailored.keywordsAdded,
-      keywordsMissing: tailored.keywordsMissing,
-      changeLog: tailored.changeLog,
-      safeChanges: tailored.safeChanges,
-      needsReview: tailored.needsReview,
+      keywordsAdded: core.canonical?.atsOpportunities?.added || [],
+      keywordsMissing: core.canonical?.atsOpportunities?.gaps || [],
+      changeLog,
+      safeChanges: changeLog,
+      needsReview: core.optimization?.ceiling?.missingEvidence || [],
       fabricationRisks: fabrication.risks,
       fabricationSafe: fabrication.safe,
       integrityScore: fabrication.integrityScore,
-      mode,
-      fileName: fileName || '',
-      targetRole,
-      scoringVersion: SCORING_VERSION,
-      db: db.dbEnabled(),
+      quality: core.quality,
+      truth: core.truth,
+      aiPolish: core.aiPolish,
+      canonical: true,
+      mode: requestedMode,
+      fileName: fileName || '', targetRole, scoringVersion: SCORING_VERSION, db: db.dbEnabled(),
     });
   } catch (err) {
     logger.error('Resume tailor failed', { message: err.message });
@@ -2900,6 +2913,23 @@ registerTemplateOsRoutes(app, { requireAuth, requireRole, currentUser, generatio
 registerProjectStoreRoutes(app, { requireAuth, currentUser, db });
 registerOpsRoutes(app, { requireAuth, requireAdmin, currentUser, db, logger });
 
+/* Job Discovery OS — canonical indexed search. The API and background worker
+   share the SAME Mongo-backed store whenever MONGODB_URI is configured. The
+   legacy /jobs/search route remains available only for operator/bootstrap use;
+   the product UI never falls back to it synchronously. */
+registerJobDiscoveryRoutes(app, {
+  jobsLimiter,
+  requireAuth,
+  requireAdmin,
+  logger,
+  legacySources: SOURCES,
+  serviceOptions: {
+    mongoose,
+    connect: db.connectDB,
+    backend: process.env.MONGODB_URI ? 'mongo' : undefined,
+  },
+});
+
 /* ---- Public legal metadata (no auth): the single source the in-app legal
    pages, Razorpay policy URLs and DPDP grievance notice all read from.
    Contacts come from env (LEGAL_* → SUPPORT/ADMIN fallbacks) so the
@@ -2944,7 +2974,7 @@ app.post('/api/applications/package', requireAuth, generationLimiter, validateBo
       verifiedProjects = (subs || []).filter((s) => s.verificationStatus === 'verified').map((s) => ({ title: s.title }));
     } catch { /* verified data is best-effort */ }
 
-    const pkg = generateApplicationPackage({ resumeText, jobDescription, targetRole, verifiedSkills, verifiedProjects, applicantName });
+    const pkg = await generateApplicationPackage({ resumeText, jobDescription, targetRole, verifiedSkills, verifiedProjects, applicantName });
 
     // Optional AI tone polish on the written pieces only — never adds facts;
     // if anything looks off we keep the deterministic version.

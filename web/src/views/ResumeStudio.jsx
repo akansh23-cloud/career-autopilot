@@ -3,8 +3,8 @@
    ----------------------------------------------------------------------------
    One deterministic engine end to end:
      document (canonical model) → server compile (truth + ATS V3 + checks +
-     JD match + ranking + NBA) → live paginated preview (same renderer as
-     export) → local ATS parse round-trip → explainable Health rail.
+     JD match + ranking + NBA) → live Template OS preview (same compiled layout model as
+     server export) → local ATS parse round-trip → explainable Health rail.
 
    Design rules enforced here:
      • No AI anywhere in scoring/matching — every number is server-computed
@@ -27,13 +27,13 @@ import {
   normalizeResumeDocument, toRendererStructured, toPlainText, makeId,
   updateItemInSection, removeItemFromSection, moveItemInSection, moveSectionOrder,
   dismissCheck, isCheckDismissed, simulateAtsParse,
-  downloadRealDocx, extractTextFromFile,
+  downloadRealDocx, downloadResumePdf, extractTextFromFile,
 } from '../lib/resumeOs.js';
 import {
-  paginateResume, composePagedDocumentHTML, exportResumePDF, exportResumeDOCX,
+  exportResumeDOCX,
   triggerDownload, canExportLayout,
 } from '../lib/resumeRenderer.js';
-import { compileTemplate, normalizeResumeDensityToTemplateMode, adaptTreeToShape, balancePageComposition, buildLayoutHTML, estimateGeometry, analyzeResumeShape, measureLayoutGeometry, canMeasure, thumbnailDataUri, cachedTemplatePreviewUrl, fallbackPreviewOnError, fromLegacyTemplate, renderTemplatePdf } from '../lib/templateOs/index.js';
+import { compileTemplate, normalizeResumeDensityToTemplateMode, adaptTreeToShape, balancePageComposition, buildLayoutHTML, estimateGeometry, analyzeResumeShape, measureLayoutGeometry, canMeasure, thumbnailDataUri, cachedTemplatePreviewUrl, fallbackPreviewOnError, fromLegacyTemplate } from '../lib/templateOs/index.js';
 import { RESUME_TEMPLATES, getResumeTemplate, getResumeTemplateCatalog, templateVersionOf } from '../lib/resumeTemplateRegistry.js';
 import { installRuntimeTemplateRows, installRuntimeTemplateVersionRow } from '../lib/runtimeTemplateCatalog.js';
 import { TemplateOsApi } from '../lib/templateOsApi.js';
@@ -869,6 +869,11 @@ export default function ResumeStudio({ go }) {
   const [tailorRanking, setTailorRanking] = useState(null);
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [coreQuality, setCoreQuality] = useState(null);
+  const [coreResult, setCoreResult] = useState(null);
+  const [coreBusy, setCoreBusy] = useState('');
+  const [aiPolish, setAiPolish] = useState(false);
+  const autoFitRef = useRef('');
   const dirtyRef = useRef(false);
 
   const setDoc = useCallback((next) => { dirtyRef.current = true; setDocRaw(next); }, []);
@@ -909,45 +914,24 @@ export default function ResumeStudio({ go }) {
         const structured = toRendererStructured(debouncedDoc);
         const tpl = getResumeTemplate(debouncedDoc.templateId, debouncedDoc.templateVersion, { strictVersion: !!debouncedDoc.templateVersion });
         if (!tpl) throw new Error(`Pinned template ${debouncedDoc.templateId}@${debouncedDoc.templateVersion} is unavailable`);
-        if (tpl.engine === 'template-os') {
-          /* Template OS: definition → layout compiler; DOM order stays semantic */
-          const compiled = balancePageComposition(adaptTreeToShape(compileTemplate(tpl.definition, { density: normalizeResumeDensityToTemplateMode(debouncedDoc.density) }), analyzeResumeShape(debouncedDoc)), structured, { sizeId: debouncedDoc.pageSize });
-          const html = buildLayoutHTML(compiled, structured, { sizeId: debouncedDoc.pageSize });
-          /* real DOM measurement when a browser is available; estimate otherwise */
-          const geometry = canMeasure()
-            ? measureLayoutGeometry(compiled, structured, { sizeId: debouncedDoc.pageSize })
-            : estimateGeometry(compiled, structured, { sizeId: debouncedDoc.pageSize });
-          if (!alive) return;
-          setPreview({
-            html,
-            pageCount: geometry.pageCount,
-            fit: { ok: (geometry.overflowLines || 0) === 0, overflowLines: geometry.overflowLines || 0, estimated: !geometry.measured },
-            paged: null,
-            templateOs: { geometry, compiled, adaptation: compiled.adaptation || { moves: [] } },
-          });
-          setSim(null); setLayoutReport(null);
-          return;
-        }
-        const theme = { ...tpl.theme };
-        if (debouncedDoc.styling?.accent) theme.accent = debouncedDoc.styling.accent;
-        if (debouncedDoc.atsStrict) { theme.skillsStyle = 'grouped-lines'; theme.bulletChar = 'disc'; theme.headerBand = false; }
-        const paged = await paginateResume(structured, { ...tpl, theme }, { size: debouncedDoc.pageSize, density: debouncedDoc.density });
+        /* Final renderer parity: both native Template OS templates and legacy
+           registry templates compile through the same Template OS layout model
+           used by ResumeRenderService. Legacy themes are adapted deterministically. */
+        const definition = tpl.engine === 'template-os' ? tpl.definition : fromLegacyTemplate(tpl);
+        const compiled = balancePageComposition(adaptTreeToShape(compileTemplate(definition, { density: normalizeResumeDensityToTemplateMode(debouncedDoc.density) }), analyzeResumeShape(debouncedDoc)), structured, { sizeId: debouncedDoc.pageSize });
+        const html = buildLayoutHTML(compiled, structured, { sizeId: debouncedDoc.pageSize });
+        const geometry = canMeasure()
+          ? measureLayoutGeometry(compiled, structured, { sizeId: debouncedDoc.pageSize })
+          : estimateGeometry(compiled, structured, { sizeId: debouncedDoc.pageSize });
         if (!alive) return;
-        setPreview({ html: composePagedDocumentHTML(paged), pageCount: paged.pageCount, fit: paged.fit, paged });
-        const s = simulateAtsParse(debouncedDoc, paged.pages);
-        setSim(s);
-        try {
-          const { validateResumeLayout } = await import('../lib/resumeLayoutValidator.js');
-          const host = document.createElement('div');
-          host.setAttribute('aria-hidden', 'true');
-          host.style.cssText = 'position:fixed;left:-14000px;top:0;z-index:-1;opacity:0;pointer-events:none;background:#fff;';
-          const style = document.createElement('style'); style.textContent = paged.css; host.appendChild(style);
-          const wrap = document.createElement('div');
-          wrap.innerHTML = paged.pages.map((inner) => `<div class="rp-page"><div class="rp-root">${inner}</div></div>`).join('');
-          host.appendChild(wrap); document.body.appendChild(host);
-          try { setLayoutReport(validateResumeLayout(wrap, { expectedPageMode: 'auto', overflowBlocks: paged.overflowBlocks, fit: paged.fit, template: paged.template })); }
-          finally { document.body.removeChild(host); }
-        } catch { setLayoutReport(null); }
+        setPreview({
+          html,
+          pageCount: geometry.pageCount,
+          fit: { ok: (geometry.overflowLines || 0) === 0, overflowLines: geometry.overflowLines || 0, estimated: !geometry.measured },
+          paged: null,
+          templateOs: { geometry, compiled, adaptation: compiled.adaptation || { moves: [] }, adaptedLegacy: tpl.engine !== 'template-os' },
+        });
+        setSim(null); setLayoutReport(null);
       } catch { /* preview failure never blocks editing */ }
     })();
     return () => { alive = false; };
@@ -969,6 +953,79 @@ export default function ResumeStudio({ go }) {
     return () => { alive = false; };
   }, [debouncedDoc]);
 
+  /* Fixed global quality is independent from tailoring mode. Layout remains N/A
+     until the final rendering patch supplies a canonical server render metric. */
+  useEffect(() => {
+    if (!debouncedDoc) return;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await ResumeOsApi.analyzeQuality({ doc: debouncedDoc, jobDescription: debouncedDoc.targetJobDescription || '', targetRole: debouncedDoc.targetRole || '' });
+        if (alive && r?.quality) setCoreQuality(r.quality);
+      } catch { /* the existing compile rail remains available */ }
+    })();
+    return () => { alive = false; };
+  }, [debouncedDoc]);
+
+  /* Active measured Auto-Fit. Canonical content operations mark the document as
+     pending. Browser pagination provides real overflow, then the existing
+     deterministic Auto-Fit engine chooses content-budget/density steps. */
+  useEffect(() => {
+    const pending = doc?.metadata?.pendingAutoFit;
+    if (!pending?.requested || !preview || !doc) return;
+    const overflowLines = Math.max(0, Number(preview.fit?.overflowLines) || 0);
+    const key = `${pending.at || ''}:${pending.iteration || 0}:${overflowLines}:${doc.density}`;
+    if (autoFitRef.current === key) return;
+    autoFitRef.current = key;
+    let alive = true;
+    (async () => {
+      const metadata = { ...(doc.metadata || {}) };
+      if (overflowLines <= 0) {
+        delete metadata.pendingAutoFit;
+        metadata.lastAutoFit = { at: new Date().toISOString(), overflowLines: 0, result: 'fits', measured: true };
+        if (alive) setDocRaw(normalizeResumeDocument({ ...doc, metadata }));
+        return;
+      }
+      try {
+        const pageTarget = Number(metadata.pendingAutoFit?.pageTarget || 1);
+        const r = await ResumeOsApi.autofit({ doc, overflowLines, pageTarget, jobDescription: doc.targetJobDescription || '' });
+        const iteration = Number(pending.iteration || 0);
+        let next = normalizeResumeDocument(doc);
+        const nextMeta = { ...(next.metadata || {}) };
+        let action = 'none';
+
+        if (iteration === 0 && r?.budgetPlan?.overrides) {
+          next = normalizeResumeDocument({ ...next, overrides: {
+            ...(next.overrides || {}),
+            bulletIds: { ...(next.overrides?.bulletIds || {}), ...(r.budgetPlan.overrides.bulletIds || {}) },
+            disabled: [...new Set([...(next.overrides?.disabled || []), ...(r.budgetPlan.overrides.disabled || [])])],
+          }});
+          action = 'content_budget';
+        } else {
+          const densityStep = (r?.plan?.steps || []).find((x) => x.step === 'compact_density' && x.to && x.to !== next.density);
+          if (densityStep) { next = normalizeResumeDocument({ ...next, density: densityStep.to }); action = `density:${densityStep.to}`; }
+          else { action = 'allow_second_page'; }
+        }
+
+        const m = { ...(next.metadata || {}) };
+        m.lastAutoFit = { at: new Date().toISOString(), overflowLines, action, measured: true, planVersion: r?.plan?.version || null };
+        if (action === 'allow_second_page' || iteration >= 3) {
+          delete m.pendingAutoFit;
+          m.pageTarget = 2;
+        } else {
+          m.pendingAutoFit = { ...pending, requested: true, iteration: iteration + 1, pageTarget, at: new Date().toISOString() };
+        }
+        if (alive) setDocRaw(normalizeResumeDocument({ ...next, metadata: m }));
+      } catch {
+        const m = { ...(doc.metadata || {}) }; delete m.pendingAutoFit;
+        m.lastAutoFit = { at: new Date().toISOString(), overflowLines, result: 'measurement_failed', measured: true };
+        if (alive) setDocRaw(normalizeResumeDocument({ ...doc, metadata: m }));
+      }
+    })();
+    return () => { alive = false; };
+  }, [doc, preview]);
+
+
   const openDoc = async (docId) => {
     setMode('loading');
     try {
@@ -987,6 +1044,47 @@ export default function ResumeStudio({ go }) {
   };
   const takeSnapshot = async (trigger = 'manual', note = '') => {
     try { await ResumeOsApi.save(doc); await ResumeOsApi.snapshot({ docId: doc.id, trigger, note, score: compile?.health?.score ?? null }); } catch { /* db-off */ }
+  };
+
+  const applyCoreResult = async (result, label, { snapshot = false } = {}) => {
+    setCoreResult(result || null);
+    if (result?.quality) setCoreQuality(result.quality);
+    const next = result?.resumeDocument || result?.doc || null;
+    if (!next || result?.ok === false) return false;
+    const contentAccepted = result?.accepted !== false && (result?.improvement?.acceptedPasses ?? 1) !== 0;
+    /* Rejected optimization attempts still carry OptimizationHistory on the
+       unchanged best ResumeDocument. Persist that metadata so the next
+       Improve Again selects a different objective instead of looping. */
+    if (snapshot && contentAccepted) await takeSnapshot('manual', `Before ${label}`);
+    setDoc(normalizeResumeDocument(next));
+    return contentAccepted;
+  };
+
+  const enhanceCore = async () => {
+    setCoreBusy('enhance'); setCoreResult(null);
+    try {
+      const r = await ResumeOsApi.enhance({ doc, targetRole: doc.targetRole || '', aiPolish });
+      await applyCoreResult(r, 'Enhance Resume', { snapshot: true });
+    } catch (e) { setCoreResult({ ok: false, error: e?.message || 'Enhance failed' }); }
+    setCoreBusy('');
+  };
+  const improveCore = async () => {
+    setCoreBusy('improve'); setCoreResult(null);
+    try {
+      try { await ResumeOsApi.save(doc); } catch { /* db-off */ }
+      const r = await ResumeOsApi.improveAgain({ doc, jobDescription: doc.targetJobDescription || '', targetRole: doc.targetRole || '', aiPolish });
+      await applyCoreResult(r, 'Improve Again');
+    } catch (e) { setCoreResult({ ok: false, error: e?.message || 'Improve Again failed' }); }
+    setCoreBusy('');
+  };
+  const optimizeCore = async () => {
+    setCoreBusy('optimize'); setCoreResult(null);
+    try {
+      try { await ResumeOsApi.save(doc); } catch { /* db-off */ }
+      const r = await ResumeOsApi.optimize({ doc, jobDescription: doc.targetJobDescription || '', targetRole: doc.targetRole || '', aiPolish, maxPasses: 7, minDelta: 0.5 });
+      await applyCoreResult(r, 'Optimize Resume');
+    } catch (e) { setCoreResult({ ok: false, error: e?.message || 'Optimize failed' }); }
+    setCoreBusy('');
   };
 
   const runTailor = async () => {
@@ -1042,16 +1140,10 @@ export default function ResumeStudio({ go }) {
     if (kind === 'pdf') {
       const tplX = getResumeTemplate(doc.templateId, doc.templateVersion, { strictVersion: !!doc.templateVersion });
       if (!tplX) { alert(`Pinned template ${doc.templateId}@${doc.templateVersion} is unavailable.`); return; }
-      if (tplX.engine === 'template-os') {
-        /* vector PDF: real selectable text, paginated by Template OS itself
-           (not by the browser's print engine) so sidebar/two-column page
-           breaks are deterministic and identical to what certification measured */
-        const compiledX = balancePageComposition(adaptTreeToShape(compileTemplate(tplX.definition, { density: normalizeResumeDensityToTemplateMode(doc.density) }), analyzeResumeShape(doc)), structured, { sizeId: doc.pageSize });
-        const out = renderTemplatePdf(compiledX, structured, { sizeId: doc.pageSize });
-        triggerDownload(new Blob([out.bytes], { type: 'application/pdf' }), `${doc.title || 'resume'}.pdf`);
-      } else {
-        await exportResumePDF(structured, tplX, { size: doc.pageSize, density: doc.density, paged: preview?.paged });
-      }
+      /* Final Resume OS rendering: every normal PDF download is server-owned.
+         Vector PDF remains ATS-first; ResumeRenderService automatically routes
+         Unicode/high-fidelity content through Chromium without losing glyphs. */
+      await downloadResumePdf(doc, tplX, { provider: 'auto' });
     }
     if (kind === 'docx') {
       /* V4: server-generated REAL WordprocessingML .docx; legacy HTML .doc only as fallback */
@@ -1112,6 +1204,13 @@ export default function ResumeStudio({ go }) {
           className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1 text-base font-bold text-ink-950 outline-none hover:border-subtle focus:border-aurora-violet/50" />
         {doc.kind === 'variant' && <Badge tone="violet"><Layers size={10} /> Variant</Badge>}
         <Badge tone={saveState === 'saved' ? 'mint' : 'default'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'local' ? 'Saved locally' : `v${doc.version || 1}`}</Badge>
+        {coreQuality && <Badge tone={coreQuality.overall >= 78 ? 'mint' : coreQuality.overall >= 66 ? 'amber' : 'rose'}>Quality {coreQuality.overall}</Badge>}
+        <label className="flex items-center gap-1.5 rounded-lg border border-subtle bg-surface-1 px-2 py-1 text-[11px] text-muted" title="Optional. Career Autopilot validates every AI wording candidate before it can be accepted.">
+          <input type="checkbox" checked={aiPolish} onChange={(e) => setAiPolish(e.target.checked)} /> AI polish
+        </label>
+        <Button size="sm" variant="soft" disabled={!!coreBusy} onClick={enhanceCore}><Sparkles size={13} /> {coreBusy === 'enhance' ? 'Enhancing…' : 'Enhance'}</Button>
+        <Button size="sm" variant="soft" disabled={!!coreBusy} onClick={improveCore}><Hammer size={13} /> {coreBusy === 'improve' ? 'Improving…' : 'Improve Again'}</Button>
+        <Button size="sm" disabled={!!coreBusy} onClick={optimizeCore}><Target size={13} /> {coreBusy === 'optimize' ? 'Optimizing…' : 'Optimize Resume'}</Button>
         <Button size="sm" variant="soft" onClick={saveNow}><Save size={13} /> Save</Button>
         <Button size="sm" variant="soft" onClick={() => setSnapshotsOpen(true)}><History size={13} /> Versions</Button>
         <div className="relative">
@@ -1135,6 +1234,20 @@ export default function ResumeStudio({ go }) {
       )}
       {fitMsg && <Card className="mb-3 border-amber-200 bg-amber-50/60 p-2.5 text-[12px] text-amber-900">{fitMsg}</Card>}
       {layoutReport && !layoutReport.valid && <Card className="mb-3 border-rose-200 bg-rose-50/70 p-2.5 text-[12px] text-rose-800">Layout validation failed — PDF export is blocked until fixed. {layoutReport.errors?.[0]?.message || ''}</Card>}
+      {coreResult && (
+        <Card className={cls('mb-3 p-3 text-[12px]', coreResult.ok === false ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/50')}>
+          {coreResult.ok === false ? <p className="text-rose-800">{coreResult.error || 'Resume optimization could not run.'}</p> : (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="font-semibold text-ink-950">{coreResult.operation === 'optimize' ? (coreResult.status || 'Optimized') : coreResult.operation === 'improve-again' ? 'Improve Again' : 'Resume enhanced'}</span>
+              {coreResult.beforeQuality && coreResult.quality && <span>Quality {coreResult.beforeQuality.overall} → <strong>{coreResult.quality.overall}</strong></span>}
+              {coreResult.improvement?.acceptedPasses != null && <span>{coreResult.improvement.acceptedPasses} accepted pass(es)</span>}
+              {coreResult.accepted === false && <span className="text-amber-800">Best version preserved: {coreResult.improvement?.reason || coreResult.reason || 'no better safe candidate'}</span>}
+              {coreResult.aiPolish?.enabled && <span>AI polish: {coreResult.aiPolish.calls || 0} call(s), truth-gated</span>}
+              {coreResult.optimization?.ceiling?.reached && <span className="text-amber-800">Optimization ceiling: more evidence could improve this further.</span>}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* body: left tabs | preview | health */}
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(340px,420px)_minmax(0,1fr)_290px]">
@@ -1221,22 +1334,22 @@ export default function ResumeStudio({ go }) {
 /* =========================================================== ASSIST MODAL
    Optional wording assistance. Deterministic candidates always work — with
    zero API keys configured. AI candidates appear ONLY when the user ticks
-   "Use AI" AND the server truth gate accepted them; rejected AI output is
+   "AI wording polish" AND the server truth gate accepted them; rejected AI output is
    shown as a count, never as applyable text. */
 function AssistModal({ assist, onClose, onApply }) {
-  const [useAi, setUseAi] = useState(false);
+  const [aiPolish, setAiPolish] = useState(false);
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (!assist) { setResult(null); setUseAi(false); return; }
+    if (!assist) { setResult(null); setAiPolish(false); return; }
     let alive = true;
     setBusy(true);
-    ResumeOsApi.assist({ kind: assist.kind === 'summary' ? 'summary' : 'bullet', text: assist.text, useAi })
+    ResumeOsApi.assist({ kind: assist.kind === 'summary' ? 'summary' : 'bullet', text: assist.text, aiPolish })
       .then((r) => { if (alive) setResult(r.result); })
       .catch(() => { if (alive) setResult(null); })
       .finally(() => { if (alive) setBusy(false); });
     return () => { alive = false; };
-  }, [assist, useAi]);
+  }, [assist, aiPolish]);
   if (!assist) return null;
   const Cand = ({ c, tone }) => (
     <button type="button" onClick={() => onApply(c.text)}
@@ -1249,8 +1362,8 @@ function AssistModal({ assist, onClose, onApply }) {
     <Modal open onClose={onClose} title="Improve wording">
       <p className="mb-2 rounded-lg bg-surface-1 p-2 text-[12px] text-muted"><span className="font-semibold text-ink-950">Original: </span>{assist.text}</p>
       <label className="mb-3 flex items-center gap-2 text-[12px] text-ink-950">
-        <input type="checkbox" checked={useAi} onChange={(e) => setUseAi(e.target.checked)} />
-        <span><span className="font-semibold">AI Assist (optional)</span> <span className="text-muted">— wording only; every suggestion passes the Truth Engine, unsupported claims are rejected outright.</span></span>
+        <input type="checkbox" checked={aiPolish} onChange={(e) => setAiPolish(e.target.checked)} />
+        <span><span className="font-semibold">AI wording polish (optional)</span> <span className="text-muted">— wording candidates only; every suggestion passes the Career Autopilot Truth Engine.</span></span>
       </label>
       {busy && <Spinner className="mb-2" />}
       {result && (
@@ -1262,9 +1375,9 @@ function AssistModal({ assist, onClose, onApply }) {
                 : <p className="text-[12px] text-muted">Already tight — no deterministic rewrite improves it.</p>}
             </div>
           </div>
-          {useAi && (
+          {aiPolish && (
             <div>
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-aurora-violet">AI Assist {!result.aiAvailable && '(no provider configured on this server)'}</p>
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-aurora-violet">AI wording polish {!result.aiAvailable && '(no provider configured on this server)'}</p>
               <div className="grid gap-1.5">
                 {result.ai.map((c, i) => <Cand key={i} c={c} tone="border-aurora-violet/30 bg-aurora-violet/5" />)}
                 {result.aiAvailable && !result.ai.length && !busy && <p className="text-[12px] text-muted">No AI candidate survived the truth gate.</p>}
@@ -1295,39 +1408,14 @@ function TemplateCompareModal({ doc, templateIds, onClose, onPick }) {
       for (const id of templateIds) {
         const tpl = getResumeTemplate(id);
         try {
-          if (tpl.engine === 'template-os') {
-            const compiled = balancePageComposition(adaptTreeToShape(compileTemplate(tpl.definition, { density: normalizeResumeDensityToTemplateMode(doc.density) }), analyzeResumeShape(doc)), structured, { sizeId: doc.pageSize });
+          {
+            const definition = tpl.engine === 'template-os' ? tpl.definition : fromLegacyTemplate(tpl);
+            const compiled = balancePageComposition(adaptTreeToShape(compileTemplate(definition, { density: normalizeResumeDensityToTemplateMode(doc.density) }), analyzeResumeShape(doc)), structured, { sizeId: doc.pageSize });
             const html = buildLayoutHTML(compiled, structured, { sizeId: doc.pageSize });
             const geo = canMeasure()
               ? measureLayoutGeometry(compiled, structured, { sizeId: doc.pageSize })
               : estimateGeometry(compiled, structured, { sizeId: doc.pageSize });
-            out.push({
-              id, tpl, html,
-              pageCount: geo.pageCount,
-              overflow: geo.overflowLines || 0,
-              measured: !!geo.measured,
-              bodyFont: compiled.tokens.typography.bodyFontPx,
-              layoutType: tpl.layoutType,
-              atsLevel: tpl.atsLevel || (tpl.atsSafe ? 'HIGH' : 'DESIGN_FORWARD'),
-              atsLevelMultiPage: tpl.atsLevelMultiPage || null,
-              sections: compiled.tree.sections.length,
-              moves: compiled.adaptation?.moves || [],
-            });
-          } else {
-            // eslint-disable-next-line no-await-in-loop
-            const paged = await paginateResume(structured, tpl, { size: doc.pageSize, density: doc.density });
-            out.push({
-              id, tpl, html: composePagedDocumentHTML(paged),
-              pageCount: paged.pageCount,
-              overflow: (paged.overflowBlocks || []).length,
-              measured: true,
-              bodyFont: paged.fit?.bodyFontPx || null,
-              layoutType: tpl.layoutType || 'single-column',
-              atsLevel: tpl.strictAts ? 'VERY_HIGH' : tpl.atsSafe ? 'HIGH' : 'DESIGN_FORWARD',
-              atsLevelMultiPage: null,
-              sections: null,
-              moves: [],
-            });
+            out.push({ id, tpl, html, pageCount: geo.pageCount, overflow: geo.overflowLines || 0, measured: !!geo.measured, bodyFont: compiled.tokens.typography.bodyFontPx, layoutType: definition.layout?.type || tpl.layoutType || 'single-column', atsLevel: tpl.atsLevel || (tpl.atsSafe ? 'HIGH' : 'DESIGN_FORWARD'), atsLevelMultiPage: tpl.atsLevelMultiPage || null, sections: compiled.tree.sections.length, moves: compiled.adaptation?.moves || [] });
           }
         } catch { out.push({ id, tpl, error: true }); }
       }

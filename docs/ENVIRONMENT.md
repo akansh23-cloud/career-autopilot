@@ -23,7 +23,7 @@ missing. Everything else degrades gracefully. Full template: `.env.example`.
 ## AI / payments / auth
 | Var | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` | Resume analysis, tailoring, vision, grounded support. |
+| `ANTHROPIC_API_KEY` | Non-resume AI features that still use the generic AI proxy (for example outreach/support where configured). |
 | `ADMIN_EMAILS` | Comma-separated admin full-access emails (server-resolved). |
 | `ALLOW_DEV_LOGIN` | `1`/`0` to force the demo login. Keep off in prod. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | Google OAuth. |
@@ -51,6 +51,27 @@ All research fetches go through the existing SSRF-safe fetcher
 content-type allow-list. External research can influence vocabulary only — it
 can never become a candidate claim. See
 `docs/RESUME-NARRATIVE-INTELLIGENCE.md`.
+
+
+## Resume PDF rendering
+Resume OS now has one server-owned render pipeline. The ATS vector writer is the
+normal default; HTML/CSS rendering is selected automatically when meaningful
+non-Latin glyphs must be preserved.
+
+| Var | Default | Purpose |
+|---|---|---|
+| `RESUME_RENDER_PROVIDER` | `auto` | `auto`, `vector`, `chromium`, or `weasyprint`. `auto` prefers vector for compatible Latin content and an HTML renderer for Unicode. |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` | Playwright-managed Chromium | Optional explicit Chromium executable for the Playwright provider. |
+| `CHROMIUM_EXECUTABLE_PATH` | common system paths | Alias used by the Chromium provider. |
+| `CHROMIUM_CLI_FALLBACK` | `0` | `1` enables direct Chrome `--print-to-pdf` only as an operational fallback when Playwright is unavailable. |
+| `CHROMIUM_NO_SANDBOX` | auto for root | Force Chromium `--no-sandbox`; avoid unless required by the container runtime. |
+| `WEASYPRINT_EXECUTABLE_PATH` | common system paths | Optional fail-safe HTML/CSS Unicode renderer when Chromium is unavailable. |
+
+Production recommendation: install the normal Node dependencies so Playwright
+is available, and provide a Chromium binary in the runtime/container. The
+renderer never silently sends Unicode-heavy resumes through the Base-14 vector
+writer; if no Unicode-capable provider exists, export fails explicitly instead
+of dropping glyphs.
 
 ## Jobs / contacts (optional)
 | Var | Purpose |
@@ -116,3 +137,14 @@ only. Two failure modes follow from that:
 
 `npm run preflight` reports both cases. If AI features break after a deploy,
 check this variable first.
+
+
+### Playwright browser installation
+
+`playwright` is a production dependency, but the Chromium browser binary must be installed in the deployment image. Recommended container/build step:
+
+```bash
+npx playwright install --with-deps chromium
+```
+
+If your image manages Chromium separately, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` or `CHROMIUM_EXECUTABLE_PATH`.

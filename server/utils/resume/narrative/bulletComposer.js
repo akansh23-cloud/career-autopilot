@@ -37,9 +37,51 @@ import { vocabularyFor, eligibleCollocations, INTENTS } from './domainVocabulary
 import { validateAgainstEvidence } from './truthValidator.js';
 import { applySpellingConvention, isNamedTool } from './candidateIntelligence.js';
 
+import { rankAuthorizedVerbs, headNoun } from './objectVerbFit.js';
+import {
+  evidenceResponsibilityLevel, claimedResponsibilityLevel, RESPONSIBILITY,
+} from './responsibilityScale.js';
+import {
+  authorizedActionsFor, classifyActionProvenance, PROVENANCE,
+} from './actionProvenance.js';
+
 export const BULLET_COMPOSER_VERSION = 'bullet-composer-v1';
 
+/* Verbs that take a preposition before their object. Using them bare is the
+   difference between "Contributed to the service" and "Contribute service". */
+const PREPOSITIONAL_VERBS = {
+  contribute: 'to', participate: 'in', assist: 'with', help: 'with', work: 'on',
+};
+
+/* These verbs are always realized in past tense in the contribution family,
+   independent of the source's tense detection, which is unreliable when the
+   source opener was a placeholder. */
+function pastTense(base) {
+  const irregular = { build: 'Built', write: 'Wrote', run: 'Ran', lead: 'Led' };
+  if (irregular[base]) return irregular[base];
+  const b = String(base);
+  const past = /e$/.test(b) ? `${b}d` : /[^aeiou]y$/.test(b) ? `${b.slice(0, -1)}ied` : `${b}ed`;
+  return past.charAt(0).toUpperCase() + past.slice(1);
+}
+
+/* Weak-opener parsing intentionally removes a/an/the before storing the object
+   so downstream anatomy is clean. Contribution rewrites, however, need the
+   original determiner back to remain human: "Worked on a Spring Boot service"
+   should become "Contributed to a Spring Boot service", not "Contributed to
+   Spring Boot service". Restore only a determiner explicitly present in the
+   source; never invent one from noun heuristics. */
+const WEAK_OPENER_WITH_DETERMINER_RE = /^(?:worked on|worked with|involved in|participated in|contributed to|helped with|helped on|helped|assisted with|assisted in|assisted|supported|part of|engaged in|responsible for|accountable for|in charge of|tasked with)\s+(a|an|the)\s+/i;
+
+function restoreSourceDeterminer(objectPhrase, rawText) {
+  const obj = String(objectPhrase || '').trim();
+  if (!obj || /^(?:a|an|the)\s+/i.test(obj)) return obj;
+  const m = String(rawText || '').trim().match(WEAK_OPENER_WITH_DETERMINER_RE);
+  return m ? `${m[1]} ${obj}` : obj;
+}
+
 export const STRATEGIES = Object.freeze([
+  'authorized_action',
+  'contribution_safe',
   'denominalised',
   'technical_precision', 'impact_led', 'ownership_led', 'architecture_led',
   'concise_ats', 'seniority_adjusted', 'domain_natural',
@@ -584,6 +626,85 @@ function buildStrategyCandidates(evidence, ctx) {
       `${rv} ${object}${scope ? ` ${pick(CONNECTIVES.scope, seed, 3)} ${scope}` : ''}${outcome ? `, ${outcomeVerb || 'reducing'} ${outcome}` : withMethod(5)}`);
   }
 
+  /* ---- I. authorized_action : same-level alternatives from the EVIDENCE ----
+     Rewritten for A.1. This family used to ask the OBJECT which verbs sound
+     natural and then claim them, which is how "Worked on a Spring Boot
+     service" acquired "Designed"/"Developed"/"Deployed". Collocation strength
+     answers "what sounds natural?"; it cannot answer "what did they do?".
+
+     Now the evidence layer produces the AUTHORIZED SET and objectVerbFit only
+     ranks within it. The language layer can no longer add a claim. */
+  {
+    const objectPhrase = evidence.object || '';
+    const authorized = authorizedActionsFor(evidence, {
+      recordActions: ctx.recordActions || [],
+    });
+    if (authorized.length && objectPhrase) {
+      const ranked = rankAuthorizedVerbs({ object: objectPhrase, authorizedVerbs: authorized });
+      const evidencedLevel = evidenceResponsibilityLevel(evidence.rawText || '');
+      const cap = evidencedLevel === null ? RESPONSIBILITY.EXECUTED : evidencedLevel;
+      for (const base of ranked.slice(0, 5)) {
+        /* Prepositional verbs ("contribute TO", "participate IN") are
+           ungrammatical bare — "Contribute Spring Boot service". They are
+           realized by the contribution family below, which supplies the
+           preposition. */
+        if (PREPOSITIONAL_VERBS[base] !== undefined) continue;
+        const claims = claimedResponsibilityLevel(`${base} x`);
+        if (claims !== null && claims > cap) continue;
+        const objHead = headNoun(objectPhrase);
+        if (objHead && objHead.slice(0, 5) === String(base).slice(0, 5)) continue;
+        const v = conjug(registerAdjust(base, seniority));
+        if (!v) continue;
+        const tail = outcome
+          ? `, ${outcomeVerb || 'reducing'} ${outcome}`
+          : purpose ? ` to ${purpose}` : '';
+        add('authorized_action', 'AUTHORIZED VERB → OBJECT → CONTEXT',
+          `${v} ${objectPhrase}${scope ? ` ${pick(CONNECTIVES.scope, seed, 5)} ${scope}` : ''}${withMethod(7)}${tail}`);
+      }
+    }
+  }
+
+  /* ---- J. contribution_safe : stronger writing at the SAME claim level ----
+     A contribution-level bullet still deserves to read better. What it does
+     not deserve is a promotion. "Worked on X for Y" → "Contributed to X
+     supporting Y" is tighter and more specific without asserting anything new
+     about what the person actually did. */
+  {
+    const prov = classifyActionProvenance(evidence, { recordActions: ctx.recordActions || [] });
+    const isContribution = prov.category === PROVENANCE.CONTRIBUTION_ONLY
+      || prov.category === PROVENANCE.UNKNOWN_ACTION;
+    const objectPhrase = evidence.object || '';
+    const associationOnly = String(evidence.weakOpener || '').toLowerCase() === 'worked with';
+    if (isContribution && objectPhrase && !associationOnly) {
+      const readableObject = restoreSourceDeterminer(objectPhrase, evidence.rawText || '');
+      const opener = String(evidence.weakOpener || '').toLowerCase();
+      const preferredContributionVerbs = /^(worked on|involved in|participated in|part of|contributed to the)$/.test(opener)
+        ? ['contribute']
+        : /^(helped|helped with|helped to|assisted|assisted with|assisted in|supported)$/.test(opener)
+          ? ['support', 'contribute']
+          : ['contribute', 'support'];
+      for (const base of preferredContributionVerbs) {
+        if (!prov.authorized.includes(base)) continue;
+        const verb = pastTense(base);
+        /* "support X" can imply operational support, which is more specific
+           than mere involvement. For a CONTRIBUTION_ONLY source, keep support
+           explicitly at the work level: "Supported work on X". */
+        const lead = base === 'support'
+          ? `${verb} work on `
+          : `${verb} ${PREPOSITIONAL_VERBS[base] || ''} `;
+        /* "for internal ticket routing" reads better as "supporting internal
+           ticket routing" once the sentence already opens with a contribution
+           verb — it avoids "Contributed to X for Y", which stacks two weak
+           prepositions. */
+        const purposeClause = purpose
+          ? ` supporting ${purpose}`
+          : scope ? ` ${pick(CONNECTIVES.scope, seed, 5)} ${scope}` : '';
+        add('contribution_safe', 'CONTRIBUTION VERB → OBJECT → PURPOSE',
+          `${lead}${readableObject}${purposeClause}${withMethod(7)}`);
+      }
+    }
+  }
+
   /* ---- H. denominalised : buried verb → real verb (P2.7) ----
      Structural only. The verb was already the candidate's word; it was
      just wearing a noun. This is the family that makes the difference
@@ -721,8 +842,15 @@ export function composeCandidates(evidence, {
       });
       continue;
     }
-    const v = validateAgainstEvidence(c.text, evidence, { ownershipCeiling: effectiveCeiling, globalPermittedSkills });
-    if (v.ok) accepted.push({ ...c, truth: { ok: true, checks: v.checked } });
+    const v = validateAgainstEvidence(c.text, evidence, {
+      ownershipCeiling: effectiveCeiling, globalPermittedSkills, seniority,
+    });
+    if (v.ok) {
+      /* Carry the NAMED verdicts forward. Without this the later audit stage
+         sees NOT_RUN for checks that were in fact run here, and — correctly,
+         given what it can see — reverts a change that was already verified. */
+      accepted.push({ ...c, truth: { ok: true, checks: v.checked }, verdicts: v.verdicts });
+    }
     else rejected.push({ ...c, violations: v.blocking });
   }
 

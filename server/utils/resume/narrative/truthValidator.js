@@ -32,7 +32,13 @@ import { allKnownSkills, canonicalSkill } from '../skillOntology.js';
 import { skillPresent } from '../skillMatcher.js';
 import { validateRewrite } from '../writingProviders.js';
 
-export const TRUTH_VALIDATOR_VERSION = 'narrative-truth-validator-v1';
+import { expandImplied } from './skillIntelligence.js';
+import { validateActionSemantics } from './actionSemantics.js';
+import { validateActionProvenance } from './actionProvenance.js';
+import { validateResponsibility, ceilingForSeniority } from './responsibilityScale.js';
+import { newVerdictSheet, recordVerdict, evaluateSheet, VERDICT } from './truthCheckRegistry.js';
+
+export const TRUTH_VALIDATOR_VERSION = 'narrative-truth-validator-v2-named-verdicts';
 
 /* A digit that is part of an identifier ("EC2", "p99", "Java17") is not a
    metric. The lookbehind mirrors extractNumericEvidence so the validator and
@@ -84,8 +90,22 @@ function skillsIn(text) {
  *                 the candidate demonstrably has somewhere)
  * @returns {{ok:boolean, violations:Array, checked:number}}
  */
+/* An umbrella term is a broader canonical name for something already in THIS
+   record's evidence — "CI/CD" over a record naming GitLab CI. That restates a
+   fact the record already contains rather than importing a different one, so
+   it stays permitted. Anything else the resume merely happens to contain does
+   not. */
+function isUmbrellaFor(term, sourceSkills) {
+  for (const src of sourceSkills) {
+    if (src === term) return true;
+    for (const imp of expandImplied(src)) if (imp === term) return true;
+  }
+  return false;
+}
+
 export function validateAgainstEvidence(candidate, evidence, {
   ownershipCeiling = 3, globalPermittedSkills = null, allowSemanticSkillAlignment = true,
+  kind = 'bullet', seniority = null,
 } = {}) {
   const text = str(candidate).trim();
   const violations = [];
@@ -95,7 +115,17 @@ export function validateAgainstEvidence(candidate, evidence, {
     evidence?.company, evidence?.role, evidence?.projectName, evidence?.techStack,
   ].filter(Boolean).join(' \u2022 ');
 
-  if (!text) return { ok: false, violations: [{ code: 'empty', detail: 'Empty candidate.' }], checked: 0 };
+  /* Part 4.4 — every mandatory validator starts NOT_RUN and must be moved to
+     PASS explicitly. Nothing is assumed clean because nobody looked. */
+  const verdicts = newVerdictSheet();
+
+  if (!text) {
+    return {
+      ok: false, violations: [{ code: 'empty', detail: 'Empty candidate.' }],
+      blocking: [{ code: 'empty', severity: 'critical', detail: 'Empty candidate.' }],
+      checked: 0, verdicts, safety: evaluateSheet(verdicts),
+    };
+  }
 
   /* ---- 1. NUMBERS: the strictest rule in the system ---- */
   const permitted = new Set((evidence?.numericEvidence || []).map((n) => str(n.value)));
@@ -121,7 +151,30 @@ export function validateAgainstEvidence(candidate, evidence, {
     /* Semantic alignment: the composer is permitted to name the canonical
        umbrella term for something the candidate demonstrably did — but only
        when that term is already somewhere in their own evidence graph. */
-    if (allowSemanticSkillAlignment && globalPermittedSkills?.has(s)) continue;
+    /* SCOPE (Part 4). A technology is authorised by the RECORD it is
+       evidenced in, not by the resume as a whole.
+
+       Document-wide permission is why "Built Jenkins pipelines" plus a
+       separate Terraform role could become "Built Jenkins pipelines using
+       Terraform" — true of the person, false of the job. They did both
+       things; they did not do them together, and the sentence says they did.
+
+       Resume-wide skills still drive the Skills section, job matching and
+       gap analysis. They do not authorise an experience claim. */
+    if (allowSemanticSkillAlignment
+        && globalPermittedSkills?.has(s)
+        && isUmbrellaFor(s, sourceSkills)) continue;
+
+    if (globalPermittedSkills?.has(s)) {
+      violations.push({
+        code: 'cross_record_skill_leakage',
+        severity: 'critical',
+        detail: `Introduces "${s}", which appears elsewhere in this resume but not in this record's own evidence. A technology used in one role cannot be attributed to another.`,
+        token: s,
+        scope: 'RECORD',
+      });
+      continue;
+    }
     violations.push({
       code: 'fabricated_technology',
       severity: 'critical',
@@ -208,8 +261,91 @@ export function validateAgainstEvidence(candidate, evidence, {
     }
   }
 
+  /* ---- 9. ACTION SEMANTICS (Part 4.2) ----
+     Bullets make action claims; summaries describe a person. There is no
+     original action for a summary to contradict, so the check does not
+     apply rather than failing to run. */
+  const action = kind === 'summary'
+    ? { status: VERDICT.NOT_APPLICABLE, violations: [], detail: 'Summaries are descriptions, not action statements.' }
+    : validateActionSemantics(text, evidence || {});
+  recordVerdict(verdicts, 'actionSemantics', action.status);
+  if (action.status === VERDICT.FAIL) {
+    for (const v of action.violations) {
+      violations.push({ code: v.code, severity: v.severity, detail: v.detail });
+    }
+  }
+
+  /* ---- 10. RESPONSIBILITY CEILING (Part 3) ----
+     Distinct from the candidate seniority ceiling above. This one asks what
+     THIS STATEMENT evidences, so a senior profile cannot authorise "Owned"
+     on a bullet whose own words say "Responsible for". */
+  const responsibility = kind === 'summary'
+    ? { status: VERDICT.NOT_APPLICABLE, violations: [], detail: 'Summaries are not per-statement responsibility claims.' }
+    : validateResponsibility(text, evidence || {}, {
+      candidateCeiling: seniority ? ceilingForSeniority(seniority) : undefined,
+    });
+  if (responsibility.status === 'FAIL') {
+    for (const v of responsibility.violations) {
+      violations.push({ code: v.code, severity: v.severity, detail: v.detail });
+    }
+  }
+
+  /* ---- 11. ACTION PROVENANCE ----
+     Distinct from action semantics. Semantics asks "is this the same action?"
+     Provenance asks "does the evidence establish ANY specific action here?"
+     A contribution-level source answers no, and no amount of collocation
+     strength changes that. */
+  const provenance = validateActionProvenance(text, evidence || {}, { kind });
+  recordVerdict(verdicts, 'actionProvenance', provenance.status);
+  if (provenance.status === 'FAIL') {
+    for (const v of provenance.violations) {
+      violations.push({ code: v.code, severity: v.severity, detail: v.detail });
+    }
+  }
+
   const blocking = violations.filter((v) => v.severity === 'critical' || v.severity === 'high');
-  return { ok: blocking.length === 0, violations, blocking, checked: 8 };
+
+  /* Map the violation codes this validator produces onto named checks. Any
+     check with no violation against it, and which this function genuinely
+     evaluated, becomes PASS. Checks this function does not evaluate stay
+     NOT_RUN and are filled in by their own owners further up the pipeline. */
+  const CODE_TO_CHECK = {
+    fabricated_number: 'metric',
+    fabricated_technology: 'skillContext',
+    cross_record_skill_leakage: 'skillContext',
+    fabricated_credential: 'certification',
+    fabricated_authority: 'seniority',
+    seniority_inflation: 'seniority',
+    fabricated_scale: 'metric',
+    fabricated_title: 'entity',
+    unquantified_magnitude: 'metric',
+    legacy_gate: 'evidenceBinding',
+    action_semantics: 'actionSemantics',
+    responsibility_inflation: 'seniority',
+    unsupported_action_claim: 'actionProvenance',
+  };
+  /* These are the checks this function is the owner of and did evaluate. */
+  const EVALUATED_HERE = ['metric', 'skillContext', 'certification', 'seniority', 'entity', 'evidenceBinding'];
+  const failedChecks = new Set(
+    violations
+      .filter((v) => v.severity === 'critical' || v.severity === 'high')
+      .map((v) => CODE_TO_CHECK[v.code])
+      .filter(Boolean),
+  );
+  for (const id of EVALUATED_HERE) {
+    recordVerdict(verdicts, id, failedChecks.has(id) ? VERDICT.FAIL : VERDICT.PASS);
+  }
+
+  return {
+    ok: blocking.length === 0,
+    violations,
+    blocking,
+    checked: 11,
+    verdicts,
+    actionSemantics: action,
+    responsibility,
+    actionProvenance: provenance,
+  };
 }
 
 /**

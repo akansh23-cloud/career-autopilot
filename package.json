@@ -1,7 +1,7 @@
 {
   "name": "career-autopilot",
   "version": "4.0.0",
-  "description": "AI job-application assistant \u2014 premium React frontend (Vite) served by the existing Express backend. Jobs are real & verified-only; AI returns structured resume JSON only. Same-origin deploy keeps Google OAuth + session cookies intact.",
+  "description": "Career Autopilot \u2014 frozen canonical Resume OS plus source-grounded Job Discovery OS with indexed search, persistent crawling, deduplication and freshness verification.",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -27,7 +27,17 @@
     "seed:demo:recruiter": "node scripts/seed-demo.mjs --talent-only",
     "seed:demo:recruiter:reset": "node scripts/seed-demo.mjs --talent-only --reset",
     "previews:templates": "node scripts/generate-template-previews.mjs",
-    "quality:resume": "node scripts/resume-quality-benchmark.mjs"
+    "quality:resume": "node scripts/resume-quality-benchmark.mjs",
+    "quality:resume-core": "node scripts/resume-quality-benchmark.mjs && node scripts/resume-core-live-audit.mjs && node scripts/resume-gemini-polish-contract-audit.mjs && node scripts/resume-core-phase-gate.mjs",
+    "quality:resume-render": "node scripts/resume-render-gate.mjs && node scripts/resume-render-regression-gate.mjs",
+    "quality:resume-final": "npm run quality:resume-render && node scripts/resume-os-final-gate.mjs",
+    "jobs:gates": "node scripts/job-discovery-gates.mjs",
+    "jobs:demo": "node scripts/job-discovery-demo.mjs",
+    "jobs:coverage": "node scripts/job-discovery-demo.mjs",
+    "jobs:smoke": "node scripts/job-discovery-live-smoke.mjs",
+    "jobs:worker": "node scripts/job-discovery-worker.mjs --forever",
+    "jobs:tick": "node scripts/job-discovery-worker.mjs --once",
+    "test:jobs": "NODE_ENV=test node --test --test-concurrency=1 test/jobDiscovery*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -43,7 +53,8 @@
     "mongoose": "^8.24.0",
     "nodemailer": "^9.0.3",
     "pdfjs-dist": "^4.7.76",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "playwright": "^1.60.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
