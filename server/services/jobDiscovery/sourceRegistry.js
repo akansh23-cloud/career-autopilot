@@ -300,16 +300,7 @@ export class SourceRegistry {
   }
 
   async summary() {
-    const all = await this.store.listSources({});
-    const byProvider = {};
-    const byStatus = {};
-    const byClass = {};
-    for (const s of all) {
-      byProvider[s.provider] = (byProvider[s.provider] || 0) + 1;
-      byStatus[s.status] = (byStatus[s.status] || 0) + 1;
-      byClass[s.sourceClass] = (byClass[s.sourceClass] || 0) + 1;
-    }
-    return { total: all.length, byProvider, byStatus, byClass };
+    return this.store.sourceSummary();
   }
 }
 

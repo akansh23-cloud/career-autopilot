@@ -436,7 +436,12 @@ SOURCES.push({
   fetch: async (role) => {
     const pages = [0, 1];
     const roleTerms = roleTokens(role);
-    const batches = await Promise.allSettled(pages.map(p => fetchJson(`https://www.themuse.com/api/public/jobs?page=${p}`)));
+    const museApiKey = String(process.env.MUSE_API_KEY || '').trim();
+    const batches = await Promise.allSettled(pages.map((p) => {
+      const params = new URLSearchParams({ page: String(p) });
+      if (museApiKey) params.set('api_key', museApiKey);
+      return fetchJson(`https://www.themuse.com/api/public/jobs?${params.toString()}`);
+    }));
     const all = [];
     batches.forEach(r => { if (r.status === 'fulfilled') all.push(...(r.value.results || [])); });
     return all.filter(x => {

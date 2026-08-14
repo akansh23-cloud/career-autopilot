@@ -24,6 +24,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   Play, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Database, Clock, Eye,
+  Search, ChevronLeft, ChevronRight, Building2, ExternalLink, DownloadCloud,
 } from 'lucide-react';
 import { SectionCard } from './common.jsx';
 import { Button, Badge, EmptyState, Input, Field, Spinner } from '../components/ui/kit.jsx';
@@ -62,6 +63,16 @@ export default function AdminJobIngestPanel() {
   const [error, setError] = useState(null);
   const [runs, setRuns] = useState([]);
   const [stored, setStored] = useState(null);
+  const [storedPage, setStoredPage] = useState(1);
+  const [storedQuery, setStoredQuery] = useState('');
+  const [companies, setCompanies] = useState(null);
+  const [companyPage, setCompanyPage] = useState(1);
+  const [companyQuery, setCompanyQuery] = useState('');
+  const [seedBusy, setSeedBusy] = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
+  const [queueBusy, setQueueBusy] = useState(null);
+  const [queueResult, setQueueResult] = useState(null);
+  const [companyFetchBusy, setCompanyFetchBusy] = useState(null);
 
   const targetList = targets.split(/[\n,]/).map((t) => t.trim()).filter(Boolean);
 
@@ -72,13 +83,23 @@ export default function AdminJobIngestPanel() {
     } catch { /* the panel still works without history */ }
   }, []);
 
-  const loadStored = useCallback(async () => {
+  const loadStored = useCallback(async (page = storedPage, q = storedQuery) => {
     try {
-      setStored(await AdminJobDiscovery.jobs({ limit: 20 }));
+      const data = await AdminJobDiscovery.jobs({ page, q });
+      setStored(data);
+      setStoredPage(data.page || page);
     } catch { /* non-fatal */ }
-  }, []);
+  }, [storedPage, storedQuery]);
 
-  useEffect(() => { loadRuns(); loadStored(); }, [loadRuns, loadStored]);
+  const loadCompanies = useCallback(async (page = companyPage, q = companyQuery) => {
+    try {
+      const data = await AdminJobDiscovery.companies({ page, q });
+      setCompanies(data);
+      setCompanyPage(data.page || page);
+    } catch { /* non-fatal */ }
+  }, [companyPage, companyQuery]);
+
+  useEffect(() => { loadRuns(); loadStored(1, ''); loadCompanies(1, ''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = useCallback(async (dryRun) => {
     if (!targetList.length) return;
@@ -89,14 +110,62 @@ export default function AdminJobIngestPanel() {
       setResult(r);
       if (!dryRun) {
         /* Verify against the store rather than trusting the receipt. */
-        await Promise.all([loadRuns(), loadStored()]);
+        setStoredPage(1);
+        await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery)]);
       }
     } catch (e) {
       setError(e?.message || 'fetch failed');
     } finally {
       setBusy(false);
     }
-  }, [targetList, mode, reason, loadRuns, loadStored]);
+  }, [targetList, mode, reason, loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery]);
+
+  const seedCompanies = useCallback(async () => {
+    setSeedBusy(true);
+    setError(null);
+    try {
+      const r = await AdminJobDiscovery.seedCompanies({ minimum: 1000, includeRemote: true });
+      setSeedResult(r);
+      setCompanyPage(1);
+      await loadCompanies(1, companyQuery);
+    } catch (e) {
+      setError(e?.message || 'company seed import failed');
+    } finally {
+      setSeedBusy(false);
+    }
+  }, [companyQuery, loadCompanies]);
+
+  const fetchCompany = useCallback(async (company) => {
+    if (!company?.careersUrl) return;
+    setCompanyFetchBusy(company.id);
+    setError(null);
+    try {
+      const r = await AdminJobDiscovery.fetch([company.careersUrl], {
+        mode: 'INLINE',
+        reason: `Admin company-registry fetch: ${company.name || company.domain || company.id}`,
+      });
+      setResult(r);
+      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery)]);
+    } catch (e) {
+      setError(e?.message || 'company fetch failed');
+    } finally {
+      setCompanyFetchBusy(null);
+    }
+  }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery]);
+
+  const processQueue = useCallback(async (phase) => {
+    setQueueBusy(phase);
+    setError(null);
+    try {
+      const r = await AdminJobDiscovery.processQueue({ phase });
+      setQueueResult({ phase, ...r });
+      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery)]);
+    } catch (e) {
+      setError(e?.message || `${phase} queue processing failed`);
+    } finally {
+      setQueueBusy(null);
+    }
+  }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery]);
 
   const totals = result?.run?.totals;
 
@@ -200,18 +269,49 @@ export default function AdminJobIngestPanel() {
         </SectionCard>
       ) : null}
 
+      <SectionCard title="Durable ingestion queues">
+        <p className="mb-3 text-xs text-fg-muted">
+          Stress tests are not capped by an artificial source/job count. A serverless request processes until its execution deadline, checkpoints progress, and leaves the remainder durable for the next run.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="soft" size="sm" disabled={!!queueBusy} onClick={() => processQueue('crawl')}>
+            <Play size={13} /> {queueBusy === 'crawl' ? 'Processing crawl…' : 'Process crawl queue'}
+          </Button>
+          <Button variant="soft" size="sm" disabled={!!queueBusy} onClick={() => processQueue('discover')}>
+            <Search size={13} /> {queueBusy === 'discover' ? 'Processing discovery…' : 'Process discovery queue'}
+          </Button>
+          <Button variant="soft" size="sm" disabled={!!queueBusy} onClick={() => processQueue('verify')}>
+            <CheckCircle2 size={13} /> {queueBusy === 'verify' ? 'Verifying…' : 'Process verification queue'}
+          </Button>
+        </div>
+        {queueResult ? (
+          <div className="mt-3 rounded-lg border border-subtle bg-sunken px-3 py-2 text-xs text-fg-secondary">
+            Last manual queue run: {queueResult.phase} · {queueResult.deadlineReached ? 'checkpointed at execution deadline; continuation remains queued' : 'completed available work'}
+          </div>
+        ) : null}
+      </SectionCard>
+
       <SectionCard
-        title="In the store"
-        action={<Button variant="ghost" size="sm" onClick={loadStored}><RefreshCw size={13} />Refresh</Button>}
+        title="Canonical jobs"
+        action={<Button variant="ghost" size="sm" onClick={() => loadStored(storedPage, storedQuery)}><RefreshCw size={13} />Refresh</Button>}
       >
         <p className="mb-3 text-xs text-fg-muted">
-          Read straight from the canonical store — this is what is actually there, not what the receipt claims.
+          Server-side search and fixed 20-job pages. The browser never loads the whole job collection just to scroll it.
         </p>
+        <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); setStoredPage(1); loadStored(1, storedQuery); }}>
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <Input value={storedQuery} onChange={(e) => setStoredQuery(e.target.value)} placeholder="Search stored jobs by title, company or text" className="pl-9" />
+          </div>
+          <Button size="sm" type="submit">Search</Button>
+        </form>
         {!stored ? <Spinner /> : stored.total === 0 ? (
           <EmptyState icon={Database} title="No jobs stored yet" hint="Fetch a board above to populate the index." />
         ) : (
           <>
-            <div className="mb-2 text-xs text-fg-muted">{stored.total.toLocaleString()} canonical jobs</div>
+            <div className="mb-2 text-xs text-fg-muted">
+              {stored.total.toLocaleString()} canonical jobs · page {stored.page} of {stored.totalPages || 1} · 20 per page
+            </div>
             <div className="space-y-1">
               {stored.jobs.map((j) => (
                 <div key={j.id} className="flex items-center gap-2 border-b border-subtle py-1.5 text-xs">
@@ -226,6 +326,74 @@ export default function AdminJobIngestPanel() {
                   <Badge>{j.status}</Badge>
                 </div>
               ))}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
+              <Button variant="soft" size="sm" disabled={!stored.hasPrev} onClick={() => { const p = Math.max(1, stored.page - 1); setStoredPage(p); loadStored(p, storedQuery); }}>
+                <ChevronLeft size={14} /> Previous
+              </Button>
+              <span className="text-xs text-fg-muted">Page {stored.page} / {stored.totalPages || 1}</span>
+              <Button variant="soft" size="sm" disabled={!stored.hasNext} onClick={() => { const p = stored.page + 1; setStoredPage(p); loadStored(p, storedQuery); }}>
+                Next <ChevronRight size={14} />
+              </Button>
+            </div>
+          </>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Company career-site registry"
+        action={<Button variant="soft" size="sm" onClick={seedCompanies} disabled={seedBusy}><DownloadCloud size={13} />{seedBusy ? 'Seeding…' : 'Seed / refresh 1,000'}</Button>}
+      >
+        <p className="mb-3 text-xs text-fg-muted">
+          Persistent direct-employer career knowledge. Search by company instead of scrolling a static list; results are paged 20 at a time.
+        </p>
+        {seedResult ? (
+          <div className="mb-3 rounded-lg border border-subtle bg-sunken px-3 py-2 text-xs text-fg-secondary">
+            Seed target: {seedResult.target?.toLocaleString?.() || 1000} · stored: {seedResult.summary?.seeded?.toLocaleString?.() || 0}
+            {seedResult.reached ? ' · target reached' : ' · target not yet reached'}
+            {seedResult.external?.error ? ` · external import: ${seedResult.external.error}` : ''}
+          </div>
+        ) : null}
+        <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); setCompanyPage(1); loadCompanies(1, companyQuery); }}>
+          <div className="relative flex-1">
+            <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
+            <Input value={companyQuery} onChange={(e) => setCompanyQuery(e.target.value)} placeholder="Search company, domain, industry or career URL" className="pl-9" />
+          </div>
+          <Button size="sm" type="submit">Search</Button>
+        </form>
+        {!companies ? <Spinner /> : companies.total === 0 ? (
+          <EmptyState icon={Building2} title="No company career sites stored" hint="Use Seed / refresh 1,000 to bootstrap the registry." />
+        ) : (
+          <>
+            <div className="mb-2 text-xs text-fg-muted">
+              {companies.total.toLocaleString()} companies · page {companies.page} of {companies.totalPages || 1}
+            </div>
+            <div className="space-y-1">
+              {companies.companies.map((c) => (
+                <div key={c.id} className="flex items-center gap-2 border-b border-subtle py-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium text-fg">{c.name}</div>
+                    <div className="truncate text-fg-muted">{c.domain || c.region || 'domain not known'}{c.atsProvider ? ` · ${c.atsProvider}` : ''}{c.careerUrlStatus ? ` · ${c.careerUrlStatus}` : ''}</div>
+                  </div>
+                  {c.careersUrl ? (
+                    <>
+                      <Button variant="soft" size="sm" disabled={companyFetchBusy === c.id} onClick={() => fetchCompany(c)}>
+                        <Play size={13} /> {companyFetchBusy === c.id ? 'Fetching…' : 'Fetch'}
+                      </Button>
+                      <a href={c.careersUrl} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm"><ExternalLink size={13} /> Careers</Button></a>
+                    </>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
+              <Button variant="soft" size="sm" disabled={!companies.hasPrev} onClick={() => { const p = Math.max(1, companies.page - 1); setCompanyPage(p); loadCompanies(p, companyQuery); }}>
+                <ChevronLeft size={14} /> Previous
+              </Button>
+              <span className="text-xs text-fg-muted">Page {companies.page} / {companies.totalPages || 1}</span>
+              <Button variant="soft" size="sm" disabled={!companies.hasNext} onClick={() => { const p = companies.page + 1; setCompanyPage(p); loadCompanies(p, companyQuery); }}>
+                Next <ChevronRight size={14} />
+              </Button>
             </div>
           </>
         )}

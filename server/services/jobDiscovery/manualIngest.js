@@ -32,12 +32,12 @@
    The only things a manual run changes are WHEN work happens and
    WHO asked for it. Both are recorded.
 
-   BOUNDED BY CONSTRUCTION
-   -----------------------
-   One click must not be able to start an unbounded crawl of the
-   internet. Targets per run, pages per source and total pages are
-   all capped, and the response says when a cap was hit rather than
-   quietly stopping.
+   UNBOUNDED COUNT, DURABLE EXECUTION
+   ----------------------------------
+   Operator stress tests may submit any number of targets/pages. No
+   artificial count cap truncates the request. Platform execution
+   deadlines are handled by checkpointing and durable queues so work
+   continues instead of disappearing or timing out silently.
 
    IDEMPOTENT
    ----------
@@ -50,6 +50,7 @@
 import { sha256, registrableDomain, normalizeUrl } from './normalize/text.js';
 import { detectAts } from './atsDetect.js';
 import { ACCESS_POLICY, SOURCE_STATUS, PROVIDER, ERROR_CLASS } from './schema.js';
+import { DISCOVERY_KIND } from './discoveryQueue.js';
 
 export const TARGET_KIND = Object.freeze({
   ATS_BOARD: 'ATS_BOARD',       // a URL we can fingerprint to provider + tenant
@@ -67,9 +68,11 @@ export const RUN_MODE = Object.freeze({
 });
 
 export const LIMITS = Object.freeze({
-  maxTargetsPerRun: 50,
-  maxPagesPerSource: 20,
-  maxTotalPages: 400,
+  /* No artificial target/page caps. Large runs are made safe by durable queues,
+     checkpoints and execution deadlines rather than silently dropping work. */
+  maxTargetsPerRun: null,
+  maxPagesPerSource: null,
+  maxTotalPages: null,
   maxRunsListed: 200,
 });
 
@@ -148,13 +151,17 @@ export class ManualIngestService {
   async fetch(targets = [], {
     mode = RUN_MODE.INLINE,
     dryRun = false,
-    maxPagesPerSource = this.limits.maxPagesPerSource,
+    maxPagesPerSource = null,
     triggeredBy = null,
     reason = null,
     ctx = {},
+    deadlineAt = null,
   } = {}) {
     const startedAt = this.nowIso();
     const started = Date.now();
+    const deadlineMs = deadlineAt == null
+      ? null
+      : (deadlineAt instanceof Date ? deadlineAt.getTime() : Number(deadlineAt));
 
     const list = (Array.isArray(targets) ? targets : [targets])
       .map((t) => String(t ?? '').trim())
@@ -164,35 +171,39 @@ export class ManualIngestService {
       return { ok: false, error: 'no_targets', message: 'Provide at least one URL, domain or source id.' };
     }
 
-    const truncated = list.length > this.limits.maxTargetsPerRun;
-    const accepted = list.slice(0, this.limits.maxTargetsPerRun);
-
     const results = [];
     let pagesSpent = 0;
+    let deadlineReached = false;
 
-    for (const raw of accepted) {
+    for (let i = 0; i < list.length; i += 1) {
+      const raw = list[i];
       const classified = classifyTarget(raw);
       if (!classified.ok) {
         results.push({ input: raw, ok: false, stage: 'CLASSIFY', reason: classified.reason });
         continue;
       }
 
-      /* A shared page budget across the whole run. Without it, one enormous
-         board can consume everything an operator asked for. */
-      if (pagesSpent >= this.limits.maxTotalPages) {
-        results.push({
-          input: raw, ok: false, stage: 'BUDGET',
-          reason: `run page budget of ${this.limits.maxTotalPages} exhausted before this target`,
-        });
+      /* An execution deadline is NOT an ingestion limit. When the request is
+         near the platform deadline, persist the remainder as queue work instead
+         of truncating it. The workers/cron continue the same unbounded batch. */
+      if (mode === RUN_MODE.INLINE && Number.isFinite(deadlineMs) && Date.now() >= deadlineMs) {
+        deadlineReached = true;
+        // eslint-disable-next-line no-await-in-loop
+        const deferred = await this.queueTarget(classified, { dryRun, ctx, reason: 'inline execution deadline reached' });
+        results.push({ ...deferred, deferred: true });
         continue;
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const outcome = await this.fetchOne(classified, {
-        mode, dryRun, ctx,
-        maxPages: Math.min(maxPagesPerSource, this.limits.maxTotalPages - pagesSpent),
-      });
+      const outcome = mode === RUN_MODE.QUEUE
+        ? await this.queueTarget(classified, { dryRun, ctx })
+        : await this.fetchOne(classified, {
+          mode, dryRun, ctx,
+          maxPages: maxPagesPerSource,
+          deadlineAt: deadlineMs,
+        });
       pagesSpent += outcome.pagesFetched || 0;
+      if (outcome.deadlineReached) deadlineReached = true;
       results.push(outcome);
     }
 
@@ -200,7 +211,7 @@ export class ManualIngestService {
     const finishedAt = this.nowIso();
 
     const run = {
-      id: runId(startedAt, accepted),
+      id: runId(startedAt, list),
       mode,
       dryRun,
       triggeredBy: triggeredBy ?? null,
@@ -208,8 +219,7 @@ export class ManualIngestService {
       startedAt,
       finishedAt,
       durationMs: Date.now() - started,
-      /* The receipt keeps a compact per-target record — enough to answer "what
-         did that fetch actually do?" days later without keeping every job. */
+      deadlineReached,
       targets: results.map((r) => ({
         input: r.input,
         kind: r.kind ?? null,
@@ -221,13 +231,14 @@ export class ManualIngestService {
         fetched: r.fetched ?? 0,
         created: r.created ?? 0,
         merged: r.merged ?? 0,
+        queued: !!r.queued,
+        deferred: !!r.deferred,
         reason: r.reason ?? null,
       })),
       totals,
       ok: results.some((r) => r.ok),
     };
 
-    /* A dry run is a question, not an event — it leaves no receipt. */
     if (!dryRun) {
       try {
         await this.store.putIngestRun(run);
@@ -240,16 +251,78 @@ export class ManualIngestService {
       ok: true,
       run,
       results,
-      truncated,
-      truncatedReason: truncated
-        ? `only the first ${this.limits.maxTargetsPerRun} targets were accepted; submit the rest as a second run`
-        : null,
-      budgetExhausted: pagesSpent >= this.limits.maxTotalPages,
+      truncated: false,
+      truncatedReason: null,
+      budgetExhausted: false,
+      deadlineReached,
+      continuationQueued: results.filter((r) => r.deferred || r.stage === 'QUEUED').length,
+    };
+  }
+
+  /** Persist a target for workers without probing the public internet inline. */
+  async queueTarget(target, { dryRun = false } = {}) {
+    const base = { input: target.input, kind: target.kind };
+    if (dryRun) return { ...base, ok: true, stage: 'DRY_RUN', reason: 'would queue target for background ingestion' };
+
+    if (target.kind === TARGET_KIND.SOURCE_ID) {
+      const source = await this.service.registry.get(target.sourceId);
+      if (!source) return { ...base, ok: false, stage: 'RESOLVE', reason: 'no such source' };
+      if (source.accessPolicy !== ACCESS_POLICY.ALLOW) {
+        return { ...base, sourceId: source.id, provider: source.provider, ok: false, stage: 'ACCESS', reason: `source access policy is ${source.accessPolicy}` };
+      }
+      const q = await this.service.crawlQueue?.enqueue(source, { priority: 1000, windowMinutes: 5 });
+      if (!q) return { ...base, ok: false, stage: 'QUEUE', reason: 'no crawl queue configured' };
+      return { ...base, sourceId: source.id, provider: source.provider, tenant: source.tenant, ok: true, stage: 'QUEUED', queued: q.created, reason: q.created ? 'queued for worker' : 'already queued' };
+    }
+
+    if (!this.service.discoveryQueue) {
+      return { ...base, ok: false, stage: 'QUEUE', reason: 'no discovery queue configured' };
+    }
+
+    let lead;
+    if (target.kind === TARGET_KIND.ATS_BOARD) {
+      lead = {
+        kind: DISCOVERY_KIND.ATS_LINK,
+        value: `${target.provider}:${target.tenant}`,
+        payload: { provider: target.provider, tenant: target.tenant, careersUrl: target.url },
+        confidence: 1,
+        priority: 1000,
+        discoveredFrom: 'manual-admin',
+      };
+    } else if (target.kind === TARGET_KIND.CAREERS_URL) {
+      lead = {
+        kind: DISCOVERY_KIND.CAREERS_URL,
+        value: target.url,
+        payload: { careersUrl: target.url },
+        confidence: 0.95,
+        priority: 1000,
+        discoveredFrom: 'manual-admin',
+      };
+    } else if (target.kind === TARGET_KIND.COMPANY_DOMAIN) {
+      lead = {
+        kind: DISCOVERY_KIND.COMPANY_DOMAIN,
+        value: target.domain,
+        payload: { companyDomain: target.domain },
+        confidence: 0.9,
+        priority: 1000,
+        discoveredFrom: 'manual-admin',
+      };
+    }
+
+    const q = await this.service.discoveryQueue.enqueue(lead);
+    return {
+      ...base,
+      provider: target.provider ?? null,
+      tenant: target.tenant ?? null,
+      ok: !!q?.ok,
+      stage: 'QUEUED',
+      queued: !!q?.created,
+      reason: q?.created ? 'queued for discovery/ingestion worker' : (q?.reason || 'already queued'),
     };
   }
 
   /** Resolve one target to a registered source, then crawl or enqueue it. */
-  async fetchOne(target, { mode, dryRun, maxPages, ctx }) {
+  async fetchOne(target, { mode, dryRun, maxPages, ctx, deadlineAt = null }) {
     const base = { input: target.input, kind: target.kind };
 
     /* ---- resolve to a source ---- */
@@ -354,7 +427,30 @@ export class ManualIngestService {
 
     /* ---- INLINE mode: crawl now ---- */
     try {
-      const r = await this.service.ingest.runSource(source, { ctx, maxPages });
+      const r = await this.service.ingest.runSource(source, { ctx, maxPages, deadlineAt });
+
+      /* A large inline stress run may intentionally have no page-count cap, but
+         serverless execution still has a wall-clock deadline. If a provider has
+         more pages when that deadline is reached, persist a continuation rather
+         than losing the cursor or forcing the operator to start over. */
+      let continuationQueued = false;
+      let continuationReason = null;
+      if (r.ok && r.partial && r.nextCursor && this.service.crawlQueue) {
+        try {
+          const q = await this.service.crawlQueue.enqueue(source, {
+            priority: 1000,
+            windowMinutes: 5,
+          });
+          if (q?.created && q.task) {
+            await this.service.crawlQueue.checkpoint(q.task, { cursor: r.nextCursor });
+          }
+          continuationQueued = !!q?.created;
+          continuationReason = q?.created ? 'continuation queued' : (q?.reason || 'continuation already queued');
+        } catch (queueError) {
+          continuationReason = `could not queue continuation: ${queueError?.message || String(queueError)}`;
+        }
+      }
+
       return {
         ...base,
         ...identity,
@@ -378,6 +474,11 @@ export class ManualIngestService {
           ? `${r.created} new, ${r.merged} merged, ${r.changed} changed`
           : (r.errors[0]?.message || 'crawl failed'),
         errorClass: r.errors[0]?.errorClass ?? null,
+        partial: !!r.partial,
+        deadlineReached: !!r.deadlineReached,
+        nextCursor: r.nextCursor ?? null,
+        continuationQueued,
+        continuationReason,
       };
     } catch (e) {
       return { ...base, ...identity, ok: false, stage: 'CRAWL_FAILED', reason: e?.message || String(e) };

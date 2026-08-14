@@ -49,13 +49,20 @@ export function makeCompany(partial = {}) {
     atsProvider: partial.atsProvider ?? null,
     atsTenant: partial.atsTenant ?? null,
     country: partial.country ?? null,
+    region: partial.region ?? null,
     /* Only ever set when a source actually stated it. */
     industry: partial.industry ?? null,
+    hiringCountries: partial.hiringCountries ?? [],
+    indiaRelevance: partial.indiaRelevance ?? null,
+    careerUrlStatus: partial.careerUrlStatus ?? null,
+    seedSource: partial.seedSource ?? null,
+    seedRank: partial.seedRank ?? null,
     sourceIds: partial.sourceIds ?? [],
     sourceConfidence: partial.sourceConfidence ?? 0,
     lastDiscoveryAt: partial.lastDiscoveryAt ?? null,
     lastDiscoveryOutcome: partial.lastDiscoveryOutcome ?? null,
     discoveryAttempts: partial.discoveryAttempts ?? 0,
+    discoveryQueueCount: partial.discoveryQueueCount ?? 0,
     sourceHealth: partial.sourceHealth ?? null,
     jobCount: partial.jobCount ?? 0,
     provenance: partial.provenance ?? {},
@@ -83,7 +90,14 @@ export class CompanyRegistry {
     const candidate = makeCompany(partial);
     if (!candidate.id) return { ok: false, reason: 'company has neither a domain nor a name' };
 
-    const existing = await this.store.getCompany(candidate.id);
+    let existing = await this.store.getCompany(candidate.id);
+    /* A company can enter the registry by NAME before a corporate domain is
+       known. When a later seed/discovery supplies the domain, enrich that
+       existing identity rather than creating a second company row. */
+    if (!existing && candidate.normalizedName) {
+      const matches = await this.store.listCompanies({ normalizedName: candidate.normalizedName, limit: 3 });
+      if (matches.length === 1) existing = matches[0];
+    }
     if (!existing) {
       candidate.provenance = provenanceFor(candidate, source, confidence, this.nowIso());
       await this.store.putCompany(candidate);
@@ -91,9 +105,12 @@ export class CompanyRegistry {
       return { ok: true, created: true, company: candidate };
     }
 
-    const merged = { ...existing };
+    const merged = { ...existing, id: existing.id };
     let changed = false;
-    for (const field of ['name', 'normalizedName', 'domain', 'website', 'careersUrl', 'atsProvider', 'atsTenant', 'country', 'industry']) {
+    for (const field of [
+      'name', 'normalizedName', 'domain', 'website', 'careersUrl', 'atsProvider', 'atsTenant',
+      'country', 'region', 'industry', 'indiaRelevance', 'careerUrlStatus', 'seedSource', 'seedRank',
+    ]) {
       const incoming = candidate[field];
       if (incoming == null || incoming === '') continue;
       const prior = existing.provenance?.[field];
@@ -106,6 +123,12 @@ export class CompanyRegistry {
           [field]: { value: incoming, source, confidence, at: this.nowIso() },
         };
       }
+    }
+    if (candidate.hiringCountries?.length) {
+      const countries = new Set(merged.hiringCountries || []);
+      for (const c of candidate.hiringCountries) if (c) countries.add(c);
+      if (countries.size !== (merged.hiringCountries || []).length) changed = true;
+      merged.hiringCountries = [...countries];
     }
     if (candidate.sourceIds?.length) {
       const before = new Set(merged.sourceIds || []);
@@ -173,6 +196,22 @@ export class CompanyRegistry {
     return { known: true, skipProbe: false, reason: 'known company with no resolved source', company };
   }
 
+  /** Mark that a durable discovery task has been queued without counting it as
+   * an attempt yet. discoveryQueueCount is deliberately monotonic so candidate
+   * rotation stays fair even when multiple queue operations share a timestamp. */
+  async markDiscoveryQueued(company, { outcome = 'QUEUED' } = {}) {
+    if (!company?.id) return null;
+    const next = {
+      ...company,
+      lastDiscoveryAt: this.nowIso(),
+      lastDiscoveryOutcome: outcome,
+      discoveryQueueCount: Number(company.discoveryQueueCount || 0) + 1,
+      updatedAt: this.nowIso(),
+    };
+    await this.store.putCompany(next);
+    return next;
+  }
+
   /** Record the outcome of a discovery attempt against a company. */
   async recordDiscovery({ domain = null, name = null, outcome, sourceId = null, provider = null, tenant = null }) {
     const company = await this.find({ domain, name });
@@ -192,23 +231,10 @@ export class CompanyRegistry {
   }
 
   async summary() {
-    const all = await this.store.listCompanies({ limit: 100000 });
-    const byProvider = {};
-    let withDomain = 0;
-    let withSource = 0;
-    let withAts = 0;
-    for (const c of all) {
-      if (c.domain) withDomain += 1;
-      if ((c.sourceIds || []).length) withSource += 1;
-      if (c.atsProvider) { withAts += 1; byProvider[c.atsProvider] = (byProvider[c.atsProvider] || 0) + 1; }
-    }
+    const s = await this.store.companySummary();
     return {
-      total: all.length,
-      withDomain,
-      withRegisteredSource: withSource,
-      withKnownAts: withAts,
-      byProvider,
-      coveragePct: all.length ? Math.round((withSource / all.length) * 1000) / 10 : 0,
+      ...s,
+      coveragePct: s.total ? Math.round(((s.withRegisteredSource || 0) / s.total) * 1000) / 10 : 0,
       counters: { ...this.metrics },
     };
   }
@@ -216,7 +242,10 @@ export class CompanyRegistry {
 
 function provenanceFor(company, source, confidence, at) {
   const out = {};
-  for (const field of ['name', 'domain', 'website', 'careersUrl', 'atsProvider', 'atsTenant', 'country', 'industry']) {
+  for (const field of [
+    'name', 'domain', 'website', 'careersUrl', 'atsProvider', 'atsTenant', 'country', 'region',
+    'industry', 'indiaRelevance', 'careerUrlStatus', 'seedSource', 'seedRank',
+  ]) {
     if (company[field] != null && company[field] !== '') {
       out[field] = { value: company[field], source, confidence, at };
     }

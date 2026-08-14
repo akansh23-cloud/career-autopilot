@@ -194,6 +194,28 @@ export class CrawlQueue {
     return next;
   }
 
+  /**
+   * Yield a healthy but incomplete crawl back to the queue. This is used when
+   * a worker reaches its execution deadline or deliberately checkpoints a very
+   * large board. It is NOT a failure and does not create a failure signal.
+   */
+  async defer(task, { checkpoint = null, delayMs = 0, reason = 'checkpoint continuation' } = {}) {
+    const at = this.nowIso();
+    const next = {
+      ...task,
+      state: CRAWL_STATE.RETRY,
+      availableAt: new Date(this.now().getTime() + Math.max(0, Number(delayMs) || 0)).toISOString(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      checkpoint: checkpoint || task.checkpoint || null,
+      lastError: null,
+      continuationReason: reason,
+      updatedAt: at,
+    };
+    await this.store.putCrawlTask(next);
+    return next;
+  }
+
   async complete(task, result = {}) {
     this.metrics.completed += 1;
     const at = this.nowIso();

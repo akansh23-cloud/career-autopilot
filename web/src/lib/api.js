@@ -414,6 +414,14 @@ export const AdminJobDiscovery = {
     ).toString();
     return api.get('/api/admin/job-discovery/jobs' + (qs ? `?${qs}` : ''));
   },
+  companies: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    ).toString();
+    return api.get('/api/admin/job-discovery/companies' + (qs ? `?${qs}` : ''));
+  },
+  seedCompanies: (body = {}) => api.post('/api/admin/job-discovery/company-seeds', body),
+  processQueue: (body = {}) => api.post('/api/admin/job-discovery/process-queue', body),
   tick: (body = {}) => api.post('/api/admin/job-discovery/tick', body),
 };
 

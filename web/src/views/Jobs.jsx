@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown, Users, Linkedin, FileText, Mail, Sparkles, Copy, Check, AlertTriangle, ClipboardCheck, Hammer, Send, Download, Wand2, ListChecks, Target, Eye, X, Rocket } from 'lucide-react';
+import { Search, MapPin, Clock, ExternalLink, Briefcase, Building2, Filter, Bookmark, ChevronDown, ChevronLeft, ChevronRight, Users, Linkedin, FileText, Mail, Sparkles, Copy, Check, AlertTriangle, ClipboardCheck, Hammer, Send, Download, Wand2, ListChecks, Target, Eye, X, Rocket } from 'lucide-react';
 import { PageIntro } from './common.jsx';
 import { Button, Input, Badge, Skeleton, EmptyState, Card, Modal, Spinner } from '../components/ui/kit.jsx';
 import { Jobs, Contacts, AI, Applications } from '../lib/api.js';
@@ -430,6 +430,10 @@ export default function JobsView({ go }) {
   const [saved, setSaved] = useState(stored.saved || {});
   const [resumeHint, setResumeHint] = useState(Boolean(storedResume.text));
   const [sort, setSort] = useState('priority');
+  const [page, setPage] = useState(1);
+  /* Page 1 starts at null. Each nextCursor becomes the start cursor for the
+     following numbered page, so Previous never needs to refetch/scroll a giant list. */
+  const [pageCursors, setPageCursors] = useState([null]);
   const [tailorJob, setTailorJob] = useState(null);
   const [people, setPeople] = useState({ open: false, title: '', status: 'idle', contacts: [], err: '', note: '', job: null, draft: '', copied: false });
   const [mini, setMini] = useState({ open: false, title: '', body: '', job: null });
@@ -471,6 +475,10 @@ export default function JobsView({ go }) {
     const nextFresh = override.freshness ?? fresh;
     const nextExp = override.experience ?? experience;
     const nextType = override.jobType ?? jobType;
+    const pagination = override.pagination === true;
+    const requestedPage = pagination ? Math.max(1, Number(override.page) || 1) : 1;
+    const requestedCursor = pagination ? (override.cursor || null) : null;
+    if (!pagination) { setPage(1); setPageCursors([null]); }
     setRole(searchRole); setState({ status: 'loading', jobs: [], err: null }); setMeta(null); setDiag(null);
     persist({ status: 'loading', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, experience: nextExp, jobType: nextType, freshness: nextFresh });
     try {
@@ -481,16 +489,34 @@ export default function JobsView({ go }) {
         employmentType: nextType === 'any' ? '' : nextType,
         experience: nextExp === 'any' ? '' : nextExp,
         freshness: nextFresh === '1d' ? '24h' : nextFresh,
-        limit: '18',
+        limit: '20',
+        cursor: requestedCursor || '',
       });
       const mapped = fromSearchPayload(payload);
       const jobs = mapped.jobs;
       setMeta(mapped.meta);
+      setPage(requestedPage);
       setDiag(null);
       setState({ status: 'done', jobs, err: null });
       saveStoredJobResults({ status: 'done', jobs, role: searchRole, location: nextLoc, mode: nextMode, experience: nextExp, jobType: nextType, freshness: nextFresh, saved });
     }
     catch (err) { setState({ status: 'error', jobs: [], err: err.message }); setMeta(null); setDiag(null); saveStoredJobResults({ status: 'error', jobs: [], role: searchRole, location: nextLoc, mode: nextMode, experience: nextExp, jobType: nextType, freshness: nextFresh, saved, err: err.message }); }
+  };
+
+  const nextPage = () => {
+    if (!meta?.nextCursor) return;
+    const p = page + 1;
+    setPageCursors((prev) => {
+      const next = prev.slice();
+      next[p - 1] = meta.nextCursor;
+      return next;
+    });
+    run(null, { pagination: true, page: p, cursor: meta.nextCursor });
+  };
+  const previousPage = () => {
+    if (page <= 1) return;
+    const p = page - 1;
+    run(null, { pagination: true, page: p, cursor: pageCursors[p - 1] || null });
   };
 
   useEffect(() => { const queued = consumeQueuedResumeJobSearch(); if (queued?.role) { setResumeHint(true); run(null, { role: queued.role }); } }, []);
@@ -596,7 +622,7 @@ export default function JobsView({ go }) {
         action={fresh !== 'latest' ? <Button size="sm" onClick={(e)=>run(e,{ freshness:'latest', mode:'any', experience:'any', jobType:'any' })}>Search with all filters cleared</Button> : null}
       />
     )}
-    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{state.jobs.length} {fresh === 'latest' ? 'jobs' : 'jobs within window'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Discovery relevance</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Sort newest</button><button onClick={()=>setSort('title')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='title'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Title relevance</button><button className="rounded-xl border border-subtle px-4 py-2 text-xs font-semibold text-fg-secondary">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div></>}
+    {state.status === 'done' && state.jobs.length > 0 && <><div className="mb-4 flex flex-wrap items-center gap-2"><button className="rounded-full border border-aurora-mint/40 bg-aurora-mint/10 px-4 py-2 text-xs font-semibold text-aurora-mint">{(meta?.total ?? state.jobs.length).toLocaleString()} {fresh === 'latest' ? 'jobs' : 'jobs within window'}</button><button onClick={()=>setSort('priority')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='priority'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Discovery relevance</button><button onClick={()=>setSort('newest')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='newest'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Sort newest</button><button onClick={()=>setSort('title')} className={`rounded-xl border px-4 py-2 text-xs font-semibold ${sort==='title'?'border-strong bg-surface-2 text-fg':'border-subtle text-fg-secondary'}`}>Title relevance</button><button className="rounded-xl border border-subtle px-4 py-2 text-xs font-semibold text-fg-secondary">🔎 Freshness log</button></div><div className="space-y-4">{enrichedJobs.map((j,i)=><JobCard key={keyForJob(j)+i} j={j} saved={!!saved[keyForJob(j)]} onSave={toggleSave} onAction={action}/>)}</div><div className="mt-5 flex items-center justify-between rounded-xl border border-subtle bg-surface-1 px-3 py-2"><Button size="sm" variant="soft" disabled={page <= 1 || state.status === 'loading'} onClick={previousPage}><ChevronLeft size={14}/> Previous</Button><span className="text-xs font-medium text-fg-secondary">Page {page}{meta?.total ? ` of ${Math.max(1, Math.ceil(meta.total / 20))}` : ''} · 20 jobs per page</span><Button size="sm" variant="soft" disabled={!meta?.nextCursor || state.status === 'loading'} onClick={nextPage}>Next <ChevronRight size={14}/></Button></div></>}
     <TailorModal open={!!tailorJob} job={tailorJob} go={go} onClose={()=>setTailorJob(null)} />
     <Modal open={!!buildConfirm} onClose={()=>setBuildConfirm(null)} title="Build a project for these gaps" width="max-w-xl">
       {buildConfirm && <div className="space-y-4">
