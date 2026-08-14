@@ -1,22 +1,52 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "builds": [
-    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
-    { "src": "server.js", "use": "@vercel/node" }
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
   ],
-  "functions": {
-    "server.js": { "maxDuration": 60 }
-  },
   "crons": [
-    { "path": "/api/cron/job-discovery/bootstrap", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/job-discovery/crawl", "schedule": "15 0 * * *" },
-    { "path": "/api/cron/job-discovery/discover", "schedule": "30 0 * * *" },
-    { "path": "/api/cron/job-discovery/verify", "schedule": "45 0 * * *" }
+    {
+      "path": "/api/cron/job-discovery/bootstrap",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/job-discovery/crawl",
+      "schedule": "15 0 * * *"
+    },
+    {
+      "path": "/api/cron/job-discovery/discover",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/job-discovery/verify",
+      "schedule": "45 0 * * *"
+    }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "/server.js" },
-    { "src": "/(auth|ai|jobs|contacts|opportunities|profile|apply|health|support|dashboard)(/.*)?", "dest": "/server.js" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/(auth|ai|jobs|contacts|opportunities|profile|apply|health|support|dashboard)(/.*)?",
+      "dest": "/server.js"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }
