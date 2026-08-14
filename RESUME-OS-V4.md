@@ -22,7 +22,7 @@ FINAL RESUME → PDF / real DOCX / TXT
 
 trust sanitization → JD parse (+ role detection) → requirement weighting → evidence match → content ranking → template recommendation → content budget plan → deterministic summary candidates → variant proposal → truth audit → ATS health → gap report.
 
-The response is the **Job Tailor Package**: `jobMatch`, `atsHealth`, `evidenceCoverage`, `criticalRequirements met/total`, `missingEvidence[]` (with `provable` flags), recommended template + alternatives, page target, deterministic summary, and a ready-to-accept **variant** (`kind:'variant'`, `parentId`, non-destructive `overrides`). Nothing is applied until the user clicks Accept; the master document is never mutated.
+The response is the **Jobs Tailor Package**: `jobMatch`, `atsHealth`, `evidenceCoverage`, `criticalRequirements met/total`, `missingEvidence[]` (with `provable` flags), recommended template + alternatives, page target, deterministic summary, and a ready-to-accept **variant** (`kind:'variant'`, `parentId`, non-destructive `overrides`). Nothing is applied until the user clicks Accept; the master document is never mutated.
 
 **Gap rule:** a missing requirement (e.g. Terraform) is *never* inserted as experience. It surfaces as `missingEvidence` with a **Build Evidence** CTA that opens Project OS carrying `{ targetRole, targetSkill, reason:'resume_gap' }` — and Project OS consumes that context (banner + prefilled generator), closing the requirement → evidence → project → verification → resume loop.
 
