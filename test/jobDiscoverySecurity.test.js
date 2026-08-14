@@ -382,6 +382,7 @@ test('§61 — every ingest command is admin-gated', async () => {
     '/api/admin/job-discovery/crawl',
     '/api/admin/job-discovery/verify',
     '/api/admin/job-discovery/reprocess',
+    '/api/admin/job-discovery/manual-fetch',
     '/api/admin/job-discovery/tick',
     '/api/admin/job-discovery/discover',
   ];

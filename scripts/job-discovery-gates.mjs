@@ -54,6 +54,8 @@ const TEST_FILES = [
   'test/jobDiscoveryQueues.test.js',
   'test/jobDiscoveryRelevance.test.js',
   'test/jobDiscoveryScale.test.js',
+  'test/jobDiscoveryManualFetch.test.js',
+  'test/jobDiscoveryAdminUi.test.js',
 ];
 
 const BASELINE_PATH = 'test/fixtures/resumeOsBaseline.json';

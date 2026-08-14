@@ -268,6 +268,16 @@ export const Readiness = {
 // Admin-only User Directory / Talent Intelligence. Every call is gated by
 // requireAuth + requireAdmin on the backend; the UI also hides these surfaces
 // from non-admins, but the server is the source of truth.
+export const AdminJobDiscovery = {
+  stats: () => api.get('/api/admin/job-discovery/stats'),
+  health: () => api.get('/api/admin/job-discovery/health'),
+  coverage: () => api.get('/api/admin/job-discovery/coverage'),
+  manualFetch: (body = {}) => api.post('/api/admin/job-discovery/manual-fetch', body),
+  registerSource: (body = {}) => api.post('/api/admin/job-discovery/sources', body),
+  crawlSource: (sourceId) => api.post('/api/admin/job-discovery/crawl', { sourceId }),
+  discover: (body = {}) => api.post('/api/admin/job-discovery/discover', body),
+};
+
 export const Admin = {
   listUsers: (params = {}) => {
     const clean = Object.fromEntries(

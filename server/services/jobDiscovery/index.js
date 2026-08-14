@@ -126,6 +126,182 @@ export class JobDiscoveryService {
     return this.ingest.reprocessSource(source, opts);
   }
 
+  /**
+   * Admin-only manual ingestion helper. The route that exposes this method is
+   * protected by requireAuth + requireAdmin; this layer additionally keeps the
+   * work bounded so an operator click cannot turn into an unbounded serverless
+   * crawl. It NEVER changes search semantics and still uses the normal ingest,
+   * policy, SSRF, dedupe and freshness pipeline.
+   */
+  async manualFetch({
+    sourceId = null,
+    sourceUrl = null,
+    companyName = null,
+    companyDomain = null,
+    sourceLimit = 1,
+    maxPagesPerSource = 2,
+    runDiscovery = false,
+    discoveryLimit = 2,
+    runVerification = false,
+    verificationLimit = 10,
+  } = {}) {
+    const started = Date.now();
+    const boundedSourceLimit = Math.max(1, Math.min(3, Number(sourceLimit) || 1));
+    const boundedPages = Math.max(1, Math.min(3, Number(maxPagesPerSource) || 2));
+    const boundedDiscovery = Math.max(1, Math.min(5, Number(discoveryLimit) || 2));
+    const boundedVerification = Math.max(1, Math.min(25, Number(verificationLimit) || 10));
+    const before = await this.store.stats();
+    const out = {
+      ok: true,
+      trigger: 'admin-manual',
+      at: new Date().toISOString(),
+      requested: {
+        sourceId: sourceId || null,
+        sourceUrl: sourceUrl || null,
+        sourceLimit: boundedSourceLimit,
+        maxPagesPerSource: boundedPages,
+        runDiscovery: !!runDiscovery,
+        runVerification: !!runVerification,
+      },
+      registered: null,
+      crawl: null,
+      discovery: null,
+      verification: null,
+      before: { backend: before.backend, jobs: before.jobs || 0, sources: before.sources || 0 },
+      after: null,
+      delta: null,
+      durationMs: 0,
+    };
+
+    let effectiveSourceId = sourceId ? String(sourceId) : null;
+    if (sourceUrl) {
+      const registration = await this.registerFromUrl(String(sourceUrl), {
+        companyName: companyName || null,
+        companyDomain: companyDomain || null,
+        /* A manual operator click must stay bounded. For a generic careers URL
+           register exactly that URL (plus its robots policy) instead of doing a
+           multi-host autonomous discovery probe before the fetch. Direct ATS
+           URLs are still fingerprinted normally. */
+        probe: false,
+      });
+      out.registered = registration?.source ? {
+        ok: !!registration.ok,
+        created: !!registration.created,
+        reason: registration.reason || null,
+        source: {
+          id: registration.source.id,
+          provider: registration.source.provider,
+          tenant: registration.source.tenant,
+          companyName: registration.source.companyName || null,
+          accessPolicy: registration.source.accessPolicy,
+          status: registration.source.status,
+        },
+      } : { ok: !!registration?.ok, created: false, reason: registration?.reason || 'source registration did not return a source', source: null };
+      if (!registration?.ok || !registration?.source?.id) {
+        out.ok = false;
+        const after = await this.store.stats();
+        out.after = { backend: after.backend, jobs: after.jobs || 0, sources: after.sources || 0 };
+        out.delta = { jobs: out.after.jobs - out.before.jobs, sources: out.after.sources - out.before.sources };
+        out.durationMs = Date.now() - started;
+        return out;
+      }
+      effectiveSourceId = registration.source.id;
+    }
+
+    const ctx = { trigger: 'admin-manual' };
+    if (effectiveSourceId) {
+      const source = await this.registry.get(effectiveSourceId);
+      if (!source) {
+        out.ok = false;
+        out.crawl = { error: 'unknown_source', sourceId: effectiveSourceId };
+      } else if (source.accessPolicy !== ACCESS_POLICY.ALLOW) {
+        out.ok = false;
+        out.crawl = {
+          error: 'source_not_allowed',
+          sourceId: source.id,
+          provider: source.provider,
+          accessPolicy: source.accessPolicy,
+          message: 'Manual fetch cannot override source access policy.',
+        };
+      } else {
+        const r = await this.ingest.runSource(source, {
+          ctx,
+          maxPages: boundedPages,
+          followCursor: true,
+        });
+        out.crawl = {
+          mode: 'source',
+          crawled: [{
+            sourceId: source.id,
+            provider: source.provider,
+            tenant: source.tenant,
+            companyName: source.companyName || null,
+            ok: r.ok,
+            fetched: r.fetched,
+            created: r.created,
+            updated: r.updated,
+            merged: r.merged,
+            rejected: r.rejected,
+            pagesFetched: r.pagesFetched,
+            nextCursor: r.nextCursor,
+            notModified: r.notModified,
+            credible: r.health?.credible ?? true,
+            errors: (r.errors || []).map((e) => ({ errorClass: e.errorClass, message: e.message })),
+          }],
+        };
+        if (!r.ok) out.ok = false;
+      }
+    } else {
+      let slice;
+      if (this.crawlQueue) {
+        slice = await this.scheduler.crawlSlice({
+          ctx,
+          limit: boundedSourceLimit,
+          maxPagesPerSource: boundedPages,
+        });
+      } else {
+        /* Offline fixtures / single-process dev may intentionally inject no
+           durable queue. Keep the same bounded operator semantics instead of
+           requiring a different manual-fetch API in those environments. */
+        const due = await this.registry.due({ limit: boundedSourceLimit });
+        const crawled = [];
+        for (const source of due) {
+          if (source.accessPolicy !== ACCESS_POLICY.ALLOW) continue;
+          if (source.status === SOURCE_STATUS.DISABLED || source.status === SOURCE_STATUS.NOT_CONFIGURED) continue;
+          // eslint-disable-next-line no-await-in-loop
+          const r = await this.ingest.runSource(source, { ctx, maxPages: boundedPages, followCursor: true });
+          crawled.push({
+            sourceId: source.id, provider: source.provider, tenant: source.tenant,
+            companyName: source.companyName || null, ok: r.ok, fetched: r.fetched,
+            created: r.created, updated: r.updated, merged: r.merged, rejected: r.rejected,
+            pagesFetched: r.pagesFetched, nextCursor: r.nextCursor, notModified: r.notModified,
+            credible: r.health?.credible ?? true,
+            errors: (r.errors || []).map((e) => ({ errorClass: e.errorClass, message: e.message })),
+          });
+        }
+        slice = { enqueued: 0, deduped: 0, leased: crawled.length, deadLettered: 0, crawled };
+      }
+      out.crawl = { mode: 'due-batch', ...slice };
+      if (slice.crawled?.some((r) => !r.ok)) out.ok = false;
+    }
+
+    if (runDiscovery && this.discovery) {
+      out.discovery = await this.scheduler.discoverySlice({ limit: boundedDiscovery });
+    }
+    if (runVerification && this.verifier) {
+      out.verification = await this.verifier.run({ limit: boundedVerification, ctx });
+    }
+
+    const after = await this.store.stats();
+    out.after = { backend: after.backend, jobs: after.jobs || 0, sources: after.sources || 0 };
+    out.delta = {
+      jobs: out.after.jobs - out.before.jobs,
+      sources: out.after.sources - out.before.sources,
+    };
+    out.durationMs = Date.now() - started;
+    return out;
+  }
+
   async tick(opts = {}) { return this.scheduler.tick(opts); }
 
   /* ------------------------- health + reporting ------------------------- */

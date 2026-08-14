@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-14T15:13:54.516Z",
+  "generatedAt": "2026-08-14T15:51:18.604Z",
   "overall": "PASS",
-  "jobDiscoveryAssertions": 200,
+  "jobDiscoveryAssertions": 207,
   "resumeRegressionAssertions": 247,
   "totalFailures": 0,
-  "durationMs": 18353,
+  "durationMs": 15231,
   "gates": {
     "SOURCE_GATE": {
       "label": "Source adapters (phase 1)",
@@ -72,14 +72,14 @@
     "SECURITY_GATE": {
       "label": "Crawler safety",
       "status": "PASS",
-      "assertions": 55,
+      "assertions": 57,
       "failures": [],
       "missingRequirements": []
     },
     "INTEGRATION_GATE": {
       "label": "Product integration",
       "status": "PASS",
-      "assertions": 23,
+      "assertions": 28,
       "failures": [],
       "missingRequirements": []
     },
@@ -165,6 +165,20 @@
       "file": "test/jobDiscoveryScale.test.js",
       "missing": false,
       "assertions": 10,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryManualFetch.test.js",
+      "missing": false,
+      "assertions": 4,
+      "failures": 0,
+      "exitCode": 0
+    },
+    {
+      "file": "test/jobDiscoveryAdminUi.test.js",
+      "missing": false,
+      "assertions": 3,
       "failures": 0,
       "exitCode": 0
     }

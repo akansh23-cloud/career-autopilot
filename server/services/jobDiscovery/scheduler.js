@@ -237,7 +237,7 @@ export class CrawlScheduler {
    * triggers in one window produce one task), then leased and executed. The
    * atomicity lives in the store, so this is safe to run on several machines.
    */
-  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick } = {}) {
+  async crawlSlice({ ctx = {}, limit = this.sourcesPerTick, maxPagesPerSource = 20 } = {}) {
     const out = { enqueued: 0, deduped: 0, leased: 0, crawled: [], deadLettered: 0 };
 
     const due = await this.registry.due({ limit: limit * 3 });
@@ -267,6 +267,7 @@ export class CrawlScheduler {
         ctx,
         resumeCursor: task.checkpoint?.cursor || null,
         checkpoint: (cp) => this.crawlQueue.checkpoint(task, cp),
+        maxPages: Math.max(1, Math.min(20, Number(maxPagesPerSource) || 20)),
       });
 
       if (r.ok) {

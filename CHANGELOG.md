@@ -1,3 +1,13 @@
+# Job Discovery Phase 2 — Admin Manual Fetch Patch
+
+- Added dedicated admin-only **Job Discovery** control surface.
+- Added `POST /api/admin/job-discovery/manual-fetch`.
+- Manual fetch supports next due batch, selected registered source, or public ATS/careers URL registration + fetch.
+- Server hard-caps operator work to 3 sources and 3 pages/source to reduce serverless timeout risk.
+- Optional bounded source-discovery and verification slices can run after a manual fetch.
+- Manual fetch cannot override `ALLOW/REVIEW/DENY`, SSRF, robots, rate limits, dedupe, freshness or provenance rules.
+- Added manual-fetch and admin-UI regression tests.
+
 ## Job Discovery OS — Phase 2: Scale Foundation
 
 Turns the phase-1.1 foundation into an autonomous discovery network. Optimised

@@ -16,6 +16,7 @@
      POST /api/admin/job-discovery/crawl      crawl one source
      POST /api/admin/job-discovery/verify     verify one source
      POST /api/admin/job-discovery/reprocess  re-normalize from raw
+     POST /api/admin/job-discovery/manual-fetch bounded operator-triggered fetch
      POST /api/admin/job-discovery/tick       run one scheduler slice
      POST /api/admin/job-discovery/discover   probe a domain/url
 
@@ -224,6 +225,38 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       return res.json(await service.reprocessSource(sourceId, { limit: Number(req.body?.limit) || 500 }));
     } catch (e) {
       return res.status(500).json({ error: 'reprocess_failed', message: e?.message });
+    }
+  });
+
+  app.post('/api/admin/job-discovery/manual-fetch', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const body = req.body || {};
+      const sourceLimit = Math.max(1, Math.min(3, Number(body.sourceLimit) || 1));
+      const maxPagesPerSource = Math.max(1, Math.min(3, Number(body.maxPagesPerSource) || 2));
+      const discoveryLimit = Math.max(1, Math.min(5, Number(body.discoveryLimit) || 2));
+      const verificationLimit = Math.max(1, Math.min(25, Number(body.verificationLimit) || 10));
+      const sourceId = body.sourceId ? String(body.sourceId).slice(0, 180) : null;
+      const sourceUrl = body.sourceUrl ? String(body.sourceUrl).slice(0, 1000) : null;
+      const companyName = body.companyName ? String(body.companyName).slice(0, 180) : null;
+      const companyDomain = body.companyDomain ? String(body.companyDomain).slice(0, 255) : null;
+
+      const result = await service.manualFetch({
+        sourceId,
+        sourceUrl,
+        companyName,
+        companyDomain,
+        sourceLimit,
+        maxPagesPerSource,
+        runDiscovery: body.runDiscovery === true,
+        discoveryLimit,
+        runVerification: body.runVerification === true,
+        verificationLimit,
+      });
+      return res.status(result.ok ? 200 : 207).json(result);
+    } catch (e) {
+      logger.error?.('manual job fetch failed', { message: e?.message });
+      return res.status(500).json({ error: 'manual_fetch_failed', message: e?.message || 'Manual job fetch failed.' });
     }
   });
 

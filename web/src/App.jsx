@@ -47,6 +47,7 @@ import Leaderboards from './views/Leaderboards.jsx';
 import ReferralExchange from './views/ReferralExchange.jsx';
 import ProjectCreator from './views/ProjectCreator.jsx';
 import AdminUsers from './views/AdminUsers.jsx';
+import AdminJobDiscovery from './views/AdminJobDiscovery.jsx';
 import SkillsXp from './views/SkillsXp.jsx';
 import MarketplaceView from './views/Marketplace.jsx';
 import InspirationsView from './views/Inspirations.jsx';
@@ -86,6 +87,7 @@ const VIEWS = {
   growth: Growth,
   settings: Settings,
   adminusers: AdminUsers,
+  adminjobs: AdminJobDiscovery,
   templatebuilder: TemplateBuilder,
   skillsxp: SkillsXp,
   marketplace: MarketplaceView,
