@@ -73,6 +73,7 @@ export default function AdminJobIngestPanel() {
   const [queueBusy, setQueueBusy] = useState(null);
   const [queueResult, setQueueResult] = useState(null);
   const [companyFetchBusy, setCompanyFetchBusy] = useState(null);
+  const [runtimeStats, setRuntimeStats] = useState(null);
 
   const targetList = targets.split(/[\n,]/).map((t) => t.trim()).filter(Boolean);
 
@@ -99,7 +100,13 @@ export default function AdminJobIngestPanel() {
     } catch { /* non-fatal */ }
   }, [companyPage, companyQuery]);
 
-  useEffect(() => { loadRuns(); loadStored(1, ''); loadCompanies(1, ''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadStats = useCallback(async () => {
+    try {
+      setRuntimeStats(await AdminJobDiscovery.stats());
+    } catch { /* the rest of the operator dashboard can still function */ }
+  }, []);
+
+  useEffect(() => { loadRuns(); loadStored(1, ''); loadCompanies(1, ''); loadStats(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = useCallback(async (dryRun) => {
     if (!targetList.length) return;
@@ -111,14 +118,14 @@ export default function AdminJobIngestPanel() {
       if (!dryRun) {
         /* Verify against the store rather than trusting the receipt. */
         setStoredPage(1);
-        await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery)]);
+        await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery), loadStats()]);
       }
     } catch (e) {
       setError(e?.message || 'fetch failed');
     } finally {
       setBusy(false);
     }
-  }, [targetList, mode, reason, loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery]);
+  }, [targetList, mode, reason, loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery, loadStats]);
 
   const seedCompanies = useCallback(async () => {
     setSeedBusy(true);
@@ -127,13 +134,13 @@ export default function AdminJobIngestPanel() {
       const r = await AdminJobDiscovery.seedCompanies({ minimum: 1000, includeRemote: true });
       setSeedResult(r);
       setCompanyPage(1);
-      await loadCompanies(1, companyQuery);
+      await Promise.all([loadCompanies(1, companyQuery), loadStats()]);
     } catch (e) {
       setError(e?.message || 'company seed import failed');
     } finally {
       setSeedBusy(false);
     }
-  }, [companyQuery, loadCompanies]);
+  }, [companyQuery, loadCompanies, loadStats]);
 
   const fetchCompany = useCallback(async (company) => {
     if (!company?.careersUrl) return;
@@ -145,13 +152,13 @@ export default function AdminJobIngestPanel() {
         reason: `Admin company-registry fetch: ${company.name || company.domain || company.id}`,
       });
       setResult(r);
-      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery)]);
+      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery), loadStats()]);
     } catch (e) {
       setError(e?.message || 'company fetch failed');
     } finally {
       setCompanyFetchBusy(null);
     }
-  }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery]);
+  }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery, loadStats]);
 
   const processQueue = useCallback(async (phase) => {
     setQueueBusy(phase);
@@ -159,18 +166,44 @@ export default function AdminJobIngestPanel() {
     try {
       const r = await AdminJobDiscovery.processQueue({ phase });
       setQueueResult({ phase, ...r });
-      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery)]);
+      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery), loadStats()]);
     } catch (e) {
       setError(e?.message || `${phase} queue processing failed`);
     } finally {
       setQueueBusy(null);
     }
-  }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery]);
+  }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery, loadStats]);
 
   const totals = result?.run?.totals;
 
   return (
     <div className="space-y-4">
+      <SectionCard
+        eyebrow="Live canonical inventory"
+        title="Jobs currently available"
+        action={<Button variant="ghost" size="sm" onClick={loadStats}><RefreshCw size={13} />Refresh count</Button>}
+      >
+        {!runtimeStats ? <Spinner /> : (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              <Stat
+                label="AVAILABLE NOW"
+                value={(runtimeStats.inventory?.currentlyAvailable ?? 0).toLocaleString()}
+                hint="NEW + ACTIVE + LIKELY_ACTIVE"
+              />
+              <Stat label="Canonical total" value={(runtimeStats.inventory?.canonicalTotal ?? 0).toLocaleString()} hint="Includes stale/closed history" />
+              <Stat label="New" value={(runtimeStats.inventory?.new ?? 0).toLocaleString()} />
+              <Stat label="Active" value={(runtimeStats.inventory?.active ?? 0).toLocaleString()} />
+              <Stat label="Likely active" value={(runtimeStats.inventory?.likelyActive ?? 0).toLocaleString()} />
+              <Stat label="Stale / removed" value={((runtimeStats.inventory?.stale ?? 0) + (runtimeStats.inventory?.removed ?? 0)).toLocaleString()} />
+            </div>
+            <p className="mt-2 text-[11px] text-fg-muted">
+              This is an exact database count at {runtimeStats.inventory?.countedAt ? new Date(runtimeStats.inventory.countedAt).toLocaleString() : 'the last refresh'}, not the number of rows on the current 20-job page.
+            </p>
+          </>
+        )}
+      </SectionCard>
+
       <SectionCard eyebrow="Job Discovery OS" title="Fetch jobs now">
         <p className="mb-3 text-xs text-fg-muted">
           Paste board URLs, careers pages, company domains or source ids — one per line. Fetched jobs go into

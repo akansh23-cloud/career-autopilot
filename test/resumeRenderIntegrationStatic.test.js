@@ -49,5 +49,26 @@ test('template preview modal built-in PDF export uses canonical server renderer'
 
 test('Editor preview uses canonical Template OS compiler for built-in templates', () => {
   assert.match(templateComponents, /getCanonicalResumeTemplate\(templateId\)/);
-  assert.match(templateComponents, /buildLayoutHTML\(compiled, structured/);
+  /* Assert the PIPELINE, not one local variable name. The previous form pinned
+     `buildLayoutHTML(compiled, structured` and so failed the moment the variable
+     was renamed while doing the same thing — a test that guards spelling rather
+     than behaviour. */
+  assert.match(templateComponents, /compileTemplate\(/);
+  assert.match(templateComponents, /balancePageComposition\(/);
+  assert.match(templateComponents, /buildLayoutHTML\(\w+,\s*structured/);
+});
+
+test('Editor preview normalises the parsed shape before compiling', () => {
+  /* The Editor holds parsed plain-text data; fromStructuredResume() reads
+     `personalInfo` and silently returns an empty document for it. Without this
+     adapter the preview renders a blank page and nothing reports a fault. */
+  assert.match(templateComponents, /fromParsedResume/);
+  assert.match(templateComponents, /fromStructuredResume\(fromParsedResume\(data\)\)/);
+});
+
+test('Editor preview never swallows a template compile failure', () => {
+  /* A bare catch here hid a DSL validation error across 28 of 51 templates:
+     every one silently fell back to the legacy renderer. */
+  assert.match(templateComponents, /if \(!compiled\?\.ok\)/);
+  assert.match(templateComponents, /console\.error/);
 });

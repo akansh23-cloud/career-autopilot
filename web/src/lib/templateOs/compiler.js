@@ -487,8 +487,15 @@ const SECTION_TITLES = {
   volunteer: 'Volunteer Experience', languages: 'Languages', customSections: 'Additional',
 };
 
+/* "other" is the bucket a skill lands in when the candidate never grouped their
+   skills — an internal default, not a heading anyone wrote. Printing it puts the
+   word "other" on a resume above the candidate's actual skills. An ungrouped
+   bucket renders with no label at all. */
+const INTERNAL_SKILL_GROUPS = new Set(['other', 'ungrouped', 'default', 'misc', 'general']);
+
 function skillDisplayGroup(group, hasSpokenLanguages = false) {
   const raw = String(group || '');
+  if (INTERNAL_SKILL_GROUPS.has(raw.trim().toLowerCase())) return '';
   return hasSpokenLanguages && /^languages?$/i.test(raw.trim()) ? 'Programming Languages' : raw;
 }
 function skillLabel(group, skillToken, hasSpokenLanguages = false) {
@@ -518,11 +525,11 @@ function skillsHTML(d, tokens) {
   if (!groups.length) return '';
   if (mode === 'plain') return `<p class="t-p">${esc(groups.flatMap((g) => g.items).join(', '))}</p>`;
   if (mode === 'chips') return skillChipsHTML(groups, tokens, !!d.languages?.length);
-  if (mode === 'inline') return groups.map((g) => `<div class="t-skill-inline-row"><span class="t-skill-label">${esc(skillLabel(g.group, tokens.skills, !!d.languages?.length))}</span><span class="t-skillitems">${skillTokensHTML(g.items)}</span></div>`).join('');
-  if (mode === 'categorized') return groups.map((g) => `<div class="t-skillgroup t-skillgroup-categorized"><p class="t-skillhead">${esc(skillLabel(g.group, tokens.skills, !!d.languages?.length))}</p><div class="t-skilltokens">${skillTokensHTML(g.items)}</div></div>`).join('');
-  if (mode === 'matrix') return `<div class="t-skillmatrix">${groups.map((g) => `<div class="t-skill-matrix-row"><span class="t-skill-label">${esc(skillLabel(g.group, tokens.skills, !!d.languages?.length))}</span><span class="t-skillitems">${skillTokensHTML(g.items)}</span></div>`).join('')}</div>`;
-  if (mode === 'sidebar-groups') return groups.map((g) => `<div class="t-skillgroup t-skillgroup-sidebar"><p class="t-skillhead">${esc(skillLabel(g.group, tokens.skills, !!d.languages?.length))}</p><div class="t-skilltokens">${skillTokensHTML(g.items)}</div></div>`).join('');
-  if (mode === 'stack') return groups.map((g) => `<div class="t-skillgroup"><p class="t-skillhead">${esc(g.group)}</p>${g.items.map((i) => `<div class="t-skillrow">${esc(i)}</div>`).join('')}</div>`).join('');
+  if (mode === 'inline') return groups.map((g) => { const l = skillLabel(g.group, tokens.skills, !!d.languages?.length); return `<div class="t-skill-inline-row">${l ? `<span class="t-skill-label">${esc(l)}</span>` : ''}<span class="t-skillitems">${skillTokensHTML(g.items)}</span></div>`; }).join('');
+  if (mode === 'categorized') return groups.map((g) => { const l = skillLabel(g.group, tokens.skills, !!d.languages?.length); return `<div class="t-skillgroup t-skillgroup-categorized">${l ? `<p class="t-skillhead">${esc(l)}</p>` : ''}<div class="t-skilltokens">${skillTokensHTML(g.items)}</div></div>`; }).join('');
+  if (mode === 'matrix') return `<div class="t-skillmatrix">${groups.map((g) => { const l = skillLabel(g.group, tokens.skills, !!d.languages?.length); return `<div class="t-skill-matrix-row">${l ? `<span class="t-skill-label">${esc(l)}</span>` : ''}<span class="t-skillitems">${skillTokensHTML(g.items)}</span></div>`; }).join('')}</div>`;
+  if (mode === 'sidebar-groups') return groups.map((g) => { const l = skillLabel(g.group, tokens.skills, !!d.languages?.length); return `<div class="t-skillgroup t-skillgroup-sidebar">${l ? `<p class="t-skillhead">${esc(l)}</p>` : ''}<div class="t-skilltokens">${skillTokensHTML(g.items)}</div></div>`; }).join('');
+  if (mode === 'stack') return groups.map((g) => { const l = skillDisplayGroup(g.group, !!d.languages?.length); return `<div class="t-skillgroup">${l ? `<p class="t-skillhead">${esc(l)}</p>` : ''}${g.items.map((i) => `<div class="t-skillrow">${esc(i)}</div>`).join('')}</div>`; }).join('');
   return groups.map((g) => `<div class="t-skill-inline-row"><span class="t-skill-label">${esc(skillLabel(g.group, tokens.skills, !!d.languages?.length))}</span><span class="t-skillitems">${skillTokensHTML(g.items)}</span></div>`).join('');
 }
 
@@ -768,6 +775,15 @@ ${sidePanel.headingRule === 'subtle-inverse' ? `.t-col-sidebar .t-h2{border-bott
 /* 5. Full HTML document — DOM ORDER IS SEMANTIC ORDER                 */
 /* ------------------------------------------------------------------ */
 export function buildLayoutHTML(compiledOrDef, structuredInput, { sizeId = 'a4', bare = false } = {}) {
+  /* A FAILED compile result is not a definition. Re-validating one produces a
+     second-order error about "unsupported field ok" that says nothing about the
+     real problem, which is how a single missing DSL key stayed invisible across
+     28 templates. Detect it and report the original errors. */
+  if (compiledOrDef && compiledOrDef.ok === false) {
+    throw new Error(
+      `template failed validation: ${(compiledOrDef.validation?.errors || ['unknown validation failure']).join('; ')}`,
+    );
+  }
   const compiled = compiledOrDef.tree ? compiledOrDef : compileTemplate(compiledOrDef);
   if (!compiled.ok) throw new Error(`template failed validation: ${compiled.validation.errors.join('; ')}`);
   const structured = normalizeStructuredContent(structuredInput);

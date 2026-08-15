@@ -2737,7 +2737,7 @@ export const GithubRepoAnalysis = mongoose.models.GithubRepoAnalysis || mongoose
 
 const githubAuditSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     action: { type: String, default: '' },
     detail: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
@@ -5356,7 +5356,7 @@ const collegeTaskSchema = new mongoose.Schema(
     dueAt: { type: Date, default: null },
     createdByEmail: { type: String, default: '' },
     assignments: [{
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
       status: { type: String, default: 'open', enum: ['open', 'done'] },
       doneAt: { type: Date, default: null },
     }],

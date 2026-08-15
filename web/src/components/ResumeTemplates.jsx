@@ -6,6 +6,7 @@ import {
 } from '../lib/resumeTemplates.js';
 import { cachedTemplatePreviewUrl } from '../lib/templateOs/previewAssets.js';
 import { fromStructuredResume, toRendererStructured, downloadResumePdf } from '../lib/resumeOs.js';
+import { fromParsedResume } from '../lib/parsedResumeAdapter.js';
 import { getResumeTemplate as getCanonicalResumeTemplate } from '../lib/resumeTemplateRegistry.js';
 import { compileTemplate, normalizeResumeDensityToTemplateMode, adaptTreeToShape, balancePageComposition, buildLayoutHTML, analyzeResumeShape, fromLegacyTemplate } from '../lib/templateOs/index.js';
 
@@ -18,19 +19,46 @@ export function ResumePaper({ data, templateId, mode, width = 794, scale = 1, cl
     // server-side definition for user-authored templates.
     if (templateId === 'custom') return renderResumeHTML(data, templateId, { mode });
     try {
-      const doc = fromStructuredResume(data);
+      /* The Editor works in plain text and therefore holds the PARSED shape;
+         ResumeStudio holds the structured one. fromStructuredResume() reads
+         `personalInfo` and silently yields an empty document for the former —
+         a blank A4 page rather than an error. Normalise at the boundary so both
+         callers land on the same document. */
+      const doc = fromStructuredResume(fromParsedResume(data));
       doc.templateId = templateId;
       doc.pageSize = 'a4';
       const structured = toRendererStructured(doc);
       const tpl = getCanonicalResumeTemplate(templateId);
       const definition = tpl.engine === 'template-os' ? tpl.definition : fromLegacyTemplate(tpl);
-      const compiled = balancePageComposition(
-        adaptTreeToShape(compileTemplate(definition, { density: normalizeResumeDensityToTemplateMode(doc.density) }), analyzeResumeShape(doc)),
+
+      /* Check the compile EXPLICITLY. compileTemplate returns { ok:false } on a
+         validation error rather than throwing, and buildLayoutHTML then treats
+         that result object as a definition and throws a confusing second-order
+         error. Swallowing that silently is how a single missing key in the DSL
+         allowlist put 28 of 51 templates onto the legacy renderer without one
+         visible symptom. */
+      const compiled = compileTemplate(definition, {
+        density: normalizeResumeDensityToTemplateMode(doc.density),
+      });
+      if (!compiled?.ok) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `[template-os] "${templateId}" failed validation; falling back to the legacy renderer:`,
+          compiled?.validation?.errors ?? ['unknown validation failure'],
+        );
+        return renderResumeHTML(data, templateId, { mode });
+      }
+
+      const laidOut = balancePageComposition(
+        adaptTreeToShape(compiled, analyzeResumeShape(doc)),
         structured,
         { sizeId: doc.pageSize },
       );
-      return buildLayoutHTML(compiled, structured, { sizeId: doc.pageSize });
-    } catch {
+      return buildLayoutHTML(laidOut, structured, { sizeId: doc.pageSize });
+    } catch (err) {
+      /* Still fall back — a blank preview helps nobody — but never silently. */
+      // eslint-disable-next-line no-console
+      console.error(`[template-os] render failed for "${templateId}":`, err);
       return renderResumeHTML(data, templateId, { mode });
     }
   }, [data, templateId, mode]);

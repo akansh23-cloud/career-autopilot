@@ -1,58 +1,58 @@
 {
   "namespace": "FIXTURE",
-  "at": "2026-08-14T22:12:46.899Z",
-  "jobCount": 20000,
+  "at": "2026-08-14T20:12:34.796Z",
+  "jobCount": 100000,
   "normalization": {
-    "jobs": 20000,
-    "ms": 1833,
-    "jobsPerSec": 10914,
+    "jobs": 100000,
+    "ms": 17920,
+    "jobsPerSec": 5580,
     "composition": {
-      "duplicates": 1475,
-      "closed": 955,
-      "stale": 599,
-      "undated": 2171,
-      "aggregatorOnly": 2825,
-      "remoteRestricted": 1991,
-      "multiLocation": 1993,
+      "duplicates": 7479,
+      "closed": 4686,
+      "stale": 2802,
+      "undated": 10955,
+      "aggregatorOnly": 13757,
+      "remoteRestricted": 10154,
+      "multiLocation": 10286,
       "rare": 3
     },
     "companies": 4000,
     "sources": 5200
   },
   "indexBuild": {
-    "ms": 599,
-    "jobsPerSec": 33376,
+    "ms": 8451,
+    "jobsPerSec": 11834,
     "index": {
-      "docs": 20000,
+      "docs": 100000,
       "tombstones": 0,
-      "fieldTerms": 4081,
+      "fieldTerms": 4123,
       "bodyTerms": 29,
       "families": 45,
-      "companies": 3958,
+      "companies": 4000,
       "cities": 16,
       "countries": 8
     }
   },
   "memory": {
-    "heapUsedMb": 154.8,
-    "corpusAndIndexMb": 149.4,
-    "bytesPerJob": 7835
+    "heapUsedMb": 693.6,
+    "corpusAndIndexMb": 688.2,
+    "bytesPerJob": 7216
   },
   "dedupe": {
     "checks": 2000,
     "hits": 320,
-    "ms": 74,
-    "checksPerSec": 26988
+    "ms": 584,
+    "checksPerSec": 3424
   },
   "search": {
     "queries": 128,
-    "p50Ms": 10.92,
-    "p95Ms": 42.15,
-    "p99Ms": 47.45,
-    "maxMs": 50.23,
-    "meanCandidatesRanked": 740,
+    "p50Ms": 91.37,
+    "p95Ms": 159.59,
+    "p99Ms": 188.13,
+    "maxMs": 192.24,
+    "meanCandidatesRanked": 738,
     "maxCandidatesRanked": 750,
-    "meanIndexMatches": 6668,
+    "meanIndexMatches": 33391,
     "emptyResultQueries": 0
   },
   "rareTitleRetrieval": {
@@ -84,7 +84,7 @@
   "verificationSelection": {
     "scanned": 20000,
     "selected": 200,
-    "ms": 35,
+    "ms": 67,
     "byTier": {
       "URGENT": 200
     }
@@ -100,28 +100,28 @@
     "generatedAt": "2026-08-14T12:00:00.000Z",
     "windowHours": 24,
     "jobs": {
-      "activeCanonicalJobs": 18446,
-      "total": 20000,
+      "activeCanonicalJobs": 92512,
+      "total": 100000,
       "byStatus": {
-        "ACTIVE": 18446,
-        "REMOVED": 955,
-        "STALE": 599
+        "ACTIVE": 92512,
+        "REMOVED": 4686,
+        "STALE": 2802
       },
       "byProvider": {
-        "LEVER": 3951,
-        "API": 4300,
-        "GENERIC": 3871,
-        "GREENHOUSE": 3872,
-        "WORKDAY": 4006
+        "LEVER": 19766,
+        "API": 21236,
+        "GENERIC": 19579,
+        "GREENHOUSE": 19764,
+        "WORKDAY": 19655
       },
       "bySourceClass": {
-        "ORIGINAL_ATS": 11829,
-        "AGGREGATOR": 4300,
-        "ORIGINAL_CAREER_SITE": 3871
+        "ORIGINAL_ATS": 59185,
+        "AGGREGATOR": 21236,
+        "ORIGINAL_CAREER_SITE": 19579
       },
       "new": 0,
-      "stale": 599,
-      "removed": 955
+      "stale": 2802,
+      "removed": 4686
     },
     "sources": {
       "registered": 5200,
@@ -140,21 +140,21 @@
       "coveragePct": 75
     },
     "discovery": {
-      "jobsDiscoveredPerDay": 966,
-      "jobsDiscoveredInWindow": 966,
-      "newJobsLastHour": 474,
-      "medianDiscoveryAgeDays": 40,
-      "datedSampleSize": 11570,
+      "jobsDiscoveredPerDay": 5045,
+      "jobsDiscoveredInWindow": 5045,
+      "newJobsLastHour": 2506,
+      "medianDiscoveryAgeDays": 39,
+      "datedSampleSize": 57935,
       "queue": null
     },
     "quality": {
-      "directSourceCount": 15700,
-      "directSourcePct": 78.5,
-      "directApplyCount": 15700,
-      "directApplyPct": 78.5,
+      "directSourceCount": 78764,
+      "directSourcePct": 78.8,
+      "directApplyCount": 78764,
+      "directApplyPct": 78.8,
       "applyUrlCoveragePct": 100,
       "withPublishedDatePct": 88.2,
-      "withSalaryPct": 23,
+      "withSalaryPct": 23.2,
       "verificationCoveragePct": 50.9,
       "multiSourcedCount": 0,
       "duplicateRatio": 1,

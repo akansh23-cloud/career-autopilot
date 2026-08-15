@@ -64,6 +64,12 @@ const ROOT_KEYS = new Set([
   'atsLevel', 'layout', 'sectionPlacement', 'sectionOrder', 'headerStyle', 'skillStyle', 'experienceStyle', 'projectStyle',
   'educationStyle', 'sectionStyles', 'visualStyle', 'typography', 'spacing', 'colors', 'contentBudget', 'exports', 'license',
   'parentTemplateId', 'certification',
+  /* Provenance written by fromLegacyTemplate(). It is real, load-bearing data —
+     which legacy template a definition came from and which adapter produced it
+     — and omitting it from this allowlist meant EVERY legacy-adapted template
+     failed validation, so the renderer silently fell back to the legacy engine
+     for 28 of 51 templates. */
+  'migration',
 ]);
 const LAYOUT_KEYS = new Set(['type', 'columns']);
 const COLUMN_KEYS = new Set(['id', 'width']);
@@ -86,6 +92,7 @@ const BUDGET_PART_KEYS = new Set(['preferredLines', 'maxLines', 'preferredChars'
 const EXPORT_KEYS = new Set(['pdf', 'html', 'txt', 'docx', 'docxProfile']);
 const LICENSE_KEYS = new Set(['licenseStatus', 'source', 'licenseName', 'licenseNotice', 'productionEnabled']);
 const CERT_KEYS = new Set(['certified', 'atsLevel', 'atsLevelMultiPage', 'minIntegrity', 'minOrderScore', 'label', 'evidence', 'maxPages']);
+const MIGRATION_KEYS = new Set(['classification', 'sourceTemplateId', 'adapter']);
 
 function unknownKeys(obj, allowed, path, errors) {
   if (obj == null) return;
@@ -215,6 +222,9 @@ export function validateTemplateDefinition(def, { primitives = null } = {}) {
   unknownKeys(def.exports || {}, EXPORT_KEYS, 'exports', errors);
   unknownKeys(def.license || {}, LICENSE_KEYS, 'license', errors);
   unknownKeys(def.certification || {}, CERT_KEYS, 'certification', errors);
+  /* Validated, not merely tolerated: provenance that can hold arbitrary keys is
+     provenance nobody can trust. */
+  unknownKeys(def.migration || {}, MIGRATION_KEYS, 'migration', errors);
 
   for (const [k, part] of Object.entries(def.contentBudget || {})) {
     unknownKeys(part, BUDGET_PART_KEYS, `contentBudget.${k}`, errors);

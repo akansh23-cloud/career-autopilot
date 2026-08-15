@@ -251,3 +251,62 @@ test('INGEST_GATE — duplicate Mongoose index declarations stay removed', () =>
   assert.match(store, /rawSchema\.index\(\{\s*fetchedAt:\s*1\s*\}/s);
   assert.match(store, /ingestRunSchema\.index\(\{\s*startedAt:\s*-1\s*\}/s);
 });
+
+
+test('INTEGRATION_GATE — admin dashboard exposes exact currently-available canonical job count', async () => {
+  const service = await makeService({ queues: true });
+  const statuses = [
+    JOB_STATUS.NEW,
+    JOB_STATUS.ACTIVE,
+    JOB_STATUS.LIKELY_ACTIVE,
+    JOB_STATUS.STALE,
+    JOB_STATUS.REMOVED,
+  ];
+  for (let i = 0; i < statuses.length; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await service.store.putJob({
+      id: `inventory_${i}`,
+      schemaVersion: 1,
+      title: `Inventory Job ${i}`,
+      normalizedTitle: 'inventory job',
+      titleFamilies: ['software'],
+      company: { name: 'Inventory Co', normalizedName: 'inventory co', domain: 'inventory.example' },
+      locations: [{ raw: 'India' }],
+      workplace: { type: 'UNKNOWN', remoteScope: 'UNKNOWN', evidence: null },
+      employmentType: null,
+      seniority: null,
+      descriptionText: 'inventory fixture',
+      descriptionHtml: null,
+      requirements: [], skills: [], compensation: null,
+      sourcePublishedAt: null,
+      firstSeenAt: '2026-08-15T00:00:00.000Z',
+      lastSeenAt: '2026-08-15T00:00:00.000Z',
+      lastVerifiedAt: null,
+      canonicalJobUrl: `https://inventory.example/jobs/${i}`,
+      canonicalApplyUrl: `https://inventory.example/jobs/${i}/apply`,
+      directApply: true,
+      status: statuses[i], freshness: null, sourceInstances: [],
+      contentHash: `inventory_hash_${i}`, dedupeFingerprint: `inventory_fp_${i}`,
+      searchText: `Inventory Job ${i}`, completeness: 0.9, needsVerification: false,
+    });
+  }
+  const stats = await service.stats();
+  assert.equal(stats.inventory.currentlyAvailable, 3, 'NEW + ACTIVE + LIKELY_ACTIVE only');
+  assert.equal(stats.inventory.canonicalTotal, 5);
+  assert.equal(stats.inventory.stale, 1);
+  assert.equal(stats.inventory.removed, 1);
+
+  const panel = fs.readFileSync(new URL('../web/src/views/AdminJobIngestPanel.jsx', import.meta.url), 'utf8');
+  assert.match(panel, /Jobs currently available/);
+  assert.match(panel, /AVAILABLE NOW/);
+  assert.match(panel, /exact database count/i);
+});
+
+test('INTEGRATION_GATE — Job Discovery is a dedicated admin navigation screen', () => {
+  const app = fs.readFileSync(new URL('../web/src/App.jsx', import.meta.url), 'utf8');
+  const shell = fs.readFileSync(new URL('../web/src/components/app/Shell.jsx', import.meta.url), 'utf8');
+  const users = fs.readFileSync(new URL('../web/src/views/AdminUsers.jsx', import.meta.url), 'utf8');
+  assert.match(app, /jobdiscoveryadmin:\s*AdminJobDiscovery/);
+  assert.match(shell, /id:\s*'jobdiscoveryadmin'.*label:\s*'Job Discovery'/s);
+  assert.doesNotMatch(users, /<AdminJobIngestPanel\s*\/>/);
+});

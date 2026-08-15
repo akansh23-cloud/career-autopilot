@@ -1,3 +1,65 @@
+## Resume rendering — broken preview fix
+
+A reported preview showed a run-together header ("AKANSH MOWAR Pune, India | +91 ... |
+...gmail.com lin") above an almost empty page, with the summary reading
+"Early-career engineer with project experience in." Four separate defects, all now fixed.
+
+### Fixed
+- **28 of 51 templates never compiled.** `fromLegacyTemplate()` stamps a `migration`
+  provenance block onto every adapted definition, but the Template OS DSL root-key
+  allowlist did not include `migration`, so every legacy-adapted template failed
+  validation. `ResumePaper` caught the failure with a bare `catch {}` and silently
+  fell back to the legacy renderer — which is what produced the mangled header.
+  `migration` is now allowed AND validated against its own key set.
+- **The Editor's preview rendered a blank page for its own data.** The Editor holds the
+  PARSED plain-text shape (`{name, contacts, sections}`); `fromStructuredResume()` reads
+  `personalInfo` and returns an empty document for it without throwing. New
+  `web/src/lib/parsedResumeAdapter.js` normalises at the boundary — contacts are typed
+  (LinkedIn/GitHub/portfolio recognised rather than dumped into overflow links),
+  "Role | Company | Dates" lines are split, and an unrecognised heading is preserved as
+  a custom section rather than dropped.
+- **Summaries ended on a dangling preposition.** `joinList()` returns `''` for an empty
+  list, and a summary structure interpolated it after "in". The selection loop intended
+  to skip unfillable structures but only caught ones that THREW. Required slots now throw
+  via `req()`, a `wellFormed()` net rejects any sentence ending on a connector, and a new
+  student structure covers profiles with no named technologies so a sparse profile still
+  gets a complete sentence.
+- **"other" was printed as a skills heading.** Ungrouped skills land in an internal
+  `other` bucket; every labelled skill mode rendered that bucket name onto the resume.
+  Internal bucket names now render with no label at all.
+- **Template compile failures are no longer invisible.** `ResumePaper` checks
+  `compiled.ok` explicitly and logs the validation errors before falling back, and
+  `buildLayoutHTML` detects a failed compile result passed as a definition — previously
+  it re-validated the `{ok:false}` object and threw a second-order error about
+  "unsupported field ok", which is exactly why nobody traced this to `migration`.
+- **Tailoring ignored the template's summary capacity.** The tailor route computed a
+  content budget and never applied it to the summary. It now recompiles the summary
+  against the selected template's capacity, replaces it only when the existing one
+  overflows AND a compiled alternative fits, and reports `summary_over_capacity` rather
+  than clipping mid-sentence. (This clears a failure inherited from before phase 2.)
+
+### Added
+- `test/resumeRenderRegression.test.js` — 15 assertions: every registered template
+  compiles and renders, the adapter/validator contract holds, provenance is validated,
+  the header does not collide, body sections appear, parsed Editor content survives the
+  trip to structured, no summary ends on a dangling connector, and internal group labels
+  never reach the page.
+- `RESUME_RENDER_GATE` in the gate runner.
+
+### Changed
+- `resumeRenderIntegrationStatic` pinned a local variable name
+  (`buildLayoutHTML(compiled, structured`) and failed on a rename that changed no
+  behaviour. It now asserts the pipeline, the shape normalisation and the absence of a
+  silent catch.
+- The regression gate reports inherited failures that are *still* failing, separately
+  from inherited failures since fixed — a report that keeps listing fixed things as
+  broken stops being read.
+
+### Validation
+- 14 gates PASS: 227 job-discovery/render assertions + 247 Resume/Template OS regression
+  checks, 0 failures, 0 unattributed. Inherited failures down from 2 to 1 (the remaining
+  one needs a WeasyPrint binary that is not installed here).
+
 ## Job Discovery OS — Manual ingestion
 
 An operator-triggered fetch path, so the index can be seeded and topped up on

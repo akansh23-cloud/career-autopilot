@@ -424,8 +424,27 @@ export class JobDiscoveryService {
   }
 
   async stats() {
+    const store = await this.store.stats();
+    const byStatus = store?.byStatus || {};
+    const inventory = {
+      /* "Currently available" deliberately matches the statuses used by the
+         normal search index. STALE/REMOVED records remain in the canonical
+         corpus for provenance, but are not counted as available jobs. */
+      currentlyAvailable:
+        Number(byStatus[JOB_STATUS.NEW] || 0)
+        + Number(byStatus[JOB_STATUS.ACTIVE] || 0)
+        + Number(byStatus[JOB_STATUS.LIKELY_ACTIVE] || 0),
+      canonicalTotal: Number(store?.jobs || 0),
+      new: Number(byStatus[JOB_STATUS.NEW] || 0),
+      active: Number(byStatus[JOB_STATUS.ACTIVE] || 0),
+      likelyActive: Number(byStatus[JOB_STATUS.LIKELY_ACTIVE] || 0),
+      stale: Number(byStatus[JOB_STATUS.STALE] || 0),
+      removed: Number(byStatus[JOB_STATUS.REMOVED] || 0),
+      countedAt: new Date().toISOString(),
+    };
     return {
-      store: await this.store.stats(),
+      inventory,
+      store,
       search: await this.searchIndex.stats(),
       http: this.http?.stats?.() ?? null,
       browser: this.browserPool?.stats?.() ?? null,

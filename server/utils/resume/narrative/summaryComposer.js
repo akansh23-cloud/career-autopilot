@@ -38,6 +38,46 @@ function sentence(s) {
   return /[.!?]$/.test(out) ? out : `${out}.`;
 }
 
+/* ------------------------------------------------------------------
+   Slot enforcement.
+
+   A structure is a sentence with holes in it. When a hole is empty the
+   result is not a shorter sentence, it is a broken one: "Early-career
+   engineer with project experience in." — a real string this composer
+   shipped, because joinList() returns '' for an empty list and the
+   template interpolated it after the preposition "in".
+
+   The selection loop already intends to skip structures that cannot be
+   filled ("a structure that cannot be filled is simply skipped"), but it
+   only caught structures that THREW. Nothing threw. So required slots now
+   throw, which turns that intent into behaviour.
+   ------------------------------------------------------------------ */
+class EmptySlot extends Error {}
+
+/** Value for a slot the sentence cannot survive without. */
+function req(value) {
+  const v = typeof value === 'string' ? value.trim() : value;
+  if (v == null || v === '' || (Array.isArray(v) && !v.length)) {
+    throw new EmptySlot('required slot empty');
+  }
+  return v;
+}
+
+/* Defence in depth: even a structure with no explicit req() must not emit a
+   sentence that ends on a connector, or doubles its punctuation. This catches
+   the next structure someone adds without reading the note above. */
+const DANGLING = /\b(in|on|with|across|for|of|and|to|at|using|including|covering|spanning|combining|from|by)\s*[.,;:]\s*$/i;
+
+function wellFormed(text) {
+  const t = clean(text);
+  if (!t) return false;
+  if (DANGLING.test(t)) return false;
+  if (/[,;:]\s*$/.test(t)) return false;
+  /* "Engineer with  ." — a slot that collapsed to whitespace. */
+  if (/\s{2,}\./.test(t)) return false;
+  return true;
+}
+
 function joinList(items, { max = 4, conj = 'and' } = {}) {
   /* Case-insensitive dedupe, and drop any item that is contained in another
      ("kubernetes" alongside "Kubernetes", "analytics" alongside "Google
@@ -269,26 +309,26 @@ function strongestAchievement(achievements) {
 const STRUCTURES = [
   /* S1: role → what they work across → what they have done */
   (f) => [
-    sentence(`${f.roleTitle || f.roleFamilyLabel}${f.yearsKnown && f.years >= 1 ? ` with ${f.years}+ ${f.years === 1 ? 'year' : 'years'}` : ''} working across ${joinList(f.technologies, { max: 4 })}`),
+    sentence(`${f.roleTitle || f.roleFamilyLabel}${f.yearsKnown && f.years >= 1 ? ` with ${f.years}+ ${f.years === 1 ? 'year' : 'years'}` : ''} working across ${req(joinList(f.technologies, { max: 4 }))}`),
     f.intentPhrases.length ? sentence(`Experience covers ${joinProse(f.intentPhrases, 2)}`) : '',
   ].filter(Boolean).join(' '),
 
   /* S2: work-first — leads with what they actually do */
   (f) => [
-    sentence(`${f.roleTitle || f.roleFamilyLabel} focused on ${joinProse(f.intentPhrases, 2)}${f.technologies.length ? ` across ${joinList(f.technologies, { max: 3 })}` : ''}`),
+    sentence(`${f.roleTitle || f.roleFamilyLabel} focused on ${req(joinProse(f.intentPhrases, 2))}${f.technologies.length ? ` across ${joinList(f.technologies, { max: 3 })}` : ''}`),
     f.yearsKnown && f.years >= 2 ? sentence(`${f.years} years across ${f.employers.length ? joinList(f.employers, { max: 2 }) : 'delivery teams'}`) : '',
   ].filter(Boolean).join(' '),
 
   /* S3: technology-anchored */
   (f) => [
-    sentence(`${f.roleTitle || f.roleFamilyLabel} focused on ${joinList(f.technologies, { max: 3 })}${f.yearsKnown && f.years >= 1 ? `, ${f.years}+ years in delivery roles` : ''}`),
+    sentence(`${f.roleTitle || f.roleFamilyLabel} focused on ${req(joinList(f.technologies, { max: 3 }))}${f.yearsKnown && f.years >= 1 ? `, ${f.years}+ years in delivery roles` : ''}`),
     f.intentPhrases.length ? sentence(`Recent work has centred on ${joinProse(f.intentPhrases, 2)}`) : '',
   ].filter(Boolean).join(' '),
 
   /* S4: outcome-shaped, still factual */
   (f) => [
     f.intentPhrases.length
-      ? sentence(`${f.roleTitle || f.roleFamilyLabel} with hands-on ${joinProse(f.intentPhrases, 2)}`)
+      ? sentence(`${f.roleTitle || f.roleFamilyLabel} with hands-on ${req(joinProse(f.intentPhrases, 2))}`)
       : sentence(`${f.roleTitle || f.roleFamilyLabel}`),
     f.technologies.length ? sentence(`Works day to day with ${joinList(f.technologies, { max: 4 })}`) : '',
   ].filter(Boolean).join(' '),
@@ -336,12 +376,21 @@ function achievementSentence(a) {
 /* Student / early-career shapes never imply years or authority. */
 const STUDENT_STRUCTURES = [
   (f) => [
-    sentence(`${f.education.length ? `${f.education[0]} graduate` : 'Graduate'} building with ${joinList(f.technologies, { max: 4 })}`),
+    sentence(`${f.education.length ? `${f.education[0]} graduate` : 'Graduate'} building with ${req(joinList(f.technologies, { max: 4 }))}`),
     f.intentPhrases.length ? sentence(`Project work covers ${joinProse(f.intentPhrases, 2)}`) : '',
   ].filter(Boolean).join(' '),
   (f) => [
-    sentence(`${f.roleTitle || 'Early-career engineer'} with project experience in ${joinList(f.technologies, { max: 3 })}`),
+    sentence(`${f.roleTitle || 'Early-career engineer'} with project experience in ${req(joinList(f.technologies, { max: 3 }))}`),
     f.verifiedProjects ? sentence(`${f.verifiedProjects} verified ${f.verifiedProjects === 1 ? 'project' : 'projects'} on record`) : '',
+  ].filter(Boolean).join(' '),
+
+  /* The shape that works when we know almost nothing: education and intent
+     only. Without this, a profile with no technologies has no student
+     structure left and would fall through to no summary at all. */
+  (f) => [
+    sentence(`${f.education.length ? `${f.education[0]} graduate` : 'Early-career candidate'}${f.roleTitle ? ` targeting ${f.roleTitle} roles` : ''}`),
+    f.intentPhrases.length ? sentence(`Project work covers ${joinProse(f.intentPhrases, 2)}`)
+      : (f.verifiedProjects ? sentence(`${f.verifiedProjects} verified ${f.verifiedProjects === 1 ? 'project' : 'projects'} on record`) : ''),
   ].filter(Boolean).join(' '),
 ];
 
@@ -406,7 +455,11 @@ export function composeSummary(doc, graph, intelligence, {
     const fn = pool[(seed + i) % pool.length];
     try {
       const text = fn(facts);
-      if (text) raw.push({ text, source: 'deterministic', structureIndex: (seed + i) % pool.length });
+      /* Both gates matter: req() rejects a structure whose slot was empty, and
+         wellFormed() rejects one that produced a dangling clause anyway. */
+      if (text && wellFormed(text)) {
+        raw.push({ text, source: 'deterministic', structureIndex: (seed + i) % pool.length });
+      }
     } catch { /* a structure that cannot be filled is simply skipped */ }
   }
   for (const ai of aiCandidates) raw.push({ text: sentence(ai.text), source: 'ai' });

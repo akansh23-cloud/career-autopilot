@@ -428,7 +428,7 @@ Docs:
 - [`JOB-DISCOVERY-PHASE2-SCALE.md`](JOB-DISCOVERY-PHASE2-SCALE.md) — **scale foundation, benchmarks, gates and limitations**
 
 ```bash
-npm run jobs:gates          # all 13 quality gates
+npm run jobs:gates          # all 14 quality gates
 npm run jobs:gates:quick    # skip the Resume OS regression sweep
 npm run jobs:scale          # deterministic 100,000-job benchmark
 npm run jobs:relevance      # graded nDCG relevance evaluation

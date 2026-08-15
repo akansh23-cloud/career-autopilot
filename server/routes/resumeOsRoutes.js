@@ -477,12 +477,56 @@ export function registerResumeOsRoutes(app, deps = {}) {
       const template = await runtimeTemplates.resolve(templateId, templateRanking.best?.templateVersion || null);
       const budgetPlan = planContentBudget(canonicalDoc, ranking, template, { pageTarget });
 
+      /* The chosen template states how much room the summary actually has. A
+         variant that keeps the master summary regardless either overflows that
+         space or wastes it — and the whole point of picking a template per job
+         is that the content is then shaped to it. Recompile the summary against
+         the template's own capacity, and only accept the result when it is a
+         real improvement in fit. */
+      let variantSummary = canonicalDoc.summary || '';
+      let summaryDecision = null;
+      const summaryCapacity = budgetPlan.summary?.maxChars;
+      if (Number.isFinite(summaryCapacity) && summaryCapacity > 0) {
+        const overflows = variantSummary.length > summaryCapacity;
+        const compiled = compileSummary(canonicalDoc, {
+          targetRole,
+          verifiedSkills: ctx.verifiedSkills,
+          maxChars: budgetPlan.summary?.maxChars,
+        });
+        const candidate = compiled.ok
+          ? (compiled.candidates || []).find((c) => c.text && c.text.length <= summaryCapacity)
+          : null;
+        /* Only replace when the existing summary does not fit and the compiled
+           one does. A summary the candidate wrote themselves and that already
+           fits is left exactly as it is. */
+        if (overflows && candidate) {
+          summaryDecision = {
+            action: 'replace_summary_for_fit',
+            reason: `summary was ${variantSummary.length} characters against a template capacity of ${summaryCapacity}`,
+            patternId: candidate.patternId,
+            from: variantSummary.length,
+            to: candidate.text.length,
+          };
+          variantSummary = candidate.text;
+        } else if (overflows) {
+          /* Reported, not silently truncated: a clipped sentence is exactly the
+             "…project experience in." class of defect. */
+          summaryDecision = {
+            action: 'summary_over_capacity',
+            reason: `summary is ${variantSummary.length} characters against a template capacity of ${summaryCapacity}, and no compiled alternative fit`,
+            from: variantSummary.length,
+            to: variantSummary.length,
+          };
+        }
+      }
+
       const variantDoc = normalizeResumeDocument({
         ...canonicalDoc,
         id: canonicalDoc.kind === 'variant' ? canonicalDoc.id : makeId('rd'),
         kind: 'variant', parentId: master?.id || canonicalDoc.parentId || null,
         title: [job.company, job.title].filter(Boolean).join(' — ') || `${targetRole || 'Job'} variant`,
         targetRole, targetJobDescription: jobDescription,
+        summary: variantSummary,
         templateId,
         templateVersion: Number(template?.templateVersion || template?.definition?.version || canonicalDoc.templateVersion || 1),
         overrides: { ...(canonicalDoc.overrides || {}), ...(budgetPlan.overrides || {}) },
@@ -505,6 +549,7 @@ export function registerResumeOsRoutes(app, deps = {}) {
         },
         variant: variantDoc, resumeDocument: variantDoc,
         jd, match, ranking, budgetPlan, truth, health, templateRanking,
+        summaryFit: summaryDecision,
         quality: core.quality, beforeQuality: core.beforeQuality, changeLedger: core.changeLedger,
         optimization: core.optimization, aiPolish: core.aiPolish, autofit: core.autofit,
         canonicalResult: core.canonical, db: dbOn(),

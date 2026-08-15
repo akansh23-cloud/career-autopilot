@@ -1,0 +1,52 @@
+{
+  "phase": "2.2-dashboard-inventory",
+  "generatedAt": "2026-08-15T04:30:56.487468+00:00",
+  "base": "career-autopilot-job-discovery-os-phase2-scale(1).zip",
+  "restoredFixes": [
+    "Vercel builds/functions conflict avoided; cron routes retained",
+    "dedicated Admin Job Discovery navigation",
+    "Mongo company-seed update-path conflict fixed",
+    "searchable/paginated company career registry",
+    "20-per-page canonical job browse and user Jobs pagination",
+    "no artificial manual target/page cap; serverless deadline continuation",
+    "CRON_SECRET protected bootstrap/crawl/discover/verify phases",
+    "MUSE_API_KEY wiring",
+    "duplicate fetchedAt/startedAt and assignments.userId indexes removed",
+    "DB-side pagination/coverage aggregation"
+  ],
+  "newFeature": {
+    "name": "Exact currently available job inventory",
+    "definition": [
+      "NEW",
+      "ACTIVE",
+      "LIKELY_ACTIVE"
+    ],
+    "excludes": [
+      "STALE",
+      "REMOVED"
+    ],
+    "source": "database store stats by canonical status",
+    "refreshes": [
+      "dashboard load",
+      "manual fetch",
+      "company fetch",
+      "queue processing",
+      "manual refresh"
+    ]
+  },
+  "validation": {
+    "jobDiscoveryTests": {
+      "pass": 223,
+      "fail": 0
+    },
+    "jobDiscoveryAssertions": 223,
+    "resumeRegressionChecks": 247,
+    "newFailures": 0,
+    "overallGate": "PASS",
+    "jsMjsSyntax": {
+      "checked": 604,
+      "fail": 0
+    },
+    "viteBuild": "not rerun in clean sandbox because dependency installation did not complete; no build failure was observed"
+  }
+}

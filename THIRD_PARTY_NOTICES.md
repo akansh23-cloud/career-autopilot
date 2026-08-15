@@ -19,9 +19,3 @@ The Template OS vector PDF writer (`web/src/lib/templateOs/pdfWriter.js`) is ori
 All 28 shipped resume templates are **original Career Autopilot designs** (`licenseStatus: INTERNAL_ORIGINAL`, `productionEnabled: true`). No third-party template designs are reproduced.
 
 The template platform supports externally sourced designs via license metadata (`OWNED`, `OPEN_SOURCE`, `LICENSED`, `LICENSE_PENDING`, `DEVELOPMENT_REFERENCE`). Any template whose production rights are not yet cleared must ship with `licenseStatus: LICENSE_PENDING` (or `DEVELOPMENT_REFERENCE`) and `productionEnabled: false` — such templates are excluded from the gallery and the recommender until the status is flipped in configuration. General resume layout conventions (single-column ATS structure, section ordering, typographic hierarchy) are not subject to design licensing.
-
-## Job Discovery company seed data
-
-Career Autopilot includes an internally curated starter catalog of direct employer career-entry URLs. To expand that persisted CompanyRegistry to 1,000+ companies on an operator/cron request, Job Discovery can import company/ATS seed metadata at runtime from **Outscal/OpenJobs** (`outscal/OpenJobs`, `data/companies_v2.json`). OpenJobs is published under the MIT license and states that its company dataset contains public ATS/career links. The external dataset itself is **not bundled or redistributed in this package**; only normalized company seed records selected at runtime are persisted into the application's own database. External seed rows are marked `SEEDED_UNVERIFIED` until Career Autopilot's normal discovery/verification pipeline validates them.
-
-Upstream ATS/career links can become stale when an employer changes recruiting systems. Seed presence therefore does not mean a job or career URL has been verified recently, and all automated fetching remains subject to Career Autopilot's robots/access, SSRF and rate-control policies.
