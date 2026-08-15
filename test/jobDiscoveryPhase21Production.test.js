@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { MemoryJobStore } from '../server/services/jobDiscovery/store.js';
+import { MemoryJobStore, MongoJobStore } from '../server/services/jobDiscovery/store.js';
 import { CompanyRegistry, makeCompany } from '../server/services/jobDiscovery/companyRegistry.js';
 import {
   CompanySeedCatalog,
@@ -36,6 +36,46 @@ function mockFetchJson(payload) {
   });
 }
 
+
+
+test('INTEGRATION_GATE — Mongo company seed bulk upsert never overlaps $set and $setOnInsert paths', async () => {
+  const captured = [];
+  const store = new MongoJobStore({ mongoose: {} });
+  store.models = {
+    Company: {
+      async bulkWrite(operations) {
+        captured.push(...operations);
+        return { upsertedCount: operations.length, matchedCount: 0, modifiedCount: 0 };
+      },
+    },
+  };
+
+  const company = makeCompany({
+    name: 'Mongo Seed Fixture',
+    domain: 'mongo-seed.example',
+    careersUrl: 'https://jobs.lever.co/mongo-seed',
+    atsProvider: 'LEVER',
+    atsTenant: 'mongo-seed',
+    seedSource: 'fixture-seed',
+    seedRank: 7,
+    careerUrlStatus: 'SEEDED_UNVERIFIED',
+    indiaRelevance: 'High',
+  });
+
+  const result = await store.seedCompanies([company], { seedSource: 'fixture-seed' });
+  assert.equal(result.inserted, 1);
+  assert.equal(captured.length, 1);
+  const update = captured[0].updateOne.update;
+  const insertKeys = new Set(Object.keys(update.$setOnInsert || {}));
+  const setKeys = Object.keys(update.$set || {});
+  assert.ok(setKeys.length > 0);
+  assert.deepEqual(setKeys.filter((key) => insertKeys.has(key)), [],
+    'Mongo update operators must never target the same seed metadata path');
+  assert.equal(update.$set.seedSource, 'fixture-seed');
+  assert.equal(update.$set.seedRank, 7);
+  assert.equal(update.$set.careerUrlStatus, 'SEEDED_UNVERIFIED');
+  assert.equal(update.$set.indiaRelevance, 'High');
+});
 test('DISCOVERY_GATE — company seed catalog persists 1,000 searchable direct-employer career entries', async () => {
   const store = new MemoryJobStore();
   const companies = new CompanyRegistry({ store });

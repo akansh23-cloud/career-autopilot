@@ -1250,10 +1250,21 @@ export class MongoJobStore extends BaseJobStore {
         ...(company.careerUrlStatus ? { careerUrlStatus: company.careerUrlStatus } : {}),
         ...(company.indiaRelevance ? { indiaRelevance: company.indiaRelevance } : {}),
       };
+
+      /* MongoDB rejects an update when the same field path appears under
+         multiple update operators (for example $setOnInsert.seedSource and
+         $set.seedSource). Company seed documents already carry these metadata
+         fields, so remove them from the insert-only payload and let $set own
+         them for both inserts and refreshes. This keeps the operation
+         idempotent and lets an existing company's seed metadata be refreshed
+         without overwriting stronger discovered fields such as careersUrl. */
+      const insertDoc = { ...doc };
+      for (const key of Object.keys(seedMeta)) delete insertDoc[key];
+
       return {
         updateOne: {
           filter: { _id: id || _id },
-          update: { $setOnInsert: doc, $set: seedMeta },
+          update: { $setOnInsert: insertDoc, $set: seedMeta },
           upsert: true,
         },
       };

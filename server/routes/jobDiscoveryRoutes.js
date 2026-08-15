@@ -441,6 +441,11 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       const minimum = Math.max(1, Number(req.body?.minimum) || 1000);
       return res.json(await service.ensureCompanySeeds({ minimum, includeRemote: req.body?.includeRemote !== false }));
     } catch (e) {
+      console.error('[job-discovery] company seed failed', {
+        message: e?.message || String(e),
+        code: e?.code || null,
+        name: e?.name || null,
+      });
       return res.status(500).json({ error: 'company_seed_failed', message: e?.message });
     }
   });

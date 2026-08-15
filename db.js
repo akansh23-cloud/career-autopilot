@@ -5356,7 +5356,7 @@ const collegeTaskSchema = new mongoose.Schema(
     dueAt: { type: Date, default: null },
     createdByEmail: { type: String, default: '' },
     assignments: [{
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       status: { type: String, default: 'open', enum: ['open', 'done'] },
       doneAt: { type: Date, default: null },
     }],
