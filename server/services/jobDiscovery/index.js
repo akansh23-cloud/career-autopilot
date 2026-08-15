@@ -139,9 +139,12 @@ export class JobDiscoveryService {
       pageSize,
       q: filter.q ? String(filter.q) : '',
       sourceId: filter.sourceId || null,
+      companyId: filter.companyId || null,
       companyDomain: filter.companyDomain || null,
+      companyNormalized: filter.companyNormalized || null,
       provider: filter.provider || null,
       status: filter.status || null,
+      statuses: Array.isArray(filter.statuses) ? filter.statuses : null,
       since: filter.since || null,
     });
     return {
@@ -182,6 +185,11 @@ export class JobDiscoveryService {
       hasSource: filter.hasSource == null ? null : !!filter.hasSource,
       provider: filter.provider || null,
       seedSource: filter.seedSource || null,
+      companyType: filter.companyType || null,
+      industry: filter.industry || null,
+      region: filter.region || null,
+      indiaRelevance: filter.indiaRelevance || null,
+      hasAvailableJobs: filter.hasAvailableJobs == null ? null : !!filter.hasAvailableJobs,
     });
     return {
       total: result.total,
@@ -199,6 +207,9 @@ export class JobDiscoveryService {
         atsProvider: c.atsProvider ?? null,
         atsTenant: c.atsTenant ?? null,
         industry: c.industry ?? null,
+        companyType: c.companyType ?? 'UNKNOWN',
+        companyTypeSource: c.companyTypeSource ?? null,
+        companyTypeConfidence: c.companyTypeConfidence ?? null,
         region: c.region ?? null,
         hiringCountries: c.hiringCountries || [],
         indiaRelevance: c.indiaRelevance ?? null,
@@ -206,7 +217,57 @@ export class JobDiscoveryService {
         seedSource: c.seedSource ?? null,
         sourceIds: c.sourceIds || [],
         sourceConfidence: c.sourceConfidence ?? null,
+        availableJobCount: Number(c.availableJobCount || 0),
+        newJobCount: Number(c.newJobCount || 0),
+        activeJobCount: Number(c.activeJobCount || 0),
+        likelyActiveJobCount: Number(c.likelyActiveJobCount || 0),
         updatedAt: c.updatedAt ?? null,
+      })),
+    };
+  }
+
+  /** Company-centric drill-down: exact currently-available jobs for one registry company. */
+  async browseCompanyJobs(companyId, filter = {}) {
+    const company = await this.store.getCompany(companyId);
+    if (!company) return null;
+    const page = Math.max(1, Number(filter.page) || 1);
+    const pageSize = 20;
+    const result = await this.store.pageJobs({
+      page,
+      pageSize,
+      q: filter.q ? String(filter.q) : '',
+      companyMatch: { id: company.id, domain: company.domain || null, normalizedName: company.normalizedName || null },
+      statuses: [JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE],
+    });
+    const totalPages = Math.max(1, Math.ceil(result.total / pageSize));
+    return {
+      company: {
+        id: company.id,
+        name: company.name,
+        domain: company.domain ?? null,
+        careersUrl: company.careersUrl ?? null,
+        industry: company.industry ?? null,
+        companyType: company.companyType ?? 'UNKNOWN',
+        region: company.region ?? null,
+        indiaRelevance: company.indiaRelevance ?? null,
+        atsProvider: company.atsProvider ?? null,
+      },
+      availableJobs: result.total,
+      page: result.page,
+      pageSize,
+      totalPages,
+      hasPrev: result.page > 1,
+      hasNext: result.page < totalPages,
+      jobs: result.docs.map((j) => ({
+        id: j.id,
+        title: j.title,
+        status: j.status,
+        locations: (j.locations || []).map((l) => l.raw).filter(Boolean),
+        sourcePublishedAt: j.sourcePublishedAt,
+        lastVerifiedAt: j.lastVerifiedAt,
+        applyUrl: j.canonicalApplyUrl,
+        directApply: j.directApply,
+        providers: [...new Set((j.sourceInstances || []).map((x) => x.provider).filter(Boolean))],
       })),
     };
   }

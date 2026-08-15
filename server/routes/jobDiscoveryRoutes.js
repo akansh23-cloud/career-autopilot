@@ -422,15 +422,38 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       const hasSource = req.query?.hasSource == null || req.query?.hasSource === ''
         ? null
         : ['1', 'true', 'yes'].includes(String(req.query.hasSource).toLowerCase());
+      const hasAvailableJobs = req.query?.hasAvailableJobs == null || req.query?.hasAvailableJobs === ''
+        ? null
+        : ['1', 'true', 'yes'].includes(String(req.query.hasAvailableJobs).toLowerCase());
       return res.json(await service.browseCompanies({
         page: Number(req.query?.page) || 1,
         q: req.query?.q ? String(req.query.q).slice(0, 160) : '',
-        provider: req.query?.provider ? String(req.query.provider) : null,
-        seedSource: req.query?.seedSource ? String(req.query.seedSource) : null,
+        provider: req.query?.provider ? String(req.query.provider).slice(0, 80) : null,
+        seedSource: req.query?.seedSource ? String(req.query.seedSource).slice(0, 100) : null,
+        companyType: req.query?.companyType ? String(req.query.companyType).slice(0, 40) : null,
+        industry: req.query?.industry ? String(req.query.industry).slice(0, 80) : null,
+        region: req.query?.region ? String(req.query.region).slice(0, 80) : null,
+        indiaRelevance: req.query?.indiaRelevance ? String(req.query.indiaRelevance).slice(0, 40) : null,
         hasSource,
+        hasAvailableJobs,
       }));
     } catch (e) {
       return res.status(500).json({ error: 'company_browse_failed', message: e?.message });
+    }
+  });
+
+  /** Company-centric drill-down. Only currently available canonical jobs are returned. */
+  app.get('/api/admin/job-discovery/companies/:id/jobs', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const result = await service.browseCompanyJobs(String(req.params.id), {
+        page: Number(req.query?.page) || 1,
+        q: req.query?.q ? String(req.query.q).slice(0, 160) : '',
+      });
+      if (!result) return res.status(404).json({ error: 'company_not_found' });
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ error: 'company_jobs_failed', message: e?.message });
     }
   });
 

@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-15T04:29:37.708Z",
+  "generatedAt": "2026-08-15T05:07:48.923Z",
   "overall": "PASS",
-  "jobDiscoveryAssertions": 223,
+  "jobDiscoveryAssertions": 226,
   "resumeRegressionAssertions": 247,
   "totalFailures": 0,
-  "durationMs": 14731,
+  "durationMs": 13672,
   "gates": {
     "SOURCE_GATE": {
       "label": "Source adapters (phase 1)",
@@ -23,7 +23,7 @@
     "DISCOVERY_GATE": {
       "label": "Autonomous source discovery",
       "status": "PASS",
-      "assertions": 13,
+      "assertions": 14,
       "failures": [],
       "missingRequirements": []
     },
@@ -86,7 +86,7 @@
     "INTEGRATION_GATE": {
       "label": "Product integration",
       "status": "PASS",
-      "assertions": 29,
+      "assertions": 31,
       "failures": [],
       "missingRequirements": []
     },
@@ -185,7 +185,7 @@
     {
       "file": "test/jobDiscoveryPhase21Production.test.js",
       "missing": false,
-      "assertions": 10,
+      "assertions": 13,
       "failures": 0,
       "exitCode": 0
     }

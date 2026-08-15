@@ -34,6 +34,9 @@ import { salaryCompatibility } from './normalize/compensation.js';
 import { blockingKeys } from './dedupe.js';
 import { InvertedIndex } from './invertedIndex.js';
 
+const AVAILABLE_JOB_STATUSES = Object.freeze([JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE]);
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /* ------------------------------------------------------------------
    Base: shared query semantics so every backend behaves identically.
    ------------------------------------------------------------------ */
@@ -112,14 +115,17 @@ export class BaseJobStore {
   async companySummary() {
     const all = await this.listCompanies({ limit: 100000 });
     const byProvider = {};
+    const byCompanyType = {};
     let withDomain = 0; let withSource = 0; let withAts = 0; let seeded = 0;
     for (const c of all) {
       if (c.domain) withDomain += 1;
       if ((c.sourceIds || []).length) withSource += 1;
       if (c.atsProvider) { withAts += 1; byProvider[c.atsProvider] = (byProvider[c.atsProvider] || 0) + 1; }
+      const companyType = c.companyType || 'UNKNOWN';
+      byCompanyType[companyType] = (byCompanyType[companyType] || 0) + 1;
       if (c.seedSource) seeded += 1;
     }
-    return { total: all.length, seeded, withDomain, withRegisteredSource: withSource, withKnownAts: withAts, byProvider };
+    return { total: all.length, seeded, withDomain, withRegisteredSource: withSource, withKnownAts: withAts, byProvider, byCompanyType };
   }
   async sourceSummary() {
     const all = await this.listSources({});
@@ -402,13 +408,26 @@ export class MemoryJobStore extends BaseJobStore {
       .slice(0, Math.max(1, Number(limit) || 50));
   }
 
-  async pageJobs({ page = 1, pageSize = 20, q = '', sourceId = null, companyDomain = null, provider = null, status = null, since = null } = {}) {
+  async pageJobs({
+    page = 1, pageSize = 20, q = '', sourceId = null, companyId = null,
+    companyDomain = null, companyNormalized = null, companyMatch = null, provider = null,
+    status = null, statuses = null, since = null,
+  } = {}) {
     const needle = String(q || '').trim().toLowerCase();
+    const wantedStatuses = Array.isArray(statuses) && statuses.length ? statuses : (status ? [status] : null);
     let out = [...this.jobs.values()].filter((j) => {
       if (sourceId && !(j.sourceInstances || []).some((s) => s.sourceId === sourceId)) return false;
+      if (companyId && j.companyId !== companyId) return false;
       if (companyDomain && j.company?.domain !== companyDomain) return false;
+      if (companyNormalized && j.company?.normalizedName !== companyNormalized) return false;
+      if (companyMatch) {
+        const ok = (companyMatch.id && j.companyId === companyMatch.id)
+          || (companyMatch.domain && j.company?.domain === companyMatch.domain)
+          || (companyMatch.normalizedName && j.company?.normalizedName === companyMatch.normalizedName);
+        if (!ok) return false;
+      }
       if (provider && !(j.sourceInstances || []).some((s) => s.provider === provider)) return false;
-      if (status && j.status !== status) return false;
+      if (wantedStatuses && !wantedStatuses.includes(j.status)) return false;
       if (since && String(j.firstSeenAt || '') < since) return false;
       if (needle) {
         const hay = [j.title, j.company?.name, j.company?.domain, j.searchText].filter(Boolean).join(' ').toLowerCase();
@@ -423,22 +442,44 @@ export class MemoryJobStore extends BaseJobStore {
     return { docs: out.slice(offset, offset + size), total: out.length, page: p, pageSize: size };
   }
 
-  async pageCompanies({ page = 1, pageSize = 20, q = '', hasSource = null, provider = null, seedSource = null } = {}) {
+  async pageCompanies({
+    page = 1, pageSize = 20, q = '', hasSource = null, provider = null, seedSource = null,
+    companyType = null, industry = null, region = null, indiaRelevance = null, hasAvailableJobs = null,
+  } = {}) {
     const needle = String(q || '').trim().toLowerCase();
+    const matchesCompany = (job, c) => (job.companyId && job.companyId === c.id)
+      || (c.domain && job.company?.domain === c.domain)
+      || (c.normalizedName && job.company?.normalizedName === c.normalizedName);
+    const enrich = (c) => {
+      const jobs = [...this.jobs.values()].filter((j) => AVAILABLE_JOB_STATUSES.includes(j.status) && matchesCompany(j, c));
+      return {
+        ...c,
+        availableJobCount: jobs.length,
+        newJobCount: jobs.filter((j) => j.status === JOB_STATUS.NEW).length,
+        activeJobCount: jobs.filter((j) => j.status === JOB_STATUS.ACTIVE).length,
+        likelyActiveJobCount: jobs.filter((j) => j.status === JOB_STATUS.LIKELY_ACTIVE).length,
+      };
+    };
     let out = [...this.companies.values()].filter((c) => {
       if (hasSource === true && !(c.sourceIds || []).length) return false;
       if (hasSource === false && (c.sourceIds || []).length) return false;
       if (provider && c.atsProvider !== provider) return false;
       if (seedSource && c.seedSource !== seedSource) return false;
+      if (companyType && c.companyType !== companyType) return false;
+      if (indiaRelevance && c.indiaRelevance !== indiaRelevance) return false;
+      if (industry && !String(c.industry || '').toLowerCase().includes(String(industry).toLowerCase())) return false;
+      if (region && !String(c.region || '').toLowerCase().includes(String(region).toLowerCase())) return false;
       if (needle) {
-        const hay = [c.name, c.normalizedName, c.domain, c.careersUrl, c.industry, c.region, ...(c.hiringCountries || [])]
+        const hay = [c.name, c.normalizedName, c.domain, c.careersUrl, c.industry, c.region, c.companyType, ...(c.hiringCountries || [])]
           .filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
-    });
-    out.sort((a, b) => (Number(a.seedRank || Number.MAX_SAFE_INTEGER) - Number(b.seedRank || Number.MAX_SAFE_INTEGER))
-      || (Number(b.jobCount || 0) - Number(a.jobCount || 0))
+    }).map(enrich);
+    if (hasAvailableJobs === true) out = out.filter((c) => c.availableJobCount > 0);
+    if (hasAvailableJobs === false) out = out.filter((c) => c.availableJobCount === 0);
+    out.sort((a, b) => Number(b.availableJobCount || 0) - Number(a.availableJobCount || 0)
+      || (Number(a.seedRank || Number.MAX_SAFE_INTEGER) - Number(b.seedRank || Number.MAX_SAFE_INTEGER))
       || String(a.name || '').localeCompare(String(b.name || '')));
     const p = Math.max(1, Number(page) || 1);
     const size = Math.max(1, Number(pageSize) || 20);
@@ -765,7 +806,10 @@ async function buildModels(mongoose) {
     atsTenant: { type: String, default: null },
     country: { type: String, default: null },
     region: { type: String, default: null },
-    industry: { type: String, default: null },
+    industry: { type: String, default: null, index: true },
+    companyType: { type: String, default: 'UNKNOWN', index: true },
+    companyTypeSource: { type: String, default: null },
+    companyTypeConfidence: { type: Number, default: null },
     hiringCountries: { type: [String], default: [] },
     indiaRelevance: { type: String, default: null },
     careerUrlStatus: { type: String, default: null, index: true },
@@ -1249,6 +1293,11 @@ export class MongoJobStore extends BaseJobStore {
         ...(company.seedRank != null ? { seedRank: company.seedRank } : {}),
         ...(company.careerUrlStatus ? { careerUrlStatus: company.careerUrlStatus } : {}),
         ...(company.indiaRelevance ? { indiaRelevance: company.indiaRelevance } : {}),
+        ...(company.companyType && company.companyType !== 'UNKNOWN' ? {
+          companyType: company.companyType,
+          companyTypeSource: company.companyTypeSource || null,
+          companyTypeConfidence: company.companyTypeConfidence ?? null,
+        } : {}),
       };
 
       /* MongoDB rejects an update when the same field path appears under
@@ -1260,6 +1309,12 @@ export class MongoJobStore extends BaseJobStore {
          without overwriting stronger discovered fields such as careersUrl. */
       const insertDoc = { ...doc };
       for (const key of Object.keys(seedMeta)) delete insertDoc[key];
+      /* Mongoose timestamps owns these paths during bulkWrite. makeCompany()
+         carries timestamps for memory/file stores, but sending them under
+         $setOnInsert while Mongoose injects updatedAt under $set causes Mongo
+         error 40 (conflicting update path). */
+      delete insertDoc.createdAt;
+      delete insertDoc.updatedAt;
 
       return {
         updateOne: {
@@ -1279,14 +1334,25 @@ export class MongoJobStore extends BaseJobStore {
   }
 
   async pageJobs({
-    page = 1, pageSize = 20, q: search = '', sourceId = null,
-    companyDomain = null, provider = null, status = null, since = null,
+    page = 1, pageSize = 20, q: search = '', sourceId = null, companyId = null,
+    companyDomain = null, companyNormalized = null, companyMatch = null, provider = null,
+    status = null, statuses = null, since = null,
   } = {}) {
     const query = {};
     if (sourceId) query['sourceInstances.sourceId'] = sourceId;
+    if (companyId) query.companyId = companyId;
     if (companyDomain) query['company.domain'] = companyDomain;
+    if (companyNormalized) query['company.normalizedName'] = companyNormalized;
+    if (companyMatch) {
+      const companyOr = [];
+      if (companyMatch.id) companyOr.push({ companyId: companyMatch.id });
+      if (companyMatch.domain) companyOr.push({ 'company.domain': companyMatch.domain });
+      if (companyMatch.normalizedName) companyOr.push({ 'company.normalizedName': companyMatch.normalizedName });
+      if (companyOr.length) query.$or = companyOr;
+    }
     if (provider) query['sourceInstances.provider'] = provider;
-    if (status) query.status = status;
+    if (Array.isArray(statuses) && statuses.length) query.status = { $in: statuses };
+    else if (status) query.status = status;
     if (since) query.firstSeenAt = { $gte: new Date(since) };
     const term = String(search || '').trim();
     if (term) query.$text = { $search: term };
@@ -1296,21 +1362,55 @@ export class MongoJobStore extends BaseJobStore {
     const offset = (p - 1) * size;
     const countPromise = this.models.Job.countDocuments(query);
     let find = this.models.Job.find(query);
-    if (term) {
-      find = find.select({ score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, firstSeenAt: -1 });
-    } else {
-      find = find.sort({ firstSeenAt: -1, _id: 1 });
-    }
-    const [total, docs] = await Promise.all([
-      countPromise,
-      find.skip(offset).limit(size).lean(),
-    ]);
+    if (term) find = find.select({ score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, firstSeenAt: -1 });
+    else find = find.sort({ firstSeenAt: -1, _id: 1 });
+    const [total, docs] = await Promise.all([countPromise, find.skip(offset).limit(size).lean()]);
     return { docs: docs.map((d) => this.fromDoc(d)), total, page: p, pageSize: size };
+  }
+
+  async companyAvailableCounts(companies = []) {
+    if (!companies.length) return new Map();
+    const ids = companies.map((c) => c._id || c.id).filter(Boolean);
+    const domains = companies.map((c) => c.domain).filter(Boolean);
+    const names = companies.map((c) => c.normalizedName).filter(Boolean);
+    const ors = [];
+    if (ids.length) ors.push({ companyId: { $in: ids } });
+    if (domains.length) ors.push({ 'company.domain': { $in: domains } });
+    if (names.length) ors.push({ 'company.normalizedName': { $in: names } });
+    if (!ors.length) return new Map();
+    const groups = await this.models.Job.aggregate([
+      { $match: { status: { $in: AVAILABLE_JOB_STATUSES }, $or: ors } },
+      { $group: {
+        _id: { companyId: '$companyId', domain: '$company.domain', normalizedName: '$company.normalizedName' },
+        availableJobCount: { $sum: 1 },
+        newJobCount: { $sum: { $cond: [{ $eq: ['$status', JOB_STATUS.NEW] }, 1, 0] } },
+        activeJobCount: { $sum: { $cond: [{ $eq: ['$status', JOB_STATUS.ACTIVE] }, 1, 0] } },
+        likelyActiveJobCount: { $sum: { $cond: [{ $eq: ['$status', JOB_STATUS.LIKELY_ACTIVE] }, 1, 0] } },
+      } },
+    ]);
+    const by = new Map();
+    const findCompany = (g) => companies.find((c) => (g._id.companyId && g._id.companyId === (c._id || c.id))
+      || (g._id.domain && g._id.domain === c.domain)
+      || (g._id.normalizedName && g._id.normalizedName === c.normalizedName));
+    for (const g of groups) {
+      const c = findCompany(g);
+      if (!c) continue;
+      const key = c._id || c.id;
+      const prior = by.get(key) || { availableJobCount: 0, newJobCount: 0, activeJobCount: 0, likelyActiveJobCount: 0 };
+      by.set(key, {
+        availableJobCount: prior.availableJobCount + g.availableJobCount,
+        newJobCount: prior.newJobCount + g.newJobCount,
+        activeJobCount: prior.activeJobCount + g.activeJobCount,
+        likelyActiveJobCount: prior.likelyActiveJobCount + g.likelyActiveJobCount,
+      });
+    }
+    return by;
   }
 
   async pageCompanies({
     page = 1, pageSize = 20, q: search = '', hasSource = null,
-    provider = null, seedSource = null, careerUrlStatus = null,
+    provider = null, seedSource = null, careerUrlStatus = null, companyType = null,
+    industry = null, region = null, indiaRelevance = null, hasAvailableJobs = null,
   } = {}) {
     const query = {};
     if (hasSource === true) query['sourceIds.0'] = { $exists: true };
@@ -1318,31 +1418,49 @@ export class MongoJobStore extends BaseJobStore {
     if (provider) query.atsProvider = provider;
     if (seedSource) query.seedSource = seedSource;
     if (careerUrlStatus) query.careerUrlStatus = careerUrlStatus;
+    if (companyType) query.companyType = companyType;
+    if (indiaRelevance) query.indiaRelevance = indiaRelevance;
+    if (industry) query.industry = { $regex: escapeRegex(industry), $options: 'i' };
+    if (region) query.region = { $regex: escapeRegex(region), $options: 'i' };
     const term = String(search || '').trim();
     if (term) query.$text = { $search: term };
+
+    if (hasAvailableJobs != null) {
+      const activeMatch = { status: { $in: AVAILABLE_JOB_STATUSES } };
+      const [ids, domains, names] = await Promise.all([
+        this.models.Job.distinct('companyId', activeMatch),
+        this.models.Job.distinct('company.domain', activeMatch),
+        this.models.Job.distinct('company.normalizedName', activeMatch),
+      ]);
+      const ors = [
+        { _id: { $in: ids.filter(Boolean) } },
+        { domain: { $in: domains.filter(Boolean) } },
+        { normalizedName: { $in: names.filter(Boolean) } },
+      ];
+      if (hasAvailableJobs === true) query.$or = ors;
+      else query.$nor = ors;
+    }
 
     const p = Math.max(1, Number(page) || 1);
     const size = Math.max(1, Number(pageSize) || 20);
     const offset = (p - 1) * size;
     const countPromise = this.models.Company.countDocuments(query);
     let find = this.models.Company.find(query);
-    if (term) {
-      find = find.select({ score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, seedRank: 1, name: 1 });
-    } else {
-      find = find.sort({ seedRank: 1, jobCount: -1, name: 1 });
-    }
-    const [total, docs] = await Promise.all([
-      countPromise,
-      find.skip(offset).limit(size).lean(),
-    ]);
+    if (term) find = find.select({ score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, seedRank: 1, name: 1 });
+    else find = find.sort({ seedRank: 1, jobCount: -1, name: 1 });
+    const [total, docs] = await Promise.all([countPromise, find.skip(offset).limit(size).lean()]);
+    const counts = await this.companyAvailableCounts(docs);
     return {
-      docs: docs.map(({ _id, __v, score, ...rest }) => ({ ...rest, id: _id })),
+      docs: docs.map(({ _id, __v, score, ...rest }) => ({
+        ...rest, id: _id,
+        ...(counts.get(_id) || { availableJobCount: 0, newJobCount: 0, activeJobCount: 0, likelyActiveJobCount: 0 }),
+      })),
       total, page: p, pageSize: size,
     };
   }
 
   async companySummary() {
-    const [total, seeded, withDomain, withSource, withAts, byProvider] = await Promise.all([
+    const [total, seeded, withDomain, withSource, withAts, byProvider, byCompanyType] = await Promise.all([
       this.models.Company.countDocuments(),
       this.models.Company.countDocuments({ seedSource: { $exists: true, $nin: [null, ''] } }),
       this.models.Company.countDocuments({ domain: { $exists: true, $nin: [null, ''] } }),
@@ -1352,10 +1470,14 @@ export class MongoJobStore extends BaseJobStore {
         { $match: { atsProvider: { $exists: true, $nin: [null, ''] } } },
         { $group: { _id: '$atsProvider', n: { $sum: 1 } } },
       ]),
+      this.models.Company.aggregate([
+        { $group: { _id: { $ifNull: ['$companyType', 'UNKNOWN'] }, n: { $sum: 1 } } },
+      ]),
     ]);
     return {
       total, seeded, withDomain, withRegisteredSource: withSource, withKnownAts: withAts,
       byProvider: Object.fromEntries(byProvider.map((x) => [x._id, x.n])),
+      byCompanyType: Object.fromEntries(byCompanyType.map((x) => [x._id || 'UNKNOWN', x.n])),
     };
   }
 

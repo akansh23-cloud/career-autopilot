@@ -68,6 +68,13 @@ export default function AdminJobIngestPanel() {
   const [companies, setCompanies] = useState(null);
   const [companyPage, setCompanyPage] = useState(1);
   const [companyQuery, setCompanyQuery] = useState('');
+  const [companyFilters, setCompanyFilters] = useState({
+    companyType: '', industry: '', region: '', indiaRelevance: '', provider: '', hasSource: '', hasAvailableJobs: '',
+  });
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [companyJobs, setCompanyJobs] = useState(null);
+  const [companyJobsPage, setCompanyJobsPage] = useState(1);
+  const [companyJobsQuery, setCompanyJobsQuery] = useState('');
   const [seedBusy, setSeedBusy] = useState(false);
   const [seedResult, setSeedResult] = useState(null);
   const [queueBusy, setQueueBusy] = useState(null);
@@ -92,13 +99,25 @@ export default function AdminJobIngestPanel() {
     } catch { /* non-fatal */ }
   }, [storedPage, storedQuery]);
 
-  const loadCompanies = useCallback(async (page = companyPage, q = companyQuery) => {
+  const loadCompanies = useCallback(async (page = companyPage, q = companyQuery, filters = companyFilters) => {
     try {
-      const data = await AdminJobDiscovery.companies({ page, q });
+      const data = await AdminJobDiscovery.companies({ page, q, ...filters });
       setCompanies(data);
       setCompanyPage(data.page || page);
     } catch { /* non-fatal */ }
-  }, [companyPage, companyQuery]);
+  }, [companyPage, companyQuery, companyFilters]);
+
+  const loadCompanyJobs = useCallback(async (company, page = 1, q = companyJobsQuery) => {
+    if (!company?.id) return;
+    try {
+      const data = await AdminJobDiscovery.companyJobs(company.id, { page, q });
+      setSelectedCompany(data.company || company);
+      setCompanyJobs(data);
+      setCompanyJobsPage(data.page || page);
+    } catch (e) {
+      setError(e?.message || 'company job drill-down failed');
+    }
+  }, [companyJobsQuery]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -173,6 +192,20 @@ export default function AdminJobIngestPanel() {
       setQueueBusy(null);
     }
   }, [loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery, loadStats]);
+
+  const applyCompanyFilter = useCallback((patch) => {
+    const next = { ...companyFilters, ...patch };
+    setCompanyFilters(next);
+    setCompanyPage(1);
+    loadCompanies(1, companyQuery, next);
+  }, [companyFilters, companyQuery, loadCompanies]);
+
+  const resetCompanyFilters = useCallback(() => {
+    const next = { companyType: '', industry: '', region: '', indiaRelevance: '', provider: '', hasSource: '', hasAvailableJobs: '' };
+    setCompanyFilters(next);
+    setCompanyPage(1);
+    loadCompanies(1, companyQuery, next);
+  }, [companyQuery, loadCompanies]);
 
   const totals = result?.run?.totals;
 
@@ -378,7 +411,7 @@ export default function AdminJobIngestPanel() {
         action={<Button variant="soft" size="sm" onClick={seedCompanies} disabled={seedBusy}><DownloadCloud size={13} />{seedBusy ? 'Seeding…' : 'Seed / refresh 1,000'}</Button>}
       >
         <p className="mb-3 text-xs text-fg-muted">
-          Persistent direct-employer career knowledge. Search by company instead of scrolling a static list; results are paged 20 at a time.
+          Company-centric administration: search and filter persisted direct employers, then open one company to inspect only its currently available canonical jobs. Results stay server-paginated 20 at a time for both companies and company jobs.
         </p>
         {seedResult ? (
           <div className="mb-3 rounded-lg border border-subtle bg-sunken px-3 py-2 text-xs text-fg-secondary">
@@ -387,49 +420,86 @@ export default function AdminJobIngestPanel() {
             {seedResult.external?.error ? ` · external import: ${seedResult.external.error}` : ''}
           </div>
         ) : null}
-        <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); setCompanyPage(1); loadCompanies(1, companyQuery); }}>
+        <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Companies stored" value={(runtimeStats?.companySeeds?.total ?? companies?.total ?? 0).toLocaleString()} />
+          <Stat label="Startup / scale-up" value={(runtimeStats?.companySeeds?.byCompanyType?.STARTUP_SCALEUP ?? 0).toLocaleString()} />
+          <Stat label="MNC / enterprise" value={(runtimeStats?.companySeeds?.byCompanyType?.MNC_ENTERPRISE ?? 0).toLocaleString()} />
+          <Stat label="Unclassified" value={(runtimeStats?.companySeeds?.byCompanyType?.UNKNOWN ?? 0).toLocaleString()} hint="Not guessed without reliable evidence" />
+        </div>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Button size="sm" variant={!companyFilters.companyType && !companyFilters.indiaRelevance && !companyFilters.hasAvailableJobs ? 'primary' : 'soft'} onClick={() => applyCompanyFilter({ companyType: '', indiaRelevance: '', hasAvailableJobs: '' })}>All companies</Button>
+          <Button size="sm" variant={companyFilters.companyType === 'STARTUP_SCALEUP' ? 'primary' : 'soft'} onClick={() => applyCompanyFilter({ companyType: 'STARTUP_SCALEUP' })}>Startup & scale-up</Button>
+          <Button size="sm" variant={companyFilters.companyType === 'MNC_ENTERPRISE' ? 'primary' : 'soft'} onClick={() => applyCompanyFilter({ companyType: 'MNC_ENTERPRISE' })}>MNC & enterprise</Button>
+          <Button size="sm" variant={companyFilters.indiaRelevance === 'High' ? 'primary' : 'soft'} onClick={() => applyCompanyFilter({ indiaRelevance: 'High' })}>India relevant</Button>
+          <Button size="sm" variant={companyFilters.hasAvailableJobs === 'true' ? 'primary' : 'soft'} onClick={() => applyCompanyFilter({ hasAvailableJobs: 'true' })}>Has available jobs</Button>
+        </div>
+        <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); setCompanyPage(1); loadCompanies(1, companyQuery, companyFilters); }}>
           <div className="relative flex-1">
             <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" />
             <Input value={companyQuery} onChange={(e) => setCompanyQuery(e.target.value)} placeholder="Search company, domain, industry or career URL" className="pl-9" />
           </div>
           <Button size="sm" type="submit">Search</Button>
         </form>
+        <div className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <select value={companyFilters.companyType} onChange={(e) => setCompanyFilters((f) => ({ ...f, companyType: e.target.value }))} className="h-9 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none">
+            <option value="">Company type: all</option><option value="STARTUP_SCALEUP">Startup / scale-up</option><option value="MNC_ENTERPRISE">MNC / enterprise</option><option value="OTHER">Other</option><option value="UNKNOWN">Unclassified</option>
+          </select>
+          <select value={companyFilters.indiaRelevance} onChange={(e) => setCompanyFilters((f) => ({ ...f, indiaRelevance: e.target.value }))} className="h-9 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none">
+            <option value="">India relevance: all</option><option value="High">High</option>
+          </select>
+          <select value={companyFilters.provider} onChange={(e) => setCompanyFilters((f) => ({ ...f, provider: e.target.value }))} className="h-9 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none">
+            <option value="">ATS/provider: all</option>{['GREENHOUSE','LEVER','ASHBY','WORKDAY','SMARTRECRUITERS','WORKABLE','ICIMS','SUCCESSFACTORS','TALEO','TEAMTAILOR','RECRUITEE','PERSONIO','GENERIC'].map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+          <select value={companyFilters.hasSource} onChange={(e) => setCompanyFilters((f) => ({ ...f, hasSource: e.target.value }))} className="h-9 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none">
+            <option value="">Discovery state: all</option><option value="true">Source resolved</option><option value="false">Needs discovery</option>
+          </select>
+          <select value={companyFilters.hasAvailableJobs} onChange={(e) => setCompanyFilters((f) => ({ ...f, hasAvailableJobs: e.target.value }))} className="h-9 rounded-lg border border-field-border bg-field px-3 text-xs text-fg outline-none">
+            <option value="">Available jobs: all</option><option value="true">Has available jobs</option><option value="false">No available jobs</option>
+          </select>
+          <Input value={companyFilters.industry} onChange={(e) => setCompanyFilters((f) => ({ ...f, industry: e.target.value }))} placeholder="Industry contains…" />
+          <Input value={companyFilters.region} onChange={(e) => setCompanyFilters((f) => ({ ...f, region: e.target.value }))} placeholder="Region contains…" />
+          <div className="flex gap-2"><Button size="sm" onClick={() => { setCompanyPage(1); loadCompanies(1, companyQuery, companyFilters); }}>Apply filters</Button><Button variant="ghost" size="sm" onClick={resetCompanyFilters}>Clear</Button></div>
+        </div>
+        <p className="mb-3 text-[11px] text-fg-muted">Startup/MNC grouping is only asserted for Career Autopilot-curated employers. External seed rows stay Unclassified unless a reliable company-type source is available; the dashboard does not guess funding stage or employee count.</p>
         {!companies ? <Spinner /> : companies.total === 0 ? (
-          <EmptyState icon={Building2} title="No company career sites stored" hint="Use Seed / refresh 1,000 to bootstrap the registry." />
+          <EmptyState icon={Building2} title="No companies match" hint="If the registry is empty, use Seed / refresh 1,000. Otherwise clear one or more filters." />
         ) : (
           <>
-            <div className="mb-2 text-xs text-fg-muted">
-              {companies.total.toLocaleString()} companies · page {companies.page} of {companies.totalPages || 1}
-            </div>
+            <div className="mb-2 text-xs text-fg-muted">{companies.total.toLocaleString()} companies · page {companies.page} of {companies.totalPages || 1} · 20 per page</div>
             <div className="space-y-1">
               {companies.companies.map((c) => (
                 <div key={c.id} className="flex items-center gap-2 border-b border-subtle py-2 text-xs">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-fg">{c.name}</div>
-                    <div className="truncate text-fg-muted">{c.domain || c.region || 'domain not known'}{c.atsProvider ? ` · ${c.atsProvider}` : ''}{c.careerUrlStatus ? ` · ${c.careerUrlStatus}` : ''}</div>
-                  </div>
-                  {c.careersUrl ? (
-                    <>
-                      <Button variant="soft" size="sm" disabled={companyFetchBusy === c.id} onClick={() => fetchCompany(c)}>
-                        <Play size={13} /> {companyFetchBusy === c.id ? 'Fetching…' : 'Fetch'}
-                      </Button>
-                      <a href={c.careersUrl} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm"><ExternalLink size={13} /> Careers</Button></a>
-                    </>
-                  ) : null}
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => loadCompanyJobs(c, 1, '')}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium text-fg">{c.name}</span>
+                      <Badge tone={c.companyType === 'STARTUP_SCALEUP' ? 'cyan' : c.companyType === 'MNC_ENTERPRISE' ? 'mint' : 'default'}>{c.companyType === 'STARTUP_SCALEUP' ? 'STARTUP / SCALE-UP' : c.companyType === 'MNC_ENTERPRISE' ? 'MNC / ENTERPRISE' : 'UNCLASSIFIED'}</Badge>
+                      <Badge tone={c.availableJobCount > 0 ? 'mint' : 'default'}>{c.availableJobCount || 0} available jobs</Badge>
+                    </div>
+                    <div className="mt-0.5 truncate text-fg-muted">{c.domain || c.region || 'domain not known'}{c.industry ? ` · ${c.industry}` : ''}{c.region ? ` · ${c.region}` : ''}{c.atsProvider ? ` · ${c.atsProvider}` : ''}{c.indiaRelevance === 'High' ? ' · India relevant' : ''}</div>
+                  </button>
+                  <Button variant="soft" size="sm" onClick={() => loadCompanyJobs(c, 1, '')}><Eye size={13} /> View jobs</Button>
+                  {c.careersUrl ? <><Button variant="soft" size="sm" disabled={companyFetchBusy === c.id} onClick={() => fetchCompany(c)}><Play size={13} /> {companyFetchBusy === c.id ? 'Fetching…' : 'Fetch'}</Button><a href={c.careersUrl} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm"><ExternalLink size={13} /> Careers</Button></a></> : null}
                 </div>
               ))}
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
-              <Button variant="soft" size="sm" disabled={!companies.hasPrev} onClick={() => { const p = Math.max(1, companies.page - 1); setCompanyPage(p); loadCompanies(p, companyQuery); }}>
-                <ChevronLeft size={14} /> Previous
-              </Button>
+              <Button variant="soft" size="sm" disabled={!companies.hasPrev} onClick={() => { const p = Math.max(1, companies.page - 1); setCompanyPage(p); loadCompanies(p, companyQuery, companyFilters); }}><ChevronLeft size={14} /> Previous</Button>
               <span className="text-xs text-fg-muted">Page {companies.page} / {companies.totalPages || 1}</span>
-              <Button variant="soft" size="sm" disabled={!companies.hasNext} onClick={() => { const p = companies.page + 1; setCompanyPage(p); loadCompanies(p, companyQuery); }}>
-                Next <ChevronRight size={14} />
-              </Button>
+              <Button variant="soft" size="sm" disabled={!companies.hasNext} onClick={() => { const p = companies.page + 1; setCompanyPage(p); loadCompanies(p, companyQuery, companyFilters); }}>Next <ChevronRight size={14} /></Button>
             </div>
           </>
         )}
+        {selectedCompany ? (
+          <div className="mt-5 rounded-xl border border-subtle bg-sunken p-4">
+            <div className="mb-3 flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-fg">{selectedCompany.name}</div><div className="mt-0.5 text-xs text-fg-muted">{companyJobs?.availableJobs?.toLocaleString?.() || 0} currently available jobs{selectedCompany.industry ? ` · ${selectedCompany.industry}` : ''}{selectedCompany.region ? ` · ${selectedCompany.region}` : ''}</div></div><Button variant="ghost" size="sm" onClick={() => { setSelectedCompany(null); setCompanyJobs(null); }}>Close</Button></div>
+            <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); setCompanyJobsPage(1); loadCompanyJobs(selectedCompany, 1, companyJobsQuery); }}><div className="relative flex-1"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" /><Input value={companyJobsQuery} onChange={(e) => setCompanyJobsQuery(e.target.value)} placeholder={`Search jobs at ${selectedCompany.name}`} className="pl-9" /></div><Button size="sm" type="submit">Search jobs</Button></form>
+            {!companyJobs ? <Spinner /> : companyJobs.availableJobs === 0 ? (
+              <EmptyState icon={Database} title="No currently available jobs" hint="The company stays in the registry even when its current canonical inventory is empty." />
+            ) : (
+              <><div className="space-y-1">{companyJobs.jobs.map((j) => (<div key={j.id} className="flex items-center gap-2 border-b border-subtle py-2 text-xs"><div className="min-w-0 flex-1"><div className="truncate font-medium text-fg">{j.title}</div><div className="truncate text-fg-muted">{j.locations?.length ? j.locations.join(', ') : 'Location not stated'}{j.providers?.length ? ` · ${j.providers.join(', ')}` : ''}</div></div>{j.directApply ? <Badge tone="mint">direct</Badge> : null}<Badge>{j.status}</Badge>{j.applyUrl ? <a href={j.applyUrl} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm"><ExternalLink size={13} /> Apply</Button></a> : null}</div>))}</div><div className="mt-3 flex items-center justify-between border-t border-subtle pt-3"><Button variant="soft" size="sm" disabled={!companyJobs.hasPrev} onClick={() => { const p = Math.max(1, companyJobsPage - 1); setCompanyJobsPage(p); loadCompanyJobs(selectedCompany, p, companyJobsQuery); }}><ChevronLeft size={14} /> Previous</Button><span className="text-xs text-fg-muted">Page {companyJobs.page} / {companyJobs.totalPages || 1}</span><Button variant="soft" size="sm" disabled={!companyJobs.hasNext} onClick={() => { const p = companyJobsPage + 1; setCompanyJobsPage(p); loadCompanyJobs(selectedCompany, p, companyJobsQuery); }}>Next <ChevronRight size={14} /></Button></div></>
+            )}
+          </div>
+        ) : null}
       </SectionCard>
 
       <SectionCard

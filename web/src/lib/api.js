@@ -420,6 +420,12 @@ export const AdminJobDiscovery = {
     ).toString();
     return api.get('/api/admin/job-discovery/companies' + (qs ? `?${qs}` : ''));
   },
+  companyJobs: (id, params = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    ).toString();
+    return api.get(`/api/admin/job-discovery/companies/${encodeURIComponent(id)}/jobs` + (qs ? `?${qs}` : ''));
+  },
   seedCompanies: (body = {}) => api.post('/api/admin/job-discovery/company-seeds', body),
   processQueue: (body = {}) => api.post('/api/admin/job-discovery/process-queue', body),
   tick: (body = {}) => api.post('/api/admin/job-discovery/tick', body),

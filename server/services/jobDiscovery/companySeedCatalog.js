@@ -18,13 +18,39 @@
 
 import fs from 'node:fs';
 import { detectAts } from './atsDetect.js';
-import { makeCompany } from './companyRegistry.js';
+import { makeCompany, COMPANY_TYPE } from './companyRegistry.js';
 import { registrableDomain, hostOf } from './normalize/text.js';
 
 export const DEFAULT_COMPANY_SEED_TARGET = 1000;
 export const OPENJOBS_COMPANY_DATA_URL = 'https://raw.githubusercontent.com/outscal/OpenJobs/main/data/companies_v2.json';
 export const CURATED_SEED_SOURCE = 'career-autopilot-curated-2026-08';
 export const OPENJOBS_SEED_SOURCE = 'outscal-openjobs';
+
+
+
+/* Company type is only assigned where this bundled catalog has an explicit
+   curated classification. External OpenJobs rows do not expose funding stage
+   or employee count, so they remain UNKNOWN rather than being guessed. The
+   broader MNC_ENTERPRISE bucket intentionally means "large/established employer"
+   for admin grouping; it does not claim every member is legally multinational. */
+const STARTUP_SCALEUP_NAMES = new Set([
+  'Airbnb','Anduril','Anthropic','BrowserStack','Chargebee','CleverTap','Cohere','Coinbase','Confluent',
+  'CRED','Darwinbox','Databricks','Datadog','Delhivery','Dream Sports','Druva','Freshworks','GitLab',
+  'Groww','InMobi','Innovaccer','Juspay','Klarna','Lucid Motors','Meesho','MoEngage','MongoDB','OpenAI',
+  'Palantir','Paytm','PhonePe','Pine Labs','Postman','Razorpay','Revolut','Rivian','Robinhood','Scale AI',
+  'ShareChat','Shiprocket','Shopify','Snowflake','SpaceX','Stripe','Swiggy','Tekion','Udaan','Uniphore',
+  'Whatfix','Wise','Zerodha','Zomato','Zoom'
+]);
+
+function curatedCompanyType(row) {
+  if (row?.companyType && Object.values(COMPANY_TYPE).includes(row.companyType)) {
+    return { companyType: row.companyType, companyTypeSource: 'curated-explicit', companyTypeConfidence: 1 };
+  }
+  if (STARTUP_SCALEUP_NAMES.has(String(row?.name || ''))) {
+    return { companyType: COMPANY_TYPE.STARTUP_SCALEUP, companyTypeSource: 'career-autopilot-curated', companyTypeConfidence: 0.95 };
+  }
+  return { companyType: COMPANY_TYPE.MNC_ENTERPRISE, companyTypeSource: 'career-autopilot-curated', companyTypeConfidence: 0.85 };
+}
 
 const CURATED = JSON.parse(fs.readFileSync(
   new URL('./data/company-career-seeds-curated.json', import.meta.url),
@@ -87,6 +113,7 @@ function normalizeCurated(row, rank) {
   if (!row?.name || !isDirectCareerSeedUrl(row.careersUrl)) return null;
   const domain = companyDomainFromWebsite(null, row.careersUrl);
   const ats = atsInfo(row.careersUrl);
+  const type = curatedCompanyType(row);
   return makeCompany({
     name: row.name,
     domain,
@@ -96,6 +123,7 @@ function normalizeCurated(row, rank) {
     atsTenant: ats.tenant,
     region: row.region || null,
     industry: row.industry || null,
+    ...type,
     indiaRelevance: row.indiaRelevance || null,
     careerUrlStatus: 'CURATED_DIRECT',
     seedSource: CURATED_SEED_SOURCE,
@@ -126,6 +154,9 @@ export function normalizeOpenJobsRow(row, rank = 0) {
     atsProvider: ats.provider,
     atsTenant: ats.tenant,
     industry: row.industry_category || row.type || null,
+    companyType: COMPANY_TYPE.UNKNOWN,
+    companyTypeSource: 'external-unclassified',
+    companyTypeConfidence: null,
     hiringCountries: Array.isArray(row.countries) ? row.countries.filter(Boolean).slice(0, 100) : [],
     country: Array.isArray(row.countries) && row.countries.length === 1 ? row.countries[0] : null,
     indiaRelevance: Array.isArray(row.countries) && row.countries.some((c) => /^india$/i.test(String(c))) ? 'High' : null,
@@ -195,10 +226,15 @@ export class CompanySeedCatalog {
     try {
       sourceRows = await fetchJsonBounded(this.fetchImpl, OPENJOBS_COMPANY_DATA_URL);
     } catch (e) {
+      /* The bundled curated tier is intentionally committed first. A remote
+         catalog outage must never roll back or visually hide those direct
+         employer seeds. Report a partial success and let a later refresh or
+         cron continue toward the requested target. */
       return {
-        ok: false,
+        ok: true,
+        partial: true,
         target,
-        reached: false,
+        reached: summary.seeded >= target,
         curated,
         external: { ok: false, source: OPENJOBS_SEED_SOURCE, error: e?.message || String(e) },
         summary,

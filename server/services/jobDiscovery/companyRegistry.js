@@ -25,6 +25,12 @@ import { sha256, registrableDomain } from './normalize/text.js';
 import { normalizeCompany } from './normalize/entity.js';
 
 export const IDENTITY = Object.freeze({ DOMAIN: 'DOMAIN', NAME: 'NAME' });
+export const COMPANY_TYPE = Object.freeze({
+  STARTUP_SCALEUP: 'STARTUP_SCALEUP',
+  MNC_ENTERPRISE: 'MNC_ENTERPRISE',
+  OTHER: 'OTHER',
+  UNKNOWN: 'UNKNOWN',
+});
 
 export function companyId({ domain = null, normalizedName = null }) {
   const d = domain ? registrableDomain(domain) : null;
@@ -52,6 +58,9 @@ export function makeCompany(partial = {}) {
     region: partial.region ?? null,
     /* Only ever set when a source actually stated it. */
     industry: partial.industry ?? null,
+    companyType: partial.companyType ?? COMPANY_TYPE.UNKNOWN,
+    companyTypeSource: partial.companyTypeSource ?? null,
+    companyTypeConfidence: partial.companyTypeConfidence ?? null,
     hiringCountries: partial.hiringCountries ?? [],
     indiaRelevance: partial.indiaRelevance ?? null,
     careerUrlStatus: partial.careerUrlStatus ?? null,
@@ -109,7 +118,8 @@ export class CompanyRegistry {
     let changed = false;
     for (const field of [
       'name', 'normalizedName', 'domain', 'website', 'careersUrl', 'atsProvider', 'atsTenant',
-      'country', 'region', 'industry', 'indiaRelevance', 'careerUrlStatus', 'seedSource', 'seedRank',
+      'country', 'region', 'industry', 'companyType', 'companyTypeSource', 'companyTypeConfidence',
+      'indiaRelevance', 'careerUrlStatus', 'seedSource', 'seedRank',
     ]) {
       const incoming = candidate[field];
       if (incoming == null || incoming === '') continue;

@@ -60,6 +60,9 @@ test('INTEGRATION_GATE — Mongo company seed bulk upsert never overlaps $set an
     seedRank: 7,
     careerUrlStatus: 'SEEDED_UNVERIFIED',
     indiaRelevance: 'High',
+    companyType: 'MNC_ENTERPRISE',
+    companyTypeSource: 'fixture-curated',
+    companyTypeConfidence: 0.9,
   });
 
   const result = await store.seedCompanies([company], { seedSource: 'fixture-seed' });
@@ -75,6 +78,12 @@ test('INTEGRATION_GATE — Mongo company seed bulk upsert never overlaps $set an
   assert.equal(update.$set.seedRank, 7);
   assert.equal(update.$set.careerUrlStatus, 'SEEDED_UNVERIFIED');
   assert.equal(update.$set.indiaRelevance, 'High');
+  assert.equal(update.$set.companyType, 'MNC_ENTERPRISE');
+  assert.equal(update.$set.companyTypeSource, 'fixture-curated');
+  assert.equal(Object.prototype.hasOwnProperty.call(update.$setOnInsert || {}, 'createdAt'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(update.$setOnInsert || {}, 'updatedAt'), false,
+    'Mongoose timestamps owns updatedAt; seed payload must not collide with it');
+  assert.equal(Object.prototype.hasOwnProperty.call(update.$set || {}, 'updatedAt'), false);
 });
 test('DISCOVERY_GATE — company seed catalog persists 1,000 searchable direct-employer career entries', async () => {
   const store = new MemoryJobStore();
@@ -110,6 +119,30 @@ test('DISCOVERY_GATE — company seed catalog persists 1,000 searchable direct-e
   assert.ok(curated.total > 0);
 });
 
+
+
+test('DISCOVERY_GATE — remote seed outage still persists the bundled curated company registry', async () => {
+  const store = new MemoryJobStore();
+  const companies = new CompanyRegistry({ store });
+  const catalog = new CompanySeedCatalog({
+    store,
+    companies,
+    fetchImpl: async () => { throw new Error('fixture remote unavailable'); },
+    logger: { warn() {} },
+  });
+
+  const result = await catalog.ensure({ minimum: 1000, includeRemote: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.partial, true);
+  assert.equal(result.reached, false);
+  assert.ok(result.summary.seeded >= 250, 'bundled curated career sites remain persisted');
+  assert.match(result.external.error, /remote unavailable/);
+  const page = await store.pageCompanies({ page: 1, pageSize: 20 });
+  assert.equal(page.docs.length, 20);
+  assert.ok(page.total >= 250, 'registry remains usable even when external expansion is down');
+  assert.ok(Number(result.summary.byCompanyType?.STARTUP_SCALEUP || 0) > 0);
+  assert.ok(Number(result.summary.byCompanyType?.MNC_ENTERPRISE || 0) > 0);
+});
 
 test('DISCOVERY_GATE — persisted company career seeds feed the durable discovery queue', async () => {
   const service = await makeService({ queues: true });
@@ -215,6 +248,30 @@ test('INTEGRATION_GATE — admin canonical-job browse is fixed at 20 results per
   assert.equal(p3.hasPrev, true);
 });
 
+
+test('INTEGRATION_GATE — company registry filters by type and reports exact available job counts', async () => {
+  const store = new MemoryJobStore();
+  const startup = makeCompany({ name: 'Growth Startup', domain: 'growth-startup.example', careersUrl: 'https://growth-startup.example/careers', companyType: 'STARTUP_SCALEUP', industry: 'SaaS', indiaRelevance: 'High', seedSource: 'fixture', seedRank: 1 });
+  const enterprise = makeCompany({ name: 'Global Enterprise', domain: 'global-enterprise.example', careersUrl: 'https://global-enterprise.example/careers', companyType: 'MNC_ENTERPRISE', industry: 'Banking', seedSource: 'fixture', seedRank: 2 });
+  await store.putCompany(startup); await store.putCompany(enterprise);
+  for (const [i, status] of [JOB_STATUS.NEW, JOB_STATUS.ACTIVE, JOB_STATUS.LIKELY_ACTIVE, JOB_STATUS.REMOVED].entries()) {
+    await store.putJob({ id: `company_filter_job_${i}`, title: `Platform Engineer ${i}`, companyId: startup.id, company: { name: startup.name, normalizedName: startup.normalizedName, domain: startup.domain }, status, firstSeenAt: `2026-08-15T00:00:0${i}.000Z`, sourceInstances: [], locations: [], directApply: true });
+  }
+  const filtered = await store.pageCompanies({ page: 1, pageSize: 20, companyType: 'STARTUP_SCALEUP', hasAvailableJobs: true });
+  assert.equal(filtered.total, 1); assert.equal(filtered.docs[0].id, startup.id); assert.equal(filtered.docs[0].availableJobCount, 3); assert.equal(filtered.docs[0].newJobCount, 1); assert.equal(filtered.docs[0].activeJobCount, 1); assert.equal(filtered.docs[0].likelyActiveJobCount, 1);
+});
+
+test('INTEGRATION_GATE — admin company drill-down returns only available jobs and stays 20-per-page', async () => {
+  const service = await makeService({ queues: true });
+  const company = makeCompany({ name: 'Clickable Company', domain: 'clickable.example', careersUrl: 'https://clickable.example/careers', companyType: 'MNC_ENTERPRISE', seedSource: 'fixture', seedRank: 1 });
+  await service.store.putCompany(company);
+  for (let i = 0; i < 24; i += 1) {
+    await service.store.putJob({ id: `company_drill_${i}`, title: `DevOps Engineer ${i}`, company: { name: company.name, normalizedName: company.normalizedName, domain: company.domain }, companyId: i % 2 === 0 ? company.id : null, status: i === 23 ? JOB_STATUS.REMOVED : (i % 3 === 0 ? JOB_STATUS.ACTIVE : JOB_STATUS.NEW), firstSeenAt: `2026-08-15T00:${String(i).padStart(2, '0')}:00.000Z`, sourceInstances: [], locations: [{ raw: 'India' }], directApply: true });
+  }
+  const p1 = await service.browseCompanyJobs(company.id, { page: 1 }); const p2 = await service.browseCompanyJobs(company.id, { page: 2 });
+  assert.equal(p1.availableJobs, 23); assert.equal(p1.jobs.length, 20); assert.equal(p2.jobs.length, 3); assert.ok(p1.jobs.every((j) => j.status !== JOB_STATUS.REMOVED));
+});
+
 test('INTEGRATION_GATE — production config contains secret-protected cron consumers and Muse key wiring', () => {
   const vercel = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
   const paths = new Set((vercel.crons || []).map((c) => c.path));
@@ -242,6 +299,10 @@ test('INTEGRATION_GATE — admin company catalog exposes search, pagination and 
   assert.match(panel, /20 at a time/);
   assert.match(panel, /fetchCompany\(c\)/);
   assert.match(panel, /Fetching…/);
+  assert.match(panel, /Startup & scale-up/);
+  assert.match(panel, /MNC & enterprise/);
+  assert.match(panel, /View jobs/);
+  assert.match(panel, /companyJobs/);
 });
 
 test('INGEST_GATE — duplicate Mongoose index declarations stay removed', () => {

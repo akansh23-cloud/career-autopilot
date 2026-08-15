@@ -19,3 +19,9 @@ The Template OS vector PDF writer (`web/src/lib/templateOs/pdfWriter.js`) is ori
 All 28 shipped resume templates are **original Career Autopilot designs** (`licenseStatus: INTERNAL_ORIGINAL`, `productionEnabled: true`). No third-party template designs are reproduced.
 
 The template platform supports externally sourced designs via license metadata (`OWNED`, `OPEN_SOURCE`, `LICENSED`, `LICENSE_PENDING`, `DEVELOPMENT_REFERENCE`). Any template whose production rights are not yet cleared must ship with `licenseStatus: LICENSE_PENDING` (or `DEVELOPMENT_REFERENCE`) and `productionEnabled: false` — such templates are excluded from the gallery and the recommender until the status is flipped in configuration. General resume layout conventions (single-column ATS structure, section ordering, typographic hierarchy) are not subject to design licensing.
+
+## Job Discovery company-catalog expansion
+
+Career Autopilot can optionally extend its bundled direct-employer seed catalog from the public **Outscal/OpenJobs** `data/companies_v2.json` dataset at runtime. The OpenJobs repository is MIT licensed and describes the company/ATS dataset as a point-in-time source whose ATS links may become stale. Career Autopilot treats imported rows as `SEEDED_UNVERIFIED`; its own source-discovery, access-policy, and verification layers remain authoritative before jobs are trusted or reconciled.
+
+The OpenJobs dataset itself is not bundled wholesale in this distribution; only Career Autopilot's curated direct-employer seed file ships locally. Runtime expansion is optional and failure-tolerant.
