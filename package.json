@@ -1,6 +1,6 @@
 {
   "name": "career-autopilot",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Career Autopilot \u2014 frozen canonical Resume OS plus source-grounded Job Discovery OS with indexed search, persistent crawling, deduplication and freshness verification.",
   "type": "module",
   "engines": {

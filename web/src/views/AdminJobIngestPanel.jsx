@@ -156,9 +156,10 @@ export default function AdminJobIngestPanel() {
         policy: 'ALLOW',
         reason: reason || `Manual admin approval for ${row.input || row.sourceId}`,
       });
-      const retry = await AdminJobDiscovery.fetch([row.sourceId], {
+      const retryTarget = row.input || row.sourceId;
+      const retry = await AdminJobDiscovery.fetch([retryTarget], {
         mode: 'INLINE',
-        reason: reason || `Approved REVIEW source and retried ${row.input || row.sourceId}`,
+        reason: reason || `Approved REVIEW source and retried ${retryTarget}`,
       });
       setResult(retry);
       await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery), loadStats()]);

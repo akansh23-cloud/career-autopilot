@@ -379,6 +379,32 @@ test('MANUAL_INGEST_GATE — an unlimited inline source checkpoints page continu
   assert.equal(checkpoint.cp.cursor, 'page-9');
 });
 
+test('MANUAL_INGEST_GATE — missing robots.txt (HTTP 404) does not block a public careers page', async () => {
+  const html = `<!doctype html><html><head><script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'JobPosting',
+    title: 'Site Reliability Engineer', datePosted: '2026-08-15',
+    description: 'Operate reliable cloud systems.',
+    hiringOrganization: { '@type': 'Organization', name: 'No Robots Inc', sameAs: 'https://norobots.example' },
+    jobLocation: { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: 'Bengaluru', addressCountry: 'IN' } },
+    url: 'https://careers.norobots.example/jobs/1',
+  })}</script></head><body>Jobs</body></html>`;
+  const service = await manualService({
+    routes: [
+      [/robots\.txt/, { status: 404, body: 'not found', contentType: 'text/plain' }],
+      ['https://careers.norobots.example/jobs', { body: html, contentType: 'text/html' }],
+    ],
+  });
+
+  const registered = await service.registerFromUrl('https://careers.norobots.example/jobs', { probe: false });
+  assert.equal(registered.ok, true);
+  assert.equal(registered.source.accessPolicy, 'ALLOW');
+
+  const result = await service.fetchNow(['https://careers.norobots.example/jobs']);
+  assert.equal(result.results[0].ok, true, result.results[0].reason);
+  assert.equal(result.results[0].stage, 'CRAWLED');
+  assert.ok(result.results[0].created >= 1);
+});
+
 test('MANUAL_INGEST_GATE — admin can approve an indeterminate REVIEW source and retry it', async () => {
   const html = `<!doctype html><html><head><script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org', '@type': 'JobPosting',

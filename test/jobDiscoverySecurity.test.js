@@ -315,6 +315,27 @@ test('an unreachable robots.txt is REVIEW, not permission', async () => {
   assert.equal(check.policy, ACCESS_POLICY.REVIEW);
 });
 
+
+test('ROBOTS_GATE — HTTP 404 robots.txt is unavailable and allows the public careers path', async () => {
+  const error = new Error('HTTP 404');
+  error.status = 404;
+  const policy = new RobotsPolicy({ fetchText: async () => { throw error; } });
+  const check = await policy.check('https://careers.example.com/jobs');
+  assert.equal(check.policy, ACCESS_POLICY.ALLOW);
+  assert.equal(check.robotsUnavailable, true);
+  assert.equal(check.status, 404);
+  assert.match(check.reason, /robots-unavailable-http-404/);
+});
+
+test('ROBOTS_GATE — HTTP 410 robots.txt is also treated as an unavailable policy file', async () => {
+  const error = new Error('HTTP 410');
+  error.status = 410;
+  const policy = new RobotsPolicy({ fetchText: async () => { throw error; } });
+  const check = await policy.check('https://careers.example.com/jobs');
+  assert.equal(check.policy, ACCESS_POLICY.ALLOW);
+  assert.equal(check.status, 410);
+});
+
 /* ============================ §12 browser bounds ============================ */
 
 test('SECURITY_GATE — browser pool is bounded and blocks non-content resources', async () => {

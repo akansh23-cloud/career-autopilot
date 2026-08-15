@@ -118,11 +118,20 @@ export class RobotsPolicy {
     let entry;
     try {
       const text = await this.fetchText(`${origin}/robots.txt`);
-      entry = { parsed: parseRobots(text), at: this.now(), error: null };
+      entry = { parsed: parseRobots(text), at: this.now(), error: null, status: 200, unavailable: false };
     } catch (e) {
-      /* Unreachable robots.txt is NOT permission. It is treated as REVIEW —
-         crawl proceeds only for sources explicitly marked ALLOW by config. */
-      entry = { parsed: null, at: this.now(), error: e?.message || 'robots-unreachable' };
+      const status = Number.isFinite(Number(e?.status)) ? Number(e.status) : null;
+
+      /* RFC 9309 §2.3.1.3: if /robots.txt itself is unavailable, that is not a
+         site-wide crawl denial. A missing robots file (404/410) is common on
+         careers hosts, so those unambiguous missing-file statuses are allowed.
+
+         Auth/rate-limit responses plus 5xx/network failures stay conservative
+         REVIEW states and are never converted into permission. */
+      const missingRobots = status === 404 || status === 410;
+      entry = missingRobots
+        ? { parsed: parseRobots(''), at: this.now(), error: null, status, unavailable: true }
+        : { parsed: null, at: this.now(), error: e?.message || 'robots-unreachable', status, unavailable: false };
     }
     this.cache.set(origin, entry);
     return entry;
@@ -137,7 +146,17 @@ export class RobotsPolicy {
     const origin = `${u.protocol}//${u.host}`;
     const entry = await this.load(origin);
     if (!entry.parsed) {
-      return { policy: ACCESS_POLICY.REVIEW, reason: entry.error || 'robots-unavailable', crawlDelayMs: null };
+      return { policy: ACCESS_POLICY.REVIEW, reason: entry.error || 'robots-unreachable', crawlDelayMs: null, status: entry.status ?? null };
+    }
+    if (entry.unavailable) {
+      return {
+        policy: ACCESS_POLICY.ALLOW,
+        reason: `robots-unavailable-http-${entry.status || '4xx'}`,
+        crawlDelayMs: null,
+        sitemaps: [],
+        robotsUnavailable: true,
+        status: entry.status ?? null,
+      };
     }
     const { allowed, rule, crawlDelay } = isAllowed(entry.parsed, u.pathname + (u.search || ''), this.agent);
     return {
