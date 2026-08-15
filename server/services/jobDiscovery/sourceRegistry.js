@@ -67,6 +67,10 @@ export function makeSource(partial = {}) {
 
     status: partial.status || SOURCE_STATUS.ACTIVE,
     accessPolicy: partial.accessPolicy || ACCESS_POLICY.REVIEW,
+    /* An explicit admin approval is only an override for an indeterminate
+       REVIEW state (for example, a robots endpoint that could not be read).
+       It never overrides an explicit robots DENY. */
+    accessApproval: partial.accessApproval ?? null,
 
     crawlStrategy: partial.crawlStrategy || CRAWL_STRATEGY.API,
     crawlIntervalMinutes: partial.crawlIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES[sourceClass] ?? 360,

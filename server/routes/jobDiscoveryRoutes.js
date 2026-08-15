@@ -13,6 +13,7 @@
      GET  /api/admin/job-discovery/coverage   coverage report
      GET  /api/admin/job-discovery/stats      runtime stats
      POST /api/admin/job-discovery/sources    register source
+     POST /api/admin/job-discovery/sources/:sourceId/access  approve/review/deny source
      POST /api/admin/job-discovery/crawl      crawl one source
      POST /api/admin/job-discovery/verify     verify one source
      POST /api/admin/job-discovery/reprocess  re-normalize from raw
@@ -245,6 +246,25 @@ export function registerJobDiscoveryRoutes(app, deps = {}) {
       return res.json(r);
     } catch (e) {
       return res.status(500).json({ error: 'register_failed', message: e?.message });
+    }
+  });
+
+  app.post('/api/admin/job-discovery/sources/:sourceId/access', ...admin, async (req, res) => {
+    try {
+      const service = await getService();
+      const sourceId = String(req.params?.sourceId || '');
+      if (!sourceId) return res.status(400).json({ error: 'bad_request', message: 'sourceId is required.' });
+      const policy = String(req.body?.policy || 'ALLOW').toUpperCase();
+      const approvedBy = req.user?.email || req.user?.id || req.user?._id || 'platform-admin';
+      const r = await service.setSourceAccess(sourceId, {
+        policy,
+        reason: req.body?.reason ? String(req.body.reason).slice(0, 500) : null,
+        approvedBy: String(approvedBy),
+      });
+      if (!r.ok) return res.status(r.status || 400).json({ error: 'source_access_update_failed', message: r.reason, ...r });
+      return res.json(r);
+    } catch (e) {
+      return res.status(500).json({ error: 'source_access_update_failed', message: e?.message });
     }
   });
 

@@ -112,6 +112,57 @@ export class JobDiscoveryService {
   async listSources(filter = {}) { return this.registry.list(filter); }
 
   /**
+   * Resolve an access REVIEW state explicitly. This is intentionally narrow:
+   * an administrator can approve an indeterminate REVIEW source, but an
+   * explicit robots DENY can never be overridden here.
+   */
+  async setSourceAccess(sourceId, { policy = ACCESS_POLICY.ALLOW, reason = null, approvedBy = null } = {}) {
+    const source = await this.registry.get(sourceId);
+    if (!source) return { ok: false, status: 404, reason: 'unknown source' };
+    if (![ACCESS_POLICY.ALLOW, ACCESS_POLICY.REVIEW, ACCESS_POLICY.DENY].includes(policy)) {
+      return { ok: false, status: 400, reason: 'policy must be ALLOW, REVIEW or DENY' };
+    }
+
+    let robotsCheck = null;
+    const url = source.careersUrl || source.baseUrl || null;
+    if (url && this.robots) {
+      try { robotsCheck = await this.robots.check(url); } catch { robotsCheck = null; }
+    }
+
+    if (policy === ACCESS_POLICY.ALLOW && robotsCheck?.policy === ACCESS_POLICY.DENY) {
+      return {
+        ok: false, status: 409, reason: `robots explicitly denies this source (${robotsCheck.reason || 'DENY'}); it cannot be manually approved`,
+        source, robotsCheck,
+      };
+    }
+
+    const now = new Date().toISOString();
+    const patch = {
+      accessPolicy: policy,
+      accessApproval: policy === ACCESS_POLICY.ALLOW ? {
+        policy: ACCESS_POLICY.ALLOW,
+        approvedAt: now,
+        approvedBy: approvedBy || 'platform-admin',
+        reason: reason || 'Approved by platform administrator after REVIEW',
+        robotsPolicyAtApproval: robotsCheck?.policy || ACCESS_POLICY.REVIEW,
+        robotsReasonAtApproval: robotsCheck?.reason || null,
+      } : null,
+    };
+    if (robotsCheck) {
+      patch.robotsPolicy = {
+        checkedAt: now,
+        policy: robotsCheck.policy,
+        crawlDelayMs: robotsCheck.crawlDelayMs ?? null,
+        reason: robotsCheck.reason || null,
+      };
+    }
+    if (policy === ACCESS_POLICY.DENY) patch.status = SOURCE_STATUS.DISABLED;
+
+    const updated = await this.registry.update(sourceId, patch);
+    return { ok: true, source: updated, robotsCheck, manualApproval: policy === ACCESS_POLICY.ALLOW && robotsCheck?.policy !== ACCESS_POLICY.ALLOW };
+  }
+
+  /**
    * Operator-triggered fetch. Accepts board URLs, careers pages, bare domains
    * or already-registered source ids, registers whatever is new, crawls it, and
    * persists the jobs into the SAME canonical store the autonomous pipeline
@@ -322,6 +373,8 @@ export class JobDiscoveryService {
       careersUrl: s.careersUrl,
       status: s.status,
       accessPolicy: s.accessPolicy,
+      accessApproval: s.accessApproval ?? null,
+      robotsPolicy: s.robotsPolicy ?? null,
       lastAttemptAt: s.lastAttemptAt,
       lastSuccessAt: s.lastSuccessAt,
       lastErrorAt: s.lastErrorAt,

@@ -56,15 +56,31 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
     return { ...det, matches: det.provider === PROVIDER.GENERIC };
   }
 
-  async checkAccess(url) {
-    if (!this.robots) return { policy: ACCESS_POLICY.REVIEW, reason: 'no robots policy configured' };
-    return this.robots.check(url);
+  async checkAccess(url, source = null) {
+    if (!this.robots) {
+      if (source?.accessPolicy === ACCESS_POLICY.ALLOW && source?.accessApproval?.policy === ACCESS_POLICY.ALLOW) {
+        return { policy: ACCESS_POLICY.ALLOW, reason: 'admin-approved-review', manualApproval: true, crawlDelayMs: null };
+      }
+      return { policy: ACCESS_POLICY.REVIEW, reason: 'no robots policy configured' };
+    }
+
+    const live = await this.robots.check(url);
+    /* Explicit robots DENY always wins. An administrator may only approve a
+       source that is otherwise stuck in REVIEW because robots could not be
+       established. This makes the UI's “Approve source” action real without
+       turning it into a robots bypass. */
+    if (live.policy === ACCESS_POLICY.DENY) return live;
+    if (live.policy === ACCESS_POLICY.ALLOW) return live;
+    if (source?.accessPolicy === ACCESS_POLICY.ALLOW && source?.accessApproval?.policy === ACCESS_POLICY.ALLOW) {
+      return { ...live, policy: ACCESS_POLICY.ALLOW, reason: `admin-approved-review: ${live.reason || 'robots-unconfirmed'}`, manualApproval: true };
+    }
+    return live;
   }
 
   async discover(source, ctx = {}) {
     const url = source.careersUrl || source.baseUrl;
     if (!url) return { source, ok: false, reason: 'no careers url', errorClass: ERROR_CLASS.PARSE_FAILED };
-    const access = await this.checkAccess(url);
+    const access = await this.checkAccess(url, source);
     if (access.policy !== ACCESS_POLICY.ALLOW) {
       return { source: { ...source, accessPolicy: access.policy }, ok: false, reason: access.policy === ACCESS_POLICY.DENY ? `robots denied: ${access.reason}` : `crawl policy requires review: ${access.reason || 'robots policy not confirmed'}`, errorClass: access.policy === ACCESS_POLICY.DENY ? ERROR_CLASS.ROBOTS_DENIED : ERROR_CLASS.BLOCKED };
     }
@@ -102,7 +118,7 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
     const url = source.careersUrl || source.baseUrl;
     if (!url) return { items: [], nextCursor: null, authoritative: false, error: { errorClass: ERROR_CLASS.PARSE_FAILED, message: 'no careers url' } };
 
-    const access = await this.checkAccess(url);
+    const access = await this.checkAccess(url, source);
     if (access.policy !== ACCESS_POLICY.ALLOW) {
       return { items: [], nextCursor: null, authoritative: false, error: { errorClass: access.policy === ACCESS_POLICY.DENY ? ERROR_CLASS.ROBOTS_DENIED : ERROR_CLASS.BLOCKED, message: access.policy === ACCESS_POLICY.DENY ? access.reason : `crawl policy requires review: ${access.reason || 'robots policy not confirmed'}` } };
     }

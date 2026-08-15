@@ -378,3 +378,60 @@ test('MANUAL_INGEST_GATE — an unlimited inline source checkpoints page continu
   assert.equal(result.results[0].continuationQueued, true);
   assert.equal(checkpoint.cp.cursor, 'page-9');
 });
+
+test('MANUAL_INGEST_GATE — admin can approve an indeterminate REVIEW source and retry it', async () => {
+  const html = `<!doctype html><html><head><script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'JobPosting',
+    title: 'Cloud Platform Engineer',
+    datePosted: '2026-08-15',
+    description: 'Build and operate cloud platforms.',
+    hiringOrganization: { '@type': 'Organization', name: 'Example Labs', sameAs: 'https://example.com' },
+    jobLocation: { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: 'Pune', addressCountry: 'IN' } },
+    url: 'https://careers.example.com/jobs/123',
+  })}</script></head><body>Jobs</body></html>`;
+  const service = await manualService({
+    routes: [
+      [/robots\.txt/, { status: 503, body: 'temporarily unavailable', contentType: 'text/plain' }],
+      ['https://careers.example.com/jobs', { body: html, contentType: 'text/html' }],
+    ],
+  });
+
+  const { source } = await service.registerSource(makeSource({
+    provider: 'GENERIC', sourceType: 'CAREER_SITE', sourceClass: SOURCE_CLASS.ORIGINAL_CAREER_SITE,
+    tenant: 'careers.example.com', careersUrl: 'https://careers.example.com/jobs', baseUrl: 'https://careers.example.com/jobs',
+    accessPolicy: 'REVIEW',
+  }));
+
+  const blocked = await service.fetchNow([source.id]);
+  assert.equal(blocked.results[0].stage, 'ACCESS');
+
+  const approval = await service.setSourceAccess(source.id, {
+    policy: 'ALLOW', approvedBy: 'admin@example.com', reason: 'Reviewed public careers page',
+  });
+  assert.equal(approval.ok, true);
+  assert.equal(approval.source.accessPolicy, 'ALLOW');
+  assert.equal(approval.source.accessApproval.policy, 'ALLOW');
+  assert.equal(approval.manualApproval, true);
+
+  const retried = await service.fetchNow([source.id]);
+  assert.equal(retried.results[0].ok, true, retried.results[0].reason);
+  assert.equal(retried.results[0].stage, 'CRAWLED');
+  assert.ok(retried.results[0].created >= 1);
+});
+
+test('MANUAL_INGEST_GATE — explicit robots DENY cannot be overridden by admin approval', async () => {
+  const service = await manualService({ robotsText: 'User-agent: *\nDisallow: /' });
+  const { source } = await service.registerSource(makeSource({
+    provider: 'GENERIC', sourceType: 'CAREER_SITE', sourceClass: SOURCE_CLASS.ORIGINAL_CAREER_SITE,
+    tenant: 'blocked.example.com', careersUrl: 'https://blocked.example.com/jobs', baseUrl: 'https://blocked.example.com/jobs',
+    accessPolicy: 'REVIEW',
+  }));
+
+  const approval = await service.setSourceAccess(source.id, { policy: 'ALLOW', approvedBy: 'admin@example.com' });
+  assert.equal(approval.ok, false);
+  assert.equal(approval.status, 409);
+  assert.match(approval.reason, /cannot be manually approved/i);
+
+  const stored = await service.registry.get(source.id);
+  assert.equal(stored.accessPolicy, 'REVIEW');
+});

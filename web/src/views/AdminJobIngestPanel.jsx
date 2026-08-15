@@ -81,6 +81,7 @@ export default function AdminJobIngestPanel() {
   const [queueResult, setQueueResult] = useState(null);
   const [companyFetchBusy, setCompanyFetchBusy] = useState(null);
   const [runtimeStats, setRuntimeStats] = useState(null);
+  const [approvalBusy, setApprovalBusy] = useState(null);
 
   const targetList = targets.split(/[\n,]/).map((t) => t.trim()).filter(Boolean);
 
@@ -145,6 +146,28 @@ export default function AdminJobIngestPanel() {
       setBusy(false);
     }
   }, [targetList, mode, reason, loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery, loadStats]);
+
+  const approveAndRetry = useCallback(async (row) => {
+    if (!row?.sourceId) return;
+    setApprovalBusy(row.sourceId);
+    setError(null);
+    try {
+      await AdminJobDiscovery.setSourceAccess(row.sourceId, {
+        policy: 'ALLOW',
+        reason: reason || `Manual admin approval for ${row.input || row.sourceId}`,
+      });
+      const retry = await AdminJobDiscovery.fetch([row.sourceId], {
+        mode: 'INLINE',
+        reason: reason || `Approved REVIEW source and retried ${row.input || row.sourceId}`,
+      });
+      setResult(retry);
+      await Promise.all([loadRuns(), loadStored(1, storedQuery), loadCompanies(companyPage, companyQuery), loadStats()]);
+    } catch (e) {
+      setError(e?.message || 'source approval/retry failed');
+    } finally {
+      setApprovalBusy(null);
+    }
+  }, [reason, loadRuns, loadStored, loadCompanies, storedQuery, companyPage, companyQuery, loadStats]);
 
   const seedCompanies = useCallback(async () => {
     setSeedBusy(true);
@@ -283,9 +306,9 @@ export default function AdminJobIngestPanel() {
           </div>
 
           <p className="text-[11px] text-fg-muted">
-            An admin trigger changes when work happens, not what is permitted. Robots policy, source access
-            policy, provider credentials and the source-health guard all still apply — a fetch of a broken
-            board can never close jobs it failed to see.
+            REVIEW sources can be explicitly approved by an administrator and retried from the result row.
+            An explicit robots DENY is never overridden; provider credentials and the source-health guard still
+            apply, and a broken fetch can never close jobs it failed to see.
           </p>
         </div>
       </SectionCard>
@@ -328,6 +351,17 @@ export default function AdminJobIngestPanel() {
                   <div className="truncate font-mono text-fg">{r.input}</div>
                   <div className="text-fg-muted">{r.reason}</div>
                 </div>
+                {r.stage === 'ACCESS' && r.sourceId && /REVIEW/i.test(r.reason || '') ? (
+                  <Button
+                    variant="soft"
+                    size="sm"
+                    disabled={approvalBusy === r.sourceId}
+                    onClick={() => approveAndRetry(r)}
+                    title="Approve only this REVIEW source, then retry. An explicit robots DENY is never overridden."
+                  >
+                    {approvalBusy === r.sourceId ? 'Approving…' : 'Approve & retry'}
+                  </Button>
+                ) : null}
                 <Badge tone={STAGE_TONE[r.stage]}>{r.stage}</Badge>
               </div>
             ))}

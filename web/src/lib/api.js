@@ -401,6 +401,7 @@ export const AdminJobDiscovery = {
   stats: () => api.get('/api/admin/job-discovery/stats'),
   /* targets: board URLs, careers pages, company domains or source ids. */
   fetch: (targets, opts = {}) => api.post('/api/admin/job-discovery/fetch', { targets, ...opts }),
+  setSourceAccess: (sourceId, body = {}) => api.post(`/api/admin/job-discovery/sources/${encodeURIComponent(sourceId)}/access`, body),
   runs: (params = {}) => {
     const qs = new URLSearchParams(
       Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
