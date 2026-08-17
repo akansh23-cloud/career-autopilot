@@ -1,24 +1,15 @@
 /* ============================================================
-   UNIVERSAL CAREER-SITE CRAWLER ADAPTER  (§9)
+   UNIVERSAL CAREER-SITE CRAWLER ADAPTER
    ------------------------------------------------------------
-   For companies outside a supported ATS. Extraction runs cheap ->
-   expensive and STOPS at the first stage that yields real jobs:
+   Generic career-page ingestion with two additional guarantees:
 
-     1  HTTP fetch
-     2  canonical / meta inspection
-     3  JSON-LD  @type=JobPosting
-     4  embedded framework JSON (__NEXT_DATA__, Nuxt, page state)
-     5  HTML job links -> per-posting JSON-LD
-     6  sitemap / XML
-     7  public XHR endpoints the page itself exposes
-     8  Playwright render  <- LAST, and bounded
+   1. Marketing/root pages are allowed to resolve to an explicit jobs listing.
+   2. Recognised public listing pages (currently Google Careers and Amazon Jobs)
+      are paginated with durable cursors instead of treating page one as the
+      complete vacancy inventory.
 
-   If the configured URL is only a marketing careers landing page,
-   one bounded extra step follows high-confidence "Search jobs" /
-   "View open positions" listing links before giving up. This is
-   deliberately NOT a general site crawler: only a few job-listing
-   candidates are considered and every target goes through the same
-   robots/HTTP safety gates as the original source.
+   No private endpoint discovery and no auth bypass is introduced here. Every
+   request still passes the same robots/access and SSRF-safe HTTP layer.
    ============================================================ */
 
 import { JobSourceAdapter } from './base.js';
@@ -28,11 +19,14 @@ import {
   extractMeta, findJobPostings, jobPostingToInput, extractEmbeddedJson,
   findJobArrays, extractJobLinks, extractSitemapUrls, isSitemapIndex, filterJobSitemapUrls,
 } from '../crawler/extract.js';
-import { sha256, normalizeUrl, stripHtml, registrableDomain, normalizeWhitespace } from '../normalize/text.js';
+import {
+  sha256, normalizeUrl, stripHtml, registrableDomain, normalizeWhitespace,
+} from '../normalize/text.js';
 
 export const STAGE = Object.freeze({
   JSON_LD: 'JSON_LD',
   EMBEDDED_JSON: 'EMBEDDED_JSON',
+  LISTING_CARDS: 'LISTING_CARDS',
   HTML_LINKS: 'HTML_LINKS',
   SITEMAP: 'SITEMAP',
   PUBLIC_XHR: 'PUBLIC_XHR',
@@ -41,26 +35,84 @@ export const STAGE = Object.freeze({
 
 const MAX_DETAIL_PAGES = 40;
 const MAX_LISTING_PAGE_HOPS = 3;
+const AMAZON_RESULT_LIMIT = 50;
 
-/* A career landing page often has a CTA such as "Search for jobs" while the
-   actual vacancies live one URL deeper. The old crawler treated the landing
-   page as the listing and therefore returned a perfectly successful zero-job
-   run for employers such as Amazon. These patterns identify only likely
-   LISTING pages, not arbitrary navigation. */
 const LISTING_TEXT_RE = /\b(search|find|view|browse|explore|see|show)\s+(?:for\s+)?(?:all\s+)?(?:open\s+)?(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b|\b(current|open)\s+(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b/i;
 const LISTING_PATH_RE = /(?:^|\/)(?:search|job-search|search-jobs?|jobs?|careers?\/jobs?|careers?\/search|open-positions?|openings?|positions?|opportunities|vacancies)(?:\/|$)/i;
 const SINGLE_JOB_RE = /(?:^|\/)(?:jobs?|positions?|roles?|openings?)\/[^/?#]{5,}(?:\/|$)/i;
 const BAD_LISTING_TEXT_RE = /\b(sign[ -]?in|log[ -]?in|register|talent community|join our network|apply now|job alert)\b/i;
+const GENERIC_ANCHOR_TEXT_RE = /^(learn more|read more|view|details?|apply|apply now|share|open|job details?)$/i;
 
 function sameOrigin(a, b) {
   try { return new URL(a).origin === new URL(b).origin; } catch { return false; }
 }
 
-/**
- * Extract only high-confidence listing/search pages from a landing page.
- * Kept exportable so offline fixtures can regression-test landing -> listing
- * resolution without making a network request.
- */
+function isGoogleCareersUrl(value) {
+  try {
+    const u = new URL(value);
+    return (u.hostname === 'www.google.com' || u.hostname === 'google.com' || u.hostname === 'careers.google.com')
+      && (/\/about\/careers\/applications\/jobs\/results/i.test(u.pathname) || /\/jobs\/?$/i.test(u.pathname));
+  } catch { return false; }
+}
+
+function isGoogleListingUrl(value) {
+  try {
+    const u = new URL(value);
+    return (u.hostname === 'www.google.com' || u.hostname === 'google.com')
+      && /^\/about\/careers\/applications\/jobs\/results\/?$/i.test(u.pathname);
+  } catch { return false; }
+}
+
+function isAmazonJobsUrl(value) {
+  try {
+    const u = new URL(value);
+    return /(^|\.)amazon\.jobs$/i.test(u.hostname);
+  } catch { return false; }
+}
+
+function isAmazonSearchUrl(value) {
+  try {
+    const u = new URL(value);
+    return /(^|\.)amazon\.jobs$/i.test(u.hostname) && /^\/[a-z]{2}(?:-[A-Z]{2})?\/search\/?$/i.test(u.pathname);
+  } catch { return false; }
+}
+
+export function canonicalListingUrl(value, cursor = null) {
+  let raw = cursor?.url || value;
+  if (!raw) return null;
+
+  try {
+    const u = new URL(raw);
+    if (u.hostname === 'careers.google.com' || (isGoogleCareersUrl(raw) && !isGoogleListingUrl(raw))) {
+      raw = 'https://www.google.com/about/careers/applications/jobs/results/';
+    }
+
+    if (isAmazonJobsUrl(raw)) {
+      const a = new URL(raw);
+      if (!/\/[a-z]{2}(?:-[A-Z]{2})?\/search\/?$/i.test(a.pathname)) {
+        const locale = (a.pathname.match(/^\/([a-z]{2}(?:-[A-Z]{2})?)(?:\/|$)/) || [])[1] || 'en';
+        a.pathname = `/${locale}/search`;
+      }
+      if (!a.searchParams.has('base_query')) a.searchParams.set('base_query', '');
+      if (!a.searchParams.has('loc_query')) a.searchParams.set('loc_query', '');
+      if (!a.searchParams.has('result_limit')) a.searchParams.set('result_limit', String(cursor?.limit || AMAZON_RESULT_LIMIT));
+      a.searchParams.set('offset', String(cursor?.offset ?? Number(a.searchParams.get('offset') || 0)));
+      raw = a.toString();
+    }
+
+    if (isGoogleListingUrl(raw)) {
+      const g = new URL(raw);
+      const page = cursor?.page ?? Number(g.searchParams.get('page') || 1);
+      g.searchParams.set('page', String(Math.max(1, page)));
+      raw = g.toString();
+    }
+
+    return normalizeUrl(raw) || raw;
+  } catch {
+    return normalizeUrl(raw);
+  }
+}
+
 export function extractListingPageLinks(html, baseUrl) {
   const found = new Map();
   for (const m of String(html || '').matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
@@ -79,21 +131,113 @@ export function extractListingPageLinks(html, baseUrl) {
     let score = 0;
     if (LISTING_TEXT_RE.test(label)) score += 14;
     if (LISTING_PATH_RE.test(u.pathname)) score += 9;
-    /* Plain /en/search and locale-prefixed equivalents are common listing
-       routes even when the anchor text is only "Jobs". */
     if (/(?:^|\/)search(?:\/|$)/i.test(u.pathname)) score += 8;
     if (/jobs?\.|careers?\./i.test(u.hostname)) score += 3;
     if (sameOrigin(abs, baseUrl)) score += 2;
     if (SINGLE_JOB_RE.test(u.pathname)) score -= 18;
     if (BAD_LISTING_TEXT_RE.test(joined)) score -= 20;
     if (/\/(?:about|culture|benefits|students?|internships?|locations?|teams?)(?:\/|$)/i.test(u.pathname)) score -= 6;
-
     if (score < 9) continue;
+
     const prior = found.get(abs);
     const candidate = { url: abs, text: label, score };
     if (!prior || candidate.score > prior.score) found.set(abs, candidate);
   }
   return [...found.values()].sort((a, b) => b.score - a.score || a.url.localeCompare(b.url));
+}
+
+function titleFromSlug(slug) {
+  const text = normalizeWhitespace(String(slug || '').replace(/[-_]+/g, ' '));
+  if (!text) return null;
+  return text.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function extractRecognizedListingCards(html, pageUrl) {
+  let site = null;
+  if (isGoogleListingUrl(pageUrl)) site = 'google';
+  else if (isAmazonSearchUrl(pageUrl)) site = 'amazon';
+  if (!site) return [];
+
+  const out = new Map();
+  const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const m of String(html || '').matchAll(anchorRe)) {
+    let abs;
+    try { abs = normalizeUrl(new URL(m[1], pageUrl).toString()); } catch { continue; }
+    if (!abs) continue;
+
+    let jobId = null;
+    let slug = null;
+    if (site === 'google') {
+      const mm = new URL(abs).pathname.match(/\/about\/careers\/applications\/jobs\/results\/(\d+)-([^/?#]+)/i);
+      if (!mm) continue;
+      [, jobId, slug] = mm;
+    } else {
+      const mm = new URL(abs).pathname.match(/\/[a-z]{2}(?:-[A-Z]{2})?\/jobs\/(\d+)\/([^/?#]+)/i);
+      if (!mm) continue;
+      [, jobId, slug] = mm;
+    }
+
+    let label = normalizeWhitespace(stripHtml(m[2] || '')).replace(/\s+/g, ' ').trim();
+    if (!label || GENERIC_ANCHOR_TEXT_RE.test(label) || label.length < 3) label = titleFromSlug(slug);
+    if (!label) continue;
+
+    const start = Math.max(0, (m.index || 0) - 500);
+    const end = Math.min(String(html || '').length, (m.index || 0) + m[0].length + 900);
+    const context = normalizeWhitespace(stripHtml(String(html || '').slice(start, end))).slice(0, 1600);
+
+    out.set(`${site}:${jobId}`, {
+      __kind: 'listing-card',
+      site,
+      sourceJobId: jobId,
+      title: label,
+      jobUrl: abs,
+      context,
+    });
+  }
+  return [...out.values()];
+}
+
+function parseGooglePageWindow(html) {
+  const text = normalizeWhitespace(stripHtml(html));
+  const m = text.match(/Showing\s+(\d+)\s+to\s+(\d+)\s+of\s+([\d,]+)\s+rows/i)
+    || text.match(/(\d+)\s*[\-–‑]\s*(\d+)\s+of\s+([\d,]+)/i);
+  if (!m) return null;
+  return { start: Number(m[1]), end: Number(m[2]), total: Number(String(m[3]).replace(/,/g, '')) };
+}
+
+export function listingCursorFor(html, pageUrl, itemCount = 0) {
+  if (isGoogleListingUrl(pageUrl)) {
+    const win = parseGooglePageWindow(html);
+    if (!win || !Number.isFinite(win.total) || win.total <= 0 || win.end >= win.total) return null;
+    const u = new URL(pageUrl);
+    const current = Math.max(1, Number(u.searchParams.get('page') || 1));
+    u.searchParams.delete('page');
+    return { kind: 'SITE_LISTING', site: 'google', url: u.toString(), page: current + 1, total: win.total };
+  }
+
+  if (isAmazonSearchUrl(pageUrl)) {
+    if (!itemCount) return null;
+    const u = new URL(pageUrl);
+    const offset = Math.max(0, Number(u.searchParams.get('offset') || 0));
+    const requestedLimit = Math.max(1, Number(u.searchParams.get('result_limit') || AMAZON_RESULT_LIMIT));
+    const text = normalizeWhitespace(stripHtml(html));
+    const hasMoreSignal = /Load more jobs/i.test(text) || itemCount >= requestedLimit;
+    if (!hasMoreSignal) return null;
+    u.searchParams.delete('offset');
+    return {
+      kind: 'SITE_LISTING', site: 'amazon', url: u.toString(),
+      offset: offset + itemCount, limit: requestedLimit,
+    };
+  }
+
+  return null;
+}
+
+function explicitLocationFromContext(raw) {
+  const text = String(raw || '');
+  const amazon = text.match(/(?:^|\s)([^|]{2,120}?)\s*\|\s*Job ID\s*:/i);
+  if (amazon) return normalizeWhitespace(amazon[1]).replace(/^.*?Results listed\s*/i, '').trim();
+  return null;
 }
 
 export class GenericCareerSiteAdapter extends JobSourceAdapter {
@@ -121,12 +265,7 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
       }
       return { policy: ACCESS_POLICY.REVIEW, reason: 'no robots policy configured' };
     }
-
     const live = await this.robots.check(url);
-    /* Explicit robots DENY always wins. An administrator may only approve a
-       source that is otherwise stuck in REVIEW because robots could not be
-       established. This makes the UI's “Approve source” action real without
-       turning it into a robots bypass. */
     if (live.policy === ACCESS_POLICY.DENY) return live;
     if (live.policy === ACCESS_POLICY.ALLOW) return live;
     if (source?.accessPolicy === ACCESS_POLICY.ALLOW && source?.accessApproval?.policy === ACCESS_POLICY.ALLOW) {
@@ -136,7 +275,8 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
   }
 
   async discover(source, ctx = {}) {
-    const url = source.careersUrl || source.baseUrl;
+    const initial = source.careersUrl || source.baseUrl;
+    const url = canonicalListingUrl(initial) || initial;
     if (!url) return { source, ok: false, reason: 'no careers url', errorClass: ERROR_CLASS.PARSE_FAILED };
     const access = await this.checkAccess(url, source);
     if (access.policy !== ACCESS_POLICY.ALLOW) {
@@ -159,11 +299,7 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
           sitemaps: access.sitemaps || [],
         },
         ok: true,
-        /* When the page reveals a real ATS, source discovery should register
-           THAT instead — direct-source coverage beats generic crawling. */
-        redirectToProvider: ats.provider !== PROVIDER.GENERIC && ats.tenant
-          ? { provider: ats.provider, tenant: ats.tenant }
-          : null,
+        redirectToProvider: ats.provider !== PROVIDER.GENERIC && ats.tenant ? { provider: ats.provider, tenant: ats.tenant } : null,
         reason: ats.provider !== PROVIDER.GENERIC ? `careers page is powered by ${ats.provider}` : 'generic careers page reachable',
       };
     } catch (e) {
@@ -173,45 +309,36 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
 
   async fetchJobs(source, cursor = null, ctx = {}) {
     const http = ctx.http || this.http;
-    const url = source.careersUrl || source.baseUrl;
-    if (!url) return { items: [], nextCursor: null, authoritative: false, error: { errorClass: ERROR_CLASS.PARSE_FAILED, message: 'no careers url' } };
+    const initial = source.careersUrl || source.baseUrl;
+    const requestUrl = canonicalListingUrl(initial, cursor) || initial;
+    if (!requestUrl) return { items: [], nextCursor: null, authoritative: false, error: { errorClass: ERROR_CLASS.PARSE_FAILED, message: 'no careers url' } };
 
-    const access = await this.checkAccess(url, source);
+    const access = await this.checkAccess(requestUrl, source);
     if (access.policy !== ACCESS_POLICY.ALLOW) {
       return { items: [], nextCursor: null, authoritative: false, error: { errorClass: access.policy === ACCESS_POLICY.DENY ? ERROR_CLASS.ROBOTS_DENIED : ERROR_CLASS.BLOCKED, message: access.policy === ACCESS_POLICY.DENY ? access.reason : `crawl policy requires review: ${access.reason || 'robots policy not confirmed'}` } };
     }
 
     let page;
     try {
-      page = await http.fetch(url, { etag: source.http?.etag || null, lastModified: source.http?.lastModified || null });
+      page = await http.fetch(requestUrl, cursor ? {} : { etag: source.http?.etag || null, lastModified: source.http?.lastModified || null });
     } catch (e) {
       return { items: [], nextCursor: null, authoritative: false, error: { errorClass: e?.errorClass || ERROR_CLASS.NETWORK, message: e?.message } };
     }
-    if (page.notModified) {
-      return { items: [], nextCursor: null, authoritative: false, notModified: true, http: { etag: page.etag, status: 304 } };
-    }
+    if (page.notModified) return { items: [], nextCursor: null, authoritative: false, notModified: true, http: { etag: page.etag, status: 304 } };
 
     let effectivePage = page;
     let result = await this.extractFrom(page.text, page.url, source, ctx);
 
-    /* A reachable careers page with zero extracted jobs may simply be the
-       marketing shell. Follow at most three explicit listing/search CTAs and
-       run the SAME extraction ladder there. This fixes stale seeded URLs without
-       requiring an operator to manually discover the hidden final page first. */
-    if (!(result.items || []).length) {
+    if (!(result.items || []).length && !cursor) {
       const listingLinks = extractListingPageLinks(page.text, page.url).slice(0, MAX_LISTING_PAGE_HOPS);
       for (const candidate of listingLinks) {
+        const candidateUrl = canonicalListingUrl(candidate.url) || candidate.url;
         let listingAccess;
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          listingAccess = await this.checkAccess(candidate.url, source);
-        } catch { continue; }
+        try { listingAccess = await this.checkAccess(candidateUrl, source); } catch { continue; }
         if (listingAccess.policy !== ACCESS_POLICY.ALLOW) continue;
         try {
-          // eslint-disable-next-line no-await-in-loop
-          const listingPage = await http.fetch(candidate.url);
+          const listingPage = await http.fetch(candidateUrl);
           if (listingPage.notModified) continue;
-          // eslint-disable-next-line no-await-in-loop
           const listingResult = await this.extractFrom(listingPage.text, listingPage.url, source, ctx);
           if ((listingResult.items || []).length) {
             effectivePage = listingPage;
@@ -222,6 +349,7 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
       }
     }
 
+    const nextCursor = listingCursorFor(effectivePage.text, effectivePage.url, (result.items || []).length);
     const httpMeta = {
       etag: effectivePage.etag,
       lastModified: effectivePage.lastModified,
@@ -232,114 +360,92 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
     if (result.stage) this.stageCounts[result.stage] = (this.stageCounts[result.stage] || 0) + 1;
     return {
       items: result.items,
-      nextCursor: null,
-      /* A generic scrape is NEVER authoritative: we cannot prove the page shows
-         the complete vacancy list, so absence must not close a job (§22.1). */
+      nextCursor,
       authoritative: false,
       stage: result.stage,
       http: httpMeta,
     };
   }
 
-  /** Runs the ladder against already-fetched HTML. Exposed for offline tests. */
   async extractFrom(html, pageUrl, source = {}, ctx = {}) {
     const http = ctx.http || this.http;
 
-    /* 3 — JSON-LD on the listing page itself. */
     const postings = findJobPostings(html);
-    if (postings.length) {
-      return { stage: STAGE.JSON_LD, items: postings.map((n) => ({ __kind: 'jsonld', node: n, pageUrl })) };
-    }
+    if (postings.length) return { stage: STAGE.JSON_LD, items: postings.map((n) => ({ __kind: 'jsonld', node: n, pageUrl })) };
 
-    /* 4 — embedded framework JSON. */
     for (const block of extractEmbeddedJson(html)) {
       const arrays = findJobArrays(block.data);
       if (arrays.length && arrays[0].jobs.length) {
-        return {
-          stage: STAGE.EMBEDDED_JSON,
-          items: arrays[0].jobs.map((j) => ({ __kind: 'embedded', node: j, pageUrl, embedKey: block.key })),
-        };
+        return { stage: STAGE.EMBEDDED_JSON, items: arrays[0].jobs.map((j) => ({ __kind: 'embedded', node: j, pageUrl, embedKey: block.key })) };
       }
     }
 
-    /* 5 — HTML job links, then per-posting JSON-LD on each detail page. */
+    const listingCards = extractRecognizedListingCards(html, pageUrl);
+    if (listingCards.length) return { stage: STAGE.LISTING_CARDS, items: listingCards };
+
     const links = extractJobLinks(html, pageUrl);
     if (links.length) {
-      const items = await this.fetchDetailPages(links.slice(0, this.maxDetailPages), http, pageUrl);
+      const items = await this.fetchDetailPages(links.slice(0, this.maxDetailPages), http);
       if (items.length) return { stage: STAGE.HTML_LINKS, items };
     }
 
-    /* 6 — sitemap. */
     const sitemaps = source.sitemaps?.length ? source.sitemaps : [];
     if (sitemaps.length && http) {
       for (const sm of sitemaps.slice(0, 3)) {
         try {
-          // eslint-disable-next-line no-await-in-loop
           const xml = await http.fetchText(sm, { accept: 'application/xml' });
           let urls = extractSitemapUrls(xml);
           if (isSitemapIndex(xml)) {
             const child = urls.find((u) => /job|career|vacan/i.test(u));
-            if (child) {
-              // eslint-disable-next-line no-await-in-loop
-              urls = extractSitemapUrls(await http.fetchText(child, { accept: 'application/xml' }));
-            }
+            if (child) urls = extractSitemapUrls(await http.fetchText(child, { accept: 'application/xml' }));
           }
           const jobUrls = filterJobSitemapUrls(urls).slice(0, this.maxDetailPages);
           if (jobUrls.length) {
-            // eslint-disable-next-line no-await-in-loop
-            const items = await this.fetchDetailPages(jobUrls.map((u) => ({ url: u })), http, pageUrl);
+            const items = await this.fetchDetailPages(jobUrls.map((u) => ({ url: u })), http);
             if (items.length) return { stage: STAGE.SITEMAP, items };
           }
         } catch { /* try next sitemap */ }
       }
     }
 
-    /* 7 — public XHR endpoint the page itself calls, unauthenticated only. */
     const xhr = this.findPublicJobEndpoint(html, pageUrl);
     if (xhr && http) {
       try {
         const r = await http.fetchJson(xhr);
         const arrays = findJobArrays(r.json);
         if (arrays.length && arrays[0].jobs.length) {
-          return {
-            stage: STAGE.PUBLIC_XHR,
-            items: arrays[0].jobs.map((j) => ({ __kind: 'embedded', node: j, pageUrl, endpoint: xhr })),
-          };
+          return { stage: STAGE.PUBLIC_XHR, items: arrays[0].jobs.map((j) => ({ __kind: 'embedded', node: j, pageUrl, endpoint: xhr })) };
         }
       } catch { /* fall through to browser */ }
     }
 
-    /* 8 — browser render. Bounded, and skipped entirely when unavailable. */
     if (this.browserPool && await this.browserPool.probe()) {
       try {
         const rendered = await this.browserPool.render(pageUrl);
         const renderedPostings = findJobPostings(rendered.html);
-        if (renderedPostings.length) {
-          return { stage: STAGE.BROWSER, items: renderedPostings.map((n) => ({ __kind: 'jsonld', node: n, pageUrl: rendered.url })) };
-        }
+        if (renderedPostings.length) return { stage: STAGE.BROWSER, items: renderedPostings.map((n) => ({ __kind: 'jsonld', node: n, pageUrl: rendered.url })) };
         for (const block of extractEmbeddedJson(rendered.html)) {
           const arrays = findJobArrays(block.data);
-          if (arrays.length && arrays[0].jobs.length) {
-            return { stage: STAGE.BROWSER, items: arrays[0].jobs.map((j) => ({ __kind: 'embedded', node: j, pageUrl: rendered.url })) };
-          }
+          if (arrays.length && arrays[0].jobs.length) return { stage: STAGE.BROWSER, items: arrays[0].jobs.map((j) => ({ __kind: 'embedded', node: j, pageUrl: rendered.url })) };
         }
+        const cards = extractRecognizedListingCards(rendered.html, rendered.url);
+        if (cards.length) return { stage: STAGE.BROWSER, items: cards };
         const renderedLinks = extractJobLinks(rendered.html, rendered.url);
         if (renderedLinks.length) {
-          const items = await this.fetchDetailPages(renderedLinks.slice(0, this.maxDetailPages), http, rendered.url);
+          const items = await this.fetchDetailPages(renderedLinks.slice(0, this.maxDetailPages), http);
           if (items.length) return { stage: STAGE.BROWSER, items };
         }
-      } catch { /* browser genuinely failed — report nothing rather than guess */ }
+      } catch { /* browser failed; never fabricate */ }
     }
 
     return { stage: null, items: [] };
   }
 
-  async fetchDetailPages(links, http, baseUrl) {
+  async fetchDetailPages(links, http) {
     if (!http) return [];
     const out = [];
     for (const link of links) {
       try {
-        // eslint-disable-next-line no-await-in-loop
         const r = await http.fetch(link.url);
         const nodes = findJobPostings(r.text);
         if (nodes.length) {
@@ -347,15 +453,12 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
           continue;
         }
         const meta = extractMeta(r.text, r.url);
-        if (meta.title) {
-          out.push({ __kind: 'meta', meta, pageUrl: r.url, linkText: link.text || null, html: r.text });
-        }
-      } catch { /* one bad posting page must not fail the source */ }
+        if (meta.title) out.push({ __kind: 'meta', meta, pageUrl: r.url, linkText: link.text || null, html: r.text });
+      } catch { /* one bad posting must not fail the source */ }
     }
     return out;
   }
 
-  /** Only endpoints the public page itself references. No credential discovery. */
   findPublicJobEndpoint(html, baseUrl) {
     const patterns = [
       /["'](\/[^"']*api[^"']*(?:jobs?|positions?|openings?|vacanc)[^"']*)["']/i,
@@ -374,6 +477,38 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
     if (raw.__kind === 'jsonld') {
       const input = jobPostingToInput(raw.node, { pageUrl: raw.pageUrl });
       return { ...input, extraction: 'JSON_LD', rawHash: sha256(JSON.stringify(raw.node)) };
+    }
+
+    if (raw.__kind === 'listing-card') {
+      const location = raw.site === 'amazon' ? explicitLocationFromContext(raw.context) : null;
+      return {
+        sourceJobId: raw.sourceJobId || raw.jobUrl,
+        requisitionId: raw.sourceJobId || null,
+        title: raw.title || null,
+        company: {
+          name: source.companyName || (raw.site === 'google' ? 'Google' : raw.site === 'amazon' ? 'Amazon' : null),
+          website: source.baseUrl || null,
+          domain: source.companyDomain || null,
+          logoUrl: null,
+        },
+        descriptionHtml: null,
+        descriptionText: raw.context || null,
+        locationsRaw: location ? [location] : [],
+        applicantRegions: [],
+        explicitRemote: null,
+        workplaceHint: null,
+        employmentTypeRaw: null,
+        department: null,
+        jobUrl: raw.jobUrl,
+        applyUrl: raw.jobUrl,
+        sourcePublishedAt: null,
+        validThrough: null,
+        compensationStructured: null,
+        compensationRaw: null,
+        tags: [],
+        extraction: 'LISTING_CARD',
+        rawHash: sha256(`${raw.site}:${raw.sourceJobId}:${raw.title}:${raw.jobUrl}`),
+      };
     }
 
     if (raw.__kind === 'embedded') {
@@ -405,8 +540,6 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
         department: n.department || n.team || null,
         jobUrl,
         applyUrl: n.applyUrl || n.application_url || jobUrl,
-        /* Only a field that genuinely means "published". An `updatedAt` is not
-           promoted to a posting date. */
         sourcePublishedAt: n.publishedAt || n.published_on || n.datePosted || n.createdAt || null,
         validThrough: null,
         compensationStructured: null,
@@ -417,7 +550,6 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
       };
     }
 
-    /* meta-only detail page: title + description, nothing invented. */
     const meta = raw.meta || {};
     return {
       sourceJobId: raw.pageUrl || null,
@@ -439,7 +571,7 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
       department: null,
       jobUrl: meta.canonical || raw.pageUrl || null,
       applyUrl: meta.canonical || raw.pageUrl || null,
-      sourcePublishedAt: null, // the page stated none
+      sourcePublishedAt: null,
       validThrough: null,
       compensationStructured: null,
       compensationRaw: null,
