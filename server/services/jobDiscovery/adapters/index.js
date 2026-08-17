@@ -37,6 +37,7 @@ import WorkdayAdapter from './workday.js';
 import OracleRecruitingAdapter from './oracleRecruiting.js';
 import ICIMSAdapter from './icims.js';
 import GenericCareerSiteAdapter from './genericCareerSite.js';
+import GoogleCareersAdapter from './googleCareers.js';
 import AggregatorAdapter from './aggregator.js';
 import { adapterFromSpec } from './spec/specAdapter.js';
 import PROVIDER_SPECS from './spec/providerSpecs.js';
@@ -57,6 +58,10 @@ export class AdapterRegistry {
     for (const Cls of ADAPTER_CLASSES) {
       this.adapters.set(Cls.provider, new Cls(ctx));
     }
+    /* Google is still persisted as a GENERIC employer career source. Routing it
+       here, rather than assigning a fake provider enum, keeps the canonical
+       source model stable while enforcing Google's host-specific robots policy. */
+    this.googleCareers = new GoogleCareersAdapter(ctx);
   }
 
   get(provider) {
@@ -64,6 +69,9 @@ export class AdapterRegistry {
   }
 
   forSource(source) {
+    if (source?.provider === PROVIDER.GENERIC && GoogleCareersAdapter.matchesSource(source)) {
+      return this.googleCareers;
+    }
     return this.get(source?.provider);
   }
 
@@ -97,6 +105,18 @@ export class AdapterRegistry {
         ...cfg,
       };
     }
+    out.GOOGLE_CAREERS_DIRECT = {
+      adapter: this.googleCareers.constructor.name,
+      sourceType: this.googleCareers.constructor.sourceType,
+      sourceClass: this.googleCareers.constructor.sourceClass,
+      requiresCredentials: false,
+      specDriven: false,
+      detectable: true,
+      status: SOURCE_STATUS.ACTIVE,
+      configured: true,
+      mode: 'ROBOTS_COMPLIANT_PARTIAL',
+      reason: 'Direct Google Careers crawl uses only the robots-allowed canonical listing page; broader inventory must come from other configured sources.',
+    };
     return out;
   }
 
@@ -148,7 +168,7 @@ export {
   JobSourceAdapter, assertNormalizedInput, NORMALIZED_INPUT_KEYS,
   GreenhouseAdapter, LeverAdapter, AshbyAdapter, WorkableAdapter,
   SmartRecruitersAdapter, WorkdayAdapter, OracleRecruitingAdapter, ICIMSAdapter,
-  GenericCareerSiteAdapter, AggregatorAdapter,
+  GenericCareerSiteAdapter, GoogleCareersAdapter, AggregatorAdapter,
 };
 
 export default AdapterRegistry;
