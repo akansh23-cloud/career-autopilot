@@ -32,6 +32,22 @@ export const COMPANY_TYPE = Object.freeze({
   UNKNOWN: 'UNKNOWN',
 });
 
+const CAREER_RESOLVER_SOURCE_PREFIX = 'career-autopilot-career-target-resolver';
+const RESOLVER_AUTHORITATIVE_FIELDS = new Set([
+  'careersUrl', 'atsProvider', 'atsTenant', 'careerUrlStatus',
+]);
+
+function comparableUrl(value) {
+  try {
+    const u = new URL(String(value || ''));
+    u.hash = '';
+    if (u.pathname.length > 1) u.pathname = u.pathname.replace(/\/+$/, '');
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return String(value || '').trim().replace(/\/$/, '');
+  }
+}
+
 export function companyId({ domain = null, normalizedName = null }) {
   const d = domain ? registrableDomain(domain) : null;
   if (d) return `co_${sha256(`domain:${d.toLowerCase()}`).slice(0, 20)}`;
@@ -94,6 +110,11 @@ export class CompanyRegistry {
    * Upsert. Existing knowledge is ENRICHED, never overwritten by something
    * weaker: a domain-sourced fact outranks a job-sourced one, and a null never
    * replaces a value we already have.
+   *
+   * The career-target resolver is a deliberate exception for URL/ATS identity.
+   * It has just fetched the employer surface and resolved a more specific final
+   * listing/ATS target, so an older high-confidence CURATED_SURFACE seed must
+   * not be allowed to permanently pin the company to a marketing landing page.
    */
   async upsert(partial, { source = 'unknown', confidence = 0.5 } = {}) {
     const candidate = makeCompany(partial);
@@ -115,6 +136,7 @@ export class CompanyRegistry {
     }
 
     const merged = { ...existing, id: existing.id };
+    const resolverAuthoritative = String(source || '').startsWith(CAREER_RESOLVER_SOURCE_PREFIX);
     let changed = false;
     for (const field of [
       'name', 'normalizedName', 'domain', 'website', 'careersUrl', 'atsProvider', 'atsTenant',
@@ -125,12 +147,14 @@ export class CompanyRegistry {
       if (incoming == null || incoming === '') continue;
       const prior = existing.provenance?.[field];
       const priorConfidence = prior?.confidence ?? -1;
-      if (existing[field] == null || existing[field] === '' || confidence > priorConfidence) {
+      const resolverWins = resolverAuthoritative && RESOLVER_AUTHORITATIVE_FIELDS.has(field);
+      if (existing[field] == null || existing[field] === '' || confidence > priorConfidence || resolverWins) {
         if (existing[field] !== incoming) changed = true;
+        const storedConfidence = resolverWins ? Math.max(1, Number(confidence) || 0) : confidence;
         merged[field] = incoming;
         merged.provenance = {
           ...(merged.provenance || {}),
-          [field]: { value: incoming, source, confidence, at: this.nowIso() },
+          [field]: { value: incoming, source, confidence: storedConfidence, at: this.nowIso() },
         };
       }
     }
@@ -193,7 +217,19 @@ export class CompanyRegistry {
       };
     }
     if ((company.sourceIds || []).length) {
-      return { known: true, skipProbe: true, reason: 'company already has a registered source', company };
+      const sourceIds = (company.sourceIds || []).slice(0, 20);
+      const sources = (await Promise.all(sourceIds.map((id) => this.store.getSource(id).catch(() => null)))).filter(Boolean);
+      const target = comparableUrl(company.careersUrl);
+      const matching = target && sources.some((s) => comparableUrl(s.careersUrl || s.baseUrl) === target);
+      if (matching) {
+        return { known: true, skipProbe: true, reason: 'company already has a registered source for the current careers URL', company };
+      }
+      return {
+        known: true,
+        skipProbe: false,
+        reason: 'registered source is stale and does not match the current resolved careers URL',
+        company,
+      };
     }
     if ((company.discoveryAttempts || 0) >= 5) {
       return {
