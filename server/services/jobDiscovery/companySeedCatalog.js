@@ -31,11 +31,28 @@ export const OPENJOBS_SEED_SOURCE = 'outscal-openjobs';
 export const CAREER_RESOLVER_SOURCE = 'career-autopilot-career-target-resolver';
 export const DEFAULT_CAREER_RESOLVE_BATCH = 60;
 
+/* A tiny set of regression anchors for employers whose public marketing
+   careers surface is known to sit in front of a separate, stable listing page.
+   These are official employer-owned URLs, not guessed ATS tenants. The dynamic
+   resolver remains responsible for the rest of the catalog. */
 const CURATED_CANONICAL_OVERRIDES = new Map([
+  ['Google', {
+    url: 'https://www.google.com/about/careers/applications/jobs/results/',
+    provider: null,
+    tenant: null,
+    status: 'CURATED_VERIFIED_LISTING',
+  }],
+  ['Amazon', {
+    url: 'https://www.amazon.jobs/en/search',
+    provider: null,
+    tenant: null,
+    status: 'CURATED_VERIFIED_LISTING',
+  }],
   ['NVIDIA', {
     url: 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite',
     provider: PROVIDER.WORKDAY,
     tenant: 'nvidia/wd5/NVIDIAExternalCareerSite',
+    status: 'CURATED_VERIFIED_ATS',
   }],
 ]);
 
@@ -79,8 +96,8 @@ const SHARED_ATS_HOSTS = [
   'applytojob.com', 'jobvite.com', 'zohorecruit.com', 'rippling.com',
 ];
 
-const JOB_BOARD_TEXT_RE = /\b(search|find|view|browse|explore|see|show)\s+(all\s+)?(open\s+)?(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b|\b(current|open)\s+(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b/i;
-const JOB_BOARD_PATH_RE = /\/(jobs?|job-search|search-jobs?|careers?\/jobs?|careers?\/search|open-positions?|openings?|positions?|opportunities|vacancies)(?:\/|$)/i;
+const JOB_BOARD_TEXT_RE = /\b(search|find|view|browse|explore|see|show)\s+(?:for\s+)?(all\s+)?(open\s+)?(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b|\b(current|open)\s+(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b/i;
+const JOB_BOARD_PATH_RE = /\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(jobs?|job-search|search-jobs?|search|careers?\/jobs?|careers?\/search|open-positions?|openings?|positions?|opportunities|vacancies)(?:\/|$)/i;
 const SINGLE_JOB_PATH_RE = /\/(jobs?|positions?|roles?|openings?)\/[^/?#]{5,}(?:[/?#]|$)/i;
 const BAD_TARGET_RE = /\b(sign[ -]?in|log[ -]?in|register|talent community|join our network|apply now)\b/i;
 
@@ -122,7 +139,7 @@ function normalizeCurated(row, rank) {
   const careersUrl = override?.url || row.careersUrl;
   const domain = companyDomainFromWebsite(null, row.careersUrl);
   const ats = override
-    ? { provider: override.provider, tenant: override.tenant }
+    ? { provider: override.provider || null, tenant: override.tenant || null }
     : atsInfo(careersUrl);
   const type = curatedCompanyType(row);
   return makeCompany({
@@ -136,7 +153,7 @@ function normalizeCurated(row, rank) {
     industry: row.industry || null,
     ...type,
     indiaRelevance: row.indiaRelevance || null,
-    careerUrlStatus: override ? 'CURATED_VERIFIED_ATS' : (ats.provider ? 'CURATED_ATS' : 'CURATED_SURFACE'),
+    careerUrlStatus: override?.status || (ats.provider ? 'CURATED_ATS' : 'CURATED_SURFACE'),
     seedSource: CURATED_SEED_SOURCE,
     seedRank: Number(row.seedRank || rank),
     sourceConfidence: Number(row.sourceConfidence || 0.9),
@@ -194,7 +211,7 @@ async function fetchJsonBounded(fetchImpl, url, { maxBytes = 8 * 1024 * 1024, ti
   try {
     const res = await fetchImpl(url, {
       signal: controller.signal,
-      headers: { accept: 'application/json', 'user-agent': 'CareerAutopilot-JobDiscovery/2.2' },
+      headers: { accept: 'application/json', 'user-agent': 'CareerAutopilot-JobDiscovery/2.3' },
     });
     if (!res.ok) throw new Error(`company seed source returned HTTP ${res.status}`);
     const length = Number(res.headers?.get?.('content-length') || 0);
@@ -218,7 +235,7 @@ async function fetchHtmlBounded(fetchImpl, url, { maxBytes = 1024 * 1024, timeou
       redirect: 'follow',
       headers: {
         accept: 'text/html,application/xhtml+xml',
-        'user-agent': 'CareerAutopilot-JobDiscovery/2.2 (+career-target-resolution)',
+        'user-agent': 'CareerAutopilot-JobDiscovery/2.3 (+career-target-resolution)',
       },
     });
     if (!res.ok) throw new Error(`career page returned HTTP ${res.status}`);
@@ -274,9 +291,9 @@ export async function resolveCareerTarget(fetchImpl, company) {
       ok: true,
       changed: inputUrl !== override.url,
       url: override.url,
-      provider: override.provider,
-      tenant: override.tenant,
-      status: 'RESOLVED_VERIFIED_ATS',
+      provider: override.provider || null,
+      tenant: override.tenant || null,
+      status: override.status || (override.provider ? 'RESOLVED_VERIFIED_ATS' : 'RESOLVED_VERIFIED_LISTING'),
       confidence: 1,
       evidence: 'curated-official-override',
     };
@@ -402,9 +419,13 @@ export class CompanySeedCatalog {
     const rows = this.curatedEntries();
     const result = await this.store.seedCompanies(rows, { seedSource: CURATED_SEED_SOURCE });
 
+    /* Verified overrides must update an existing row too. seedCompanies() is
+       intentionally insert-biased so generic seed refreshes cannot overwrite
+       stronger discovered fields; this explicit resolver-authority path is the
+       narrow exception for official final listing/ATS URLs. */
     let corrected = 0;
     if (this.companies) {
-      for (const row of rows.filter((r) => r.careerUrlStatus === 'CURATED_VERIFIED_ATS')) {
+      for (const row of rows.filter((r) => /^CURATED_VERIFIED_/i.test(String(r.careerUrlStatus || '')))) {
         // eslint-disable-next-line no-await-in-loop
         const up = await this.companies.upsert(row, { source: CAREER_RESOLVER_SOURCE, confidence: 1 });
         if (up?.changed) corrected += 1;
@@ -421,7 +442,7 @@ export class CompanySeedCatalog {
     const candidates = all
       .filter((c) => c.seedSource === CURATED_SEED_SOURCE)
       .filter((c) => c.careersUrl)
-      .filter((c) => !/^RESOLVED_|^CURATED_VERIFIED_ATS$/i.test(String(c.careerUrlStatus || '')))
+      .filter((c) => !/^RESOLVED_|^CURATED_VERIFIED_/i.test(String(c.careerUrlStatus || '')))
       .sort((a, b) => Number(a.seedRank || 999999) - Number(b.seedRank || 999999))
       .slice(0, Math.max(1, Number(limit) || DEFAULT_CAREER_RESOLVE_BATCH));
 
