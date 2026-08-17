@@ -13,9 +13,12 @@
      7  public XHR endpoints the page itself exposes
      8  Playwright render  <- LAST, and bounded
 
-   A browser is never launched for a source an earlier stage
-   already answered. The stage that succeeded is recorded so the
-   browser-fallback percentage in §51 is a measured number.
+   If the configured URL is only a marketing careers landing page,
+   one bounded extra step follows high-confidence "Search jobs" /
+   "View open positions" listing links before giving up. This is
+   deliberately NOT a general site crawler: only a few job-listing
+   candidates are considered and every target goes through the same
+   robots/HTTP safety gates as the original source.
    ============================================================ */
 
 import { JobSourceAdapter } from './base.js';
@@ -25,7 +28,7 @@ import {
   extractMeta, findJobPostings, jobPostingToInput, extractEmbeddedJson,
   findJobArrays, extractJobLinks, extractSitemapUrls, isSitemapIndex, filterJobSitemapUrls,
 } from '../crawler/extract.js';
-import { sha256, normalizeUrl, stripHtml, registrableDomain } from '../normalize/text.js';
+import { sha256, normalizeUrl, stripHtml, registrableDomain, normalizeWhitespace } from '../normalize/text.js';
 
 export const STAGE = Object.freeze({
   JSON_LD: 'JSON_LD',
@@ -37,6 +40,61 @@ export const STAGE = Object.freeze({
 });
 
 const MAX_DETAIL_PAGES = 40;
+const MAX_LISTING_PAGE_HOPS = 3;
+
+/* A career landing page often has a CTA such as "Search for jobs" while the
+   actual vacancies live one URL deeper. The old crawler treated the landing
+   page as the listing and therefore returned a perfectly successful zero-job
+   run for employers such as Amazon. These patterns identify only likely
+   LISTING pages, not arbitrary navigation. */
+const LISTING_TEXT_RE = /\b(search|find|view|browse|explore|see|show)\s+(?:for\s+)?(?:all\s+)?(?:open\s+)?(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b|\b(current|open)\s+(jobs?|roles?|positions?|openings?|opportunities|vacancies)\b/i;
+const LISTING_PATH_RE = /(?:^|\/)(?:search|job-search|search-jobs?|jobs?|careers?\/jobs?|careers?\/search|open-positions?|openings?|positions?|opportunities|vacancies)(?:\/|$)/i;
+const SINGLE_JOB_RE = /(?:^|\/)(?:jobs?|positions?|roles?|openings?)\/[^/?#]{5,}(?:\/|$)/i;
+const BAD_LISTING_TEXT_RE = /\b(sign[ -]?in|log[ -]?in|register|talent community|join our network|apply now|job alert)\b/i;
+
+function sameOrigin(a, b) {
+  try { return new URL(a).origin === new URL(b).origin; } catch { return false; }
+}
+
+/**
+ * Extract only high-confidence listing/search pages from a landing page.
+ * Kept exportable so offline fixtures can regression-test landing -> listing
+ * resolution without making a network request.
+ */
+export function extractListingPageLinks(html, baseUrl) {
+  const found = new Map();
+  for (const m of String(html || '').matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = String(m[1] || '').trim();
+    if (!href || href.startsWith('#') || /^(mailto|tel|javascript):/i.test(href)) continue;
+    let abs;
+    let u;
+    try {
+      abs = normalizeUrl(new URL(href, baseUrl).toString());
+      u = new URL(abs);
+    } catch { continue; }
+    if (!abs || !['http:', 'https:'].includes(u.protocol)) continue;
+
+    const label = normalizeWhitespace(stripHtml(m[2] || '')).slice(0, 180);
+    const joined = `${label} ${u.pathname} ${u.search}`;
+    let score = 0;
+    if (LISTING_TEXT_RE.test(label)) score += 14;
+    if (LISTING_PATH_RE.test(u.pathname)) score += 9;
+    /* Plain /en/search and locale-prefixed equivalents are common listing
+       routes even when the anchor text is only "Jobs". */
+    if (/(?:^|\/)search(?:\/|$)/i.test(u.pathname)) score += 8;
+    if (/jobs?\.|careers?\./i.test(u.hostname)) score += 3;
+    if (sameOrigin(abs, baseUrl)) score += 2;
+    if (SINGLE_JOB_RE.test(u.pathname)) score -= 18;
+    if (BAD_LISTING_TEXT_RE.test(joined)) score -= 20;
+    if (/\/(?:about|culture|benefits|students?|internships?|locations?|teams?)(?:\/|$)/i.test(u.pathname)) score -= 6;
+
+    if (score < 9) continue;
+    const prior = found.get(abs);
+    const candidate = { url: abs, text: label, score };
+    if (!prior || candidate.score > prior.score) found.set(abs, candidate);
+  }
+  return [...found.values()].sort((a, b) => b.score - a.score || a.url.localeCompare(b.url));
+}
 
 export class GenericCareerSiteAdapter extends JobSourceAdapter {
   static provider = PROVIDER.GENERIC;
@@ -133,9 +191,45 @@ export class GenericCareerSiteAdapter extends JobSourceAdapter {
       return { items: [], nextCursor: null, authoritative: false, notModified: true, http: { etag: page.etag, status: 304 } };
     }
 
-    const httpMeta = { etag: page.etag, lastModified: page.lastModified, status: page.status, url: page.url, bytes: page.bytes };
-    const result = await this.extractFrom(page.text, page.url, source, ctx);
-    this.stageCounts[result.stage] = (this.stageCounts[result.stage] || 0) + 1;
+    let effectivePage = page;
+    let result = await this.extractFrom(page.text, page.url, source, ctx);
+
+    /* A reachable careers page with zero extracted jobs may simply be the
+       marketing shell. Follow at most three explicit listing/search CTAs and
+       run the SAME extraction ladder there. This fixes stale seeded URLs without
+       requiring an operator to manually discover the hidden final page first. */
+    if (!(result.items || []).length) {
+      const listingLinks = extractListingPageLinks(page.text, page.url).slice(0, MAX_LISTING_PAGE_HOPS);
+      for (const candidate of listingLinks) {
+        let listingAccess;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          listingAccess = await this.checkAccess(candidate.url, source);
+        } catch { continue; }
+        if (listingAccess.policy !== ACCESS_POLICY.ALLOW) continue;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const listingPage = await http.fetch(candidate.url);
+          if (listingPage.notModified) continue;
+          // eslint-disable-next-line no-await-in-loop
+          const listingResult = await this.extractFrom(listingPage.text, listingPage.url, source, ctx);
+          if ((listingResult.items || []).length) {
+            effectivePage = listingPage;
+            result = listingResult;
+            break;
+          }
+        } catch { /* one dead CTA must not fail the source */ }
+      }
+    }
+
+    const httpMeta = {
+      etag: effectivePage.etag,
+      lastModified: effectivePage.lastModified,
+      status: effectivePage.status,
+      url: effectivePage.url,
+      bytes: effectivePage.bytes,
+    };
+    if (result.stage) this.stageCounts[result.stage] = (this.stageCounts[result.stage] || 0) + 1;
     return {
       items: result.items,
       nextCursor: null,
