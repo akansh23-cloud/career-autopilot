@@ -179,12 +179,30 @@ export class SourceDiscoveryEngine {
   /** Register (or recognise) a direct ATS board. */
   async registerAts({ provider, tenant, companyName = null, companyDomain = null, careersUrl = null, discoveredFrom = null }) {
     if (!provider || !tenant) return { ok: false, reason: 'incomplete ats identity' };
+
+    /* The ATS tenant is stronger evidence than the page that led us to it.
+       Store the tenant's canonical board as the visible careers URL as well as
+       the crawl base URL. This prevents marketing/landing pages from surviving
+       in the company UI after discovery has already found the real jobs board. */
+    const board = boardUrlFor(provider, tenant);
+    const suppliedUrl = normalizeUrl(careersUrl || '') || careersUrl || null;
+    const canonicalUrl = board || suppliedUrl;
+
     const existing = await this.registry.find({ provider, tenant });
     if (existing) {
+      let source = existing;
+      if (canonicalUrl && (existing.baseUrl !== canonicalUrl || existing.careersUrl !== canonicalUrl)) {
+        source = await this.registry.update(existing.id, {
+          baseUrl: canonicalUrl,
+          careersUrl: canonicalUrl,
+          companyName: existing.companyName || companyName,
+          companyDomain: existing.companyDomain || companyDomain,
+        }) || existing;
+      }
       this.metrics.alreadyKnown += 1;
-      return { ok: true, created: false, source: existing, reason: 'source already registered' };
+      return { ok: true, created: false, source, reason: 'source already registered' };
     }
-    const board = boardUrlFor(provider, tenant);
+
     const { source, created } = await this.registry.register(makeSource({
       provider,
       sourceType: SOURCE_TYPE.ATS,
@@ -192,8 +210,8 @@ export class SourceDiscoveryEngine {
       tenant,
       companyName,
       companyDomain,
-      baseUrl: board,
-      careersUrl: careersUrl || board,
+      baseUrl: canonicalUrl,
+      careersUrl: canonicalUrl,
       crawlStrategy: CRAWL_STRATEGY.API,
       accessPolicy: ACCESS_POLICY.ALLOW, // documented public board endpoint
       discoveredFrom,
